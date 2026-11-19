@@ -223,3 +223,56 @@ test("a finding's panel folds by its page's width, not the window's", () => {
   assert.equal((css.match(/container: lf-page \/ inline-size/g) ?? []).length, 1, "the findings page's container is not named once");
   assert.equal(css.includes("@container lf-page (max-width: 1228px)"), true, "the finding panel does not fold by its page's own width");
 });
+
+test("a session's forks stand 2px from the rows round them", () => {
+  const css = sheet("app.css");
+  const first = blocks(css, ".lc-sb-kids > .lc-sl-row:first-child");
+  const after = blocks(css, ".lc-sb-kids + .lc-sl-row");
+  assert.equal(first.length, 1, "the first fork has no spacing rule");
+  assert.equal(after.length, 1, "the row after a fork list has no spacing rule");
+  assert.equal(value(first[0], "margin-top"), "2px");
+  assert.equal(value(after[0], "margin-top"), "2px");
+});
+
+test("the Limits card keeps the grid's single gap under it", () => {
+  assert.equal(blocks(sheet("surfaces.css"), ".lc-limits").length, 0, "Limits still adds its own margin under the grid's gap");
+});
+
+test("notices hang under the top row as it is now, not the old 52px one", () => {
+  const css = sheet("app.css");
+  assert.equal(value(blocks(css, ".l-toaster.lc-toaster")[0], "top"), "calc(6px + var(--lc-head) + 6px)", "the toaster hangs at the old header's height");
+  assert.equal(value(blocks(css, '.lc-broke[data-place="float"]')[0], "top"), "calc(6px + var(--lc-head) + 6px)", "the floating notice hangs at the old header's height");
+});
+
+test("Liner Design's sidebar rows stand 2px apart, as the shared ones do", () => {
+  const css = sheet("design/design-face.css");
+  for (const sel of [".ld-side", ".ld-layers", ".ld-files"]) assert.equal(value(blocks(css, sel)[0], "gap"), "2px", sel + " keeps 1px between rows");
+});
+
+test("a finding's last line ends clear of the fade", () => {
+  assert.equal(value(blocks(sheet("security/findings.css"), ".lf-x-body")[0], "padding"), "4px 22px 40px", "the body's bottom padding is under the fade's 36px");
+});
+
+test("Liner Design's open chat keeps 4px at its header's right", () => {
+  assert.equal(value(blocks(sheet("design/chat.css"), ".ldc-open > .ldc-h")[0], "padding"), "0 4px 0 10px", "the open chat's header has no right padding");
+});
+
+test("the add-ons-off banner keeps the grid's gap, not a margin on top of it", () => {
+  assert.equal(value(blocks(sheet("settings.css"), ".lc-st-banner")[0], "margin"), "0", "the banner adds 18px to the grid's 28px gap");
+});
+
+test("the composer's stacked rows stand on the card's 4px edge", () => {
+  const css = sheet("app.css");
+  assert.equal(value(blocks(css, ".lc-queued")[0], "padding"), "6px 4px 6px", "the queued messages sit 2px in, not the card's 4");
+  assert.equal(value(blocks(css, ".lc-cold")[0], "margin"), "0 4px 6px", "the cache line sits 2px in, not the card's 4");
+});
+
+test("Browser's start-page rows take the column's width, not the panel's 300", () => {
+  assert.equal(value(blocks(sheet("surfaces.css"), ".lc-br-start-in .lc-br-ports")[0], "max-width"), "none", "the start page's ports are held to the panel's 300px");
+});
+
+test("Setup's install list fades at its bottom to say it scrolls", () => {
+  const b = blocks(sheet("setup.css"), ".lc-wel-fold[data-open] > div > .lc-wel-fscroll")[0];
+  assert.equal(value(b, "padding-bottom"), "12px", "the open install list has no room for a fade");
+  assert.equal(value(b, "mask-image"), "linear-gradient(#000 calc(100% - 12px), transparent)", "the open install list does not fade");
+});

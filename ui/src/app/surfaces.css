@@ -861,6 +861,7 @@
   margin-top: 6px;
 }
 .lc-br-start-in .lc-br-ports {
+  max-width: none;
   margin: 4px 0 0;
 }
 .lc-br-start-foot {
@@ -3305,9 +3306,6 @@
 }
 
 /* Usage → Limits */
-.lc-limits {
-  margin-bottom: 14px;
-}
 .lc-limits-none {
   margin: 8px 0 2px;
   font-size: 13px;

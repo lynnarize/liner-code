@@ -170,7 +170,7 @@
   animation: l-swap-in 220ms var(--l-ease-out) backwards;
 }
 .ldc-open > .ldc-h {
-  padding: 0 0 0 10px;
+  padding: 0 4px 0 10px;
 }
 .ldc-open .ldc-body {
   padding: 2px 10px 12px;

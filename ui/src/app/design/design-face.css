@@ -9,7 +9,7 @@
 .ld-side {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   padding: 0 0 8px;
 }
@@ -162,7 +162,7 @@ button.ld-tr:hover {
 .ld-layers {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .ld-ly {
   display: flex;
@@ -211,7 +211,7 @@ button.ld-tr:hover {
 .ld-files {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .ld-none {
   padding: 8px 10px;

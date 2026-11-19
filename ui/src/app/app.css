@@ -3616,7 +3616,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 4px;
-  padding: 6px 2px 6px;
+  padding: 6px 4px 6px;
 }
 .lc-queued-h {
   padding: 0 12px 2px;
@@ -6983,7 +6983,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   position: fixed;
   z-index: 60;
   left: 50%;
-  top: 64px;
+  top: calc(6px + var(--lc-head) + 6px);
   width: min(380px, calc(100vw - 32px));
   box-sizing: border-box;
   margin: 0;
@@ -7035,7 +7035,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 2px 6px;
+  margin: 0 4px 6px;
   padding: 4px 4px 4px 12px;
   border-radius: 12px;
   background: color-mix(in oklab, var(--l-warn) 9%, var(--lc-card));
@@ -7070,7 +7070,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 /* ---------- Toasts: at the top right, under the title bar, out of the composer's way ---------- */
 /* Liner's toaster stacks up from the bottom; here it hangs from the top, the older ones peeking below. */
 .l-toaster.lc-toaster {
-  top: 64px;
+  top: calc(6px + var(--lc-head) + 6px);
   right: 16px;
   bottom: auto;
   left: auto;
@@ -8454,7 +8454,9 @@ span.lc-sb-name {
 }
 /* A row, two lines. Its root is a grid of two: the words (the pick) across it, and the actions that take the end's place while you point at it. */
 /* Rows that light up (the open one, the one under the pointer) keep 2px apart, so two plates never run into one. */
-:is(.lc-sl-row, .lc-sl-fold) + .lc-sl-row {
+:is(.lc-sl-row, .lc-sl-fold) + .lc-sl-row,
+.lc-sb-kids > .lc-sl-row:first-child,
+.lc-sb-kids + .lc-sl-row {
   margin-top: 2px;
 }
 .lc-sl-row {

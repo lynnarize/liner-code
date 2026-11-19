@@ -298,6 +298,9 @@ html[data-native="mac"] .lc-wel {
 }
 .lc-wel-fold[data-open] > div > .lc-wel-fscroll {
   overflow-y: auto;
+  padding-bottom: 12px;
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 12px), transparent);
 }
 .lc-wel-fold > div > :last-child {
   margin-bottom: clamp(10px, 2.2vh, 14px);

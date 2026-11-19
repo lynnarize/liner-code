@@ -261,7 +261,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden auto;
-  padding: 4px 22px 32px;
+  padding: 4px 22px 40px;
   outline: 0;
   overflow-wrap: anywhere;
   -webkit-mask-image: linear-gradient(#000 calc(100% - 36px), transparent);

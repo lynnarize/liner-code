@@ -6,11 +6,6 @@
 .lc-ao-page {
   position: relative;
 }
-.lc-ao-page > .lc-top {
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 1;
-}
 .lc-ao-scroll {
   flex: 1;
   min-height: 0;
@@ -20,9 +15,9 @@
   display: flex;
   flex-direction: column;
   gap: 30px;
-  max-width: 860px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 48px 40px 60px;
+  padding: 32px 32px 96px;
 }
 .lc-ao-head {
   display: flex;
@@ -37,7 +32,7 @@
 }
 .lc-ao-head h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--l-ink);
@@ -185,8 +180,8 @@
   gap: 6px;
 }
 .lc-ao-list h2 {
-  margin: 0 0 6px;
-  font-size: 16px;
+  margin: 0 0 10px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--l-ink);
 }
@@ -454,10 +449,7 @@ button.lc-ao-open {
   line-height: 1.4;
 }
 .lc-ao-remove {
-  height: 32px;
-  padding: 0 10px;
   border: 0;
-  border-radius: 10px;
   background: none;
   font: inherit;
   font-size: 13px;

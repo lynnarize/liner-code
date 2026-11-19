@@ -14,7 +14,6 @@ import type { AddonAsk, AddonInfo, ConnectionAsk, DshInfo, PanelAccess, PanelAsk
 import { addonKey, summaryOf } from "@contracts";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { appIcon, dayOf, openApp, openSession } from "./Addon";
 import { bridge, isNative } from "./bridge";
@@ -23,7 +22,7 @@ import { I } from "./icons";
 import { plural, since } from "./model";
 import { startCreator } from "./Modes";
 import { STOPPED_REASON, useStoppedPanels } from "./panelLife";
-import { NamedSwitch, Pop } from "./ui";
+import { HoverNote, NamedSwitch, Pop } from "./ui";
 import * as os from "./os";
 import "./addons-page.css";
 
@@ -136,11 +135,11 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
               <h1>Add-ons</h1>
               <p>
                 Turn on and set up what you've added to Liner Code
-                <Tooltip content="Connections let your agents work with a service. Panels show beside your sessions, and apps have a page of their own. Each one asked you first, runs sealed off with only what you allowed, and keeps its versions.">
+                <HoverNote note="Connections let your agents work with a service. Panels show beside your sessions, and apps have a page of their own. Each one asked you first, runs sealed off with only what you allowed, and keeps its versions." width={300}>
                   <button type="button" className="lc-ao-info l-focus" aria-label="About add-ons">
                     <I.info size={14} />
                   </button>
-                </Tooltip>
+                </HoverNote>
               </p>
             </div>
             <button type="button" className="lc-ao-ghost l-focus" aria-label="Look again" title="Look again" data-busy={looking || undefined} onClick={refresh}>

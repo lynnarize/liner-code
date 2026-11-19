@@ -25,3 +25,17 @@ test("Liner Design's top row is a size container that hides the kept copies when
   assert.ok(blocks(css, ".ld-bar").some((b) => value(b, "container") === "ld-bar / inline-size"), "the row is not a size container");
   assert.ok(blocks(css, ".ld-ver").some((b) => value(b, "display") === "none"), "no narrow step hides the kept copies");
 });
+
+test("The Add-ons page's top row is in the flow, not laid over its scroller", () => {
+  const tops = blocks(sheet("addons-page.css"), ".lc-ao-page > .lc-top");
+  assert.ok(tops.every((b) => value(b, "position") === undefined), "a block for the top row still sets position");
+});
+
+test("The Add-ons page's column and title match Settings' page pattern", () => {
+  const css = sheet("addons-page.css");
+  const cols = blocks(css, ".lc-ao-col");
+  const heads = blocks(css, ".lc-ao-head h1");
+  assert.equal(cols.length, 1);
+  assert.equal(heads.length, 1);
+  assert.deepEqual({ maxWidth: value(cols[0], "max-width"), h1Size: value(heads[0], "font-size") }, { maxWidth: "760px", h1Size: "24px" }, "the column and title keep the Add-ons page's own measures instead of Settings'");
+});

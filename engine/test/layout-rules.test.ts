@@ -177,3 +177,28 @@ test("The conversation's text starts where the composer's text does, and your me
   assert.equal(tls.length, 1);
   assert.equal(value(tls[0], "padding-inline"), "16px 8px", "the timeline keeps its own insets instead of the composer card's 16 and 8");
 });
+
+test("Liner Design's top row starts its words at the same edge as Code's", () => {
+  const bar = blocks(sheet("design/design-face.css"), ".ld-bar");
+  assert.equal(bar.length, 1);
+  assert.equal(value(bar[0], "padding"), "6px 10px 6px 20px", "Design's row keeps its own 16px left instead of the row's 20");
+  const tt = blocks(sheet("design/design-face.css"), ".ld-tt");
+  assert.equal(value(tt[0], "margin-left"), "-10px", "the title's own 10px padding is not pulled back to the row's edge");
+});
+
+test("the lean page's title starts on the row's edge too", () => {
+  const t = blocks(sheet("design/design-face.css"), ".ld-title");
+  assert.equal(value(t[0], "margin-left"), "-8px", "the lean title's own 8px padding is not pulled back to the row's edge");
+});
+
+test("Settings' crumbs start their word, not their box, on the row's edge", () => {
+  const c = blocks(sheet("app.css"), ".lc-st-crumbs");
+  assert.equal(value(c[0], "margin-left"), "-6px", "a crumb's own 6px padding is not pulled back to the row's edge");
+});
+
+test("the Found panel's header is its own, not a page's top row", () => {
+  const tsx = readFileSync(new URL("../../ui/src/app/security/FoundPanel.tsx", import.meta.url), "utf8");
+  assert.equal(tsx.includes("lc-top lsc-found-top"), false, "the Found header still carries lc-top, so the traffic-light rule reaches it");
+  const top = blocks(sheet("security/scan.css"), ".lsc-found-top");
+  assert.equal(value(top[0], "min-height"), "var(--lc-head)", "the Found header does not keep the top row's height on its own");
+});

@@ -5364,6 +5364,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-st-crumbs {
   min-width: 0;
+  /* A crumb keeps 6px of its own (Liner's breadcrumb), so its word, not its box, starts on the row's edge. */
+  margin-left: -6px;
 }
 .lc-st-scroll {
   flex: 1;

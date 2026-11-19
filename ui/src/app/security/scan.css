@@ -494,7 +494,15 @@
   border-left: 1px solid var(--lc-hair, var(--ls-line));
   animation: lc-paper-in 320ms var(--l-ease-enter) backwards;
 }
+/* The panel's own header: the height of the top row beside it, but not a page's top row, so nothing that moves a page's
+   row out from under the traffic lights reaches it. */
 .lsc-found-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--lc-head);
+  box-sizing: border-box;
   padding: 6px 10px 6px 22px;
 }
 .lsc-found-t {

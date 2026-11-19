@@ -97,7 +97,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
     const f = mine[0];
     return (
       <aside className="lsc-found" aria-label="The finding">
-        <header className="lc-top lsc-found-top">
+        <header className="lsc-found-top">
           <span className="lsc-found-t">The finding</span>
           <span className="lc-grow" />
           {onClose && (
@@ -130,7 +130,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
 
   return (
     <aside className="lsc-found" aria-label={done ? "What the scan found" : "What the scan has found so far"}>
-      <header className="lc-top lsc-found-top">
+      <header className="lsc-found-top">
         {search === null ? (
           <span className="lsc-found-t">{done ? "Found" : "Found so far"}</span>
         ) : (

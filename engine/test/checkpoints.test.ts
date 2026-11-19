@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capture, changes, diffFiles, forget, isRepo, local, prefixOf, restore, undo } from "../src/checkpoints.ts";
+import { capture, changes, diffFiles, forget, isRepo, keep, local, prefixOf, restore, undo } from "../src/checkpoints.ts";
 import { gitStatus, listFiles } from "../src/files.ts";
 import { run } from "../src/exec.ts";
 
@@ -363,3 +363,20 @@ test("changes: a signed commit with log.showSignature on doesn't lose a file fro
   assert.deepEqual((await changes(dir, before, after, { turn: true })).map((f) => f.path), ["signed.txt"]);
 });
 
+test("keep: a fork's hold on the snapshots it copied is one ref each, the same commit once", async () => {
+  const dir = await repo();
+  const a = (await git(dir, "rev-parse", "HEAD")).trim();
+  writeFileSync(join(dir, "keep.txt"), "a\n");
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "-q", "-m", "two");
+  const b = (await git(dir, "rev-parse", "HEAD")).trim();
+  writeFileSync(join(dir, "keep.txt"), "b\n");
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "-q", "-m", "three");
+  const c = (await git(dir, "rev-parse", "HEAD")).trim();
+  await keep(dir, "fork1", [a, b, c, a]);
+  const refs = (await git(dir, "for-each-ref", "--format=%(refname) %(objectname)", "refs/liner/fork1")).trim().split("\n").filter(Boolean);
+  assert.deepEqual(refs, [`refs/liner/fork1/kept-0 ${a}`, `refs/liner/fork1/kept-1 ${b}`, `refs/liner/fork1/kept-2 ${c}`]);
+  await keep(dir, "fork2", []);
+  assert.equal((await git(dir, "for-each-ref", "--format=%(refname)", "refs/liner/fork2")).trim(), "");
+});

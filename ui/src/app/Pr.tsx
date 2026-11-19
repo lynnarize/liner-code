@@ -409,7 +409,7 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
     if (!visible) return;
     if (came) look.current(true);
     // The card watches its own checks; this keeps the reviews under it current.
-    const t = window.setInterval(() => look.current(false), 30000);
+    const t = window.setInterval(() => document.visibilityState === "visible" && look.current(false), 30000);
     return () => window.clearInterval(t);
   }, [visible]);
 

@@ -897,12 +897,12 @@ export function App() {
             {face === "security" && (view.kind === "home" || view.kind === "session") ? (
               // Liner Security: its Overview, Findings, Projects, Start a scan, or a scan's session. A fault in it stays in it.
               <Boundary label="Liner Security">
-                <SecurityShell sidebar={sidebar} onSidebar={() => setSidebar(true)} />
+                <SecurityShell sidebar={sidebar} onSidebar={showSidebar} />
               </Boundary>
             ) : face === "design" && (view.kind === "home" || view.kind === "session") ? (
               // Liner Design: its tabs, Design Home or a design on its canvas. A fault in it stays in it: the sidebar and the Code face go on working.
               <Boundary label="Liner Design">
-                <DesignShell sidebar={sidebar} onSidebar={() => setSidebar(true)} onNewAgent={() => setAgentDialog({ open: true })} />
+                <DesignShell sidebar={sidebar} onSidebar={showSidebar} onNewAgent={newAgent} />
               </Boundary>
             ) : view.kind === "session" && current ? (
               besideThread ? (

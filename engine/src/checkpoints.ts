@@ -366,8 +366,13 @@ export async function undo(cwd: string, name: string, turns: Undo[], force = fal
   CheckpointService.ts keeps refs by checkpoint scope, not by the thread that took them).
 */
 export async function keep(cwd: string, name: string, commits: string[]) {
-  let n = 0;
-  for (const c of new Set(commits)) await git(cwd, ["update-ref", `refs/liner/${name}/kept-${n++}`, c]);
+  const refs = [...new Set(commits)].map((c, n) => [`refs/liner/${name}/kept-${n}`, c] as const);
+  if (!refs.length) return;
+  // All in one git, as forget drops them: a long session's fork made hundreds of these one process at a time. A batch that
+  // fails fails whole, so then they go one at a time, as before.
+  const all = await git(cwd, ["update-ref", "--stdin"], undefined, refs.map(([ref, c]) => `update ${ref} ${c}\n`).join(""));
+  if (all.code === 0) return;
+  for (const [ref, c] of refs) await git(cwd, ["update-ref", ref, c]);
 }
 
 /**

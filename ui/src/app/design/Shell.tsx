@@ -4,7 +4,7 @@
   It also tells the store who makes the session of a design that has none yet (session.ts), for
   the asks that don't come from the dock (a fix, an AI picture, the lean).
 */
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useEngine } from "../engine";
 import { closeTab, tabKey, useTabs } from "../face";
 import { DesignFace } from "./DesignFace";
@@ -13,7 +13,8 @@ import { freshProject, makeSession, sessionOf } from "./session";
 import { design, setSessionMaker } from "./store";
 import { useTabKeys } from "./Tabs";
 
-export function DesignShell({ sidebar, onSidebar, onNewAgent }: { sidebar: boolean; onSidebar: () => void; onNewAgent: () => void }) {
+// Memoised: App redraws on every session's events, and this face only needs to when its own props change.
+export const DesignShell = memo(function DesignShell({ sidebar, onSidebar, onNewAgent }: { sidebar: boolean; onSidebar: () => void; onNewAgent: () => void }) {
   const { list, at } = useTabs();
   const projects = useEngine((s) => s.projects);
   const threads = useEngine((s) => s.threads);
@@ -35,4 +36,4 @@ export function DesignShell({ sidebar, onSidebar, onNewAgent }: { sidebar: boole
 
   if (!tab || !project) return <DesignHome sidebar={sidebar} onSidebar={onSidebar} onNewAgent={onNewAgent} />;
   return <DesignFace key={at} tab={tab} project={project} thread={sessionOf(tab, threads)} sidebar={sidebar} onSidebar={onSidebar} />;
-}
+});

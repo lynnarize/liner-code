@@ -238,6 +238,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     if (!waiting) return;
     let live = true;
     const t = window.setInterval(() => {
+      // Nobody is looking: the engine isn't asked to list this Mac's servers every five seconds for a hidden window.
+      if (document.visibilityState !== "visible") return;
       void look().then(({ p, f }) => live && setTarget((now) => now ?? pick(p, f, null)));
     }, 5000);
     return () => {

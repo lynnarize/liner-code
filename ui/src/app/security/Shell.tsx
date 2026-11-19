@@ -4,7 +4,7 @@
   whose session went away (a scan or fix deleted) goes back to the Overview; one that is only on its way (a fix session
   just made, the engine still connecting) is waited for a moment first.
 */
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useEngine } from "../engine";
 import { Findings } from "./Findings";
 import { Overview } from "./Overview";
@@ -17,7 +17,8 @@ import "./security.css";
 /** How long a session asked for may take to come in before the page gives up on it. */
 const WAIT_MS = 4000;
 
-export function SecurityShell({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
+// Memoised: App redraws on every session's events, and this face only needs to when its own props change.
+export const SecurityShell = memo(function SecurityShell({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
   const page = useSecurityPage();
   const id = page.kind === "scan" ? page.threadId : null;
   const there = useEngine((s) => id !== null && s.threads.some((t) => t.id === id));
@@ -46,4 +47,4 @@ export function SecurityShell({ sidebar, onSidebar }: { sidebar: boolean; onSide
     default:
       return <Overview sidebar={sidebar} onSidebar={onSidebar} />;
   }
-}
+});

@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.3.0 (beta), 2026-11-19
+
+Update from 0.2.9: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;
+on Windows, run the new setup. **A new icon**, the `//` mark from the website. **Send and Stop as one
+button**, and a working turn as one live line. **A compact model picker.** **Safer by default**, with
+your session keys out of sight and an engine that answers only to its own address.
+
+### Added
+
+- **A blue dot for what finished:** a session that finished while you were away ends its row in a
+  blue dot, gone once you open it.
+- **Show the Demo:** a switch in Settings › General, beside the six taps.
+
+### Changed
+
+- **The icon:** the app's icon is the `//` mark, as on the website: two slanted strokes, ink then
+  blue, in light and dark on the Mac.
+- **Send and Stop are one button**, and a working turn is one live line over "Working for", on The
+  Wall too.
+- **A compact model picker:** Fusion, Best and Fast are one strip, All models lists every ready tool
+  with the session's own first, and the Fusion column holds only its choices, with what each means
+  when you rest on it. A model a tool names by its id alone reads as a name.
+- **Rows that never touch:** rows that light up together keep apart in the sidebar, the model list,
+  menus and the face switch, and focus rings show whole where they used to be cut.
+- **A Reviewer block reads as one:** the row says "Reviewer blocked it" with a grey dot, not a
+  question's amber, and still counts in Needs you. It also outlives a restart of the engine.
+- **The Browser's Desktop** shows the page zoomed out in a narrow panel, as Tablet and Phone do,
+  rather than squeezing it.
+- **A session's key to Liner Code's tools** is kept in a file of your own, not in any environment or
+  command line.
+- **The engine answers only to its own address,** and a tool call without its key is turned away
+  before it is read.
+- **Text an agent wrote** can no longer steer later sessions or the Reviewer.
+- **Updates:** the app checks a waiting update's signature again before it installs it.
+- **Lighter in the background:** the other faces no longer redraw on every session event, hidden
+  windows stop asking for news, and a fork takes its snapshots in one git call.
+
+### Fixed
+
+- An animation in a narrow Browser panel slowed the whole app. The page now draws only the pixels it
+  is shown at.
+- Fix pressed twice at once started two sessions for one finding.
+- An outside tool waiting on a session couldn't cancel its wait.
+- An export failed when its folder didn't exist yet. It now makes it.
+- A sidekick that ignored Stop kept its lead waiting. It is now given up.
+- A "Make it an app" you stopped could still be installed.
+- Quitting could wait on a question whose turn was already over.
+- A draft, a hand edit or a half-written line comment could be lost.
+
 ## 0.2.9 (beta), 2026-11-19
 
 Update from 0.2.8: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;

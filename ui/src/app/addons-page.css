@@ -92,7 +92,6 @@
 .lc-ao-split {
   display: inline-flex;
   flex: none;
-  overflow: hidden;
   border-radius: 11px;
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
@@ -112,7 +111,12 @@
   color: inherit;
   cursor: pointer;
 }
+/* The pair keeps its round ends without clipping, so a focus ring shows whole. */
+.lc-ao-split > button:first-child {
+  border-radius: 11px 0 0 11px;
+}
 .lc-ao-split-more {
+  border-radius: 0 11px 11px 0;
   justify-content: center;
   width: 34px;
   padding: 0;

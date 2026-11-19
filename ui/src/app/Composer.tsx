@@ -28,7 +28,7 @@ import { onComposerInsert } from "./Find";
 import { EffortPick, ModelPicker } from "./Models";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
-import { Disc, PanelHead, Pop, Row } from "./ui";
+import { Disc, HoverNote, PanelHead, Pop, Row } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
@@ -248,6 +248,8 @@ function pastedName(taken: string[]) {
 const COLD_TOKENS = 200_000;
 /** The model picker's tab for your agents (no tool has this id). */
 const AGENTS_TAB = "@agents";
+/** The Demo has a row of its own in this panel (Demo run): the model lists in it leave it out, so it's never a lead, a sidekick or a model of its own. */
+const notDemo = (p: ProviderInfo) => p.id !== "demo";
 /**
   The tools whose models the picker lists: ready, with models to list, the Demo apart (it has a row
   of its own). A tool whose every model is left out (Hermes with only OpenCode Go's, while OpenCode
@@ -1349,6 +1351,16 @@ function rove(e: KeyEvent<HTMLElement>) {
   e.preventDefault();
 }
 
+/** Along the Fusion, Best and Fast strip: Left and Right move part to part, stopping at its ends (Right past the last goes to the Lead: `across`). */
+function roveStrip(e: KeyEvent<HTMLElement>) {
+  if (e.defaultPrevented || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+  const parts = [...e.currentTarget.querySelectorAll<HTMLElement>("[data-rove]:not(:disabled)")];
+  const next = parts[parts.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowRight" ? 1 : -1)];
+  if (!next) return;
+  next.focus();
+  e.preventDefault();
+}
+
 /**
   The tools sit two to a row, so there the arrows move as it looks: left and right along a row, up
   and down a row at a time, and past the grid's top or bottom to the rows round it.
@@ -1460,8 +1472,8 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const classes = useEngine((s) => s.settings.classes);
   const handOverSet = useEngine((s) => s.settings.handOver);
   const pairEffort = useEngine((s) => s.settings.pairEffort);
-  // The tool is picked on its own (ToolPick, beside where it runs), so this panel offers that tool's
-  // models: its own pair, its best and its fast, and its full list. A sidekick can still come from
+  // The tool is picked on its own (ToolPick, beside where it runs), so this panel's pair, best and fast
+  // are that tool's. All models still lists every tool, that one first. A sidekick can come from
   // another tool, from the Sidekick's "every model". The Demo, or a tool that's gone, sees them all.
   const toolNow = settings.agent === "demo" ? "" : splitModel(settings.model ?? agentOf(settings.agent, agents, providers).model).provider;
   const scoped = useMemo(() => {
@@ -1471,7 +1483,12 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const pair = useMemo(() => castOf(scoped, { picks, every: providers }), [scoped, picks, providers]);
   const two = pairReady(pair);
   const way: Way | "demo" = settings.agent === "demo" ? "demo" : wayOf(settings, pair);
-  const tools = useMemo(() => toolsOf(scoped, providers), [scoped, providers]);
+  // All models lists every tool that's ready, the one the session runs on first: Fusion, Best and Fast stay that tool's,
+  // but a model of another tool is still one press away, and picking it moves the session to that tool.
+  const tools = useMemo(() => {
+    const all = toolsOf(providers);
+    return [...all.filter((p) => p.id === toolNow), ...all.filter((p) => p.id !== toolNow)];
+  }, [providers, toolNow]);
   const yours = agents.filter((a) => a.id !== "demo");
   const [query, setQuery] = useState("");
   // What the column shows: the rows (""), a tool's models (its id), or your agents.
@@ -1490,10 +1507,10 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const howBtn = useRef<HTMLButtonElement>(null);
   const picking = open === "lead" || open === "side";
   const line = open && open !== "lines" && !picking ? open : undefined;
-  /** Across the two columns by the arrows: Right from the Pair row to the Lead, Left from Lead or Sidekick back to it. */
+  /** Across the two columns by the arrows: Right from the strip's last part to the Lead, Left from Lead or Sidekick back to Fusion. */
   const across = (e: KeyEvent<HTMLElement>) => {
     if (e.defaultPrevented || !(e.target instanceof HTMLButtonElement)) return;
-    const to = e.key === "ArrowRight" && e.target.dataset.way === "pair" ? leadBtn.current : e.key === "ArrowLeft" && e.target.classList.contains("lc-who-pick") ? col.current?.querySelector<HTMLElement>("[data-way='pair']") : null;
+    const to = e.key === "ArrowRight" && e.target.dataset.way && !e.target.closest(".lc-hnote-at")?.nextElementSibling ? leadBtn.current : e.key === "ArrowLeft" && e.target.classList.contains("lc-who-pick") ? col.current?.querySelector<HTMLElement>("[data-way='pair']") : null;
     if (!to) return;
     e.preventDefault();
     to.focus();
@@ -1654,6 +1671,27 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     </button>
   );
 
+  // Your agents, as a tab of a tool's list, on the same terms as in the Lead's (once you have one): the rail reads alike in both columns.
+  const agentsTab = () =>
+    yours.length
+      ? {
+          id: AGENTS_TAB,
+          label: "Your agents",
+          icon: <I.agents size={16} />,
+          body: (
+            <>
+              {yours.map((a) => agentRow(a, !settings.sidekick && settings.agent === a.id, () => pickAgent(a.id)))}
+              {onNewAgent && (
+                <button type="button" className="lc-who-opt l-focus" data-rove onClick={() => (close(), onNewAgent())}>
+                  <I.plus size={14} />
+                  <span className="lc-who-opt-t">New agent</span>
+                </button>
+              )}
+            </>
+          ),
+        }
+      : undefined;
+
   let main: ReactNode;
   if (view === AGENTS_TAB)
     main = (
@@ -1684,7 +1722,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
             </span>
           )}
         </div>
-        <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} tab={view} autoFocus height={330} onPick={pickOne} />
+        <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} only={notDemo} tab={view} autoFocus height={330} extra={agentsTab()} onPick={pickOne} />
         {compareLine}
       </>
     );
@@ -1698,29 +1736,25 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
         </label>
         {query.trim() ? (
           <>
-            <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} query={query} keysFrom={find} height={330} onPick={pickOne} />
+            <ModelPicker value={oneValue} also={compare.map((c) => c.slice(1))} only={notDemo} query={query} keysFrom={find} height={330} onPick={pickOne} />
             {compareLine}
           </>
         ) : (
           <>
-            {rows.map((r) => {
-              const on = way === r.id;
-              return (
-                <button key={r.id} type="button" className="lc-who-row l-focus" data-rove data-way={r.id} data-on={on || undefined} aria-pressed={on} aria-label={`${r.title}, ${r.say ?? r.note}`} disabled={r.off} onClick={() => pickWay(r.id)}>
-                  <span className="lc-who-i">{r.icon}</span>
-                  <span className="lc-who-row-t">
-                    <b>{r.title}</b>
-                    <span>{r.note}</span>
-                  </span>
-                  <span className="lc-way-marks">
-                    {r.marks.map((k, i) => (
-                      <ModelMark key={`${k}${i}`} kind={k} size={12} />
-                    ))}
-                  </span>
-                  <span className="lc-who-chev">{r.id === "pair" && !r.off && <I.chevR size={12} />}</span>
-                </button>
-              );
-            })}
+            {/* Fusion, Best and Fast as one strip: the name in each part, who's in it on a rest (and in what a screen reader says). */}
+            <div className="lc-who-strip" role="group" aria-label="How it works" onKeyDown={(e) => roveStrip(e)}>
+              {rows.map((r) => {
+                const on = way === r.id;
+                return (
+                  <HoverNote key={r.id} className="lc-who-seg-at" width={r.id === "pair" && !r.off ? 260 : 220} note={r.id === "pair" && !r.off ? `${r.say}. The lead plans, decides and reviews; the sidekick does the work the lead hands it.` : (r.say ?? r.note)}>
+                    <button type="button" className="lc-who-seg l-focus" data-rove data-way={r.id} data-on={on || undefined} aria-pressed={on} aria-label={`${r.title}, ${r.say ?? r.note}`} disabled={r.off} onClick={() => pickWay(r.id)}>
+                      {r.icon}
+                      <span>{r.title}</span>
+                    </button>
+                  </HoverNote>
+                );
+              })}
+            </div>
             {/* The search and the three rows stay put; the tools under them are short enough to fit, and scroll only when the room the panel opened into is very short. */}
             <div className="lc-who-scroll">
               <div className="lc-team-lab">All models</div>
@@ -1762,7 +1796,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
 
   return (
     <div className="lc-team lc-who-panel" data-pair={way === "pair" || undefined}>
-      <div className="lc-team-cols">
+      <div className="lc-team-cols" data-deep={(way === "pair" && open) || undefined}>
         <div ref={col} className="lc-team-col" role="group" aria-label="Who works on this" onKeyDown={(e) => (rove(e), across(e), view && escape(e, leave))}>
           {main}
         </div>
@@ -1826,8 +1860,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
               </>
             ) : !open ? (
               <>
-                <div className="lc-who-h">Fusion</div>
-                <p className="lc-who-note lc-who-lede">The lead plans, decides and reviews. The sidekick does the work the lead hands it.</p>
+                {/* The strip names Fusion already (and says what it is on a rest): the column is only its choices, each a row of a name and the pick. */}
                 <div className="lc-who-part">
                   <span>Lead</span>
                   <button ref={leadBtn} type="button" className="lc-who-pick l-focus" data-rove aria-label={`Lead: ${leadName}. Change it`} onClick={() => pickFrom("lead")}>
@@ -1845,17 +1878,14 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                   </button>
                 </div>
                 {ways && (
-                  <div className="lc-how">
-                    <div className="lc-how-h">
-                      <span>How Fusion works here</span>
-                      <span className="lc-how-cls">{CLASS_TAG[ways.cls]}</span>
-                    </div>
-                    <p className="lc-how-sum">{howSaid(ways, isModelAgent(lead) ? nameAlone(leadName) : leadName, nameAlone(label(side)))}</p>
-                    <button ref={howBtn} type="button" className="lc-how-row l-focus" data-rove data-own={changed > 0 || undefined} aria-label={`Change how Fusion works for this session${changed ? `, ${changed} changed` : ", nothing changed"}`} onClick={() => toLines()}>
-                      <span className="lc-how-k">Change for this session</span>
-                      <span className="lc-how-v">{changed > 0 ? `${changed} changed` : ""}</span>
-                      <I.chevR size={12} />
-                    </button>
+                  <div className="lc-who-part">
+                    <span>How it works</span>
+                    <HoverNote note={howSaid(ways, isModelAgent(lead) ? nameAlone(leadName) : leadName, nameAlone(label(side)))}>
+                      <button ref={howBtn} type="button" className="lc-who-pick l-focus" data-rove data-own={changed > 0 || undefined} aria-label={`How Fusion works here: ${CLASS_TAG[ways.cls]}${changed ? `, ${changed} changed for this session` : ""}. Change it for this session`} onClick={() => toLines()}>
+                        <span>{changed > 0 ? `${CLASS_TAG[ways.cls]} · ${changed} changed` : CLASS_TAG[ways.cls]}</span>
+                        <I.chevR size={12} />
+                      </button>
+                    </HoverNote>
                   </div>
                 )}
                 {leadModel && <PairCost lead={leadModel} sidekick={side} names={{ lead: leadName, sidekick: label(side) }} />}
@@ -1873,11 +1903,12 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                       value={leadPick}
                       autoFocus
                       height={300}
+                      only={notDemo}
                       extra={yours.length ? { id: AGENTS_TAB, label: "Your agents", icon: <I.agents size={16} />, open: !isModelAgent(lead), body: yours.map((a) => agentRow(a, settings.agent === a.id, () => pickLead(a.id))) } : undefined}
                       onPick={(ref) => pickLead(`@${ref}`)}
                     />
                   ) : (
-                    <ModelPicker value={side} autoFocus height={300} onPick={pickSide} />
+                    <ModelPicker value={side} only={notDemo} autoFocus height={300} onPick={pickSide} />
                   )
                 ) : (
                   <>

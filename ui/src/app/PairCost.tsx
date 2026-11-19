@@ -8,6 +8,8 @@ import type { CSSProperties } from "react";
 import type { ProviderInfo } from "@contracts";
 import { costOf, dearestOf, pairCostOf } from "@contracts";
 import { useEngine } from "./engine";
+import { I } from "./icons";
+import { HoverNote } from "./ui";
 
 /** The dearest model sits here, in percent, so a label still fits after its mark. */
 const FAR = 85;
@@ -40,15 +42,21 @@ export function PairCost({ lead, sidekick, names }: { lead: string; sidekick: st
   const ratio = pair.total / l;
   const word = ratio > 1.05 ? "Above Best" : ratio >= 0.95 ? "About the same as Best" : ratio >= 0.8 ? "A little under Best" : ratio >= 0.55 ? "Under Best" : ratio >= 0.4 ? "About half of Best" : "Well under Best";
   const fast = pair.total > s * 1.05 ? "more than Fast" : pair.total < s * 0.95 ? "less than Fast" : "about the same as Fast";
-  // The two marks under the bar, the cheaper first. Their names go either side of them, so two that
-  // sit close never overlap; hard against the left edge they share one name after the second.
+  // The two marks under the bar, the cheaper first. Their names go either side of them; two marks
+  // that sit close share one name ("Fast · Best"), after them, or before them near the right end.
   const [lo, hi] = s <= l ? [{ k: "Fast", at: at(s) }, { k: "Best", at: at(l) }] : [{ k: "Best", at: at(l) }, { k: "Fast", at: at(s) }];
   const tight = lo.at < 12;
-  const names2: { text: string; at: number; side: "before" | "after" }[] = tight && hi.at - lo.at < 14 ? [{ text: `${lo.k} · ${hi.k}`, at: hi.at, side: "after" }] : [{ text: lo.k, at: lo.at, side: tight ? "after" : "before" }, { text: hi.k, at: hi.at, side: "after" }];
+  const names2: { text: string; at: number; side: "before" | "after" }[] =
+    hi.at - lo.at < 14 ? [hi.at > 70 ? { text: `${lo.k} · ${hi.k}`, at: lo.at, side: "before" } : { text: `${lo.k} · ${hi.k}`, at: hi.at, side: "after" }] : [{ text: lo.k, at: lo.at, side: tight ? "after" : "before" }, { text: hi.k, at: hi.at, side: "after" }];
   return (
     <div className="lc-cost">
       <div className="lc-cost-h">
-        <span>Estimated cost</span>
+        <HoverNote note="From each model's price for a typical task, and how Fusion shares the work. Your plan may differ.">
+          <span className="lc-cost-t l-focus" tabIndex={0}>
+            Estimated cost
+            <I.info size={12} />
+          </span>
+        </HoverNote>
         <span>{word}</span>
       </div>
       <div className="lc-cost-bar" role="img" aria-label={`Estimated cost of Fusion: ${word[0].toLowerCase()}${word.slice(1)}, ${fast}.`} style={{ "--pair": `${at(pair.total)}%` } as CSSProperties}>
@@ -64,7 +72,6 @@ export function PairCost({ lead, sidekick, names }: { lead: string; sidekick: st
           </span>
         ))}
       </div>
-      <p className="lc-who-note lc-cost-note">From each model's price for a typical task, and how Fusion shares the work. Your plan may differ.</p>
     </div>
   );
 }

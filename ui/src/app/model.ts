@@ -66,11 +66,31 @@ export function effortName(id: string, ref: string, providers: ProviderInfo[]) {
 }
 
 /** "claude:claude-opus-5-5" → "Opus 5.5". */
+/** Makers' own spelling, for a name built from an id. */
+const SPELLED: Record<string, string> = { gpt: "GPT", deepseek: "DeepSeek", glm: "GLM", qwen: "Qwen", kimi: "Kimi", minimax: "MiniMax", llama: "Llama", gemini: "Gemini", gemma: "Gemma", claude: "Claude", grok: "Grok", mistral: "Mistral", codestral: "Codestral", devstral: "Devstral", oss: "OSS", ai: "AI", vl: "VL", r1: "R1" };
+/**
+  A name for a model that a tool reports by its id alone ("deepseek/deepseek-v4.1-flash", as
+  Hermes does): the part after the maker, its words spelled as their makers spell them
+  ("DeepSeek V4.1 Flash", "GPT-6.1 Sol"). Never a guess at a name it doesn't have.
+*/
+export function readable(id: string) {
+  const words = id.slice(id.lastIndexOf("/") + 1).split(/[-_:\s]+/).filter(Boolean);
+  const out: string[] = [];
+  for (const w of words) {
+    const low = w.toLowerCase();
+    const said = SPELLED[low] ?? (/^v\d/.test(low) ? `V${w.slice(1)}` : /^\d+(\.\d+)?[bm]$/.test(low) ? w.toUpperCase() : /^\d/.test(w) ? w : w[0].toUpperCase() + w.slice(1));
+    // GPT and its number go together, as OpenAI writes it: GPT-6.1.
+    if (out.at(-1) === "GPT" && /^\d/.test(w)) out[out.length - 1] = `GPT-${w}`;
+    else out.push(said);
+  }
+  return out.join(" ") || id;
+}
+
 export function modelLabel(ref: string, providers: ProviderInfo[]) {
   const { provider, model } = splitModel(ref);
   const p = providers.find((x) => x.id === provider);
   const m = p?.models.find((x) => x.id === model);
-  if (m) return m.label;
+  if (m) return /^[\w.-]+\/[\w.:-]+$/.test(m.label) ? readable(m.label) : m.label;
   if (provider === "demo") return "Demo";
   if (!model || model === "default") return p?.label ?? provider;
   return model;
@@ -242,7 +262,7 @@ export type ModelChoice = ReturnType<typeof allModels>[number];
 
 export type Bucket = "pinned" | "needs" | "working" | "open" | "snoozed" | "settled";
 
-/** It waits on you because the Reviewer blocked its change, not because its agent asked: still Needs you, without a question's amber. */
+/** The Reviewer blocked its change, and its agent asked nothing: it reads as finished, with a blue dot until you open it. */
 export const reviewHeld = (t: Thread) => t.status === "waiting" && t.held === "review";
 
 /**
@@ -257,7 +277,7 @@ export function bucketOf(t: Thread, now = Date.now()): Bucket {
   if (t.status === "running") return "working";
   // Files changed and not committed don't wait on you: committing is yours to do or not (T3 Code
   // marks only what asks, fails or hasn't been seen, too).
-  const needs = t.status === "waiting" || t.status === "error" || t.status === "limited" || t.unread || t.turns === 0;
+  const needs = (t.status === "waiting" && !reviewHeld(t)) || t.status === "error" || t.status === "limited" || t.unread || t.turns === 0;
   // Agents it sent still at work in the background: it works, though its turn has ended.
   return needs ? "needs" : t.agentsAtWork ? "working" : "open";
 }

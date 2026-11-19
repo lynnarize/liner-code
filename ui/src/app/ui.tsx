@@ -8,7 +8,7 @@ import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, LimitWindow, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
-import { clock, reviewHeld } from "./model";
+import { clock } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -332,10 +332,52 @@ export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; br
     );
   if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
   if (t.status === "limited") return <span className="lc-mk" role="img" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
-  if (bucket === "needs" && reviewHeld(t)) return <span className="lc-mk" role="img" data-s="held" aria-label="The Reviewer blocked it"><i /></span>;
   if (bucket === "needs") return <span className="lc-mk" role="img" data-s="needs" aria-label="Needs you"><i /></span>;
   if (t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
   return <span className="lc-mk" role="img" data-s="done" aria-label="Done"><I.check size={14} /></span>;
+}
+
+/**
+  An explanation kept out of the way: it shows on glass under what it explains once the pointer
+  rests there (or keyboard focus reaches it), drawn over the page so a scrolling column or a
+  popover's edge never cuts it, and flipped above when there's no room under. It never takes the
+  pointer, so moving on closes it.
+*/
+export function HoverNote({ note, children, className, width = 280 }: { note: ReactNode; children: ReactNode; className?: string; width?: number }) {
+  const at = useRef<HTMLSpanElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const place = () => {
+    const r = at.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    setPos(window.innerHeight - r.bottom > 140 ? { left, top: r.bottom + 6 } : { left, bottom: window.innerHeight - r.top + 6 });
+  };
+  const show = (now = false) => {
+    window.clearTimeout(timer.current);
+    if (now) place();
+    else timer.current = window.setTimeout(place, 450);
+  };
+  const hide = () => {
+    window.clearTimeout(timer.current);
+    setPos(null);
+  };
+  return (
+    <span
+      ref={at}
+      className={cx("lc-hnote-at", className)}
+      onPointerEnter={(e) => e.pointerType === "mouse" && show()}
+      onPointerLeave={hide}
+      onPointerDown={hide}
+      onFocus={(e) => (e.target as HTMLElement).matches(":focus-visible") && show(true)}
+      onBlur={hide}
+      onKeyDown={(e) => e.key === "Escape" && pos && (e.stopPropagation(), hide())}
+    >
+      {children}
+      {pos && createPortal(<span role="tooltip" className="lc-hnote" style={{ ...pos, width }}>{note}</span>, document.body)}
+    </span>
+  );
 }
 
 /** +19 −7, in mono. */

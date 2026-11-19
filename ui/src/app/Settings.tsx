@@ -735,6 +735,9 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         <Field title="Share anonymous usage counts" note="Once a day: a random install id, the app version, your OS and chip, and how many tokens your agents read and wrote. Never your code, words, projects or models.">
           <NamedSwitch name="Share anonymous usage counts" checked={s.usagePing !== false} onCheckedChange={(usagePing) => save({ usagePing })} />
         </Field>
+        <Field title="Show the Demo" note="A scripted agent that needs no model or account, for trying Liner Code out: Demo run in Who works on this, and the sample project on Home. Off unless you turn it on.">
+          <NamedSwitch name="Show the Demo" checked={s.showDemo === true} onCheckedChange={(showDemo) => save({ showDemo })} />
+        </Field>
       </Group>
       <Group title="First run">
         <Field title="Run the setup again" note={`Find the agent tools on ${os.here}, add projects, and choose how you work.`}>

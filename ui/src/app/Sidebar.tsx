@@ -118,8 +118,8 @@ function useStored<T extends string>(key: string, fallback: T, allowed: readonly
   Dock's count takes it (App). Snoozed and settled ones are put away, so they don't.
 */
 export const waitsOnYou = (t: Thread, now = Date.now()) => bucketOf(t.pinned ? { ...t, pinned: false } : t, now) === "needs";
-/** Asks you something: it waits on your answer, ran into a problem, or hit its plan's limit. */
-export const asksYou = (t: Thread) => t.status === "waiting" || t.status === "error" || t.status === "limited";
+/** Asks you something: it waits on your answer, ran into a problem, or hit its plan's limit. A Reviewer block isn't asking (reviewHeld). */
+export const asksYou = (t: Thread) => (t.status === "waiting" && !reviewHeld(t)) || t.status === "error" || t.status === "limited";
 /**
   Needs you, the same everywhere: the sidebar's Needs you and its top pill, the Dock's count, the menu
   bar item and Next session that needs you. It asks you something, or it finished and you haven't
@@ -246,7 +246,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         ownTap.current = false;
       });
     void rpc("settings.save", { showDemo: !showDemo });
-    toast(showDemo ? "The Demo is hidden" : "The Demo is on", { description: showDemo ? "Tap Liner, at the sidebar's foot, six times to bring it back." : "Demo run is in Who works on this, and the sample project on Home." });
+    toast(showDemo ? "The Demo is hidden" : "The Demo is on", { description: showDemo ? "Bring it back in Settings › General, or tap Liner at the sidebar's foot six times." : "Demo run is in Who works on this, and the sample project on Home." });
   };
 
   // Times and snoozes move on their own.
@@ -1660,10 +1660,12 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
   // before (By status moves a row to another section, which draws it anew) doesn't fade in again. Either keeps that for this row's life, so nothing plays when it changes.
   const [fresh] = useState(() => seen.has(t.id) || current);
   useEffect(() => void seen.add(t.id), []);
-  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : reviewHeld(t) ? "held" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
+  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : reviewHeld(t) ? "done" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
   const said = rowLine(t, bucket, state, agentsNow, now);
   const pr = t.pr ? prState(t.pr.state) : undefined;
-  const end = t.pr ? (
+  // Finished while you were elsewhere: a blue dot until you open it, beside its pull request or changes mark.
+  const unseen = t.unread && (state === "done" || state === "new");
+  const marks = t.pr ? (
     <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`Pull request #${t.pr.number}, ${pr}`}>
       <I.pr size={14} />
     </span>
@@ -1672,6 +1674,14 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
       <I.changes size={14} />
     </span>
   ) : undefined;
+  const end = unseen ? (
+    <span className="lc-sl-ends">
+      {marks}
+      <span className="lc-sl-new" role="img" aria-label="Finished, not opened yet" />
+    </span>
+  ) : (
+    marks
+  );
   const acts = t.archived ? (
     <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void ctl.current.unarchive(t)}>
       <I.undo size={14} />
@@ -1824,9 +1834,9 @@ const prState = (state: string) => (state.toUpperCase() === "MERGED" ? "merged" 
 /**
   A row's second line: what the session is doing now while it works ("Reading Sidebar.tsx", the
   engine's Thread.doing, with the agents it sent still at work after it), else how it stands or
-  how it ended, first that applies: waiting on you, a problem, its plan's limit, snoozed, not
-  started, answered while you were away, its pull request, changes to review, else finished and
-  how long ago.
+  how it ended, first that applies: the Reviewer's block, waiting on you, a problem, its plan's
+  limit, snoozed, not started, its pull request, changes to review, else finished and how long
+  ago. One finished while you were elsewhere says so with a blue dot at the row's end, not here.
 */
 function rowLine(t: Thread, bucket: Bucket, state: SideState, agents: number, now: number): { text: string; tone?: "warn" | "danger" } {
   if (state === "working") {
@@ -1844,7 +1854,6 @@ function rowLine(t: Thread, bucket: Bucket, state: SideState, agents: number, no
     if (t.snoozedUntil) return { text: `Until ${clock(t.snoozedUntil, now)}` };
   }
   if (t.turns === 0) return { text: "Not started" };
-  if (t.unread) return { text: "Answered while you were away", tone: "warn" };
   if (t.pr) return { text: `PR ${prState(t.pr.state)}` };
   if ((t.toReview ?? 0) > 0) return { text: `${plural(t.toReview!, "file")} to review` };
   // ago() says "now", "4m", "2h", then a day or a date: the minutes and hours read "ago" after them.
@@ -1869,12 +1878,12 @@ function cardState(t: Thread, bucket: Bucket, who: string, now: number, run?: { 
     if (t.goal?.status === "active") return { text: `Working · ${who} works toward its goal, turn ${t.goal.turns} of ${t.goal.max}` };
     return { text: `Working · ${who} ${who.includes(" + ") ? "are" : "is"} at it` };
   }
-  if (reviewHeld(t)) return { text: `Needs you · the Reviewer blocked it${t.verdict?.note ? `: ${t.verdict.note}` : ""}` };
+  if (reviewHeld(t)) return { text: `Finished · the Reviewer blocked it${t.verdict?.note ? `: ${t.verdict.note}` : ""}` };
   if (t.status === "waiting") return { text: `Needs you · ${who} ${who.includes(" + ") ? "wait" : "waits"} for your answer`, tone: "warn" };
   if (t.status === "error") return { text: `Ran into a problem · ${who} stopped short`, tone: "danger" };
   if (t.status === "limited") return { text: `Limited · ${who}'s plan ran out${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
   if (t.turns === 0) return { text: "Not started · nothing asked yet" };
-  if (t.unread) return { text: `Needs you · ${who} answered while you were away`, tone: "warn" };
+  if (t.unread) return { text: `Finished · ${who} answered while you were away` };
   if (bucket === "settled") return { text: "Settled · out of the way until it's busy again" };
   return { text: `Done · ${who} finished, nothing waits on you` };
 }

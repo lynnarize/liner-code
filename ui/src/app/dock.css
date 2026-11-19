@@ -536,7 +536,7 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   padding: 2px 0 6px;
 }
 .lc-sb-apps .lc-sb-nav > span {
@@ -856,7 +856,8 @@
 /* Add-ons is the fourth of the sidebar's top rows, 1px under The Wall like the others (the
    approved mockup), with the Sessions heading under it. Its menu's rows are 13 regular. */
 .lc-sb-top + .lc-sb-apps {
-  margin-top: -9px;
+  /* The sidebar's 10px gap, less 8: the same 2px as between the rows above. */
+  margin-top: -8px;
   padding: 0 0 4px;
 }
 /* The guide ("Open in this pane"): plain rows, no grey card and no tile, a wash as you point. */

@@ -21,6 +21,9 @@ html[data-theme="dark"] {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  /* Its rows stop a ring's width in from the edges it scrolls between, so a focus ring is never cut. */
+  margin: 0 calc(var(--lc-ring) * -1);
+  padding: 0 var(--lc-ring);
   overflow: auto;
   scrollbar-width: none;
 }

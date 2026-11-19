@@ -201,7 +201,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = 320, auto
         </button>
         <span className="lc-mp-sep" aria-hidden />
         {tools.map((p) => (
-          <button key={p.id} type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={rail === p.id && !query} title={`${p.label}${p.modelsFrom === "cli" ? `, ${p.models.length} models it reported` : ""}`} onClick={() => {
+          <button key={p.id} type="button" role="tab" className="lc-mp-tool l-focus" aria-selected={rail === p.id && !query} title={`${p.label}${p.modelsFrom === "cli" ? `, ${p.models.length} ${p.models.length === 1 ? "model" : "models"} it reported` : ""}`} onClick={() => {
               setRail(p.id);
               setQuery("");
               // Into this tool at the picked model's source, if it's this tool's; else at its sources.

@@ -743,7 +743,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 }
 .lc-pop-panel {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
   box-sizing: border-box;
@@ -1339,7 +1339,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-top {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .lc-sb-nav > span:first-of-type {
   flex: 1;
@@ -1480,12 +1480,6 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-mk[data-s="needs"] {
   color: var(--l-warn-text);
-}
-.lc-mk[data-s="held"] > i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-ink-3);
 }
 .lc-mk[data-s="error"] {
   color: var(--l-danger-text);
@@ -3095,7 +3089,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 2px;
   min-width: 0;
   height: 30px;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: var(--lc-ring);
   color: var(--l-ink-2);
 }
 .lc-seg > .lc-pop {
@@ -3698,6 +3693,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   min-height: 0;
 }
 .lc-who-panel .lc-team-col.lc-who-pair {
+  margin-block: calc(var(--lc-ring) * -1);
+  margin-right: calc(var(--lc-ring) * -1);
+  padding-block: var(--lc-ring);
+  padding-right: var(--lc-ring);
   overflow: hidden auto;
   scroll-padding: 6px;
   overscroll-behavior: contain;
@@ -3711,6 +3710,36 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-who-panel .lc-team-col + .lc-team-col {
     margin-left: 6px;
     padding-left: 6px;
+  }
+}
+/*
+  Stacked in a narrow window, the panel scrolls as one, so the tools never shrink away under the
+  Fusion column; that column sits under a line, and once it opens a list (Lead, Sidekick, how it
+  works) it takes the panel, its way back at its top.
+*/
+@container (max-width: 559.98px) {
+  .lc-who-panel .lc-team-cols {
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
+    margin: calc(var(--lc-ring) * -1);
+    padding: var(--lc-ring);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .lc-who-panel .lc-team-col,
+  .lc-who-panel .lc-team-col.lc-who-pair,
+  .lc-who-panel .lc-team-col.lc-who-pair[data-full],
+  .lc-who-panel .lc-who-scroll {
+    overflow: visible;
+  }
+  .lc-who-panel .lc-team-cols:not([data-deep]) > .lc-who-pair {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--l-line);
+  }
+  .lc-who-panel .lc-team-cols[data-deep] > .lc-team-col:first-child {
+    display: none;
   }
 }
 .lc-who-scroll {
@@ -3736,10 +3765,66 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   margin-bottom: 4px;
 }
 /*
-  Kept short so the whole first view fits the room it opens into: Pair, Best and Fast are one line
-  each (the name, then who's in it), and the tools sit two to a row.
+  Kept short so the whole first view fits the room it opens into: Fusion, Best and Fast are one
+  strip of three (who's in each on a rest), and the tools sit two to a row.
 */
-.lc-who-row,
+.lc-who-strip {
+  display: flex;
+  gap: 2px;
+  margin: 2px 0 4px;
+  padding: 2px;
+  border-radius: 11px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+}
+.lc-who-seg-at {
+  flex: 1;
+}
+.lc-who-seg {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.lc-who-seg > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-who-seg > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-who-seg[data-on] {
+  background: var(--l-raised);
+  box-shadow:
+    0 0 0 1px var(--l-line),
+    0 1px 2px var(--l-drop);
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-who-seg[data-on] > svg {
+  color: var(--l-accent-text);
+}
+/* Quiet but still readable: the name takes the grey of a note rather than fading, and only the icon fades. */
+.lc-who-seg:disabled {
+  color: var(--l-ink-3);
+  cursor: default;
+}
+.lc-who-seg:disabled > svg {
+  opacity: 0.55;
+}
 .lc-who-tool {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto 14px;
@@ -3756,25 +3841,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   cursor: pointer;
   transition: background 140ms ease;
 }
-.lc-who-row-t {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 17px;
-  white-space: nowrap;
-}
-.lc-who-row-t b {
-  flex: none;
-  font-weight: 500;
-}
-.lc-who-row-t span {
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-}
 .lc-who-tools {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3790,21 +3856,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-who-tool > svg:last-child {
   color: var(--l-ink-3);
 }
-.lc-who-row[data-on] {
-  background: var(--lc-plate);
-}
-.lc-who-row:disabled {
-  cursor: default;
-}
-/* Quiet but still readable: the title takes the note's grey (4.5:1 and more in both themes) rather than fading, and only the icon fades. */
-.lc-who-row:disabled b {
-  color: var(--l-ink-3);
-}
-.lc-who-row:disabled .lc-who-i {
-  opacity: 0.55;
-}
 @media (hover: hover) {
-  .lc-who-row:not([data-on], :disabled):hover,
+  .lc-who-seg:not([data-on], :disabled):hover,
   .lc-who-tool:hover,
   .lc-who-opt:not([data-on]):hover,
   .lc-who-back:hover {
@@ -3819,15 +3872,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   border-radius: 7px;
   background: var(--l-wash-2);
   color: var(--l-ink-2);
-}
-.lc-who-row[data-on] .lc-who-i {
-  background: var(--l-accent-soft);
-  color: var(--l-accent-text);
-}
-.lc-who-chev {
-  display: grid;
-  place-items: center;
-  color: var(--l-ink-3);
 }
 .lc-who-tool-t {
   overflow: hidden;
@@ -3908,7 +3952,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   cursor: pointer;
 }
 .lc-who-opt[data-on] {
-  background: var(--lc-plate);
+  background: var(--l-accent-soft);
+}
+.lc-who-opt[data-on] .lc-who-opt-t {
+  color: var(--l-accent-text);
 }
 .lc-who-opt-t {
   flex: 1;
@@ -3922,15 +3969,47 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-/* The pair beside the rows: who leads and who's its sidekick, each a button that opens the model list. */
-.lc-who-h {
-  padding: 7px 9px 2px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--l-ink-2);
+/* The cost's name: what it means shows on a rest (HoverNote), marked by the small info sign. */
+.lc-cost-t {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 5px;
+  cursor: default;
 }
-.lc-who-lede {
-  padding-top: 0;
+.lc-cost-t > svg {
+  color: var(--l-ink-4);
+}
+/* An explanation on a rest, over everything: never cut by a column that scrolls. */
+.lc-hnote-at {
+  display: inline-flex;
+  min-width: 0;
+}
+.lc-hnote {
+  position: fixed;
+  z-index: 1000;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--l-ink-2);
+  background: var(--l-raised);
+  box-shadow: var(--l-shadow-float);
+  white-space: normal;
+  pointer-events: none;
+  animation: lc-hnote-in 160ms var(--l-ease-out) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-hnote {
+    animation: none;
+  }
+}
+@keyframes lc-hnote-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
 }
 .lc-who-part {
   display: flex;
@@ -3972,17 +4051,19 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   }
 }
 /*
-  How the pair works, under its Lead and Sidekick: the sidekick's class at the head's end, one
-  sentence of how the lead works with it, and a row that opens the six lines behind it in the
-  column's own place. A line the session changed carries the accent's dot before its value.
+  How the pair works, opened from its row under Lead and Sidekick: the six lines behind it in the
+  column's own place. A line the session changed carries the accent's dot before its value, and
+  so does the row's pick when any did.
 */
-.lc-how {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--l-line);
+.lc-who-pick[data-own] > span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--l-accent);
+  vertical-align: 1px;
 }
 .lc-how-h {
   display: flex;
@@ -4002,12 +4083,9 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   text-overflow: ellipsis;
   color: var(--l-ink-3);
 }
-.lc-how-sum {
-  margin: 0;
-  padding: 0 9px 2px;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--l-ink-2);
+.lc-how-row + .lc-how-row,
+.lc-how-opt + .lc-how-opt {
+  margin-top: 2px;
 }
 .lc-how-row {
   display: flex;
@@ -4117,18 +4195,19 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   never a number. The dot is white in both themes, so it reads on every part of the bar.
 */
 .lc-cost {
-  padding: 10px 9px 0;
+  padding: 10px 9px 4px;
 }
 .lc-cost-h {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--l-ink-2);
 }
 .lc-cost-h > span:last-child {
+  font-size: 12.5px;
   color: var(--l-ink-3);
 }
 .lc-cost-bar {
@@ -4192,9 +4271,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-cost-lab[data-side="before"] {
   right: calc(100% - var(--at) + 4px);
-}
-.lc-who-note.lc-cost-note {
-  padding: 2px 0 4px;
 }
 /* The same scale, small, at the end of a choice in a list: the bar is cut where the pair would land with it. */
 .lc-cost-mini {
@@ -7285,6 +7361,9 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   text-align: left;
   cursor: pointer;
 }
+.lc-face-opt + .lc-face-opt {
+  margin-top: 2px;
+}
 .lc-face-opt[aria-checked="true"] {
   background: var(--l-wash);
 }
@@ -7609,12 +7688,10 @@ body,
 .l-cmd__item .l-cmd__label {
   font-size: 13px;
 }
-.lc-row-t b,
-.lc-who-row-t b {
+.lc-row-t b {
   font-weight: 400;
 }
-.lc-row[data-on] .lc-row-t b,
-.lc-who-row[data-on] .lc-who-row-t b {
+.lc-row[data-on] .lc-row-t b {
   font-weight: 500;
 }
 .lc-pop-head {
@@ -8285,6 +8362,10 @@ span.lc-sb-name {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
 }
 /* A row, two lines. Its root is a grid of two: the words (the pick) across it, and the actions that take the end's place while you point at it. */
+/* Rows that light up (the open one, the one under the pointer) keep 2px apart, so two plates never run into one. */
+:is(.lc-sl-row, .lc-sl-fold) + .lc-sl-row {
+  margin-top: 2px;
+}
 .lc-sl-row {
   position: relative;
   display: grid;
@@ -8374,6 +8455,25 @@ span.lc-sb-name {
 .lc-sl-chg {
   display: grid;
   place-items: center;
+}
+/* Finished and not opened yet: a blue dot at the row's end, gone once you open it (Claude Code's sidebar). */
+.lc-sl-new {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: oklch(0.62 0.17 255);
+}
+[data-theme="dark"] .lc-sl-new {
+  background: oklch(0.7 0.15 255);
+}
+.lc-sl-end:has(> .lc-sl-ends) {
+  width: auto;
+}
+.lc-sl-ends {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .lc-sl-pr[data-pr="merged"] {
   color: var(--lc-merged);

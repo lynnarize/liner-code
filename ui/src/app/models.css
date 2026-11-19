@@ -142,6 +142,9 @@
   font-weight: 500;
   color: var(--l-ink-3);
 }
+.lc-mp-row + .lc-mp-row {
+  margin-top: 2px;
+}
 .lc-mp-row {
   position: relative;
   display: flex;

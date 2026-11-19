@@ -2078,8 +2078,9 @@ export class Runtime {
     } finally {
       clearTimeout(timer);
       session.close();
-      const t = this.store.thread(threadId);
-      this.store.logUsage({ at: Date.now(), threadId: apart ? "" : threadId, projectId: apart ? "" : t.projectId, agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
+      // The session may have been deleted while it read: its answer and what it spent are still worth keeping.
+      const t = this.store.threads.find((x) => x.id === threadId);
+      this.store.logUsage({ at: Date.now(), threadId: apart ? "" : threadId, projectId: apart ? "" : (t?.projectId ?? ""), agent: as, provider, model, inputTokens: own.inputTokens, outputTokens: own.outputTokens, cacheReadTokens: own.cacheReadTokens, costUsd: own.costUsd, seconds: (Date.now() - started) / 1000 });
     }
     return text;
   }
@@ -2626,12 +2627,14 @@ export class Runtime {
       if (abort.signal.aborted) throw new Error("stopped");
       const prompt = briefPrompt(b.brief, b.doneWhen);
       began = true;
+      // A tool that doesn't hear Stop or its cap is given up as a turn's is (untilStopped), or the brief would hold this session's
+      // line of briefs for good. No notice: the brief's row and what the lead is told say how it ended.
       try {
-        await session.turn(prompt, sink, abort.signal);
+        await this.untilStopped(threadId, turn, session, session.turn(prompt, sink, abort.signal), abort.signal, false);
       } catch (e) {
         // Its session from before is gone: the tool opened a new one, and the brief is all it needs.
         if (!(e instanceof ResumeFailed) || abort.signal.aborted) throw e;
-        await session.turn(prompt, sink, abort.signal);
+        await this.untilStopped(threadId, turn, session, session.turn(prompt, sink, abort.signal), abort.signal, false);
       }
       if (git && from) {
         to = await capture(cwd, `${tag}-after`);
@@ -2968,9 +2971,9 @@ export class Runtime {
   /**
     A turn's run, given up once stopGraceMs have passed after Stop with the tool's turn still going (it didn't hear the abort, or hangs
     winding down): its live session is closed (drop), which ends its process and everything it marked, and this resolves, so the
-    turn ends as stopped. The session keeps its saved id, so your next message resumes it. One that ends in time is left as it ends.
+    turn ends as stopped. The session keeps its saved id, so your next message resumes it. One that ends in time is left as it ends. `say` false: no notice in the thread (a brief's own row says how it ended).
   */
-  private untilStopped(threadId: string, turn: number, session: ProviderSession, run: Promise<void>, signal: AbortSignal): Promise<void> {
+  private untilStopped(threadId: string, turn: number, session: ProviderSession, run: Promise<void>, signal: AbortSignal, say = true): Promise<void> {
     run.catch(() => {});
     let timer: NodeJS.Timeout | undefined;
     let onAbort = () => {};
@@ -2979,7 +2982,7 @@ export class Runtime {
         timer = setTimeout(() => {
           const key = [...this.live].find(([, l]) => l.session === session)?.[0];
           if (key) this.drop(key);
-          if (this.store.threads.some((x) => x.id === threadId)) {
+          if (say && this.store.threads.some((x) => x.id === threadId)) {
             const t = this.store.thread(threadId);
             // The tool by its own name (OpenCode), not an API endpoint's or an account's it runs ("DeepSeek", "Claude Code · Work"):
             // the tool is what hung. An agent you added has only its own name.

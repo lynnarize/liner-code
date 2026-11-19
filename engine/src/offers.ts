@@ -224,6 +224,9 @@ export class Offers {
     const it = this.offerOf(m);
     if (!it || (it.state !== "creating" && it.state !== "installing")) return;
     if (t.status === "error" || t.status === "limited") return void store.putItem(m.threadId, { ...it, state: "failed", error: "Making it stopped with an error. Try again." });
+    // A turn you stopped ends as "done" too: what it had written by then is half an add-on, not one to put in.
+    const last = store.timeline(t.id).findLast((x) => x.kind === "turn");
+    if (last?.kind === "turn" && last.status === "stopped") return void store.putItem(m.threadId, { ...it, state: "failed", error: "Making it was stopped before it finished. Try again." });
     store.putItem(m.threadId, { ...it, state: "installing" });
     try {
       const { manifest, files } = readDraft(this.h.cwdOf(t.id), m.id);

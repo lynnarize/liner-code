@@ -447,3 +447,22 @@ test("quiet: a one-off read whose model never answers ends at its limit with a s
     restore();
   }
 });
+
+test("a quiet read whose session is deleted meanwhile still gives its answer", async () => {
+  const codex = providers.codex;
+  const { store, runtime, dir } = await session();
+  providers.codex = {
+    id: "codex",
+    detect: async () => info("codex", []),
+    open: () => ({
+      turn: async (_text, sink) => { store.removeThread("t"); sink.text("the answer"); },
+      close() {},
+    }),
+  };
+  try {
+    const out = await runtime.quiet("t", "codex:gpt-6-sol", dir, "read this", new AbortController().signal, "reviewer", 5000);
+    assert.equal(out, "the answer");
+  } finally {
+    providers.codex = codex;
+  }
+});

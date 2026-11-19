@@ -315,6 +315,26 @@ test("sidekick: a brief that runs past the cap is stopped, and the lead is told 
   }
 });
 
+test("sidekick: a brief whose tool never ends after its cap is given up, and the lead is told", async () => {
+  // A tool that hears nothing: its turn never settles, abort or not.
+  const side = fake("codex", () => new Promise<void>(() => {}));
+  let said = "";
+  const lead = fake("claude", async (o, _t, sink) => {
+    said = (await hand(tools, o, sink, "k1", { brief: "one that hangs" })).text;
+  });
+  const { runtime, tools } = pair();
+  runtime.sidekickMs = 1500;
+  runtime.stopGraceMs = 200;
+  try {
+    const hung = new Promise<never>((_, no) => setTimeout(() => no(new Error("the brief never ended")), 15_000).unref());
+    await Promise.race([runtime.send("t", "go"), hung]);
+    assert.match(said, /cap for one brief/);
+  } finally {
+    side.restore();
+    lead.restore();
+  }
+});
+
 test("sidekick: in a Read only session its sidekick works read only, and its edit is refused outright as the lead's would be", async () => {
   let asked: Promise<{ allow: boolean; level?: boolean }> | undefined;
   const side = fake("codex", async (_o, _t, sink, signal) => {

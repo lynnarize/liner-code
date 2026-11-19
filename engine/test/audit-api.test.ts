@@ -413,6 +413,19 @@ test("offers: one that carries on after the restart is added when that turn ends
   assert.equal(state(again.store).state, "installed");
 });
 
+test("offers: a session that was stopped while making it isn't added: the card says it stopped", async () => {
+  const { store, o, cwd, addons } = offers();
+  await o.answer("parent", "of", "create");
+  const child = state(store).child!;
+  draft(cwd, state(store).addon!);
+  store.putItem(child, { kind: "turn", id: "tm", turn: 1, at: 2, agent: "forge", model: "demo:demo", status: "stopped" });
+  store.patchThread(child, { status: "running" });
+  store.patchThread(child, { status: "done" });
+  assert.equal(state(store).state, "failed");
+  assert.match(state(store).error ?? "", /stopped/i);
+  assert.ok(!addons.get(state(store).addon!), "nothing was installed");
+});
+
 test("offers: one whose session is gone after a restart fails rather than waiting for good", async () => {
   const first = offers();
   await first.o.answer("parent", "of", "create");

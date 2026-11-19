@@ -625,8 +625,22 @@ function whoStarts(sec: Security, projectId: string, agent?: string) {
   return str(agent, 200) ?? (ownDefault(sec, projectId) || undefined);
 }
 
-/** Starts a fix: a session in a worktree of its own (Thread.security { kind: "fix", finding }) with the finding as its brief. */
-export async function fixFinding(sec: Security, p: { id: string; agent?: string; model?: string; effort?: Effort }): Promise<Thread> {
+/** Fixes being started, by finding: a second ask while the first is still making its session and worktree (a double press, another window) joins it. */
+const fixing = new WeakMap<Security, Map<string, Promise<Thread>>>();
+
+/** Starts a fix: a session in a worktree of its own (Thread.security { kind: "fix", finding }) with the finding as its brief. One at a time per finding. */
+export function fixFinding(sec: Security, p: { id: string; agent?: string; model?: string; effort?: Effort }): Promise<Thread> {
+  let mine = fixing.get(sec);
+  if (!mine) fixing.set(sec, (mine = new Map()));
+  const going = mine.get(p.id);
+  if (going) return going;
+  const started = startFix(sec, p).finally(() => mine.delete(p.id));
+  mine.set(p.id, started);
+  return started;
+}
+
+/** fixFinding's work, once per finding at a time. */
+async function startFix(sec: Security, p: { id: string; agent?: string; model?: string; effort?: Effort }): Promise<Thread> {
   wake(sec);
   const f = sec.finding(p.id);
   if (f.state !== "open") throw new Error(f.state === "fixed" ? "That finding is fixed already." : "That finding is dismissed: open it again to fix it.");

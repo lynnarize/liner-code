@@ -109,3 +109,41 @@ test("outside: the MCP server on stdio lists its tools and passes a call to the 
     server.close();
   }
 });
+
+test("outside: a call its tool cancels is let go, and no answer is sent for it", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-out-cancel-"));
+  let got = false;
+  let closed = false;
+  const server = createServer((req, res) => {
+    if (req.method !== "POST" || !req.url?.startsWith("/outside")) return void res.writeHead(404).end();
+    got = true;
+    req.on("close", () => (closed = true));
+    // Never answers: liner_wait holds the call until the tool cancels it.
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  writeFileSync(join(home, "outside.json"), JSON.stringify({ url: `http://127.0.0.1:${port}/outside`, key: "k123" }));
+  const child = spawn(process.execPath, [fileURLToPath(new URL("../src/outside.ts", import.meta.url))], { env: { ...process.env, LINER_HOME: home } });
+  const replies: Record<string, unknown>[] = [];
+  let buf = "";
+  child.stdout.on("data", (d: Buffer) => {
+    buf += String(d);
+    for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+      replies.push(JSON.parse(buf.slice(0, i)));
+      buf = buf.slice(i + 1);
+    }
+  });
+  const ask = (id: number, method: string, params: unknown = {}) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+  try {
+    ask(7, "tools/call", { name: "liner_wait", arguments: { session: "th_1" } });
+    for (let i = 0; i < 200 && !got; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(got, "the call reached the engine");
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7 } })}\n`);
+    for (let i = 0; i < 200 && !closed; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(closed, "the held request's connection is closed within two seconds of the cancel");
+    assert.equal(replies.some((r) => r.id === 7), false, "no answer is sent for a cancelled call");
+  } finally {
+    child.kill();
+    server.close();
+  }
+});

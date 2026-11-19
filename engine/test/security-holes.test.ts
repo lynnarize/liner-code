@@ -375,6 +375,14 @@ test("holes: Fix starts where it asks before commands, never in the folder itsel
   assert.equal(none.sent.some((x) => x.method === "thread.create"), false);
 });
 
+test("scan: Fix pressed twice at once starts one session, not two", async () => {
+  const { sec, store } = rig({ "src/a.js": "x\n" });
+  const f = sec.add("p", { title: "Query as text", severity: "high", source: "agent", file: "src/a.js" }).finding;
+  const [a, b] = await Promise.all([fixFinding(sec, { id: f.id }), fixFinding(sec, { id: f.id })]);
+  assert.equal(a.id, b.id, "both presses get the same session");
+  assert.equal(store.threads.filter((t) => t.security?.kind === "fix").length, 1, "one fix session, not two");
+});
+
 test("holes: the engine itself makes no fix session in the folder of a repository with no commits", async () => {
   const store = new Store(temp("home"));
   const dir = gitRepo({ "a.js": "x\n" }, false);

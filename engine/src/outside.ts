@@ -36,16 +36,32 @@ function where(): { url: string; key: string } | null {
   }
 }
 
-async function call(name: string, args: unknown) {
+/** The calls at work, by their request's id: one its tool cancels (it gave up on it) is let go, so a held liner_wait doesn't keep the engine's connection open after the tool has stopped waiting. */
+const calls = new Map<string | number, AbortController>();
+/** What a call its tool cancelled comes to: no answer at all, as MCP has it (the tool has stopped waiting for one). */
+const CANCELLED = Symbol("cancelled");
+
+async function call(id: string | number, name: string, args: unknown, progress?: string | number) {
   const w = where();
   if (!w) return failed("Liner Code isn't running, or Settings › Safety › Agents outside Liner Code is off.");
+  let n = 0;
+  const ac = new AbortController();
+  calls.set(id, ac);
+  const message = "Waiting for the session";
+  const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message } })}\n`), 20_000);
   try {
-    const r = await fetch(w.url, { method: "POST", headers: { "content-type": "application/json", "x-liner-outside": w.key }, body: JSON.stringify({ tool: name, args: args ?? {} }) });
+    const r = await fetch(w.url, { method: "POST", headers: { "content-type": "application/json", "x-liner-outside": w.key }, body: JSON.stringify({ tool: name, args: args ?? {} }), signal: ac.signal });
+    if (ac.signal.aborted) return CANCELLED;
     if (r.status === 401) return failed("Liner Code turned this key down. Turn Agents outside Liner Code off and on again in its Settings.");
     const b = (await r.json()) as { ok: boolean; result?: unknown; error?: string };
+    if (ac.signal.aborted) return CANCELLED;
     return b.ok ? b.result : failed(b.error ?? "Liner Code didn't answer.");
   } catch {
-    return failed("Liner Code isn't running.");
+    return ac.signal.aborted ? CANCELLED : failed("Liner Code isn't running.");
+  } finally {
+    clearInterval(beat);
+    // A later call may have taken its id by now: that one stays.
+    if (calls.get(id) === ac) calls.delete(id);
   }
 }
 
@@ -54,6 +70,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   try {
     m = JSON.parse(line) as Msg;
   } catch {
+    return;
+  }
+  // A cancel is a notification (no id): let go the call it names before the id check below would drop it.
+  if (m?.method === "notifications/cancelled") {
+    const of = m.params?.requestId;
+    if (typeof of === "string" || typeof of === "number") calls.get(of)?.abort();
     return;
   }
   // Valid JSON needn't be a message: null, say.
@@ -69,7 +91,11 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       },
     });
   } else if (m.method === "tools/list") send({ id: m.id, result: { tools: TOOLS } });
-  else if (m.method === "tools/call") void call(String(m.params?.name ?? ""), m.params?.arguments).then((result) => send({ id: m.id, result }));
+  else if (m.method === "tools/call") {
+    const token = (m.params?._meta as { progressToken?: string | number } | undefined)?.progressToken;
+    const id = m.id;
+    void call(id, String(m.params?.name ?? ""), m.params?.arguments, token).then((result) => result === CANCELLED || send({ id, result }));
+  }
   else if (m.method === "ping") send({ id: m.id, result: {} });
   else send({ id: m.id, error: { code: -32601, message: `No method ${m.method}` } });
 });

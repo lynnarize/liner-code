@@ -3,7 +3,7 @@
   what each agent said and did, the questions and approvals, what the Reviewer found, and each
   turn's diff. Reasoning stays out; so do pages the agent drew (their titles are in).
 */
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Item } from "../../contracts/src/index.ts";
@@ -113,6 +113,8 @@ export async function sessionMarkdown(store: Store, threadId: string, diff: (fro
 export function saveToDownloads(title: string, markdown: string) {
   const base = title.replace(/[\\/:*?"<>|\n]+/g, "-").trim().slice(0, 80) || "Liner Code session";
   const dir = join(homedir(), "Downloads");
+  // A Mac set up without one, or a home that isn't a person's (a server, a test): the folder is made rather than the save failing.
+  mkdirSync(dir, { recursive: true });
   let path = join(dir, `${base}.md`);
   for (let n = 2; existsSync(path); n++) path = join(dir, `${base} ${n}.md`);
   writeFileSync(path, markdown);

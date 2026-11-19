@@ -56,7 +56,7 @@
   padding: 0 10px;
 }
 /* What starts the session's header (the sidebar's button), there only while the panel's row is the
-   paper's header: the full canvas, or a session too narrow for both (app.css, 700px). */
+   paper's header: the full canvas, or a session too narrow for both (app.css, 786px). */
 .lc-stabs-lead {
   display: none;
   flex: none;
@@ -67,8 +67,13 @@
 .lc-session[data-wide] .lc-stabs-lead {
   display: inline-flex;
 }
-@container lc-session (max-width: 700px) {
+@container lc-session (max-width: 786px) {
   .lc-session[data-panel] .lc-stabs-lead {
+    display: inline-flex;
+  }
+}
+@container lc-session (max-width: 946px) {
+  .lc-session[data-panel][data-panes="2"] .lc-stabs-lead {
     display: inline-flex;
   }
 }
@@ -143,11 +148,12 @@
 .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
   grid-template-columns: minmax(420px, 1fr) min(round(down, calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), 1px), calc(100% - 420px));
 }
-.lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel {
-  width: max(100%, min(calc(var(--lc-panel-w, clamp(340px, 36cqw, 520px)) * 1.6), calc(100cqw - 420px)));
+/* Closing, two panes keep the width they had (the card's own width is its column's, less its 8px). */
+.lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel[data-leaving] {
+  width: calc(max(100%, min(calc(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)) * 1.6), calc(100cqw - 466px))) - 8px);
 }
-/* Narrower, two panes beside the thread would each be too thin: they take over the paper, as one does at 700px. */
-@container lc-session (max-width: 860px) {
+/* Narrower than 946px, two panes beside the thread would each be too thin: they take over the paper, as one does at 786px. */
+@container lc-session (max-width: 946px) {
   .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
     grid-template-columns: minmax(0px, 0fr) 100%;
   }

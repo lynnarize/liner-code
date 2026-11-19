@@ -361,8 +361,16 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
   padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
 }
-@container lc-session (max-width: 700px) {
+@container lc-session (max-width: 786px) {
   html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
+    --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
+    padding-top: calc(6px - var(--lc-up));
+    padding-bottom: calc(6px + var(--lc-up));
+    padding-left: max(10px, calc(var(--lc-lights-x, 70px) + 4px));
+  }
+}
+@container lc-session (max-width: 946px) {
+  html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel][data-panes="2"]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top {
     --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
     padding-top: calc(6px - var(--lc-up));
     padding-bottom: calc(6px + var(--lc-up));
@@ -1886,11 +1894,12 @@ html[data-native="mac"] .lc-sb-head {
   pointer-events: none;
 }
 /* The session decides by its own width (the sidebar and Settings take part of the window): when the
-   thread and the panel can't both fit, the panel takes over the paper rather than squeezing either. */
+   thread and the panel can't both fit, the panel takes over the paper rather than squeezing either.
+   Both fit at 786px: thread 420 + panel 320 + rail 46; two panes ask 160 more, 946px. */
 .lc-session {
   container: lc-session / inline-size;
 }
-@container lc-session (max-width: 700px) {
+@container lc-session (max-width: 786px) {
   .lc-session[data-panel] .lc-body {
     grid-template-columns: minmax(0px, 0fr) 100%;
   }
@@ -7671,9 +7680,11 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   font-size: 13px;
 }
 /* The session's width now includes the rail (46px), so the panel's own width is worked out from
-   the body's: without this it ran 46px past its column, under the rail. */
+   the body's: without this it ran 46px past its column, under the rail. This is the width it closes
+   at (open, the card takes its column's): the card's 8px margin is taken off, so its content does
+   not re-wrap by 8px on the first frame. */
 .lc-session:not([data-wide]) .lc-body > .lc-panel {
-  width: max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px)));
+  width: calc(max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px))) - 8px);
 }
 
 /* ---------- 0.2.7, second pass: type as Devin sets it, and the sidebar as the mockup lays it ---------- */
@@ -7773,32 +7784,38 @@ body,
 /*
   Beside the thread the panel floats: 8px from the paper's top and bottom and from the thread, a
   14px corner, its own ring and a small shadow, and no top row (the rail's first button hides it;
-  the full canvas keeps its key and the Review link). It stays inside its column, so it never runs
-  under the rail. The Session card is only as tall as what it holds and scrolls past that; every
+  the full canvas keeps its key and the Review link). Open, it stays inside its column, so it never
+  runs under the rail. The Session card is only as tall as what it holds and scrolls past that; every
   other surface fills the height. Its ring is the edge: no hairline between thread and panel.
+  The look holds while it closes too; only the width differs, so its content does not jump.
   Over the whole paper ([data-wide]) nothing changes.
 */
+/* The open state is named beside the bare one so the card's inset stays declared on the card's own
+   selector, which the layout-rules source test reads; the look holds while it closes too. */
+.lc-session:not([data-wide]) .lc-body > .lc-panel,
 .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
   /* What a surface's first row keeps above it here, where no top row stands over it (over the whole paper it is 0). */
   --lc-card-top: 8px;
-  justify-self: stretch;
-  width: auto;
-  min-width: 0;
   margin: var(--lc-card-top) 0 var(--lc-card-top) var(--lc-card-top);
   overflow: hidden;
   border-radius: 14px;
   background: var(--lc-paper);
   box-shadow: 0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
 }
-html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+.lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+  justify-self: stretch;
+  width: auto;
+  min-width: 0;
+}
+html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel {
   background: color-mix(in oklab, var(--lc-paper) 86%, transparent);
 }
 @media (min-resolution: 2dppx) {
-  .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+  .lc-session:not([data-wide]) .lc-body > .lc-panel {
     box-shadow: 0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
   }
 }
-.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving]) {
+.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"] {
   align-self: start;
   height: auto;
   max-height: calc(100% - 16px);
@@ -7840,9 +7857,50 @@ html[data-native="mac"] .lc-sb-head {
   both the panel takes the paper and its row is the paper's header again: it holds Show the sidebar
   and starts after the traffic lights (the block "With the sidebar away"), so it stays.
 */
-@container lc-session (max-width: 700px) {
+@container lc-session (max-width: 786px) {
   .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top {
     display: flex;
+  }
+  /* Here the panel is the paper, not a card on it: its row is the paper's header, at the paper's corner. */
+  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+    --lc-card-top: 0px;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* The flat look holds while it closes too, so the paper's header does not jump. */
+  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel {
+    --lc-card-top: 0px;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving]) {
+    align-self: stretch;
+    height: auto;
+    max-height: none;
+  }
+  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"] {
+    align-self: stretch;
+    height: auto;
+    max-height: none;
+  }
+}
+@container lc-session (max-width: 946px) {
+  .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top {
+    display: flex;
+  }
+  /* Here the panel is the paper, not a card on it: its row is the paper's header, at the paper's corner. */
+  .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
+    --lc-card-top: 0px;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving]) {
+    align-self: stretch;
+    height: auto;
+    max-height: none;
   }
 }
 

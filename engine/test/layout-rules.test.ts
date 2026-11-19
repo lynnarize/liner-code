@@ -106,3 +106,61 @@ test("The more-files line in docked Changes starts where the rest of Changes sta
   assert.equal(docked.length, 1, "no rule stands the line in Changes itself at 16px");
   assert.equal(value(docked[0], "padding-inline"), "16px");
 });
+
+test("The panel takes the paper at 786px of session, and two panes at 946px, not the old 700 and 860", () => {
+  for (const file of ["app.css", "dock.css"]) {
+    assert.ok(!sheet(file).includes("@container lc-session (max-width: 700px)"), `${file} still hands the paper over at 700px, a breakpoint set before the rail was counted`);
+  }
+  assert.ok(sheet("app.css").includes("@container lc-session (max-width: 786px)"), "app.css does not hand the paper over at 786px (thread 420 + panel 320 + rail 46)");
+  const dock = sheet("dock.css");
+  assert.ok(!dock.includes("@container lc-session (max-width: 860px)"), "dock.css still hands the paper over to two panes at 860px");
+  assert.ok(dock.includes("@container lc-session (max-width: 946px)"), "dock.css does not hand the paper over to two panes at 946px");
+});
+
+test("Taking the whole paper, the panel is flat with its row as the paper's header, in one pane and in two", () => {
+  const css = sheet("app.css");
+  const flat = (two: boolean) => {
+    const at = two ? '[data-panes="2"]' : "";
+    const why = two ? " with two panes" : "";
+    const p = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])`);
+    assert.ok(p.some((b) => value(b, "--lc-card-top") === "0px" && value(b, "margin") === "0" && value(b, "border-radius") === "0" && value(b, "box-shadow") === "none"), `no flat rule for the panel that takes the paper${why}`);
+    const s = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving])`);
+    assert.ok(s.some((b) => value(b, "align-self") === "stretch" && value(b, "height") === "auto" && value(b, "max-height") === "none"), `the Session panel does not fill the paper's height${why}`);
+    const t = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top`);
+    assert.ok(t.some((b) => value(b, "display") === "flex"), `the paper's header row does not come back${why}`);
+  };
+  flat(false);
+  flat(true);
+  assert.ok(css.includes("@container lc-session (max-width: 946px)"), "app.css does not hold the two-pane paper handover at 946px");
+  const lead = blocks(sheet("dock.css"), '.lc-session[data-panel][data-panes="2"] .lc-stabs-lead');
+  assert.ok(lead.some((b) => value(b, "display") === "inline-flex"), "the sidebar's button does not come back in the two-pane paper header");
+  const lights = blocks(css, 'html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel][data-panes="2"]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top');
+  assert.ok(lights.some((b) => value(b, "padding-left") === "max(10px, calc(var(--lc-lights-x, 70px) + 4px))"), "the two-pane paper header does not start after the traffic lights");
+});
+
+test("The panel keeps its card while it closes, and a narrow session keeps its flat paper", () => {
+  const css = sheet("app.css");
+  const look = blocks(css, ".lc-session:not([data-wide]) .lc-body > .lc-panel");
+  assert.ok(look.some((b) => value(b, "--lc-card-top") === "8px" && value(b, "margin") === "var(--lc-card-top) 0 var(--lc-card-top) var(--lc-card-top)" && value(b, "overflow") === "hidden" && value(b, "border-radius") === "14px" && value(b, "background") === "var(--lc-paper)" && value(b, "box-shadow") === "0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04)"), "the card's look still drops while the panel closes");
+  assert.ok(look.some((b) => value(b, "box-shadow") === "0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04)"), "the Retina ring still drops while the panel closes");
+  const bg = blocks(css, "html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel");
+  assert.ok(bg.some((b) => value(b, "background") === "color-mix(in oklab, var(--lc-paper) 86%, transparent)"), "the tinted ground still drops while the panel closes");
+  const sess = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]');
+  assert.ok(sess.some((b) => value(b, "align-self") === "start" && value(b, "height") === "auto" && value(b, "max-height") === "calc(100% - 16px)" && value(b, "overflow") === "auto"), "the Session card's height still drops while it closes");
+  const open = blocks(css, ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])");
+  assert.ok(open.some((b) => value(b, "justify-self") === "stretch" && value(b, "width") === "auto" && value(b, "min-width") === "0"), "the open card no longer stretches to its column");
+  assert.ok(look.some((b) => value(b, "width") === "calc(max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px))) - 8px)"), "the width it closes at does not take the card's 8px margin off");
+  const flatClosing = blocks(css, '.lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel');
+  assert.ok(flatClosing.some((b) => value(b, "--lc-card-top") === "0px" && value(b, "margin") === "0" && value(b, "border-radius") === "0" && value(b, "box-shadow") === "none"), "a narrow session's panel does not stay flat while it closes");
+  const sessClosing = blocks(css, '.lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]');
+  assert.ok(sessClosing.some((b) => value(b, "align-self") === "stretch" && value(b, "height") === "auto" && value(b, "max-height") === "none"), "a narrow session's Session panel does not stay flat while it closes");
+});
+
+test("Two panes fit their column while open, and keep their width less the card's margin while closing", () => {
+  const dock = sheet("dock.css");
+  const open = blocks(dock, '.lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel');
+  assert.equal(open.length, 0, "a two-pane width still outweighs the card's width: auto while open");
+  const closing = blocks(dock, '.lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel[data-leaving]');
+  assert.equal(closing.length, 1, "no closing-only width for two panes");
+  assert.equal(value(closing[0], "width"), "calc(max(100%, min(calc(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)) * 1.6), calc(100cqw - 466px))) - 8px)", "the closing two-pane width does not know the rail and the card's margin");
+});

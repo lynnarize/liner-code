@@ -37,7 +37,7 @@ export const BATCH_MS = 16;
 export const BEHIND_BYTES = 4 * 1024 * 1024;
 
 /** `alone`: the last app's event stream closed, so no window is open to let go of what it watched (a reload never says off). */
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; check?: Check; dsh?: Dsh; alone?: () => void }) {
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; /** Whether a key is one of ours, asked before a call's body is read: a caller without one isn't worth 64 MB of reading. Unset: the call itself says. */ knows?: { surface(key: string): boolean; outside(key: string): boolean }; check?: Check; dsh?: Dsh; alone?: () => void }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
@@ -79,6 +79,17 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
     return got.length === want.length && timingSafeEqual(got, want);
   };
 
+  /**
+    A request for this server itself. A web page that points a name of its own at 127.0.0.1 (DNS rebinding) sends that name
+    as its Host, and would be read as the app's own origin: only this address is answered, as the Browser's proxy does
+    (proxy.ts addressed).
+  */
+  const addressed = (host?: string) => {
+    const a = server.address();
+    const port = typeof a === "object" && a ? a.port : -1;
+    return host === `127.0.0.1:${port}` || host === `localhost:${port}`;
+  };
+
   const body = async (req: IncomingMessage) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -103,6 +114,7 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
     const url = URL.parse(req.url ?? "/", "http://localhost");
     // "//" and the like aren't addresses at all.
     if (!url) return void res.writeHead(400).end("Bad request");
+    if (!addressed(req.headers.host)) return void res.writeHead(403).end("Forbidden");
     if (url.pathname === "/events" || url.pathname === "/rpc") {
       if (!authed(req)) {
         res.writeHead(401).end("Unauthorized");
@@ -152,11 +164,14 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       const outside = url.pathname === "/outside";
       const take = outside ? o.outside : o.surface;
       if (!take) return void res.writeHead(404).end();
+      const key = String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? "");
+      // The key first: any page in a browser can post here, and its body is read only once it has shown a key of ours.
+      if (o.knows && !(outside ? o.knows.outside(key) : o.knows.surface(key))) return void res.writeHead(401).end("Unauthorized");
       try {
         const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
         const gone = new AbortController();
         res.on("close", () => res.writableEnded || gone.abort());
-        const work = take(String(req.headers[outside ? "x-liner-outside" : "x-liner-surface"] ?? ""), String(tool ?? ""), args ?? {}, gone.signal);
+        const work = take(key, String(tool ?? ""), args ?? {}, gone.signal);
         if (!work) return void res.writeHead(401).end("Unauthorized");
         // A call can wait on you (an add-on's install card) for minutes: the answer starts at once and a
         // space goes every 20 seconds, which JSON reads past, so the caller's fetch doesn't give up on it.

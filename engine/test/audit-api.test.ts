@@ -91,7 +91,8 @@ test("server: a webhook that throws is answered, not left hanging", async () => 
   };
   const server = await startServer({ store, api: { call: async () => null, ready: Promise.resolve() }, snapshot: async () => ({}) as never, token: "t", port: 0, hooks });
   try {
-    assert.match(await raw(server.port, "POST /hooks/r/abc?key=k HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"), /^HTTP\/1\.1 500/);
+    // Addressed to the server itself, as a real webhook is: one sent under another name is turned away before it gets here.
+    assert.match(await raw(server.port, `POST /hooks/r/abc?key=k HTTP/1.1\r\nHost: 127.0.0.1:${server.port}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`), /^HTTP\/1\.1 500/);
   } finally {
     server.close();
   }

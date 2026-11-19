@@ -426,6 +426,54 @@ test("secrets: the shell's token and keys come over stdin, so nothing on this Ma
   }
 });
 
+/** The real engine, started the way the shell starts it: its port, and a way to stop it. */
+async function startEngine() {
+  const home = mkdtempSync(join(tmpdir(), "liner-front-"));
+  const engine = spawn(process.execPath, [join(import.meta.dirname, "../src/main.ts"), "--port", "0"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, LINER_HOME: home, LINER_SECRETS: "stdin", LINER_UPDATE_REPO: "" },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  engine.stdin.write(`${JSON.stringify({ token: "front-token-0123456789abcdef", keys: {} })}\n`);
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      let out = "";
+      engine.stdout.on("data", (d: Buffer) => {
+        out += d.toString();
+        const m = /LINER_READY (\{.*\})/.exec(out);
+        if (m) resolve((JSON.parse(m[1]) as { port: number }).port);
+      });
+      engine.once("exit", (code) => reject(new Error(`the engine stopped (${code})`)));
+      setTimeout(() => reject(new Error("the engine didn't start in time")), 20_000);
+    });
+    return { port, stop: () => engine.kill() };
+  } catch (e) {
+    engine.kill();
+    throw e;
+  }
+}
+
+test("the engine answers only requests addressed to itself: a page that points its own name at this machine is refused", async () => {
+  const { port, stop } = await startEngine();
+  try {
+    assert.equal((await get(`http://127.0.0.1:${port}/health`, { host: `evil.example:${port}` })).status, 403);
+    assert.equal((await get(`http://127.0.0.1:${port}/health`, { host: `127.0.0.1:${port}` })).status, 200);
+  } finally {
+    stop();
+  }
+});
+
+test("a tool call with no key or a wrong one is refused before its body is read", async () => {
+  const { port, stop } = await startEngine();
+  try {
+    const surface = await fetch(`http://127.0.0.1:${port}/surface`, { method: "POST", headers: { "x-liner-surface": "nope" }, body: "not json" });
+    assert.equal(surface.status, 401);
+    const outside = await fetch(`http://127.0.0.1:${port}/outside`, { method: "POST", headers: { "x-liner-outside": "nope" }, body: "not json" });
+    assert.ok(outside.status === 401 || outside.status === 404, `got ${outside.status}`);
+  } finally {
+    stop();
+  }
+});
+
 test("github: a remote's owner and name, whichever way it's written", () => {
   assert.equal(githubName("git@github.com:halcyon/app.git"), "halcyon/app");
   assert.equal(githubName("https://github.com/halcyon/app"), "halcyon/app");

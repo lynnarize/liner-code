@@ -186,6 +186,7 @@ const server = await startServer({
     return threadId ? tools.call(threadId, tool, args, gone) : null;
   },
   outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
+  knows: { surface: (key) => Boolean(key && tools.threadOf(key)), outside: (key) => Boolean(outside.now?.allows(key)) },
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
   dsh: (token, rest, search, req, res) => dsh.serve(token, rest, search, req, res),
   // No window left: every canvas and design watch goes, and the windows that come back watch again as they open their designs.

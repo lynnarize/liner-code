@@ -1,7 +1,8 @@
-// Draws Liner Code's app icon: two turns round one centre, the outer in ink and the inner in blue,
-// on a flat squircle tile with a soft shadow, at every size macOS asks for, into an .iconset that
-// iconutil turns into AppIcon.icns. The geometry is docs/brand/icon-2026's: a 1024 grid, y down, the
-// tile inset 100 (824 across, a superellipse of exponent 5), strokes 78 wide with round caps.
+// Draws Liner Code's app icon: the line comment mark, two slanted strokes, the first in ink and the
+// second in blue, as the website's mark and favicon have it (site/public/favicon.svg), on a flat
+// squircle tile with a soft shadow, at every size macOS asks for, into an .iconset that iconutil turns
+// into AppIcon.icns (and scripts/make-ico.ts into Windows' .ico). A 1024 grid, y down, the tile inset
+// 100 (824 across, a superellipse of exponent 5); the favicon's 32 grid scaled by 824 / 32 onto it.
 // Usage: swift scripts/make-icon.swift <out.iconset> [light|dark]
 //        swift scripts/make-icon.swift <out.png> [light|dark] [px]    one image, 1024 px unless px says
 import CoreGraphics
@@ -16,10 +17,11 @@ let dark = args.count > 2 && args[2] == "dark"
 func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
 }
-let tile = rgb(dark ? 0x161719 : 0xF9FAFB)
+// The favicon's colours, light and dark.
+let tile = rgb(dark ? 0x171A20 : 0xF5F6F8)
 let edge = dark ? rgb(0xFFFFFF, 0.10) : rgb(0x141828, 0.08)
-let ink = rgb(dark ? 0xF4F5F6 : 0x16181C)
-let blue = rgb(dark ? 0x609EFA : 0x297CEF)
+let ink = rgb(dark ? 0xECEEF1 : 0x0D0F12)
+let blue = rgb(dark ? 0x4F8FF7 : 0x2A6FE8)
 
 func draw(_ px: Int) -> Data? {
     let s = CGFloat(px)
@@ -49,23 +51,22 @@ func draw(_ px: Int) -> Data? {
     ctx.setLineWidth(3)
     ctx.strokePath()
 
-    // The mark: down, a quarter turn round (545, 488), across.
+    // The mark: two strokes from bottom left to top right, the favicon's (5.2, 19.6) to (10.6, 4.4) and
+    // (13.4, 19.6) to (18.8, 4.4) inside its 4 unit margin, 3.4 wide, scaled onto the tile.
+    let k: CGFloat = 824 / 32
+    let at = { (x: CGFloat, y: CGFloat) in CGPoint(x: 100 + (4 + x) * k, y: 100 + (4 + y) * k) }
     ctx.setLineCap(.round)
-    ctx.setLineWidth(78)
-    let outer = CGMutablePath()
-    outer.move(to: CGPoint(x: 309, y: 300))
-    outer.addLine(to: CGPoint(x: 309, y: 488))
-    outer.addArc(tangent1End: CGPoint(x: 309, y: 724), tangent2End: CGPoint(x: 545, y: 724), radius: 236)
-    outer.addLine(to: CGPoint(x: 715, y: 724))
-    ctx.addPath(outer)
+    ctx.setLineWidth(3.4 * k)
+    let first = CGMutablePath()
+    first.move(to: at(5.2, 19.6))
+    first.addLine(to: at(10.6, 4.4))
+    ctx.addPath(first)
     ctx.setStrokeColor(ink)
     ctx.strokePath()
-    let inner = CGMutablePath()
-    inner.move(to: CGPoint(x: 433, y: 424))
-    inner.addLine(to: CGPoint(x: 433, y: 488))
-    inner.addArc(tangent1End: CGPoint(x: 433, y: 600), tangent2End: CGPoint(x: 545, y: 600), radius: 112)
-    inner.addLine(to: CGPoint(x: 591, y: 600))
-    ctx.addPath(inner)
+    let second = CGMutablePath()
+    second.move(to: at(13.4, 19.6))
+    second.addLine(to: at(18.8, 4.4))
+    ctx.addPath(second)
     ctx.setStrokeColor(blue)
     ctx.strokePath()
 

@@ -532,9 +532,6 @@
 .lf-x-act-bar > .lc-btn:first-child {
   margin-left: -10px;
 }
-.lf-x-dismiss {
-  gap: 6px;
-}
 .lf-x-dismiss svg {
   color: var(--l-ink-3);
 }

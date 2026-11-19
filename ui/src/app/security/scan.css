@@ -413,10 +413,6 @@
   outline: none;
   animation: l-swap-in 240ms var(--l-ease-out) backwards;
 }
-.lsc-ask-top .lc-ib {
-  width: 28px;
-  height: 28px;
-}
 .lsc-ask-h {
   padding: 2px 10px 8px;
   font-size: 14.5px;

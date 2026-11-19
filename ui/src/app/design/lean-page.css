@@ -446,10 +446,6 @@ html[data-motion="quick"] .ld-lp {
   flex: none;
   color: var(--l-accent);
 }
-.lc-home-in:has(> .ld-fit) .lc-home-compose .lc-tray {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
 .ld-fit .ld-lp-mono,
 .ld-fit-row .ld-lp-mono {
   color: var(--l-ink);

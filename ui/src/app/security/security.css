@@ -357,10 +357,6 @@
 .ls-bx:hover {
   background: var(--l-wash);
 }
-.ls-bx[aria-checked="true"] {
-  background: var(--l-wash-2);
-  box-shadow: inset 0 0 0 1.5px var(--l-ink);
-}
 .ls-bx[data-wide] {
   grid-column: span 2;
 }
@@ -389,9 +385,6 @@
   height: 16px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
-}
-.ls-bx[aria-checked="true"] .ls-rad {
-  box-shadow: inset 0 0 0 5px var(--l-ink);
 }
 .ls-bx > small {
   display: block;
@@ -423,10 +416,6 @@
   padding: 0 10px 0 9px;
   border-radius: 10px;
   background: var(--l-wash);
-}
-.ls-bx[aria-checked="true"] .ls-pick {
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
 }
 .ls-pick[data-nil] {
   background: none;

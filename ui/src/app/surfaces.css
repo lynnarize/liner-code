@@ -216,9 +216,6 @@
   }
 }
 
-.lc-panel[data-wide-review] {
-  box-shadow: none;
-}
 
 /* ---------- Open a surface ---------- */
 .lc-spick {
@@ -248,7 +245,6 @@
 .lc-spick-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
   width: min(100%, 560px);
 }
 @container (max-width: 420px) {
@@ -264,10 +260,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  min-height: 52px;
-  padding: 8px 10px 8px 8px;
   border: 0;
-  border-radius: 14px;
   background: var(--lc-plate);
   box-shadow: none;
   text-align: left;
@@ -286,9 +279,6 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
   background: var(--l-wash-2);
   color: var(--l-ink-2);
 }
@@ -358,20 +348,11 @@
   color: var(--l-ink-3);
 }
 .lc-sinfo-v {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 /* In a flex row the ellipsis is its own: a path that's cut says so. */
-.lc-sinfo-v > .lc-quiet {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /*
   Context: a bar of ticks in each source's colour over the grey of what's free, a mark where the
   tool compacts, then each source as a chip. Resting on a chip lifts its ticks and dims the rest.
@@ -4655,8 +4636,6 @@
 /* A folded row's chevron, after its words: it points at them shut and turns down open. */
 .lc-row-chev {
   flex: none;
-  width: 13px;
-  height: 13px;
   color: var(--l-ink-4);
   rotate: -90deg;
   transition: rotate 320ms var(--l-spring-smooth);
@@ -5779,12 +5758,6 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   width: 11px;
   height: 11px;
   color: var(--l-ink-4);
-}
-.lc-trail-agent-t {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /*

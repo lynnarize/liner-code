@@ -897,9 +897,6 @@ html[data-motion="quick"] .ld-pres::after {
 }
 
 /* ---------- Design Home ---------- */
-.ld-home-in {
-  padding-bottom: 48px;
-}
 .ld-lean-chip .ld-q4 {
   margin-right: 2px;
 }
@@ -1152,6 +1149,7 @@ html[data-native="mac"] .ld-bar {
 html[data-motion="quick"][data-native="mac"] .ld-bar {
   transition-duration: 180ms;
 }
+/* The top row's traffic-light move from app.css, here for .ld-bar so Design's row clears the lights too. */
 html[data-native="mac"] .lc-app:not([data-sidebar]) .ld-bar {
   --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
   padding-top: calc(6px - var(--lc-up));

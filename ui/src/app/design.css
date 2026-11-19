@@ -344,10 +344,6 @@
   background: var(--lc-well);
   cursor: zoom-in;
 }
-.lc-dz-thumb[data-size="phone"],
-.lc-dz-thumb[data-size="tablet"] {
-  padding-top: 0;
-}
 .lc-dz-thumb-in {
   position: relative;
   flex: none;

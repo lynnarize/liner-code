@@ -276,3 +276,21 @@ test("Setup's install list fades at its bottom to say it scrolls", () => {
   assert.equal(value(b, "padding-bottom"), "12px", "the open install list has no room for a fade");
   assert.equal(value(b, "mask-image"), "linear-gradient(#000 calc(100% - 12px), transparent)", "the open install list does not fade");
 });
+
+import { readdirSync } from "node:fs";
+
+test("the classes nothing references are gone from every stylesheet", () => {
+  const root = new URL("../../ui/src/app/", import.meta.url);
+  const files: URL[] = [];
+  const walk = (d: URL) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = new URL(e.name + (e.isDirectory() ? "/" : ""), d); if (e.isDirectory()) walk(p); else if (e.name.endsWith(".css")) files.push(p); } };
+  walk(root);
+  const dead = ["lc-stop", "lc-box-keys", "lc-agent-card-t", "lc-ask-title", "lc-accent-t", "lc-tstep-line", "lc-tstep-target", "lc-trail-agent-t"];
+  for (const f of files) {
+    const css = readFileSync(f, "utf8");
+    for (const c of dead) assert.equal(new RegExp(`(^|[^A-Za-z0-9_-])${c}([^A-Za-z0-9_-]|$)`).test(css), false, `${c} is still in ${f.pathname}`);
+  }
+});
+
+test("the sidebar's width is said once", () => {
+  assert.equal((sheet("app.css").match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
+});

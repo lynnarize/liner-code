@@ -16,7 +16,7 @@
   --lc-font-name: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --l-track-body: -0.005em;
   --l-track-display: -0.02em;
-  --lc-side: 244px;
+  --lc-side: 264px;
   /* The one top row: the sidebar's head, the session's header and the panel's tabs share it (44, as
      the approved one-row header has it; 52 before 0.2.5). Its centre, the window's gap plus half of
      it, is where both shells put the traffic lights: 28px from the window's top. */
@@ -186,16 +186,12 @@ pre {
 .lc-quiet {
   color: var(--l-ink-3);
 }
-.lc-accent-t {
-  color: var(--l-accent-text);
-  font-size: 12px;
-}
 
 /* ---------- The window: one ground, and the paper ---------- */
 /*
   The sidebar sits on the ground. Home, a session, Usage and Settings' places sit on the paper, a
   white sheet a gap in from the window's edges, as before but with no glass round it. The side
-  panel is a column inside the paper with nothing drawn round it.
+  panel beside the thread is a card; over the whole paper it is flat with its row.
 */
 /* With the sidebar away its column keeps the window's gap, so the paper's edge rides the one
    animated track and never steps by the gap when the sidebar starts to go or come. */
@@ -1004,7 +1000,6 @@ html[data-native="mac"] .lc-sb {
 .lc-sb-head {
   display: flex;
   align-items: center;
-  gap: 10px;
   min-height: 32px;
   padding: 2px 2px 2px 4px;
 }
@@ -1019,7 +1014,6 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-brand {
   display: inline-flex;
-  flex: 1;
   align-items: center;
   gap: 9px;
   min-width: 0;
@@ -1053,10 +1047,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-find input::placeholder {
   color: var(--l-ink-4);
 }
-.lc-sb-find:not(.lc-st-find):has(input:focus-visible) {
-  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
-  outline-offset: 2px;
-}
 .lc-sb-find .lc-ib {
   width: 26px;
   height: 26px;
@@ -1082,7 +1072,6 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 10px;
   background: none;
   font: inherit;
-  font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.005em;
   color: var(--l-ink-2);
@@ -1169,7 +1158,6 @@ html[data-native="mac"] .lc-sb-head {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
   padding-bottom: 8px;
 }
 .lc-sb-plate {
@@ -1177,7 +1165,6 @@ html[data-native="mac"] .lc-sb-head {
   top: 0;
   left: 0;
   right: 0;
-  border-radius: 12px;
   background: var(--lc-plate);
   box-shadow: none;
   pointer-events: none;
@@ -1187,7 +1174,6 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-sec {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 /*
   The badge: a project's two letters in grey on a tint of the ink, the same for every project
@@ -1324,15 +1310,11 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-foot {
   display: flex;
   align-items: center;
-  gap: 6px;
   min-height: 40px;
-  padding: 0 2px;
 }
 .lc-sb-foot .lc-ib {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
   border-radius: 10px;
 }
 .lc-sb-fi {
@@ -1863,8 +1845,7 @@ html[data-native="mac"] .lc-sb-head {
   cursor: col-resize;
   touch-action: none;
 }
-/* A hairline shows where it holds, on hover, while dragging, and from the keyboard: over the panel's
-   own, from the paper's top to its bottom, as the panel is a full-height column now. */
+/* A hairline shows where it holds, on hover, while dragging, and from the keyboard, down the panel's edge. */
 .lc-grip::after {
   content: "";
   position: absolute;
@@ -2645,18 +2626,15 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   align-items: flex-start;
   gap: 12px;
 }
-.lc-ask-title,
 .lc-plan-top > span:first-child {
   display: grid;
   flex: 1;
   min-width: 0;
 }
-.lc-ask-title small,
 .lc-plan-top small {
   font-size: 13px;
   color: var(--l-ink-3);
 }
-.lc-ask-title b,
 .lc-plan-top b {
   font-size: 15px;
   font-weight: 600;
@@ -3168,8 +3146,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   text-overflow: ellipsis;
 }
 .lc-ctl-attach,
-.lc-send,
-.lc-stop {
+.lc-send {
   display: grid;
   flex: none;
   place-items: center;
@@ -3237,21 +3214,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     opacity: 0;
   }
 }
-/* Stop is neutral, an ink square on a wash: the action colour means one thing, send, and Stop
-   beside Send in the same red read as two of the same. */
-.lc-stop {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-  animation: lc-stop-in 260ms var(--l-ease-enter) backwards;
-}
-@keyframes lc-stop-in {
-  from {
-    opacity: 0;
-    scale: 0.86;
-  }
-}
 .lc-send:not(:disabled):active,
-.lc-stop:active,
 .lc-ctl-attach:active {
   transform: scale(0.95);
 }
@@ -3271,7 +3234,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-send[data-ready]:hover {
     background: color-mix(in oklab, var(--lc-act) 88%, black);
   }
-  .lc-stop:hover,
   .lc-send[data-stop]:hover {
     background: var(--l-wash-3);
   }
@@ -3351,7 +3313,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex-shrink: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .lc-stop,
   .lc-send[data-ready] .lc-send-up {
     animation: none;
   }
@@ -3497,29 +3458,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-strip-under > [aria-hidden] {
     display: none;
   }
-}
-/* What the box takes, behind the keys button under the strip: each key, and what it brings up. */
-.lc-box-keys {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 2px 6px 6px;
-}
-.lc-box-keys > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 30px;
-  padding: 0 6px;
-}
-.lc-box-keys dt {
-  flex: none;
-  min-width: 56px;
-}
-.lc-box-keys dd {
-  margin: 0;
-  font-size: 13px;
-  color: var(--l-ink-2);
 }
 .lc-files {
   display: flex;
@@ -3863,14 +3801,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-who-tool {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto 14px;
   align-items: center;
-  column-gap: 10px;
   width: 100%;
   min-height: 34px;
-  padding: 0 10px;
   border: 0;
-  border-radius: 11px;
   background: none;
   text-align: left;
   color: inherit;
@@ -4384,15 +4318,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   overflow-wrap: anywhere;
   animation: l-unblur 520ms var(--l-ease-out) backwards;
 }
-.lc-ask-h .lc-pop {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: baseline;
-}
 /* The tray's 720, so the card in it is the session's 712. */
 .lc-home-compose {
-  width: min(720px, 100%);
   animation: lc-focus-in 520ms 120ms var(--l-ease-enter) backwards;
 }
 /* Nothing to start in yet: the words in a 460px measure, and the three ways in on one row under
@@ -4436,8 +4363,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 /* ---------- The panel ---------- */
 /* The panel is a column on the ground beside the thread, with nothing drawn between them. */
 .lc-panel {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
   animation: lc-panel-in 460ms var(--l-ease-enter) backwards;
@@ -4475,8 +4400,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     color: var(--l-ink);
   }
 }
-/* Beside the thread, one sheet split by a hairline from the paper's top to its bottom: the panel is a
-   full-height column, its header on the session header's line. */
+/* Beside the thread the panel is a card; over the whole paper it is flat with its row. */
 .lc-session[data-beside] .lc-panel {
   box-shadow: inset 1px 0 0 var(--l-line);
 }
@@ -4736,28 +4660,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   margin: 0;
 }
 .lc-agents-panel {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  padding: 0 10px 14px;
   overflow: auto;
-}
-.lc-agent-card-t {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-.lc-agent-card-t b {
-  font-size: 14px;
-  font-weight: 600;
-}
-.lc-agent-card-t b span {
-  font-size: 12px;
-  font-weight: 400;
-}
-.lc-agent-card-t small {
-  font-size: 13px;
-  color: var(--l-ink-3);
 }
 
 /* ---------- Usage ---------- */
@@ -4968,10 +4871,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   border-radius: 24px;
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
-}
-.lc-sheet-frame[data-size="md"] {
-  width: min(760px, 100%);
-  margin: 0 auto;
 }
 .lc-sheet-head {
   display: flex;
@@ -6825,7 +6724,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 6px;
   font-size: 13px;
   line-height: 24px;
-  white-space: nowrap;
   color: var(--l-ink-2);
   animation: l-unblur 300ms var(--l-ease-out) backwards;
 }
@@ -7296,9 +7194,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   Since 0.2.8 the name has gone to the foot as that option, and the head is only the window's
   controls (the block at the end of this sheet).
 */
-:root {
-  --lc-side: 264px;
-}
 .lc-brand {
   flex: none;
   cursor: default;
@@ -7315,9 +7210,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   opacity: 0.38;
   cursor: default;
 }
-.lc-sb-nav {
-  font-size: 14px;
-}
 .lc-sb-nav > svg {
   width: auto;
   height: auto;
@@ -7330,17 +7222,9 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   at the end of this sheet); its menu is as it was.
 */
 .lc-sb-facepick {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 7px 0 8px;
   border: 0;
-  border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 13px;
-  font-weight: 500;
   color: var(--l-ink);
   cursor: pointer;
   transition: background 140ms ease;
@@ -7380,11 +7264,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
 .lc-face-tile[data-face="security"] {
   background: var(--l-ok);
   color: #fff;
-}
-.lc-sb-facepick > .lc-face-tile {
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
 }
 .lc-face-opt {
   display: flex;
@@ -7454,7 +7333,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   align-self: end;
   align-items: center;
   gap: 8px;
-  padding: 0 6px 0 2px;
 }
 .lc-home-top > .lc-pop {
   min-width: 0;
@@ -7522,7 +7400,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   display: flex;
   align-self: start;
   flex-direction: column;
-  padding: 0 4px;
   animation: lc-focus-in 420ms 160ms var(--l-ease-enter) backwards;
 }
 .lc-home-pickup .lc-home-pick {
@@ -7553,7 +7430,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 14px;
   color: var(--l-ink);
   text-align: left;
   cursor: pointer;
@@ -7752,7 +7628,6 @@ body,
 */
 .lc-sb-head {
   padding-right: 4px;
-  padding-left: 10px;
 }
 .lc-sb-sec {
   gap: 0;
@@ -7847,9 +7722,6 @@ html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel {
   no longer run into the sidebar's right inset to make room for "Liner Design"). On macOS the row
   starts just past the traffic lights.
 */
-.lc-sb-head > .lc-grow {
-  min-width: 0;
-}
 html[data-native="mac"] .lc-sb-head {
   padding-left: max(4px, calc(var(--lc-lights-x, 70px) - 4px));
 }

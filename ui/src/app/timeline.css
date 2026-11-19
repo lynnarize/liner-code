@@ -107,12 +107,6 @@
   object-fit: contain;
 }
 
-/* ---------- An edit step opens the Diff ---------- */
-@media (hover: hover) {
-  .lc-tstep-line[data-diff]:hover .lc-tstep-target {
-    color: var(--l-accent-text);
-  }
-}
 
 /* ---------- Your prompts, at the thread's left edge ----------
    One tick a prompt, spread 9px apart and squeezed to fit when there are many, centred on what

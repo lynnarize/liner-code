@@ -48,6 +48,7 @@ import { startDesigns } from "./Design";
 import { HiddenBrowsers } from "./Browser";
 import { is, matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import { currentTab, faceKept, getFace, HOME_TAB, openTab as openDesignTab, setFace, showTab, tabKey, toggleFace, useFace, useTabs } from "./face";
+import { keptOnFaceChange } from "./face-pages";
 // Liner Design's store and sidebar body load with the face, never for someone who stays in Code.
 const DesignSide = lazyAgain(() => import("./design/Layers").then((m) => m.DesignSide));
 // Liner Design's face: its tabs, Design Home and the canvas load the first time the window shows them.
@@ -309,6 +310,8 @@ export function App() {
     const was = lastFace.current;
     lastFace.current = face;
     if (was === face || !ready) return;
+    // A page that belongs to no face (Add-ons, Usage, the Wall, an app) is left behind with the face it was opened from.
+    if (!keptOnFaceChange(view.kind)) setView({ kind: "home" });
     // Liner Security has its own pages and sessions: going to it or leaving it makes nothing and opens nothing of Design's.
     if (face === "security" || was === "security") return;
     const s = getState();

@@ -20,6 +20,7 @@ import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
 import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
+import { frameBox } from "./browserFrame";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { launchNote, useLaunch } from "./launch";
@@ -33,8 +34,6 @@ let logSeq = 0;
 type Picked = { selector: string; path: string; text: string; html: string; rect: { x: number; y: number; w: number; h: number } };
 type Width = "desktop" | "tablet" | "phone";
 const WIDTH: Record<Width, number | null> = { desktop: null, tablet: 820, phone: 390 };
-/** What Desktop lays a page out at when the panel is narrower: a laptop's width, past the breakpoints most sites switch to their desktop layout at. */
-const DESKTOP = 1280;
 
 /** What the Browser shows: a page of a local port, or (port null) a page of the session's own folder; `server`, the launch.json server it's of, followed to another port if it moves. */
 type Target = { port: number | null; path: string; server?: string };
@@ -529,8 +528,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const errors = logs.filter((l) => l.level === "error").length;
   const src = useMemo(() => (proxy && target ? `${proxy}${target.path}` : null), [proxy, where, nonce]);
   const w = WIDTH[width];
-  // A phone or tablet wider than the panel is drawn smaller, 12px in from the stage's edges all
-  // round, so it never runs under them; the page still lays out at the device's own width.
+  // How wide the stage is: a page wider than it is drawn smaller (browserFrame.ts).
   const [room, setRoom] = useState(0);
   useEffect(() => {
     const el = stage.current;
@@ -539,11 +537,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     ro.observe(el);
     return () => ro.disconnect();
   }, [target !== null]);
-  // Desktop fills the stage edge to edge: in a panel narrower than a laptop, the page lays out
-  // DESKTOP wide and is drawn smaller, rather than squeezed into the phone layout the panel's width asks for.
-  const fit = w ? (room > 24 ? Math.min(1, (room - 24) / w) : 1) : room > 0 ? Math.min(1, room / DESKTOP) : 1;
-  // What a page pixel is drawn at: its zoom, times the fit.
-  const scale = zoom * fit;
+  // What a page pixel is drawn at (its zoom, times the fit), and the frame's size and zoom for it.
+  const { fit, scale, style: box } = frameBox(w, zoom, room);
 
   /*
     Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its
@@ -801,8 +796,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
           // Its server isn't up: why, and a press to run it again, in place of the proxy's "nothing answers".
           <ServerDown server={shownServer} pressing={pressing === shownServer.name} onRun={() => void runServer(shownServer.name)} />
         ) : src ? (
-          // Zoomed as a browser zooms: the frame lays out 1/zoom as wide and tall as the box it's
-          // shown in, then is drawn at zoom, so the page reflows rather than only growing.
+          // Zoomed as a browser zooms: the page lays out 1/zoom as wide and tall as the box it's
+          // shown in and is drawn at zoom, so it reflows rather than only growing, and it's asked
+          // for the pixels it's shown at, never more (browserFrame.ts).
           <div className="lc-br-zoom" style={w ? { width: w * fit } : undefined}>
             <iframe
               // Opened again at the same address (an agent checking its edit), it loads afresh.
@@ -813,7 +809,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               title="Page preview"
               onLoad={onLoad}
               // A frame's color-scheme is what the page inside reads as prefers-color-scheme.
-              style={{ width: !w && fit < 1 ? `${DESKTOP / zoom}px` : `${100 / scale}%`, height: `${100 / scale}%`, transform: scale === 1 ? undefined : `scale(${scale})`, colorScheme: scheme === "system" ? undefined : scheme }}
+              style={{ ...box, colorScheme: scheme === "system" ? undefined : scheme }}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
             />
           </div>

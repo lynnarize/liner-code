@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
+import { connect } from "node:net";
 import type { Access, AgentProfile, ProviderInfo, Thread } from "../../contracts/src/index.ts";
 import { castOf, costOf, dearestOf, emptyUsage, frontierClass, makerOf, pairCostOf, reviewerOf, shortlistOf, smallChange, startOf } from "../../contracts/src/index.ts";
 import { LEAD_SHARE } from "../../contracts/src/tiers.ts";
@@ -333,6 +334,45 @@ test("proxy: only requests for the proxy itself get through; other sites keep th
     assert.equal((await get(`${base}/`, { host: `evil.example:${new URL(base).port}` })).status, 403);
     assert.deepEqual(await get(`${base}/`, { host, origin: base }), { status: 200, body: "none" });
     assert.deepEqual(await get(`${base}/`, { host, origin: "https://evil.example" }), { status: 200, body: "https://evil.example" });
+  } finally {
+    proxies.closeAll();
+    site.close();
+  }
+});
+
+test("proxy: a WebSocket upgrade gets through only when it's addressed to the proxy itself", async () => {
+  const seen: string[] = [];
+  const site = createServer((_req, res) => res.writeHead(200).end("ok"));
+  site.on("upgrade", (req, socket) => {
+    seen.push(req.headers.host ?? "");
+    socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+    socket.end();
+  });
+  await new Promise<void>((r) => site.listen(0, "127.0.0.1", () => r()));
+  const port = (site.address() as { port: number }).port;
+  const proxies = new Proxies();
+  // A raw upgrade request to the proxy with a Host of our choosing; whatever comes back before the socket closes.
+  const upgrade = (pport: number, host: string) => new Promise<{ bytes: string }>((resolve) => {
+    const sock = connect(pport, "127.0.0.1", () => {
+      sock.write(`GET / HTTP/1.1\r\nHost: ${host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n`);
+    });
+    let bytes = "";
+    const guard = setTimeout(() => sock.destroy(), 5000);
+    sock.on("data", (d: Buffer) => (bytes += d.toString("utf8")));
+    sock.on("close", () => { clearTimeout(guard); resolve({ bytes }); });
+    sock.on("error", () => { clearTimeout(guard); resolve({ bytes }); });
+  });
+  try {
+    const base = await proxies.url(port);
+    const proxyPort = Number(new URL(base).port);
+    // A page that rebinds its own name to 127.0.0.1: the upgrade is destroyed, and nothing reaches the site.
+    const evil = await upgrade(proxyPort, `evil.example:${proxyPort}`);
+    assert.equal(evil.bytes, "", "no bytes back");
+    assert.deepEqual(seen, [], "the site saw no upgrade");
+    // Addressed to the proxy itself: it goes through, and the site sees the proxy's own name for it.
+    const good = await upgrade(proxyPort, `127.0.0.1:${proxyPort}`);
+    assert.ok(good.bytes.startsWith("HTTP/1.1 101"), "the upgrade went through");
+    assert.deepEqual(seen, [`localhost:${port}`], "the site saw the proxy's host for it");
   } finally {
     proxies.closeAll();
     site.close();

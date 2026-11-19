@@ -175,6 +175,65 @@ test("a release is downloaded, checked against its SHA-256, unpacked, checked ag
   }
 });
 
+test("an update whose app says another version is refused, and nothing is left waiting", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
+  const running = miniApp(join(dir, "Applications"), "0.1.0");
+  const zip = join(dir, "release.zip");
+  execFileSync("ditto", ["-c", "-k", "--keepParent", miniApp(join(dir, "build"), "0.3.0"), zip]);
+  const body = readFileSync(zip);
+  const digest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const gh = await fakeGitHub(() => ({ tag: "v0.2.0", assets: [{ name: `Liner-Code-0.2.0-mac-${ARCH}.zip`, body, digest }] }));
+  try {
+    const home = mkdtempSync(join(tmpdir(), "liner-up-"));
+    const env = { PATH: "/usr/bin:/bin", LINER_UPDATE_REPO: "o/n", LINER_UPDATE_API: gh.api, LINER_APP_BUNDLE: running, LINER_APP_VERSION: "0.1.0" };
+    const up = new Updater(new Store(home), env, idle, () => {});
+    await assert.rejects(() => up.download(), /says it's 0\.3\.0, not 0\.2\.0/);
+    assert.ok(!existsSync(join(home, "updates/ready.json")));
+  } finally {
+    gh.server.close();
+  }
+});
+
+test("an update that isn't Liner Code is refused by its bundle id", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
+  const running = miniApp(join(dir, "Applications"), "0.1.0");
+  const built = miniApp(join(dir, "build"), "0.2.0");
+  writeFileSync(join(built, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.other</string><key>CFBundleShortVersionString</key><string>0.2.0</string><key>CFBundleExecutable</key><string>Liner Code</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>\n`);
+  execFileSync("codesign", ["--force", "--sign", "-", built], { stdio: "ignore" });
+  const zip = join(dir, "release.zip");
+  execFileSync("ditto", ["-c", "-k", "--keepParent", built, zip]);
+  const body = readFileSync(zip);
+  const digest = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+  const gh = await fakeGitHub(() => ({ tag: "v0.2.0", assets: [{ name: `Liner-Code-0.2.0-mac-${ARCH}.zip`, body, digest }] }));
+  try {
+    const home = mkdtempSync(join(tmpdir(), "liner-up-"));
+    const env = { PATH: "/usr/bin:/bin", LINER_UPDATE_REPO: "o/n", LINER_UPDATE_API: gh.api, LINER_APP_BUNDLE: running, LINER_APP_VERSION: "0.1.0" };
+    const up = new Updater(new Store(home), env, idle, () => {});
+    await assert.rejects(() => up.download(), /bundle id is different/);
+    assert.ok(!existsSync(join(home, "updates/ready.json")));
+  } finally {
+    gh.server.close();
+  }
+});
+
+test("an update with no checksum to check it against is refused", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
+  const running = miniApp(join(dir, "Applications"), "0.1.0");
+  const zip = join(dir, "release.zip");
+  execFileSync("ditto", ["-c", "-k", "--keepParent", miniApp(join(dir, "build"), "0.2.0"), zip]);
+  const body = readFileSync(zip);
+  const gh = await fakeGitHub(() => ({ tag: "v0.2.0", assets: [{ name: `Liner-Code-0.2.0-mac-${ARCH}.zip`, body }] }));
+  try {
+    const home = mkdtempSync(join(tmpdir(), "liner-up-"));
+    const env = { PATH: "/usr/bin:/bin", LINER_UPDATE_REPO: "o/n", LINER_UPDATE_API: gh.api, LINER_APP_BUNDLE: running, LINER_APP_VERSION: "0.1.0" };
+    const up = new Updater(new Store(home), env, idle, () => {});
+    await assert.rejects(() => up.download(), /no SHA-256/);
+    assert.ok(!existsSync(join(home, "updates/ready.json")));
+  } finally {
+    gh.server.close();
+  }
+});
+
 test("a swap that didn't go through says why, and that version isn't tried again by itself", async () => {
   const dir = mkdtempSync(join(tmpdir(), "liner-rel-"));
   mkdirSync(join(dir, "Liner Code.app"));

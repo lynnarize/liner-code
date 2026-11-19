@@ -152,6 +152,23 @@ test("lock: a message sent during a rewind with files isn't cut off by it, and g
   }
 });
 
+test("rewind: putting files back is refused when a later turn's change is committed, and nothing is touched", async () => {
+  const f = fake(edit);
+  try {
+    const s = await setup();
+    const t = await changed(s);
+    const cp = cpOf(s, t.id)!;
+    s.store.putItem(t.id, { ...cp, committed: "abc1234" });
+    const asked = s.store.timeline(t.id).find((x) => x.kind === "user")!;
+    const before = readFileSync(join(s.dir, "a.txt"), "utf8");
+    await assert.rejects(() => s.call("thread.rewind", { threadId: t.id, itemId: asked.id, files: true }), /are committed \(abc1234\)/);
+    assert.equal(readFileSync(join(s.dir, "a.txt"), "utf8"), before);
+    assert.equal(s.store.thread(t.id).turns, 1, "the turn is still there");
+  } finally {
+    f.restore();
+  }
+});
+
 test("lock: a second undo while one runs is refused, as work in flight", async () => {
   const f = fake(edit);
   try {

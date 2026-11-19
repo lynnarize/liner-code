@@ -578,7 +578,7 @@
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 0 10px 6px;
+  padding: var(--lc-card-top, 0px) 10px 6px;
 }
 .lc-br-addrf {
   flex: 1;
@@ -1154,7 +1154,7 @@
   align-items: center;
   gap: 8px;
   height: 30px;
-  margin: 2px 12px 6px;
+  margin: var(--lc-card-top, 2px) 12px 6px;
   padding: 0 10px;
   border-radius: 8px;
   background: var(--l-wash);
@@ -1388,7 +1388,7 @@
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 0 10px 8px 12px;
+  padding: var(--lc-card-top, 0px) 10px 8px 12px;
 }
 .lc-dev-state {
   padding: 1px 7px;
@@ -1745,7 +1745,7 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 0 10px 8px 12px;
+  padding: var(--lc-card-top, 0px) 10px 8px 12px;
 }
 .lc-linked-list {
   display: grid;
@@ -3477,7 +3477,7 @@
   grid-row: 1;
   gap: 2px;
   overflow-x: auto;
-  padding: 0 10px 4px;
+  padding: var(--lc-card-top, 0px) 10px 4px;
   scrollbar-width: none;
 }
 .lc-terms-tab {
@@ -5839,6 +5839,10 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   margin: 4px 0 0;
   padding: 6px 8px;
   font-size: 12px;
+}
+/* Beside the thread the line stands in Changes itself, whose text starts 16px in. */
+.lc-changes-panel > .lc-rv-more {
+  padding-inline: 16px;
 }
 .lc-rv-bin {
   margin: 0;

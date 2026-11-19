@@ -141,7 +141,7 @@
 
 /* Two panes side by side: the dock half as wide again, the thread still keeping its 420px. */
 .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
-  grid-template-columns: minmax(420px, 1fr) min(calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), calc(100% - 420px));
+  grid-template-columns: minmax(420px, 1fr) min(round(down, calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), 1px), calc(100% - 420px));
 }
 .lc-session[data-panes="2"]:not([data-wide]) .lc-body > .lc-panel {
   width: max(100%, min(calc(var(--lc-panel-w, clamp(340px, 36cqw, 520px)) * 1.6), calc(100cqw - 420px)));
@@ -214,7 +214,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  margin: 2px 10px 10px;
+  margin: var(--lc-card-top, 2px) 10px 10px;
   padding: 7px 10px;
   border-radius: 10px;
   background: color-mix(in oklch, var(--l-accent) 8%, transparent);

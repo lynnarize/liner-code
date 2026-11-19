@@ -394,7 +394,7 @@ button.lc-crp-r:hover {
 /* ---------- the Agents surface ---------- */
 .lc-agents-panel.lc-cr {
   display: block;
-  padding: 2px 14px 16px;
+  padding: 2px 16px 16px;
 }
 .lc-cr-h {
   display: flex;

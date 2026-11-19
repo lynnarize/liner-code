@@ -60,3 +60,49 @@ test("A menu's rows stand 2px apart in every list of rows", () => {
     assert.equal(value(bs[0], "gap") ?? value(bs[0], "row-gap"), "2px", `${selector} in ${file} does not stand its rows 2px apart`);
   }
 });
+
+test("Every surface's first row in the panel card takes its top inset from the card, written once", () => {
+  const card = blocks(sheet("app.css"), ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])");
+  assert.ok(card.some((b) => value(b, "--lc-card-top") === "8px"), "the card's rule does not declare --lc-card-top: 8px");
+  assert.ok(card.some((b) => value(b, "margin") === "var(--lc-card-top) 0 var(--lc-card-top) var(--lc-card-top)"), "the card's margin still writes the 8px out three times");
+  const rows: [string, string][] = [
+    ["surfaces.css", ".lc-br-bar"], ["surfaces.css", ".lc-linked-top"], ["surfaces.css", ".lc-dev-bar"],
+    ["surfaces.css", ".lc-terms-tabs"], ["surfaces.css", ".lc-files-find"], ["dock.css", ".lc-addon-banner"],
+  ];
+  for (const [file, selector] of rows) {
+    const bs = blocks(sheet(file), selector);
+    assert.equal(bs.length, 1, `${file} should hold one ${selector} block`);
+    assert.ok(bs[0].includes("var(--lc-card-top"), `${selector} in ${file} does not take its top inset from the card`);
+  }
+});
+
+test("The panel's column lands on whole pixels, in one pane and in two", () => {
+  const one = blocks(sheet("app.css"), ".lc-session[data-panel] .lc-body").filter((b) => (value(b, "grid-template-columns") ?? "").includes("36%"));
+  assert.equal(one.length, 1, "app.css should hold one 36% column for the panel");
+  assert.ok((value(one[0], "grid-template-columns") ?? "").includes("round(down, 36%, 1px)"), "the panel's column is not rounded down to a whole pixel");
+  const two = blocks(sheet("dock.css"), ".lc-session[data-panel][data-panes=\"2\"]:not([data-wide]) .lc-body").filter((b) => (value(b, "grid-template-columns") ?? "").includes("* 1.6"));
+  assert.equal(two.length, 1, "dock.css should hold one times-1.6 column for two panes");
+  assert.ok((value(two[0], "grid-template-columns") ?? "").includes("round(down, calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), 1px)"), "the two-pane column is not rounded down to a whole pixel");
+});
+
+test("Commit's bar keeps its controls on the composer's row, shorter inside the card", () => {
+  const feet = blocks(sheet("app.css"), ".lc-panel-foot");
+  assert.equal(feet.length, 1);
+  assert.equal(value(feet[0], "height"), "calc(70px - 2 * var(--lc-card-top, 0px))", "the foot's height does not give back the card's top and bottom margins");
+});
+
+test("The Agents surface starts its text 16px in, like the other text-led surfaces", () => {
+  const panels = blocks(sheet("crew.css"), ".lc-agents-panel.lc-cr");
+  assert.equal(panels.length, 1);
+  assert.equal(value(panels[0], "padding"), "2px 16px 16px", "Agents keeps its own 14px side inset");
+});
+
+test("The more-files line in docked Changes starts where the rest of Changes starts", () => {
+  const css = sheet("surfaces.css");
+  const base = blocks(css, ".lc-rv-more");
+  assert.equal(base.length, 1);
+  assert.equal(value(base[0], "padding"), "6px 8px", "Review's own line keeps the padding sized for its list");
+  const docked = blocks(css, ".lc-changes-panel > .lc-rv-more");
+  assert.equal(docked.length, 1, "no rule stands the line in Changes itself at 16px");
+  assert.equal(value(docked[0], "padding-inline"), "16px");
+});

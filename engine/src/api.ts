@@ -1336,7 +1336,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         // and gets the conversation that's left as text.
         // Taken back to before a turn, the conversation starts again: how full the old one was no longer holds.
         // What waits in the queue stays, held for your next message: going back is no reason to lose it.
-        store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", providerSession: undefined, sessions: undefined, forkSession: undefined, verdict: undefined, reviewSince: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
+        store.patchThread(threadId, { usage: { ...store.thread(threadId).usage, contextTokens: undefined, contextWindow: undefined }, turns: from - 1, status: "idle", held: undefined, providerSession: undefined, sessions: undefined, forkSession: undefined, verdict: undefined, reviewSince: undefined, toReview: runtime.toReview(threadId), unread: false, done: false });
         return { turn: from, files: undone };
       });
     },

@@ -28,7 +28,7 @@ import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark, N, type MarkKind } from "./icons";
-import { agentOf, ago, bucketOf, clock, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
+import { agentOf, ago, bucketOf, clock, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, reviewHeld, since, type Bucket } from "./model";
 import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
 import { SideCounts, SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "./SideList";
 import { appNotice, updates } from "./Updates";
@@ -1660,7 +1660,7 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
   // before (By status moves a row to another section, which draws it anew) doesn't fade in again. Either keeps that for this row's life, so nothing plays when it changes.
   const [fresh] = useState(() => seen.has(t.id) || current);
   useEffect(() => void seen.add(t.id), []);
-  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
+  const state: SideState = busy ? "working" : t.status === "error" ? "error" : t.status === "limited" ? "limited" : reviewHeld(t) ? "held" : t.status === "waiting" ? "needs" : t.turns === 0 ? "new" : "done";
   const said = rowLine(t, bucket, state, agentsNow, now);
   const pr = t.pr ? prState(t.pr.state) : undefined;
   const end = t.pr ? (
@@ -1835,6 +1835,7 @@ function rowLine(t: Thread, bucket: Bucket, state: SideState, agents: number, no
     if (agents > 0 && doing.startsWith("Sending an agent")) return { text: `${plural(agents, "agent")} at work` };
     return { text: agents > 0 ? `${doing} · ${plural(agents, "agent")}` : doing };
   }
+  if (reviewHeld(t)) return { text: "Reviewer blocked it" };
   if (t.status === "waiting") return { text: "Waits for your answer", tone: "warn" };
   if (t.status === "error") return { text: "Ran into a problem", tone: "danger" };
   if (t.status === "limited") return { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
@@ -1868,6 +1869,7 @@ function cardState(t: Thread, bucket: Bucket, who: string, now: number, run?: { 
     if (t.goal?.status === "active") return { text: `Working · ${who} works toward its goal, turn ${t.goal.turns} of ${t.goal.max}` };
     return { text: `Working · ${who} ${who.includes(" + ") ? "are" : "is"} at it` };
   }
+  if (reviewHeld(t)) return { text: `Needs you · the Reviewer blocked it${t.verdict?.note ? `: ${t.verdict.note}` : ""}` };
   if (t.status === "waiting") return { text: `Needs you · ${who} ${who.includes(" + ") ? "wait" : "waits"} for your answer`, tone: "warn" };
   if (t.status === "error") return { text: `Ran into a problem · ${who} stopped short`, tone: "danger" };
   if (t.status === "limited") return { text: `Limited · ${who}'s plan ran out${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };

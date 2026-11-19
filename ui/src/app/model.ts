@@ -242,6 +242,9 @@ export type ModelChoice = ReturnType<typeof allModels>[number];
 
 export type Bucket = "pinned" | "needs" | "working" | "open" | "snoozed" | "settled";
 
+/** It waits on you because the Reviewer blocked its change, not because its agent asked: still Needs you, without a question's amber. */
+export const reviewHeld = (t: Thread) => t.status === "waiting" && t.held === "review";
+
 /**
   Where a session sits: Needs you and Working follow the agents; Pinned, Snoozed and Settled are
   yours. A session that needs nothing more from you stays open in its project until you settle

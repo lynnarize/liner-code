@@ -1135,7 +1135,7 @@ export class Runtime {
     store.putItem(threadId, { kind: "approval", id, turn: turn?.turn ?? t.turns, at: Date.now(), ...ask, state: "asking" });
     this.clock(threadId);
     const was = t.status;
-    store.patchThread(threadId, { status: "waiting" });
+    store.patchThread(threadId, { status: "waiting", held: undefined });
     store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: ask.title });
     const answer = new Promise<Answer>((resolve) => {
       // However it settles, it stops listening for Stop: a turn with many cards would otherwise hold one listener for each.
@@ -1180,7 +1180,7 @@ export class Runtime {
     store.putItem(threadId, { kind: "question", id, turn: turn?.turn ?? t.turns, at: Date.now(), questions, state: "asking" });
     this.clock(threadId);
     const was = t.status;
-    store.patchThread(threadId, { status: "waiting" });
+    store.patchThread(threadId, { status: "waiting", held: undefined });
     store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.whoIs(threadId)} needs you`, body: questions[0]?.question ?? "A question" });
     let end: (state: "skipped" | "expired") => void = () => {};
     const answer = new Promise<Record<string, string> | null>((resolve) => {
@@ -1394,7 +1394,7 @@ export class Runtime {
       store.putItem(threadId, { kind: "approval", id, turn, at: Date.now(), tool: PR_TEST_TOOL, title: `Run ${command}`, description: "Runs the project's tests on this Mac before the pull request goes up.", risk, fields: [{ label: "Command", value: command }, { label: "Where", value: cwd }], ...(grants.length ? { rule } : {}), why, grants, state: "asking" });
       this.clock(threadId);
       const was = t.status;
-      store.patchThread(threadId, { status: "waiting" });
+      store.patchThread(threadId, { status: "waiting", held: undefined });
       store.emit({ type: "notify", threadId, kind: "waiting", title: `${this.resolve(t).agent.name} needs you`, body: `Run ${command}` });
       const { allow } = await new Promise<{ allow: boolean }>((resolve) => {
         this.approvals.set(id, { resolve, reject: () => resolve({ allow: false }) });
@@ -1535,7 +1535,7 @@ export class Runtime {
     this.turns.set(threadId, live);
     // A session named by its first message is named by what the person read of it, not by the words Liner wrote for the agent.
     const title = t.title === "New session" || t.title === "New thread" ? titleFrom(o.shown?.text || text) : t.title;
-    t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId });
+    t = store.patchThread(threadId, { status: "running", turns: turn, title, archived: false, done: false, snoozedUntil: undefined, turnBy: agentId, held: undefined });
     const r = this.resolve(t, agentId);
     const marker: Item = { kind: "turn", id: uid("it"), turn, at: Date.now(), agent: agentId, model: `${r.provider}:${r.model}`, status: "running", ...(o.part ? { part: o.part } : {}), ...(o.why ? { why: o.why } : {}) };
     const asked: Extract<Item, { kind: "user" }> | null = show ? { kind: "user", id: uid("it"), turn, at: Date.now(), text, ...(o.anchor ? { anchor: o.anchor } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.shown ? { shown: o.shown } : {}) } : null;
@@ -1823,7 +1823,8 @@ export class Runtime {
     const rounds = Math.min(3, Math.max(1, store.settings.reviewRounds ?? ROUNDS));
     if (round >= rounds) {
       const note = `${n} still blocking after ${rounds === 1 ? "one round" : `${rounds} rounds`}`;
-      const now = store.patchThread(threadId, { status: "waiting", verdict: { state: "blocked", note, round } });
+      // Yours to decide, not a question the agent asked: held marks the difference (Thread.held).
+      const now = store.patchThread(threadId, { status: "waiting", held: "review", verdict: { state: "blocked", note, round } });
       store.emit({ type: "notify", threadId, kind: "waiting", title: "The Reviewer needs you", body: `${now.title}: ${note}` });
       return;
     }
@@ -1836,7 +1837,8 @@ export class Runtime {
     // say the same. It's yours now, as after the last round.
     if (!fix.changed) {
       const note = `${n} still blocking: the fix changed nothing`;
-      const now = store.patchThread(threadId, { status: "waiting", verdict: { state: "blocked", note, round } });
+      // Yours to decide, not a question the agent asked: held marks the difference (Thread.held).
+      const now = store.patchThread(threadId, { status: "waiting", held: "review", verdict: { state: "blocked", note, round } });
       store.emit({ type: "notify", threadId, kind: "waiting", title: "The Reviewer needs you", body: `${now.title}: ${note}` });
       return;
     }
@@ -1874,7 +1876,7 @@ export class Runtime {
     const started = Date.now();
     const base: Extract<Item, { kind: "review" }> = { kind: "review", id: uid("it"), turn: o.turn, at: started, reviewer: o.ref, round: o.round, status: "running", findings: [] };
     store.putItem(threadId, base);
-    store.patchThread(threadId, { status: "running", verdict: { state: "checking", round: o.round } });
+    store.patchThread(threadId, { status: "running", held: undefined, verdict: { state: "checking", round: o.round } });
     const abort = new AbortController();
     this.turns.set(threadId, { abort, started, turn: store.thread(threadId).turns });
     // What it is doing meanwhile, in the words the session's bar has for it (Session.tsx), rather than a bare "Working".

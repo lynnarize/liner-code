@@ -8,7 +8,7 @@ import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, LimitWindow, Thread } from "@contracts";
 import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
-import { clock } from "./model";
+import { clock, reviewHeld } from "./model";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -332,6 +332,7 @@ export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; br
     );
   if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
   if (t.status === "limited") return <span className="lc-mk" role="img" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
+  if (bucket === "needs" && reviewHeld(t)) return <span className="lc-mk" role="img" data-s="held" aria-label="The Reviewer blocked it"><i /></span>;
   if (bucket === "needs") return <span className="lc-mk" role="img" data-s="needs" aria-label="Needs you"><i /></span>;
   if (t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
   return <span className="lc-mk" role="img" data-s="done" aria-label="Done"><I.check size={14} /></span>;

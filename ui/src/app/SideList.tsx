@@ -30,13 +30,13 @@ export function listArrows(e: KeyboardEvent<HTMLElement>) {
 }
 
 /** How a row stands, as its mark shows it. */
-export type SideState = "working" | "needs" | "limited" | "error" | "done" | "new";
+export type SideState = "working" | "needs" | "held" | "limited" | "error" | "done" | "new";
 
 const tinted = (tint?: string): CSSProperties | undefined => (tint ? { color: tint } : undefined);
 
 /**
   A row's mark, in the 24px column: the spinner while it works (in the agent's tint), the amber dot
-  with its halo when it needs you, the clock when its plan's limit stopped it, the error mark, a
+  with its halo when it needs you (a plain dot, no halo, when the Reviewer holds it), the clock when its plan's limit stopped it, the error mark, a
   small grey dot when it's done, the hollow ring before it starts. Each keeps its words for a screen
   reader (`label` says something else, as a folded folder's "A session here is working").
 */
@@ -50,6 +50,12 @@ export function SideMark({ state, tint, brand, label }: { state: SideState; tint
   if (state === "needs")
     return (
       <span className="lc-mk" role="img" data-s="needs" aria-label={label ?? "Needs you"}>
+        <i />
+      </span>
+    );
+  if (state === "held")
+    return (
+      <span className="lc-mk" role="img" data-s="held" aria-label={label ?? "The Reviewer blocked it"}>
         <i />
       </span>
     );

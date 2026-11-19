@@ -271,11 +271,14 @@ export class Store {
       }
     }
     // A thread that was working when the engine stopped is not working any more. One whose question
-    // still asks stays in Needs you: it outlives the turn that asked (timeline()).
+    // still asks stays in Needs you: it outlives the turn that asked (timeline()). So does one the
+    // Reviewer blocked (Thread.held): the block is the Reviewer's last word, not part of a turn.
     for (const t of this.state.threads)
       if (t.status === "running" || t.status === "waiting") {
+        if (t.status === "waiting" && t.held === "review" && t.verdict?.state === "blocked") continue;
         const asking = t.status === "waiting" && this.timeline(t.id).some((x) => x.kind === "question" && x.state === "asking");
         t.status = asking ? "waiting" : "idle";
+        if (!asking) t.held = undefined;
         t.unread = true;
         // A review it was in the middle of ended with it (its item settles as an error when read).
         if (t.verdict?.state === "checking") t.verdict = undefined;

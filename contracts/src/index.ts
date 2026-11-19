@@ -390,6 +390,8 @@ export type Thread = {
   queue?: QueuedMessage[];
   /** The Reviewer's last word on this session's changes. */
   verdict?: { state: "checking" | "verified" | "blocked"; note?: string; round: number };
+  /** Waiting on you because the Reviewer blocked the change, not because the agent asked you something: it's read without the yellow of a question. */
+  held?: "review";
   /** Your own sidebar group. */
   group?: string;
   /** Snoozed until something happens rather than a time. */

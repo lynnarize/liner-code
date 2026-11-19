@@ -1,18 +1,15 @@
 ---
-import { ClientRouter } from 'astro:transitions';
+// Every page: head tags, the look (light, dark, or the system's), the nav, the ruled sheet and the footer.
 import { site } from '../data/site';
 import Nav from '../components/Nav.astro';
-import Mark from '../components/Mark.astro';
-import '../styles/tokens.css';
-import '../styles/base.css';
+import Footer from '../components/Footer.astro';
 import '../styles/site.css';
-import '../styles/ui.css';
 
-interface Props { title?: string; description?: string; image?: string; tone?: string }
-const { title, description = site.description, image = '/og.png', tone = 'sky' } = Astro.props;
+interface Props { title?: string; description?: string; home?: boolean; noindex?: boolean }
+const { title, description = site.description, home = false, noindex = false } = Astro.props;
 const fullTitle = title ? `${title} | ${site.name}` : site.title;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
-const ogImage = new URL(image, Astro.site ?? site.url).href;
+const ogImage = new URL('/og.png', Astro.site ?? site.url).href;
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -29,14 +26,26 @@ const jsonLd = {
 };
 ---
 <!doctype html>
-<html lang="en" transition:animate="none" data-nav-tone={tone} data-version={site.version}>
+<html lang="en" data-version={site.version}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
-    <meta name="theme-color" content="#0b0e1c" />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" />
+    <script is:inline>
+      // The look before the first paint: the one this visitor picked, else the system's.
+      (function () {
+        var d = document.documentElement, t = null;
+        d.classList.add('js');
+        try { t = localStorage.getItem('lc:look'); } catch (e) {}
+        if (t === 'dark' || t === 'light') d.dataset.theme = t;
+        var dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0f1115' : '#ffffff');
+      })();
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -45,42 +54,65 @@ const jsonLd = {
     <meta property="og:site_name" content={site.name} />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonical} />
+    {!noindex && <meta property="og:url" content={canonical} />}
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
-    <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/geist-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-    <script is:inline>
-      document.documentElement.classList.add('js');
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
-      // The sea at night by default, or blue if this visitor picked it; kept across page swaps.
-      (function () {
-        var sea = function () {
-          var v = 'dark'; try { v = localStorage.getItem('lc:sea') === 'blue' ? 'blue' : 'dark'; } catch (e) {}
-          document.documentElement.dataset.sea = v;
-          var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', v === 'blue' ? '#0b33b4' : '#0b0e1c');
-        };
-        sea();
-        document.addEventListener('astro:after-swap', sea);
-      })();
-    </script>
-    <ClientRouter fallback="swap" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
-    <div id="curtain" transition:persist="curtain" aria-hidden="true"><div class="curtain__panel"><Mark class="curtain__mark" /></div></div>
-    <Nav />
-    <main id="main" tabindex="-1">
+    <a class="skip" href="#main">Skip to the page</a>
+    <Nav home={home} />
+    <main id="main" class="page" tabindex="-1">
+      <div class="rails" aria-hidden="true"></div>
       <slot />
     </main>
-    <slot name="footer" />
-    <script>
-      import { start } from '../engine/astro';
-      import { setupMotion } from '../motion/setup';
-      start(setupMotion);
+    <Footer />
+    <script is:inline>
+      // The look by hand. A <picture> picks its dark source by the system's look, so when the visitor
+      // picks one, each dark source's media is rewritten to always (dark) or never (light) match.
+      (function () {
+        var d = document.documentElement, sys = matchMedia('(prefers-color-scheme: dark)');
+        var btn = document.getElementById('look'), meta = document.querySelector('meta[name="theme-color"]');
+        var isDark = function () { return d.dataset.theme ? d.dataset.theme === 'dark' : sys.matches; };
+        var sources = function () {
+          var t = d.dataset.theme;
+          document.querySelectorAll('source[data-look="dark"]').forEach(function (s) {
+            var m = s.getAttribute('data-m');
+            var want = t === 'dark' ? (m || 'all') : t === 'light' ? 'not all' : (m ? m + ' and ' : '') + '(prefers-color-scheme: dark)';
+            if (s.getAttribute('media') !== want) s.setAttribute('media', want);
+          });
+        };
+        var paint = function () {
+          var dark = isDark();
+          btn.setAttribute('aria-pressed', String(dark));
+          btn.title = dark ? 'Switch to the light look' : 'Switch to the dark look';
+          meta.setAttribute('content', dark ? '#0f1115' : '#ffffff');
+        };
+        sources();
+        paint();
+        btn.addEventListener('click', function () {
+          var next = isDark() ? 'light' : 'dark';
+          d.dataset.theme = next;
+          try { localStorage.setItem('lc:look', next); } catch (e) {}
+          sources();
+          paint();
+        });
+        sys.addEventListener('change', paint);
+      })();
+      // Parts of each section settle into place as they come into view, on every page.
+      (function () {
+        var settle = document.querySelectorAll('.settle');
+        if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }); }, { rootMargin: '0px 0px -8% 0px' });
+          settle.forEach(function (el) { io.observe(el); });
+        } else settle.forEach(function (el) { el.classList.add('in'); });
+      })();
     </script>
+    <slot name="end" />
   </body>
 </html>

@@ -1,0 +1,15 @@
+---
+// A close-up: a part of the app at its true size (w / scale) times the mockup's scale k, on a small stage.
+import Shot from './Shot.astro';
+import shots from '../data/shots.json';
+import type { Frag } from '../data/site';
+interface Props { f: Frag; class?: string }
+const { f, class: cls } = Astro.props;
+const s = (shots as Record<string, { w: number; scale: number }>)[f.name];
+const w = Math.round((s.w / s.scale) * f.k);
+---
+<article class:list={['cell settle', cls]}>
+  <div class:list={['stage', f.stage, { mid: f.mid }]} data-ui><Shot name={f.name} phone={f.phone} class="frag" style={`--w:${w}px`} alt={f.alt} /></div>
+  <h3>{f.title}</h3>
+  <p>{f.text}</p>
+</article>

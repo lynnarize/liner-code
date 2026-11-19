@@ -1,0 +1,22 @@
+---
+// The tools' marks, drawn from the app's own BRANDS (24-unit paths, even-odd). A tool with no path
+// (Antigravity) is a rounded tile with its letters knocked out, as ModelMark in ui/src/app/icons.tsx does.
+import { BRANDS, type Brand } from '../../../ui/src/app/brands';
+import { tools } from '../data/site';
+---
+<ul class="marks">
+  {tools.list.map((k) => {
+    const b = BRANDS[k as Brand];
+    const two = b.letters.length > 1;
+    return (
+      <li>
+        {b.paths.length ? (
+          <svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true">{b.paths.map((d) => <path d={d} />)}</svg>
+        ) : (
+          <svg viewBox="0 0 16 16" aria-hidden="true"><mask id={`cut-${k}`}><rect width="16" height="16" rx="4.5" fill="#fff" /><text x="8" y="8.6" text-anchor="middle" dominant-baseline="middle" fill="#000" font-family="Inter Tight, Inter, system-ui, sans-serif" font-weight="700" font-size={two ? 7.6 : 9.6} letter-spacing={two ? -0.4 : 0}>{b.letters}</text></mask><rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url(#cut-${k})`} /></svg>
+        )}
+        {tools.names[k]}
+      </li>
+    );
+  })}
+</ul>

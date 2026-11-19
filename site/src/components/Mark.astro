@@ -1,11 +1,7 @@
 ---
-// Liner Code's mark: two turns round one centre, the outer one in ink and the inner one in Liner
-// blue. Drawn from docs/brand/icon-2026/liner-code-mark.svg (radii 236 and 112, stroke 78), in a
-// square box round the centre so it sits where the old mark sat.
-interface Props { class?: string; title?: string }
-const { class: cls, title } = Astro.props;
+// The mark, in one place: the nav, the footer tile and (by hand, in public/favicon.svg and scripts/icons.cjs)
+// the icons. Provisional: two slanted strokes, the second in the accent; the owner is choosing among options.
+interface Props { class?: string }
+const { class: cls } = Astro.props;
 ---
-<svg class:list={['mark', cls]} viewBox="192 192 640 640" fill="none" stroke-width="78" stroke-linecap="round" role={title ? 'img' : undefined} aria-hidden={title ? undefined : 'true'} aria-label={title}>
-  <path class="mark__a" d="M309 300V488A236 236 0 0 0 545 724H715" stroke="currentColor" />
-  <path class="mark__b" d="M433 424V488A112 112 0 0 0 545 600H591" stroke="var(--mark-b, #609efa)" />
-</svg>
+<svg class:list={['mark', cls]} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" aria-hidden="true"><path d="M5.2 19.6 10.6 4.4"/><path class="mark-accent" d="M13.4 19.6 18.8 4.4" stroke="#2a6fe8"/></svg>

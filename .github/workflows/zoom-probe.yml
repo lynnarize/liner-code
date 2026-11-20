@@ -17,4 +17,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Electron's binary is fetched on first use, and its notice would land in the path below: fetch it first.
+      - run: node node_modules/electron/install.js
       - run: '"$(node -e "console.log(require(\"electron\"))")" .github/zoom-diag/probe.cjs'

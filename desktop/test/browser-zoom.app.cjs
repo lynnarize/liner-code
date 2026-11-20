@@ -12,7 +12,7 @@ const script = (js) => `<script>${js}</` + "script>";
 
 // Anybody's animation: a canvas as large as the window, at the pixels the window says it has.
 const page = `<!doctype html><body style="margin:0"><canvas id="c"></canvas>${script(
-  `const say=()=>{c.width=Math.round(innerWidth*devicePixelRatio);c.height=Math.round(innerHeight*devicePixelRatio);parent.postMessage({page:1,w:innerWidth,h:innerHeight,dpr:devicePixelRatio,canvas:[c.width,c.height],wide:matchMedia("(min-width: 1280px)").matches},"*")};addEventListener("resize",say);say()`,
+  `const say=()=>{c.width=Math.round(innerWidth*devicePixelRatio);c.height=Math.round(innerHeight*devicePixelRatio);self.found={page:1,w:innerWidth,h:innerHeight,dpr:devicePixelRatio,canvas:[c.width,c.height],wide:matchMedia("(min-width: 1280px)").matches};parent.postMessage(found,"*")};addEventListener("resize",say);say()`,
 )}`;
 /** The window's page: the Browser's zoom box and its frame, placed as surfaces.css places them. */
 const host = (frameSrc, css) =>
@@ -39,15 +39,16 @@ async function run(name, css) {
   const out = { name, css };
   try {
     await wc.loadURL(`http://127.0.0.1:${server.address().port}${path}`);
-    // The page says again whenever its window's size changes: what it said last, once it has settled. On a cold runner
-    // its first word can come before the frame is laid out, as a window 0 wide (CI run 44701494292), so wait for a size.
-    for (let i = 0; i < 40 && !(await wc.mainFrame.executeJavaScript("Boolean(self.heard && self.heard.w > 0)")); i++) await new Promise((ok) => setTimeout(ok, 100));
+    // The page says what it found once it has loaded, and again when its window's size changes; wait for that first word.
+    for (let i = 0; i < 40 && !(await wc.mainFrame.executeJavaScript("self.heard")); i++) await new Promise((ok) => setTimeout(ok, 100));
     await new Promise((ok) => setTimeout(ok, 300));
-    Object.assign(out, await wc.mainFrame.executeJavaScript(`(()=>{const r=f.getBoundingClientRect();return {page:self.heard,hostDpr:devicePixelRatio,client:[f.clientWidth,f.clientHeight],drawn:[r.width,r.height]}})()`));
-    out.processes = wc.mainFrame.framesInSubtree.map((f) => f.processId);
-    // The frame's own size, read from inside it rather than from what it last posted: tells a late word from no size.
-    const inner = wc.mainFrame.framesInSubtree[1];
-    out.inner = inner ? await inner.executeJavaScript("[innerWidth, innerHeight, document.visibilityState]").catch((e) => String(e)) : null;
+    Object.assign(out, await wc.mainFrame.executeJavaScript(`(()=>{const r=f.getBoundingClientRect();return {hostDpr:devicePixelRatio,client:[f.clientWidth,f.clientHeight],drawn:[r.width,r.height]}})()`));
+    const frames = wc.mainFrame.framesInSubtree;
+    out.processes = frames.map((f) => f.processId);
+    // What the page finds now, asked inside its frame: its last word can be stale. Under the full desktop suite on a CI
+    // runner (run 44709755604) a page's first word said a window 0 wide, the size came after with no resize event, and the
+    // frame read 1280 by 2523 from inside while the word stayed 0. Its own say() sizes the canvas as an animation would.
+    out.page = await frames[1].executeJavaScript("say(), self.found");
   } catch (e) {
     out.error = String(e);
   }

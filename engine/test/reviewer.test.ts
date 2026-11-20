@@ -358,13 +358,16 @@ test("a fork while the Reviewer reads the last change takes that turn along: it 
   providers.codex = { ...codex, open: (o) => (o.access === "read" ? { ...codex.open(o), turn: async (text, sink, signal) => ((reading = true), await new Promise<void>((r) => (release = r)), codex.open(o).turn(text, sink, signal)) } : codex.open(o)) };
   try {
     const { store, runtime } = await session();
-    const { createApi } = await import("../src/api.ts");
-    const api = createApi(store, runtime, process.env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
     const working = runtime.send("t", "add a dark mode toggle to settings");
-    // A cold CI runner can take seconds to reach the Reviewer's read: wait on the clock, not a tick count.
     const deadline = Date.now() + 20_000;
     while (!reading && Date.now() < deadline) await tick();
     assert.ok(reading && runtime.isRunning("t"), "the Reviewer reads");
+    // The API looks for the real tools as it starts, and that look replaces these fake ones (which list no models), so
+    // a look that ends before the turn does leaves no Reviewer. On a machine without the tools (CI) it always did: made
+    // only once the Reviewer reads, it can't take the read away. Its PATH holds no agent tool, so the look finds none on
+    // a developer's Mac either, as in CI, and starts none of them.
+    const { createApi } = await import("../src/api.ts");
+    const api = createApi(store, runtime, { PATH: "/usr/bin:/bin", HOME: store.home }, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
     const fork = (await api.call("thread.create", { projectId: "p", forkOf: "t" })) as Thread;
     assert.equal(fork.turns, 1);
     assert.ok(store.timeline(fork.id).some((x) => x.kind === "checkpoint" && x.turn === 1), "the turn that ended comes along, its change too");

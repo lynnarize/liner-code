@@ -1607,7 +1607,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const commits = from ? await log([`${from}..HEAD`]) : await log(["-n", "1", "HEAD"]);
       const at = fork ? (await log(["-n", "1", fork]))[0] : undefined;
       const ahead = fork ? Number((await git(cwd, ["rev-list", "--count", `${fork}..HEAD`])).stdout.trim()) || 0 : commits.length;
-      return { branch, remote, commits, base: at ? { ...at, branch: base.replace(/^[^/]+\//, "") } : undefined, ahead };
+      // The log stops at thirty; the push carries them all, so the card counts them here.
+      const outgoing = from ? Number((await git(cwd, ["rev-list", "--count", `${from}..HEAD`])).stdout.trim()) || 0 : commits.length;
+      // Without an upstream the push publishes the branch, so "nothing to push" would be untrue even with no commits.
+      return { branch, remote, commits, base: at ? { ...at, branch: base.replace(/^[^/]+\//, "") } : undefined, ahead, outgoing, published: Boolean(upstream) };
     },
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);

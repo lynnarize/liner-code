@@ -38,6 +38,7 @@ import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
 import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
 import { keptWrite, wordRead, wordWrite } from "./kept.ts";
+import { jsonFault } from "./json-words";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -2561,10 +2562,13 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
   // The parse's own words, kept beside the manifest: a grey Add it with no reason reads as a broken form.
   const [parsed, why] = useMemo(() => {
     try {
-      const m = JSON.parse(text) as { id?: unknown; secrets?: { name?: unknown; label?: unknown }[] };
+      const m = JSON.parse(text) as { id?: unknown; secrets?: { name?: unknown; label?: unknown }[] } | null;
+      // null, a number or a list is JSON too, but no manifest: say that, not a parse error or a TypeError from reading its id.
+      if (typeof m !== "object" || m === null || Array.isArray(m)) return [null, "A manifest is a JSON object, between { and }."] as const;
       return [{ id: String(m.id ?? ""), secrets: Array.isArray(m.secrets) ? m.secrets.map((k) => ({ name: String(k.name ?? ""), label: String(k.label ?? k.name ?? "") })).filter((k) => k.name) : [] }, ""] as const;
     } catch (e) {
-      return [null, e instanceof Error ? e.message : String(e)] as const;
+      // What is wrong and where, without the offset or the manifest echoed back.
+      return [null, `That isn't JSON yet: ${jsonFault(e instanceof Error ? e.message : String(e))}`] as const;
     }
   }, [text]);
   const add = async () => {
@@ -2601,8 +2605,7 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
       />
       {text.trim() && !parsed && (
         <p id="lc-st-addhand-why" className="lc-sinfo-note" role="alert">
-          {/* The message's first words only: the rest is position numbers, or the whole manifest echoed back. */}
-          That isn't JSON yet: {why.split(",")[0].split(" ").slice(0, 6).join(" ")}
+          {why}
         </p>
       )}
       {Boolean(parsed?.secrets.length) && (

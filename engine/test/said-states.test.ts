@@ -29,6 +29,13 @@ test("the docked Changes keeps a failed diff said, as the Review does", () => {
   assert.ok(/Reading the changes/.test(changes), "the wait while the diff reads is gone");
 });
 
+test("the docked Changes keeps its turn picker when a diff fails, so another turn is one press away", () => {
+  // The picker rides in CodeDiff's strip, which a failed diff doesn't draw: the note has to carry it.
+  const changes = span(app("Panel.tsx"), "function Changes(");
+  const note = span(changes, `title="The changes didn't open"`, "</SurfaceNote>");
+  assert.ok(/action=\{picker\}/.test(note), "a failed diff leaves the docked Changes with no turn picker");
+});
+
 test("Settings' memory and rules editors say a failed read instead of empty or gone", () => {
   const editors = span(app("Settings.tsx"), "function MemoryEditor(", "function RulesForm(");
   assert.ok(count(editors, /role="alert"/g) >= 2, "both editors say the failure with role=alert");
@@ -72,9 +79,37 @@ test("the by-hand manifest form says why Add it is grey", () => {
   assert.ok(/aria-invalid/.test(hand) && /aria-describedby/.test(hand), "the textarea does not carry the failure for a screen reader");
 });
 
+test("the by-hand manifest form says a manifest is an object when the JSON is null, a number or a list", () => {
+  // JSON.parse("null") succeeds, and reading its id then threw: the line said "That isn't JSON yet: Cannot read properties of null".
+  const hand = span(app("Settings.tsx"), "export function AddByHand(", "/* ---------------------------------- Projects");
+  const parse = span(hand, "JSON.parse(text)", "}, [text]);");
+  assert.ok(hand.includes("A manifest is a JSON object"), "valid JSON that isn't an object is not said as such");
+  const check = parse.search(/Array\.isArray\(m\)/);
+  assert.ok(check >= 0 && /typeof m !== "object"/.test(parse), "a null, a number or a list is not turned away before its id is read");
+  assert.ok(check < parse.indexOf("m.id"), "the id is read before the manifest is known to be an object");
+});
+
 test("Home's notices keep a dismissal in every tool state, through toolShown", () => {
   const updates = app("Updates.tsx");
   assert.ok(/import \{ toolShown \} from "\.\/update-notices"/.test(updates), "noticesOf does not read the pure rule");
   assert.ok(/u\.tools\.filter\(\(t\) => toolShown\(t, u\.dismissed\)\)/.test(updates), "the filter does not honour a dismissal in every state");
   assert.ok(!/t\.state === "available" && u\.dismissed\[t\.id\] === t\.latest/.test(updates), "the old available-only filter is still there");
+});
+test("the by-hand manifest form names a JSON fault in whole words, with where it is, never a phrase cut off mid-way", async () => {
+  const { jsonFault } = await import("../../ui/src/app/json-words.ts");
+  const fault = (text: string) => {
+    try {
+      JSON.parse(text);
+    } catch (e) {
+      return jsonFault((e as Error).message);
+    }
+    throw new Error(`${text} parsed`);
+  };
+  assert.equal(fault('{"id" "x"}'), "Expected ':' after property name (line 1, column 7)");
+  assert.equal(fault('{"id": "x"'), "Expected ',' or '}' after property value (line 1, column 11)");
+  assert.equal(fault('{"id": "x",}'), "Expected double-quoted property name (line 1, column 12)");
+  assert.equal(fault("{"), "Expected property name or '}' (line 1, column 2)");
+  assert.equal(fault(""), "Unexpected end of JSON input");
+  const hand = app("Settings.tsx");
+  assert.ok(hand.includes("That isn't JSON yet: ${jsonFault("), "the form does not name the fault through jsonFault");
 });

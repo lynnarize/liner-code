@@ -66,3 +66,15 @@ test("Device's remembered simulator is read and written guarded", () => {
   assert.ok(/wordWrite\(localStorage, "lc:device", udid\)/.test(device), "the udid write is still bare");
   assert.ok(!/localStorage\.getItem\(/.test(device) && !/\.setItem\(/.test(device), "a bare storage call remains in Device");
 });
+test("the composer's Enter choice is a known word, read guarded, so a storage-less window still opens a session", () => {
+  const composer = app("Composer.tsx");
+  assert.ok(/wordRead\(localStorage, "lc:enter", \["queue", "steer"\], "queue"\)/.test(composer), "the composer's lc:enter read is still a bare cast that throws without storage");
+  assert.ok(!/localStorage\.getItem\("lc:enter"\)/.test(composer), "a bare lc:enter read remains in the composer");
+});
+
+test("the Wall's filter is read and written guarded, so a storage-less window still opens the Wall", () => {
+  const wall = app("Wall.tsx");
+  assert.ok(/wordRead\(sessionStorage, "lc:wall-filter", \["all", "needs", "working", "done"\], "all"\)/.test(wall), "the Wall's filter read is still bare");
+  assert.ok(/wordWrite\(sessionStorage, "lc:wall-filter", filter\)/.test(wall), "the Wall's filter write is still bare");
+  assert.ok(!/sessionStorage\.getItem\(/.test(wall) && !/\.setItem\(/.test(wall), "a bare storage call remains in the Wall");
+});

@@ -1651,9 +1651,10 @@ export type Rpc = {
   /**
     What a push would send: the commits its remote hasn't got (before the first push, all since the
     base), newest first; the commit the branch left the base at (main, master, or the remote's
-    HEAD); and how many commits ahead of the base it is.
+    HEAD); how many commits ahead of the base it is; how many the push carries in all (`commits` stops
+    at thirty); and whether the branch has an upstream yet (without one, the push publishes it).
   */
-  "git.outgoing": [{ threadId: string }, { branch: string; remote: string | null; commits: GitCommit[]; base?: GitCommit & { branch: string }; ahead: number }];
+  "git.outgoing": [{ threadId: string }, { branch: string; remote: string | null; commits: GitCommit[]; base?: GitCommit & { branch: string }; ahead: number; outgoing: number; published: boolean }];
   /** Switches the session's checkout to a branch, or to a new one made from where it is. */
   "git.switch": [{ threadId: string; branch: string; create?: boolean }, { branch: string }];
   /** The editors and terminals on this Mac that can open a folder, by bundle id. */

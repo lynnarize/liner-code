@@ -33,6 +33,7 @@ import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
+import { wordRead } from "./kept";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -339,7 +340,8 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   // A queued message being edited: it keeps its place in the queue, and the draft it pushed aside comes back after.
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null);
   const [files, setFiles] = useState<File[]>(() => draftFiles.get(draftKey) ?? []);
-  const [mode, setMode] = useState<"queue" | "steer">(() => (localStorage.getItem("lc:enter") as "steer") ?? "queue");
+  // Read guarded: a window whose storage throws would otherwise fail here and take the whole session view with it.
+  const [mode, setMode] = useState<"queue" | "steer">(() => wordRead(localStorage, "lc:enter", ["queue", "steer"], "queue") as "queue" | "steer");
   const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" } | null>(null);
   const [found, setFound] = useState<Choice[]>([]);
   const [tools, setTools] = useState<{ commands: CommandInfo[]; skills: SkillInfo[] } | null>(null);

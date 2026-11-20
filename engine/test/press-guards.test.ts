@@ -46,3 +46,11 @@ test("a held Send-now shortcut sends one message", () => {
   assert.ok(steered.includes("const s = steered.current;"), "the steered effect could not be read");
   assert.ok(/sendingNow\.current\.delete\(id\)/.test(steered), "the queue effect does not clear the mark once the message is gone");
 });
+test("Compact stays held from its press until its turn is seen running, not only until the send is accepted", () => {
+  const surface = span(app("SessionInfo.tsx"), "export function SessionSurface(", "/** The pull request's checks");
+  const press = span(surface, "const compactNow", "\n  };");
+  // thread.send answers before the turn's status arrives, so clearing the mark on that answer leaves a gap a second press gets through.
+  assert.ok(!/\.finally\(\(\) => setCompacting\(false\)\)/.test(press), "the mark clears as soon as the send is accepted, before the turn is seen running");
+  assert.ok(/useEffect\(\(\) => \{\s*if \(!compacting\) return;\s*if \(running\) return void setCompacting\(false\);/.test(surface), "nothing hands the mark over to the turn's own running state");
+  assert.ok(/setTimeout\(\(\) => setCompacting\(false\), 5000\)/.test(surface), "a mark whose turn never shows running is never let go");
+});

@@ -16,7 +16,7 @@ of this document says what each of those needs.
 
 | Needed | Version | Why |
 | --- | --- | --- |
-| macOS | 14 or newer | the shell |
+| macOS | 13 or newer | the shell (Electron's own floor, `LSMinimumSystemVersion` 13.0) |
 | Node.js | 24 or newer | runs the engine's TypeScript directly (type stripping) |
 | git | 2.30 or newer | turn snapshots, diffs, undo, commit, worktrees |
 | At least one agent | signed in | Claude Code `claude auth login`, Codex `codex login`, OpenCode `opencode auth login`, Hermes `hermes model` |

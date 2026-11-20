@@ -24,6 +24,7 @@ import { isStep, liveOf, ROW_IN, StepIcon, Tick, ticked, trailSteps, type TrailS
 import { pairOf } from "./Crew";
 import { Kbd, Lines, SendButton, StatusMark } from "./ui";
 import * as os from "./os";
+import { wordRead, wordWrite } from "./kept";
 import "./wall.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -278,11 +279,9 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     const t = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(t);
   }, []);
-  const [filter, setFilter] = useState<Filter>(() => {
-    const kept = sessionStorage.getItem("lc:wall-filter");
-    return kept === "needs" || kept === "working" || kept === "done" ? kept : "all";
-  });
-  useEffect(() => sessionStorage.setItem("lc:wall-filter", filter), [filter]);
+  // Kept for the window through kept.ts, so a window whose storage throws still opens the Wall, on All.
+  const [filter, setFilter] = useState<Filter>(() => wordRead(sessionStorage, "lc:wall-filter", ["all", "needs", "working", "done"], "all") as Filter);
+  useEffect(() => wordWrite(sessionStorage, "lc:wall-filter", filter), [filter]);
   // While the pointer is over the tiles they hold their places: one that finishes or starts to wait
   // doesn't move from under a click. They take their order when it leaves; a new one joins at the end.
   const held = useRef<string[] | null>(null);

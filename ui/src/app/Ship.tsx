@@ -12,7 +12,7 @@ import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
 import { I } from "./icons";
 import { ago, plural } from "./model";
-import { pushCount, shipLive } from "./ship-words.ts";
+import { pushCount, shipLive, shipWords } from "./ship-words";
 
 /** 0 the chip, 1 committing, 2 pushing, 3 pushed, 4 folded back into a chip. */
 type Stage = 0 | 1 | 2 | 3 | 4;
@@ -30,6 +30,12 @@ type Shipment = {
   base?: GitCommit & { branch: string };
   /** How many commits the branch is ahead of the base. */
   ahead?: number;
+  /** Whether git.outgoing answered, so `commits` is what goes out rather than nothing known. */
+  counted?: boolean;
+  /** Every commit the push carries; `commits` lists at most thirty of them. */
+  outgoing?: number;
+  /** Whether the branch has an upstream; without one the push publishes it. */
+  published?: boolean;
   /** The commit this made, once git says its sha. */
   fresh?: string;
   error?: string;
@@ -77,7 +83,7 @@ export async function ship(thread: Thread, commit: { message: string; paths?: st
     let start = performance.now();
     patch(id, { stage: commit ? 1 : 2 });
     const was = await before;
-    if (was) patch(id, { branch: was.branch, remote: was.remote, commits: was.commits, base: was.base, ahead: was.ahead });
+    if (was) patch(id, { branch: was.branch, remote: was.remote, commits: was.commits, base: was.base, ahead: was.ahead, outgoing: was.outgoing, published: was.published, counted: true });
     if (commit) {
       const r = await rpc("git.commit", { threadId: id, message: commit.message.trim() || undefined, paths: commit.paths });
       committed = true;
@@ -87,7 +93,7 @@ export async function ship(thread: Thread, commit: { message: string; paths?: st
       patch(id, { stage: 2 });
     }
     const now = await rpc("git.outgoing", { threadId: id }).catch(() => null);
-    if (now) patch(id, { branch: now.branch, remote: now.remote, commits: now.commits, base: now.base, ahead: now.ahead });
+    if (now) patch(id, { branch: now.branch, remote: now.remote, commits: now.commits, base: now.base, ahead: now.ahead, outgoing: now.outgoing, published: now.published, counted: true });
     const p = await rpc("git.push", { threadId: id });
     patch(id, { branch: p.branch, remote: p.remote });
     await holdFrom(start, 1700);
@@ -129,16 +135,19 @@ export function ShipCard({ thread }: { thread: Thread }) {
   }, [thread.turns]);
   if (!s) return null;
   const rows = rowsOf(s);
-  const n = pushCount({ files: s.files, rows: rows.length, commits: s.commits.length });
-  // Opacity hides the other stages from eyes only; aria-hidden keeps them out of the live region too.
+  // Every commit that goes out, not only the four rows shown; the one this makes counts until git lists it.
+  const n = pushCount({ files: s.files, commits: s.outgoing ?? s.commits.length, listed: Boolean(s.fresh) && s.commits.some((c) => c.sha === s.fresh), counted: Boolean(s.counted) });
+  // Opacity hides the other stages from eyes only; aria-hidden keeps them out of the live region too, and inert keeps
+  // the folded rows and the button that isn't shown yet out of reach as well.
   const live = shipLive(s.stage);
   const remote = s.remote ?? "origin";
+  const words = shipWords(n, remote, s.published !== false);
   const ahead = s.base && s.ahead ? `, ${plural(s.ahead, "commit")} ahead of ${s.base.branch}` : "";
   const bars = Math.min(5, Math.max(1, Math.round(Math.log2(s.added + s.removed + 1))));
   const red = s.added + s.removed ? Math.round((s.removed / (s.added + s.removed)) * bars) : 0;
   return (
     <div className="lc-ship" data-p={s.stage} data-out={s.out || undefined} data-error={s.error ? "" : undefined} role="status" aria-live="polite">
-      <div className="lc-ship-msg">
+      <div className="lc-ship-msg" aria-hidden={!live.msg}>
         <div>
           {!s.error && (
             <p>
@@ -150,7 +159,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
       </div>
       <div className="lc-ship-wrap">
         <div className="lc-ship-morph">
-          <div className="lc-ship-body">
+          <div className="lc-ship-body" inert={!live.body || undefined}>
             <div>
               <div className="lc-ship-in">
                 <div className="lc-ship-head" style={{ "--d": "120ms" } as CSSProperties}>
@@ -182,7 +191,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
                       {s.branch ? `/${s.branch}` : ""}
                     </span>
                     <span className="lc-ship-meta lc-ship-sw">
-                      <span className="m0" aria-hidden={!live.m0}>{n ? `${plural(n, "commit")} to push` : "up to date"}</span>
+                      <span className="m0" aria-hidden={!live.m0}>{words.meta}</span>
                       <span className="m1" aria-hidden={!live.m1}>up to date</span>
                     </span>
                   </div>
@@ -234,7 +243,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
               <span className="x2" aria-hidden={!live.x2}>
                 <span className="lc-ship-spin" aria-hidden />
                 <span className="l-shimmer">
-                  {n ? `Pushing ${plural(n, "commit")} to ${remote}` : `Pushing to ${remote}`}
+                  {words.pushing}
                 </span>
               </span>
               <span className="x3" aria-hidden={!live.x3}>
@@ -243,7 +252,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
               </span>
               <span className="x4" aria-hidden={!live.x4}>
                 {s.error ? <I.alert size={14} /> : <I.check size={14} />}
-                {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : n ? `Pushed ${plural(n, "commit")}` : "Everything is up to date"}
+                {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : words.pushed}
               </span>
             </span>
             {s.added + s.removed > 0 && (
@@ -260,11 +269,11 @@ export function ShipCard({ thread }: { thread: Thread }) {
           </div>
         </div>
         {s.error ? (
-          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" title={s.error} onClick={() => dismiss(thread.id)}>
+          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" inert={!live.next || undefined} title={s.error} onClick={() => dismiss(thread.id)}>
             Dismiss
           </button>
         ) : (
-          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" onClick={() => (dismiss(thread.id), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(String(e?.message ?? e))))}>
+          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" inert={!live.next || undefined} onClick={() => (dismiss(thread.id), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(String(e?.message ?? e))))}>
             <I.pr size={14} />
             Open a pull request
           </button>

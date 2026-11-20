@@ -1,6 +1,6 @@
 # Liner Code: threat model
 
-Repository: `lynnarize/liner-code`, version 0.2.9 beta. No infrastructure repository: the app runs locally, and the marketing site is a static Cloudflare Worker defined in `site/wrangler.jsonc`.
+Repository: `lynnarize/liner-code`, version 0.3.0 beta. No infrastructure repository: the app runs locally, and the marketing site is a static Cloudflare Worker defined in `site/wrangler.jsonc`.
 Legend: **[user]** = stated by the repo owner; **[code]** = inferred from the code.
 
 ## System overview and trust boundaries

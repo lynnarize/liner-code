@@ -567,3 +567,34 @@ test("quitting: a save that fails on the way out still ends the engine", { skip:
   }
 });
 
+
+/** A repo with a bare origin that main has been pushed to, so a branch can be pushed or not. */
+function pushed() {
+  const r = repo();
+  const origin = temp("origin");
+  execFileSync("git", ["init", "-q", "--bare", origin]);
+  r.git("remote", "add", "origin", origin);
+  r.git("push", "-q", "-u", "origin", "main");
+  return r;
+}
+
+test("git.outgoing: a push of more than thirty commits counts every one, not only the thirty it lists", async () => {
+  const { dir, git } = pushed();
+  for (let i = 0; i < 35; i++) git("commit", "-q", "--allow-empty", "-m", `c${i}`);
+  const { store, call } = await apiFor(dir, true);
+  store.putThread(thread("th_a"));
+  const r = await call<{ commits: unknown[]; outgoing: number; published: boolean }>("git.outgoing", { threadId: "th_a" });
+  assert.equal(r.commits.length, 30);
+  assert.equal(r.outgoing, 35);
+  assert.equal(r.published, true);
+});
+
+test("git.outgoing: a branch never pushed says so, even when it has no commit of its own", async () => {
+  const { dir, git } = pushed();
+  git("switch", "-q", "-c", "fresh");
+  const { store, call } = await apiFor(dir, true);
+  store.putThread(thread("th_a"));
+  const r = await call<{ commits: unknown[]; outgoing: number; published: boolean }>("git.outgoing", { threadId: "th_a" });
+  assert.equal(r.outgoing, 0);
+  assert.equal(r.published, false);
+});

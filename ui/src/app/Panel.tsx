@@ -726,7 +726,8 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
             <span className="l-shimmer">Reading the changes</span>
           </div>
         ) : diffErr ? (
-          <SurfaceNote icon={<I.alert size={20} />} title="The changes didn't open">
+          // The picker rides in CodeDiff's strip, which isn't drawn here: the note carries it, so another turn is one press away.
+          <SurfaceNote icon={<I.alert size={20} />} title="The changes didn't open" action={picker}>
             {diffErr}
           </SurfaceNote>
         ) : (

@@ -49,17 +49,23 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
   }, [visible, thread.id, thread.turns, running]);
 
   // A second press before the turn's status lands would queue another /compact, summarising what was just summarised.
-  // The state disables the button from the press itself and clears when the send settles, the turn's own running state
-  // taking over then; a state alone suffices (no ref), handed to ContextCard whose button reads it.
+  // The press disables the button at once, and keeps it so until the turn is seen running (thread.send answers before
+  // that), when the turn's own state takes over; a send that fails lets it go, and so do five seconds without a turn.
   const [compacting, setCompacting] = useState(false);
   const compactNow = () => {
     if (compacting) return;
     setCompacting(true);
     rpc("thread.send", { id: thread.id, text: "/compact" }).then(
       () => toast("Compacting the conversation", { description: "The tool sums up what came before, so the context has room again." }),
-      (e: Error) => toast.error(e.message),
-    ).finally(() => setCompacting(false));
+      (e: Error) => (setCompacting(false), toast.error(e.message)),
+    );
   };
+  useEffect(() => {
+    if (!compacting) return;
+    if (running) return void setCompacting(false);
+    const t = setTimeout(() => setCompacting(false), 5000);
+    return () => clearTimeout(t);
+  }, [compacting, running]);
 
   if (!info) return <div className="lc-sinfo">{failed ? <p className="lc-sinfo-note">{failed}</p> : <span className="l-shimmer lc-sinfo-note">Asking the session</span>}</div>;
 

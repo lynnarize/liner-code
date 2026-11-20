@@ -39,8 +39,9 @@ async function run(name, css) {
   const out = { name, css };
   try {
     await wc.loadURL(`http://127.0.0.1:${server.address().port}${path}`);
-    // The page says again whenever its window's size changes: what it said last, once it has settled.
-    for (let i = 0; i < 40 && !(await wc.mainFrame.executeJavaScript("self.heard")); i++) await new Promise((ok) => setTimeout(ok, 100));
+    // The page says again whenever its window's size changes: what it said last, once it has settled. On a cold runner
+    // its first word can come before the frame is laid out, as a window 0 wide (CI run 44701494292), so wait for a size.
+    for (let i = 0; i < 40 && !(await wc.mainFrame.executeJavaScript("Boolean(self.heard && self.heard.w > 0)")); i++) await new Promise((ok) => setTimeout(ok, 100));
     await new Promise((ok) => setTimeout(ok, 300));
     Object.assign(out, await wc.mainFrame.executeJavaScript(`(()=>{const r=f.getBoundingClientRect();return {page:self.heard,hostDpr:devicePixelRatio,client:[f.clientWidth,f.clientHeight],drawn:[r.width,r.height]}})()`));
     out.processes = wc.mainFrame.framesInSubtree.map((f) => f.processId);

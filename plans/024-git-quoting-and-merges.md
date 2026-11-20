@@ -1,31 +1,30 @@
-# 024. Git's own quoting and merges stop fooling the turn's attribution and the Reviewer's small-change pass
+# 024. Git's own spelling of a path stops fooling the Reviewer's small-change pass
 
-**Commit message:** `A merge at the turn's start no longer disables its attribution, and a unicode docs change or a pure rename reads as small to the Reviewer`
+**Commit message:** `A docs change with a unicode name, or a docs file renamed in its folder, reads as small to the Reviewer`
 
 Written by the advisor on 2026-11-20 against commit `bfb0ebc` (branch `design-and-api-endpoints`, Liner Code 0.3.0 beta).
-Findings: CORE-01 (MED), CORE-02 (HIGH). Every excerpt below is from the advisor's own read.
+Refreshed 2026-11-20 at 13c7757 after the advisor's review. Findings: CORE-02 (HIGH for the unicode part).
+The old step 1 (CORE-01, "a merge's `%P` is read as two words") is removed: `authoredPaths` reads Liner's own checkpoint
+commits, which `capture()` makes with exactly one parent (`engine/src/checkpoints.ts:147-149`), so `%P` is one hash; a
+probe with the real `capture`/`authoredPaths` on a merge HEAD that moved mid-turn attributed the turn's file alone.
+
+## What the review changed
+
+- Step 1 (CORE-01) is gone: the finding is false (above). The file name stays; the title no longer says "merges".
+- A plain rename already reads small: `git diff` detects renames by default (`diff.renames`), printing
+  `0\t0\tbig.ts => big2.ts`. The old "pure rename fails before" test passed before the fix; it is now a guard.
+- The real rename case is a docs file renamed **inside a folder**: git prints `notes/{a.md => b.md}`, whose `}` defeats
+  the docs test. That is the second failing test now.
+- "-" (a binary) keeps reading as not small, through a parse local to the rule. `numstat()` in checkpoints.ts is not
+  touched (`engine/src/files.ts:106` also uses it and wants "-" as 0).
+- The diff gets `--no-textconv` too, as `changes()` has it. The existing pins are `engine/test/engine.test.ts:698-703`.
+- The tests drive the real Reviewer path (`reviewer.test.ts`'s fake tools), and both were **seen failing** at 13c7757.
 
 ## Why this matters
 
-1. **CORE-01.** `authoredPaths` (`engine/src/checkpoints.ts:226-252`) asks git for the two snapshots' parents and
-   times with `--format=%P %ct` and splits on spaces:
-
-```ts
-  const heads = await git(cwd, ["log", "--no-walk=unsorted", "--format=%P %ct", `${from}^{commit}`, `${to}^{commit}`]);
-  if (heads.code !== 0) return null;
-  const [fromLine = "", toLine = ""] = heads.stdout.trimEnd().split("\n");
-  const [start = "", at = ""] = fromLine.split(" ");
-  const [end = ""] = toLine.split(" ");
-```
-
-   A MERGE commit prints TWO parents, so `at` becomes the second parent's hash, not the commit time. `--since=@${at}`
-   (:244) then fails to parse, `list()` throws, and the catch (:248-251, "An older git without remerge diffs") returns
-   null — which `changes()` reads as "HEAD stayed put, every change is the turn's". When HEAD was a merge at the
-   turn's start and moved during it (a pull or merge mid-turn), files the pull brought in are attributed to the turn:
-   its diff card shows them, and Undo puts back files the turn never wrote. The fallback fires on current git too.
-2. **CORE-02.** The Reviewer's small-change check (`engine/src/runtime.ts:1860`) runs
-   `git diff --relative --numstat from cp.to` with NEITHER `-z` NOR `-M`, and `smallChange`
-   (`contracts/src/index.ts:1194-1200`) tests the third tab-field against `/\.(md|mdx|txt|rst|adoc)$/i`:
+The Reviewer's small-change check (`engine/src/runtime.ts:1860`) runs `git diff --relative --numstat from cp.to` with
+neither `-z` nor `-M`, and `smallChange` (`contracts/src/index.ts:1194-1200`) tests the third tab-field against the docs
+pattern:
 
 ```ts
 export function smallChange(numstat: string) {
@@ -37,114 +36,118 @@ export function smallChange(numstat: string) {
 }
 ```
 
-   Without `-z`, git C-quotes a non-ASCII path (`"caf\303\251.md"`) — the trailing quote defeats the docs test.
-   Without `-M`, a rename reads as delete+add with full line counts. So a 50-line docs-only change with one unicode
-   file name, or a pure rename of a large file, is never "small": it costs a full Reviewer read (a quiet model turn,
-   up to ten minutes) instead of passing through. The checkpoint path already knows this — `changes()` uses `-M -z`
-   (:187) and `numstat()` (:165-179) parses the -z records, with the comment "Without -z, git quotes a name like
-   café.txt … which matches no file" (:163).
+What that command really prints (probed with git 2.55 on a scratch repo, through `smallChange`):
+
+| Change | Output | small |
+|---|---|---|
+| 50 lines added to `café.md` | `50\t0\t"caf\303\251.md"` | false (the closing quote defeats `.md$`) |
+| `notes/a.md` renamed to `notes/b.md`, 30 lines added | `30\t0\tnotes/{a.md => b.md}` | false (the `}` defeats `.md$`) |
+| `big.ts` renamed to `big2.ts`, unchanged | `0\t0\tbig.ts => big2.ts` | true already |
+
+So a docs-only change is sent to a full Reviewer read (a quiet model turn, up to ten minutes) when its file has a
+non-ASCII name or was renamed within a folder. With `-z`, git writes each path as it is, and a rename as its own
+records (old, new), which `checkpoints.ts` already parses that way (`numstat()`, :165-179, with the comment "Without
+-z, git quotes a name like café.txt … which matches no file").
 
 ## Current state (drift check)
 
 ```bash
-git log --oneline -1                                # bfb0ebc or later
-sed -n '226,252p' engine/src/checkpoints.ts         # authoredPaths
-sed -n '160,179p;186,189p' engine/src/checkpoints.ts # numstat() and changes()'s -M -z
-sed -n '1853,1863p' engine/src/runtime.ts           # changeOf's small path
-sed -n '1190,1200p' contracts/src/index.ts          # SMALL_CHANGE and smallChange
+git log --oneline -1                                 # 13c7757 or later
+sed -n '1853,1863p' engine/src/runtime.ts            # changeOf: the small path at :1860
+sed -n '21,22p' engine/src/runtime.ts                # the contracts import (smallChange) and checkpoints import
+sed -n '1190,1200p' contracts/src/index.ts           # SMALL_CHANGE and smallChange
+sed -n '160,179p;186,189p' engine/src/checkpoints.ts # numstat() and changes()'s flags (do NOT change numstat)
+sed -n '696,704p' engine/test/engine.test.ts         # the existing smallChange pins
+sed -n '36,66p' engine/test/reviewer.test.ts         # fakeTools, the harness the new tests extend
+grep -rn "smallChange" engine/src contracts/src ui/src/app   # changeOf should be the only caller
 ```
 
 ## Rules
 
 - Never run a formatter; do not re-wrap or re-indent unchanged lines. Comments are plain sentences that say why.
 - Do not touch `ui/src/liner/**`, Routines, `mac/`, the Demo provider, `CHANGELOG.md`, the untracked folders.
-- Every fix comes with a test that fails without it, written first. Scratch-repo pattern:
-  `engine/test/checkpoints.test.ts` builds temp git repos and runs real git. Test commands need
+- Every fix comes with a test that fails without it, written first. Test commands need
   `env -u NODE_TEST_CONTEXT -u NODE_TEST_WORKER_ID`.
-- One local commit, the message above. Never push. Steps independent.
+- One local commit, the message above. Never push.
 
 ## Steps
 
-### 1. Read the parent line as parents PLUS a time (CORE-01)
+### 1. The small-change pass reads -z records (CORE-02)
 
-In `authoredPaths`:
-- Change the format to separate the fields unambiguously: `--format=%P%x09%ct` (a tab between the parents and the
-  time). Parse each line by the TAB: the time is the field after the last tab; the parents are the field before it;
-  `start`/`end` remain the FIRST parent hash (`parents.split(" ")[0]`), keeping the existing first-parent semantics
-  and the `start === end` early return. A root commit (empty %P) still yields an empty start → null, as today.
-- One comment saying why: a merge prints two parents, and a space-split read the second as the time.
-- Do not change the remerge-diff lists, the prefix handling, or the null fallback (it stays for genuine failures).
+**Test first** (add to `engine/test/reviewer.test.ts`, which already has the harness):
+- Give `fakeTools` one more option, `write?: (cwd: string) => void`: when set, a writing turn calls it instead of writing
+  its `${name}.ts` file, then says "Done." (one line before `const name = …`:
+  `if (o.write) return void (o.write(opts.cwd), sink.text("Done."));`). Nothing else in the helper changes.
+- Four tests. Each starts a session with `session()`, sends one message with `runtime.send`, and asserts `order(calls)`:
+  - "reviewer: a fifty-line change to a unicode-named markdown file goes through as small": the turn writes 50 lines to
+    `café.md`; expect `["claude-sonnet-5-5 writes"]` (no read). **Seen failing at 13c7757**: actual has
+    `"gpt-6-sol reads"`.
+  - "reviewer: a docs file renamed within its folder, with an edit, goes through as small": before sending, write
+    `notes/a.md` (40 lines) and commit it (the `git` helper inside `session()` isn't returned, so run git as `session()`
+    does, with `-c commit.gpgsign=false -c core.hooksPath=/dev/null`); the turn renames it to `notes/b.md` and appends 30
+    lines; expect no read. **Seen failing at 13c7757** the same way.
+  - Guard, passes before and after: "reviewer: a pure rename of a large file goes through as small" (commit a 500-line
+    `big.ts`, the turn renames it to `big2.ts`).
+  - Guard, passes before and after: "reviewer: a binary change is read" (the turn writes a few PNG bytes to `logo.png`;
+    expect `["claude-sonnet-5-5 writes", "gpt-6-sol reads"]`).
+  The existing "ten lines of code are read" behaviour is already covered by the file's other tests.
 
-**Test first** (`engine/test/authored-paths.test.ts`, scratch repo): build a repo where HEAD is a MERGE commit at the
-turn's start (branch, commit on each side, merge --no-ff), take `from` at the merge, make a turn commit that writes
-file A, then bring in an unrelated commit via a second parent line or a pull-like fast-forward that writes file B
-(the simplest: `to` = a descendant merge that merged a branch writing B during the "turn"). Call
-`authoredPaths(cwd, from, to)`; assert it returns a Set containing A and NOT B. Before the fix it returns null (the
-`--since=@<hash>` failure) — see it fail. Also pin: a non-merge HEAD still works (the existing case), and HEAD staying
-put still returns null.
-**Verify:** `env -u NODE_TEST_CONTEXT -u NODE_TEST_WORKER_ID node --test engine/test/authored-paths.test.ts` and
-`engine/test/checkpoints.test.ts` pass; engine typecheck exits 0.
-
-### 2. The small-change numstat comes with -z and -M, parsed as the checkpoint path parses it (CORE-02)
-
-- In `contracts/src/index.ts`, add a counts-based sibling beside `smallChange` (keep `smallChange` for any other
-  caller — grep it first; if changeOf is the only caller, refactor it to delegate and say so):
+**Fix:**
+- In `contracts/src/index.ts`, beside `smallChange`, add a sibling that takes `git diff --numstat -z` output and hands
+  `smallChange` its records as tab lines, so the rule (docs pattern, SMALL_CHANGE, "-" as Infinity) stays in one place:
 
 ```ts
-/** The same rule over parsed -z numstat counts (checkpoints.numstat): a rename is its new path with its own counts,
-    and a unicode path is itself, not git's quoted spelling. */
-export function smallCounts(counts: Map<string, [number, number]>): boolean {
-  if (!counts.size) return true;
-  let lines = 0;
-  let docs = true;
-  for (const [path, [a, r]] of counts) {
-    if (!/\.(md|mdx|txt|rst|adoc)$/i.test(path) && !/^docs\//.test(path)) docs = false;
-    lines += a + r;
+/**
+  The same rule over `git diff --numstat -z`: a rename is its new path, and a name like café.md is itself, not git's
+  quoted spelling. "-" (a binary) still counts as more than small.
+*/
+export function smallChangeZ(numstat: string) {
+  const rec = numstat.split("\0");
+  const files: string[][] = [];
+  for (let i = 0; i < rec.length; i++) {
+    const m = /^(\d+|-)\t(\d+|-)\t/.exec(rec[i]);
+    if (!m) continue;
+    let path = rec[i].slice(m[0].length);
+    if (!path) {
+      path = rec[i + 2] ?? "";
+      i += 2;
+    }
+    files.push([m[1], m[2], path]);
   }
-  return docs || lines <= SMALL_CHANGE;
+  return smallChange(files.map((f) => f.join("\t")).join("\n"));
 }
 ```
 
-  (Binary counts: `numstat()` already maps "-" to 0 — a binary-only change reads as 0 lines, which matches the old
-  code's Infinity→not-small? NO: the old code treats "-" as Infinity (not small). Preserve that: carry binary as a
-  flag. Read numstat(): it maps "-" to 0, losing the binary distinction. Either extend numstat to keep "-" as
-  Infinity in the tuple, or have smallCounts take the raw records. Choose the smallest change that keeps the OLD
-  semantics for binaries — a binary change must NOT read as small. Pin it with a test either way.)
-- In `engine/src/runtime.ts`'s `changeOf` (:1860): run the small-path diff with `-M -z`
-  (`["diff", "--relative", "--no-ext-diff", "-M", "-z", "--numstat", from, cp.to]`), parse with `numstat()`
-  (import from `./checkpoints.ts` — runtime already imports from it; verify), and call `smallCounts`. The full-diff
-  path (:1861) stays as it is.
-- Do not change SMALL_CHANGE, the docs extensions, or the reviewSmall setting's behaviour.
+  (The record walk is the one `checkpoints.ts numstat()` uses: a rename's counts come with an empty path, then its old
+  and new paths as records of their own.)
+- In `engine/src/runtime.ts` `changeOf` (:1860): run
+  `["diff", "--relative", "--no-ext-diff", "--no-textconv", "-M", "-z", "--numstat", from, cp.to]` and call
+  `smallChangeZ` on its stdout. In the import at :21 swap `smallChange` for `smallChangeZ` (the only caller; keep
+  `smallChange` exported, `engine.test.ts` pins it). The full-diff path (:1861) stays as it is.
+- Do not change SMALL_CHANGE, the docs pattern, `numstat()`, or the reviewSmall setting.
 
-**Test first** (`engine/test/small-change.test.ts`): scratch repo + real git, producing the numstat stdout the same
-way changeOf does, then the parse+rule chain:
-- "a fifty-line change in a unicode-named markdown file reads as small" (café.md, 50 lines changed, nothing else) —
-  fails before (quoted path defeats docs, 50 > 6).
-- "a pure rename of a large file reads as small" (git mv of a 500-line file, no content change) — fails before
-  (delete+add counts).
-- "a binary change does not read as small" (a PNG byte change) — passes before and after (the semantics guard).
-- "a fifty-line code change does not read as small" — guard.
-- "an ascii docs-only change still reads as small" — guard.
-Plus a contracts unit test of smallCounts over hand-built maps (empty → true, docs-only → true, few lines → true).
-**Verify:** the new tests, `engine/test/reviewer.test.ts` (the small-change behaviour it pins), engine typecheck.
+The advisor tried exactly this in a scratch worktree: the four tests pass, `reviewer.test.ts` and `engine.test.ts`
+pass (68/68), and the engine typecheck is clean.
+
+**Verify:**
+`env -u NODE_TEST_CONTEXT -u NODE_TEST_WORKER_ID node --test engine/test/reviewer.test.ts engine/test/engine.test.ts`
+passes; `npm run typecheck -w engine` exits 0.
 
 ## Done
 
-- Both new test files fail before their fixes and pass after; checkpoints.test.ts and reviewer.test.ts still pass;
-  `npm run typecheck` exits 0.
-- One commit, the message above. Executor note: commit, the binary-semantics choice you made, any STOP.
+- The two new reviewer tests fail before the fix and pass after; the two guards pass both times; the
+  `engine.test.ts:698-703` pins still pass; `npm run typecheck` exits 0.
+- One commit, the message above. Executor note in `plans/README.md`: the commit, and that CORE-01 was dropped as false.
 
 ## STOP conditions
 
-- Step 1: the scratch-repo merge scenario cannot be built as described (git version differences): stop, report the
-  git version and what you tried — do not weaken the assertion.
-- Step 2: keeping the binary semantics requires changing `numstat()`'s public shape and other callers depend on the
-  0-mapping: stop and report; a separate records-based parser may be the answer, but decide with the caller list in
-  hand, not by guess.
-- `smallChange` has callers beyond changeOf that pass non-`-z` output: keep it working for them (delegate only the
-  -z path), and say so.
+- `grep smallChange` finds a caller besides `changeOf` that passes non-`-z` output: keep `smallChange` for it (it stays
+  exported anyway) and say so in the note.
+- Either new test passes before the fix on your machine: check `git config --get diff.renames` and `core.quotepath` in
+  your global config (both change git's spelling); report the git version and config instead of weakening the test.
 
 ## Maintenance note
 
-Any new git parsing should use `-z` and the existing `numstat()`/record parsers — the quoting bug class is now pinned
-twice (checkpoints and the Reviewer). A merge commit's `%P` is plural: never space-split a format that contains it.
+Any new git parsing should use `-z` and walk the records as `numstat()` does; a path git prints without `-z` can be
+C-quoted (`"caf\303\251.md"`) or a rename's brace form (`notes/{a.md => b.md}`). The small-change rule lives in one
+function, `smallChange`; `smallChangeZ` only feeds it.

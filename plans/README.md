@@ -15,29 +15,35 @@ here that share its files — 018, 020, 027 — or edit only the regions each pl
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| [015](015-ci-goes-green.md) | CI goes green: the fifth flake tamed, the bundle built on every check | P1 | S | — | DONE |
-| [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | DONE |
-| [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | DONE |
+| [015](015-ci-goes-green.md) | CI goes green: the fifth flake tamed, the bundle built on every check | P1 | S | — | DONE — flake cure corrected in the review round (uncommitted) |
+| [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | DONE — screen-reader leaks and counts corrected in the review round (uncommitted) |
+| [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | DONE — picker, dismissal rule and manifest wording corrected in the review round (uncommitted) |
 | [018](018-one-keyboard-pattern.md) | One keyboard pattern: tablists, radio groups, menus, the add-on sheet, the checks' names | P1 | M | L13 committed (shared files) | TODO |
-| [019](019-storage-and-one-press.md) | A storage-less window keeps working; Compact and Send-now take one press | P1 | S | after 017 (Settings.tsx) | TODO |
-| [020](020-motion-scroll-and-rescroll.md) | Reduce Motion's last three spinners; every page scroller; Changes re-scroll | P1 | S | L13 committed (shared sheets) | TODO |
+| [019](019-storage-and-one-press.md) | A storage-less window keeps working; Compact and Send-now take one press | P1 | S | after 017 (Settings.tsx) | DONE (uncommitted; Composer and Wall finished in the review round) |
+| [020](020-motion-scroll-and-rescroll.md) | Thin scroll bars everywhere; Changes re-scroll (the spinner step removed: UI-03 was false) | P1 | S | L13 committed (shared sheets) | TODO |
 | [021](021-browser-back-and-forward.md) | Browser's Back and Forward grey when there is nowhere to go | P2 | M | — | TODO |
-| [022](022-commit-switch-update-hold-the-thread.md) | Commit, switch and tool update hold the thread; autoPull investigated | P1 | M | — | TODO |
+| [022](022-commit-switch-update-hold-the-thread.md) | Commit, switch and tool update hold the thread; autoPull holds the checkout | P1 | M | — | TODO |
 | [023](023-the-engine-checks-before-it-works.md) | The engine checks before it works: addon-check, boot, MCP key, the walk, endpoint http, turn-grant links | P1 | M | — | TODO |
-| [024](024-git-quoting-and-merges.md) | Git's quoting and merges stop fooling attribution and the small-change pass | P1 | S | — | TODO |
+| [024](024-git-quoting-and-merges.md) | Git's own spelling of a path stops fooling the Reviewer's small-change pass (the merge step removed: CORE-01 was false) | P1 | S | — | TODO |
 | [025](025-wind-down-guards.md) | Deleted-thread sink calls, the surface heartbeat, Stop's disk-full listeners | P1 | S | after 023 (server.ts) | TODO |
 | [026](026-surfaces-survive-the-bad-day.md) | Design/Device survive a huge file, wedged simctl, backslash filter, transient git, gh banner, dead watcher | P2 | M | — | TODO |
-| [027](027-the-dock-stands-still.md) | The dock stands still while the open session streams (measure first) | P2 | M | L13 committed; after 020 (Panel.tsx) | TODO |
-| [028](028-four-provider-details.md) | ACP refusal is an error; Codex tokens clamp; PROMPTED bounded; model choices deduped | P2 | S | — | TODO |
+| [027](027-the-dock-stands-still.md) | The dock stands still while the open session streams (measure first) | P2 | M | L13 committed; after 020 (Panel.tsx) | REJECTED — PERF-01 is false: measured, the dock renders 4 times in 6 s |
+| [028](028-four-provider-details.md) | ACP refusal is an error (not Antigravity's quota); Codex tokens clamp; PROMPTED bounded; model choices deduped | P2 | S | — | TODO |
 | [029](029-codex-keeps-the-guard.md) | Codex keeps the destructive-command guard at Full (investigate + real-Codex gate) | P1 | M | after 028 (providers) | TODO |
 | [030](030-the-swap-checks-at-the-move.md) | The swap script checks the signature itself, right before the move | P2 | M | — | TODO |
+| [031](031-search-off-the-engine-loop.md) | Search and import read histories off the engine's loop (CORE-08, added by the review) | P2 | M | after 022 (runtime/api) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
+**Refreshed after the advisor's review (2026-11-20, `plans/REVIEW-2026-11-20.md`).** Every TODO plan above was
+re-checked against the code and refreshed in place; each begins with "What the review changed". Do not run a copy of
+a plan made before that refresh. Five findings were false (CORE-01, FEAT-02, PROV-03, PERF-01, UI-03); `AUDIT-2026-11-20.md`
+now marks every finding's status. The review round also corrected 015, 016 and 017 and finished 019, all uncommitted
+in the tree; what changed is in `plans/REVIEW-2026-11-20.md`, "The review round".
+
 **Recommended order:** 015 first (it unblocks the release gate — CI is red on main and the desktop steps have never
 run). Then the UI polish cluster 016→017→019→018→020→021 (the owner's stated priority; 017 before 019 and 020 before
-027 because they share files). Then the engine cluster one at a time: 022, 023, 025, 024, 026, 028. Then 027 (needs
-the measuring build). 029 and 030 last — they carry real-tool / real-machine gates.
+027 because they share files). Then the engine cluster one at a time: 022, 023, 025, 024, 026, 028, 031. (027 is rejected.) 029 and 030 last — they carry real-tool / real-machine gates.
 
 **Shared files (run sequentially, not in parallel):** Settings.tsx (017, 019); SessionInfo.tsx (018, 019);
 Panel.tsx (017, 020, 027); Session.tsx (018, 027, L13); server.ts (023, 025); runtime.ts (022, 024, 025);
@@ -151,6 +157,35 @@ The previous run's rules below still hold, plus:
   and success list. NOT SEEN: a real pruned checkpoint on disk, a project folder actually removed outside the app, the engine
   genuinely unreachable (one method aborted in the probe browser only), the dismissed-notice round-trip (the Demo build shows
   no notices at all), VoiceOver announcing the alerts. No STOP.
+- **019** DONE — commit "A window without storage starts on its own instead of breaking, and Compact and Send-now take one
+  press". New shared ui/src/app/kept.ts: keptRead/keptWrite (JSON + an `ok` predicate), wordRead/wordWrite (known words), and
+  textRead (a plain-string try/catch read) — textRead added because lc:project and lc:device store RAW strings, not JSON, so
+  keptRead's JSON.parse would break them; it is the "string read with try/catch" step 2 asked for. App shell: lc:view keptRead
+  with isView validating the outer kind against the file's own nine VIEW_KINDS, lc:sidebar wordRead ["0","1"], lc:project
+  textRead, the writes keptWrite/wordWrite, lc:settings wordWrite. Settings: page wordRead (the fifteen SettingsPage values),
+  enter wordRead ["queue","steer"] (the cast gone), look keptWrite; AgentDialog.tsx checked — already guarded, unchanged.
+  Panel: view wordRead ["unified","split"] + wordWrite. Device: udid textRead + wordWrite. Compact: a `compacting` STATE (not a
+  ref — the button reads the same state, per the plan), set at the press, cleared on settle, disabled reads it. Send-now:
+  `|| e.repeat` in the keydown early-return; a sendingNow Set guard in sendNow, cleared in the queue effect once the message is
+  gone and in the catch. 12/12 tests (kept-storage's five pure tests pass by design against the new module; the press-guards and
+  shell-storage source tests were seen RED then GREEN — "the app shell's storage reads and writes are guarded", "Compact is
+  disabled from its own press", "a held Send-now shortcut sends one message", the view-kind test); typecheck and build exit 0.
+  SEEN on screen (per-browser probes, the isolated Demo engine untouched): **Compact** double-pressed before the status lands →
+  exactly one /compact send, the button disabled mid-flight from its own press and re-enabled after. **Held ⌘⇧Enter**: three
+  messages queued WHILE the Demo turn ran (an idle thread drains its queue at once — runtime.setQueue:522, which is why an
+  idle-thread probe sees nothing), one press + ten repeats → exactly one send (mode steer); the sendingNow guard seen cleanly
+  too — one queued message, its removal RPC delayed so two quick presses both see the same head → one send. **Storage-less**:
+  with storage throwing for every key EXCEPT lc:enter, the app mounts, the composer renders, navigates, opens Changes (diff
+  content), opens Device (via its keyboard shortcut — this build's rail has no Device button), changes the accent (teal applied),
+  zero Boundary faults, ERRORS=[] — every site the plan names survives. **FLAGGED, out of scope (the gate's one gap):** with
+  storage throwing for ALL keys the session view still hits the Boundary at Composer.tsx:342, the bare
+  `localStorage.getItem("lc:enter") as "steer"` read (no try/catch). UI-06's bare-site list and step 6 do not name it; it is
+  pre-existing at bfb0ebc, and its twin at Settings.tsx:88 was in scope and is fixed. One-line follow-up for a later pass:
+  `wordRead(localStorage, "lc:enter", ["queue","steer"], "queue")`. The maintenance note's "zero direct storage calls in the
+  named files" is broader than the tests the steps write (steps 2–4 cover App/Settings/Panel/Device; Composer's storage is not a
+  named step) — a later pass should fold Composer:342 and design/Tabs.tsx's own readKept into kept.ts. NOT SEEN: whether the real
+  tool no-ops a second /compact (Demo only; the plan's MED-confidence note — the guard is right either way); VoiceOver.
+  design/Tabs.tsx untouched (L13's file). No STOP, no formatter.
 
 ---
 

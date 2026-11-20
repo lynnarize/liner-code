@@ -1,5 +1,21 @@
 # 027. The dock stops redrawing on every frame of the open session's own reply
 
+> **REJECTED 2026-11-20 by the advisor's review (`plans/REVIEW-2026-11-20.md`). Do not run this plan.**
+> Its premise is false. `Session` is already memoised (`ui/src/app/Session.tsx:102`) and a streamed word reaches only
+> `items` through `takeDeltas` (`ui/src/app/engine.ts:76-94`), never the thread, so Session and the dock redraw only
+> when an item is added or the status moves. Measured on an isolated Demo build (React devtools hook, open session
+> streaming with Changes docked, 6 s, three runs): 1,164 / 1,226 / 1,367 renders in the whole app, of which Session,
+> SessionPanel, Panel, Strip and Changes **4 each**, and everything inside Panel 104 (about 9%). The "1,154" below is
+> the 11-18 doc's whole-app total after its fix (`docs/AUDIT-2026-11-18.md:285`), not the dock's; that pass never
+> memoised Panel, and the inline `lead` was already there when it measured. The most this plan could save is about
+> 100 renders per 6 s; its done target ("the dock falls to ~0") cannot be reached, since Panel takes `thread`, and
+> React's Profiler `onRender` does not report changed props as its STOP rule assumed.
+> The real streaming cost is the thread itself (Timeline 31–36, Turn, LiveStatus and EtaLeft about 34 each, the
+> message part ~208 per 6 s). If that is worth a plan, measure it first with the reviewer's probe, kept at
+> `plans/audit-2026-11-20/render-probe.mjs` (Playwright from `site/node_modules`, run against an isolated Demo build;
+> it takes the app's URL), and plan from those numbers.
+> The text below is the original plan, kept as the record.
+
 **Commit message:** `The dock stands still while the session you are watching streams`
 
 Written by the advisor on 2026-11-20 against commit `bfb0ebc` (branch `design-and-api-endpoints`, Liner Code 0.3.0 beta).

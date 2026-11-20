@@ -12,6 +12,7 @@ import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
 import { I } from "./icons";
 import { ago, plural } from "./model";
+import { pushCount, shipLive } from "./ship-words.ts";
 
 /** 0 the chip, 1 committing, 2 pushing, 3 pushed, 4 folded back into a chip. */
 type Stage = 0 | 1 | 2 | 3 | 4;
@@ -128,7 +129,9 @@ export function ShipCard({ thread }: { thread: Thread }) {
   }, [thread.turns]);
   if (!s) return null;
   const rows = rowsOf(s);
-  const n = Math.max(1, s.files ? rows.length : s.commits.length);
+  const n = pushCount({ files: s.files, rows: rows.length, commits: s.commits.length });
+  // Opacity hides the other stages from eyes only; aria-hidden keeps them out of the live region too.
+  const live = shipLive(s.stage);
   const remote = s.remote ?? "origin";
   const ahead = s.base && s.ahead ? `, ${plural(s.ahead, "commit")} ahead of ${s.base.branch}` : "";
   const bars = Math.min(5, Math.max(1, Math.round(Math.log2(s.added + s.removed + 1))));
@@ -158,9 +161,9 @@ export function ShipCard({ thread }: { thread: Thread }) {
                     </span>
                   )}
                   <span className="lc-ship-sw lc-ship-hsw">
-                    <span className="h1">Committing</span>
-                    <span className="h2">Pushing</span>
-                    <span className="h3">
+                    <span className="h1" aria-hidden={!live.h1}>Committing</span>
+                    <span className="h2" aria-hidden={!live.h2}>Pushing</span>
+                    <span className="h3" aria-hidden={!live.h3}>
                       <i />
                       Pushed
                     </span>
@@ -179,8 +182,8 @@ export function ShipCard({ thread }: { thread: Thread }) {
                       {s.branch ? `/${s.branch}` : ""}
                     </span>
                     <span className="lc-ship-meta lc-ship-sw">
-                      <span className="m0">{plural(n, "commit")} to push</span>
-                      <span className="m1">up to date</span>
+                      <span className="m0" aria-hidden={!live.m0}>{n ? `${plural(n, "commit")} to push` : "up to date"}</span>
+                      <span className="m1" aria-hidden={!live.m1}>up to date</span>
                     </span>
                   </div>
                   {rows.map((c, i) => (
@@ -220,27 +223,27 @@ export function ShipCard({ thread }: { thread: Thread }) {
           </div>
           <div className="lc-ship-line">
             <span className="lc-ship-sw">
-              <span className="x0">
+              <span className="x0" aria-hidden={!live.x0}>
                 <I.push size={14} />
                 Commit and push
               </span>
-              <span className="x1">
+              <span className="x1" aria-hidden={!live.x1}>
                 <span className="lc-ship-spin" aria-hidden />
                 <span className="l-shimmer">Committing {plural(s.files, "file")}</span>
               </span>
-              <span className="x2">
+              <span className="x2" aria-hidden={!live.x2}>
                 <span className="lc-ship-spin" aria-hidden />
                 <span className="l-shimmer">
-                  Pushing {plural(n, "commit")} to {remote}
+                  {n ? `Pushing ${plural(n, "commit")} to ${remote}` : `Pushing to ${remote}`}
                 </span>
               </span>
-              <span className="x3">
+              <span className="x3" aria-hidden={!live.x3}>
                 <I.check size={14} />
                 Pushed to {remote}
               </span>
-              <span className="x4">
+              <span className="x4" aria-hidden={!live.x4}>
                 {s.error ? <I.alert size={14} /> : <I.check size={14} />}
-                {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : `Pushed ${plural(n, "commit")}`}
+                {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : n ? `Pushed ${plural(n, "commit")}` : "Everything is up to date"}
               </span>
             </span>
             {s.added + s.removed > 0 && (

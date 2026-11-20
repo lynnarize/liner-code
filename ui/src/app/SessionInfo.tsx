@@ -64,7 +64,7 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
       <section className="lc-sinfo-card">
         <PanelHead
           end={
-            <button type="button" className="lc-ib l-focus" aria-label="Refresh" title="Ask the session again" disabled={looking} onClick={look}>
+            <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" disabled={looking} onClick={look}>
               <I.refresh size={14} />
             </button>
           }

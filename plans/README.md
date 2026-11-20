@@ -16,7 +16,7 @@ here that share its files — 018, 020, 027 — or edit only the regions each pl
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | [015](015-ci-goes-green.md) | CI goes green: the fifth flake tamed, the bundle built on every check | P1 | S | — | DONE |
-| [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | TODO |
+| [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | DONE |
 | [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | TODO |
 | [018](018-one-keyboard-pattern.md) | One keyboard pattern: tablists, radio groups, menus, the add-on sheet, the checks' names | P1 | M | L13 committed (shared files) | TODO |
 | [019](019-storage-and-one-press.md) | A storage-less window keeps working; Compact and Send-now take one press | P1 | S | after 017 (Settings.tsx) | TODO |
@@ -121,6 +121,14 @@ The previous run's rules below still hold, plus:
   plan pins v5, the owner may prefer v7 later). Typecheck and build exit 0. **Owed to the owner:** CI on GitHub is unverified
   until pushed; the desktop CI steps have still never executed anywhere. No STOP. L13 was already committed (dbcddff) before
   this run began, so the index's "L13 first" precondition is satisfied.
+- **016** DONE — commit "A push that carries nothing says up to date, and the push card reads one stage at a time".
+  New pure module ship-words.ts: pushCount keeps the floor for a shipment with files but keeps ZERO for a push-only one;
+  shipLive mirrors the CSS [data-p] stage map (the five per-stage deepEqual tests are the tripwire against the map drifting).
+  The three source tests were seen to fail (the Math.max(1,…) floor, zero of ten aria-hidden spans, "Refresh") and then pass;
+  12/12 tests, typecheck and build exit 0. All ten stacked spans now carry aria-hidden={!live.*}; role="status"
+  aria-live="polite" kept; the stage machine and CSS unchanged. SessionInfo's re-ask is "Look again", as on the five other
+  faces. NOT SEEN (owner's gates): a push-only shipment on an already-pushed branch saying "up to date" (the Demo measuring
+  build has no reachable push remote), VoiceOver reading one stage at a time, and the Look again button on screen. No STOP.
 
 ---
 

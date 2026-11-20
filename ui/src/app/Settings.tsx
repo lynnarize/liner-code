@@ -37,6 +37,7 @@ import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
 import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { keptWrite, wordRead, wordWrite } from "./kept.ts";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -80,12 +81,12 @@ type Props = { initial?: SettingsPage; onClose: () => void; onAgent: (agent?: Ag
 
 /** Memoised: App hands it callbacks of one identity, so a session's news elsewhere doesn't redraw the page you're reading. */
 export const Settings = memo(function Settings({ initial = "general", onClose, onAgent, onOpen }: Props) {
-  const [page, setPage] = useState<SettingsPage>(() => (sessionStorage.getItem("lc:settings") as SettingsPage) || initial);
+  const [page, setPage] = useState<SettingsPage>(() => wordRead(sessionStorage, "lc:settings", ["general", "appearance", "notifications", "keyboard", "models", "agentic", "modes", "team", "safety", "addons", "projects", "git", "archive", "updates", "data"], initial) as SettingsPage);
   const [query, setQuery] = useState("");
   const [look, setLook] = useState<Look>(readLook);
   const [sound, setSound] = useState(feedback.enabled);
   // Held here, not in General, so Restore defaults shows the Enter it puts back.
-  const [enter, setEnter] = useState(() => (localStorage.getItem("lc:enter") as "queue" | "steer") ?? "queue");
+  const [enter, setEnter] = useState<"queue" | "steer">(() => wordRead(localStorage, "lc:enter", ["queue", "steer"], "queue") as "queue" | "steer");
   const scroller = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
@@ -98,7 +99,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
   const secs = useSections(scroller, page);
   const me = window.__LINER__?.user?.trim() || "You";
 
-  useEffect(() => sessionStorage.setItem("lc:settings", page), [page]);
+  useEffect(() => wordWrite(sessionStorage, "lc:settings", page), [page]);
   // Opened with focus nowhere (the link or button that opened it went away with what it was in), the
   // page's heading takes it, so a screen reader is moved to the page rather than left on nothing.
   useEffect(() => {
@@ -138,7 +139,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
   const setLookPart = (patch: Partial<Look>) => {
     const next = { ...look, ...patch };
     setLook(next);
-    localStorage.setItem(LOOK_KEY, JSON.stringify(next));
+    keptWrite(localStorage, LOOK_KEY, next);
     applyLook(next);
   };
 
@@ -200,7 +201,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
     general: () => {
       save({ worktrees: false });
       setEnter("queue");
-      localStorage.setItem("lc:enter", "queue");
+      wordWrite(localStorage, "lc:enter", "queue");
     },
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
     appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined }),
@@ -619,7 +620,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             value={enter}
             onValueChange={(v) => {
               setEnter(v);
-              localStorage.setItem("lc:enter", v);
+              wordWrite(localStorage, "lc:enter", v);
             }}
             options={[
               { value: "queue", label: "Queues it" },

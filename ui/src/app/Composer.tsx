@@ -688,10 +688,14 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     back where it was (T3 Code: chat/QueuedRunsControl.tsx).
   */
   const steered = useRef<{ text: string; at: number; until: number } | null>(null);
+  // The messages whose Send-now is on its way: a held shortcut or a second press must not send one twice.
+  const sendingNow = useRef(new Set<string>());
   const sendNow = (q: QueuedMessage) => {
     if (!thread) return;
+    if (sendingNow.current.has(q.id)) return;
     const at = queue.findIndex((x) => x.id === q.id);
     if (at < 0) return;
+    sendingNow.current.add(q.id);
     // The one being edited goes as it reads now.
     const words = editing?.id === q.id ? text.trim() || q.text : q.text;
     if (editing?.id === q.id) stopEditing();
@@ -700,12 +704,15 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     void rpc("thread.queue", { id: thread.id, queue: queue.filter((x) => x.id !== q.id) })
       .then(() => rpc("thread.send", { id: thread.id, text: words, mode: "steer", ...(q.shown && words === q.text ? { shown: q.shown } : {}) }))
       .catch((e) => {
+        sendingNow.current.delete(q.id);
         steered.current = null;
         void rpc("thread.queue", { id: thread.id, queue: before }).catch(() => {});
         toast.error(e instanceof Error ? e.message : String(e));
       });
   };
   useEffect(() => {
+    // A send is in flight until its message leaves the queue; once gone, a later press may send it again.
+    for (const id of [...sendingNow.current]) if (!queue.some((x) => x.id === id)) sendingNow.current.delete(id);
     const s = steered.current;
     if (!s || !thread) return;
     if (Date.now() > s.until) return void (steered.current = null);
@@ -723,7 +730,8 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     if (!thread) return;
     const onKey = (e: KeyboardEvent) => {
       if (!live.current.keys) return;
-      if (e.key !== "Enter" || !e.shiftKey || !(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing) return;
+      // A held key repeats, and each repeat would send the next queued message: only the first press sends.
+      if (e.key !== "Enter" || !e.shiftKey || !(e.metaKey || e.ctrlKey) || e.altKey || e.isComposing || e.repeat) return;
       const first = live.current.queue[0];
       if (!first) return;
       e.preventDefault();

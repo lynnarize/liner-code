@@ -24,6 +24,7 @@ import { Boundary } from "./Boundary";
 import { CommitButton } from "./Commit";
 import { closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, paneOf, pickTab, type DockState } from "./dock";
 import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
+import { wordRead, wordWrite } from "./kept.ts";
 import { I } from "./icons";
 import { plural } from "./model";
 import { ContextMenu, PanelHead, Pop, Row, Sep } from "./ui";
@@ -649,11 +650,11 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [diffErr, setDiffErr] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
-  const [view, setView] = useState<"unified" | "split">(() => (localStorage.getItem("lc:view") as "split") ?? "unified");
+  const [view, setView] = useState<"unified" | "split">(() => wordRead(localStorage, "lc:view", ["unified", "split"], "unified") as "unified" | "split");
   const [viewed, setViewed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<"undo" | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => localStorage.setItem("lc:view", view), [view]);
+  useEffect(() => wordWrite(localStorage, "lc:view", view), [view]);
 
   // The diff for the turn in the picker, fetched when it changes.
   const key = `${pick}:${cp?.reverted}:${cp?.committed}:${cps.length}`;

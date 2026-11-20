@@ -48,11 +48,17 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
     if (visible) look();
   }, [visible, thread.id, thread.turns, running]);
 
+  // A second press before the turn's status lands would queue another /compact, summarising what was just summarised.
+  // The state disables the button from the press itself and clears when the send settles, the turn's own running state
+  // taking over then; a state alone suffices (no ref), handed to ContextCard whose button reads it.
+  const [compacting, setCompacting] = useState(false);
   const compactNow = () => {
+    if (compacting) return;
+    setCompacting(true);
     rpc("thread.send", { id: thread.id, text: "/compact" }).then(
       () => toast("Compacting the conversation", { description: "The tool sums up what came before, so the context has room again." }),
       (e: Error) => toast.error(e.message),
-    );
+    ).finally(() => setCompacting(false));
   };
 
   if (!info) return <div className="lc-sinfo">{failed ? <p className="lc-sinfo-note">{failed}</p> : <span className="l-shimmer lc-sinfo-note">Asking the session</span>}</div>;
@@ -94,7 +100,7 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
         )}
       </section>
 
-      {more && <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} onCompact={compactNow} />}
+      {more && <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} compacting={compacting} onCompact={compactNow} />}
 
       <section className="lc-sinfo-card">
         <PanelHead end={<span className="lc-quiet">{info.project}</span>}>Project</PanelHead>
@@ -271,12 +277,12 @@ function doingOf(items: Item[]) {
   a mark where the tool compacts older turns, then each source with what it takes. A source says
   more when the pointer rests on it, and its ticks stand out.
 */
-function ContextCard({ info, doing, running, onCompact }: { info: SessionInfo; doing: string; running: boolean; onCompact: () => void }) {
+function ContextCard({ info, doing, running, compacting, onCompact }: { info: SessionInfo; doing: string; running: boolean; compacting: boolean; onCompact: () => void }) {
   const [hl, setHl] = useState<number | null>(null);
   const [all, setAll] = useState(false);
   const ctx = info.context;
   const compactBtn = info.compact && (
-    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={running || !ctx} title={running ? "Wait for the turn to finish" : "Sum up the conversation so far, to make room"} onClick={onCompact}>
+    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={running || !ctx || compacting} title={running ? "Wait for the turn to finish" : "Sum up the conversation so far, to make room"} onClick={onCompact}>
       Compact
     </button>
   );

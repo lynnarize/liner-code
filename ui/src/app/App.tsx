@@ -49,6 +49,7 @@ import { HiddenBrowsers } from "./Browser";
 import { is, matches, MENU_COMMANDS, menuKeys, pressed, setBindings, shortcutOf } from "./keymap";
 import { currentTab, faceKept, getFace, HOME_TAB, openTab as openDesignTab, setFace, showTab, tabKey, toggleFace, useFace, useTabs } from "./face";
 import { keptOnFaceChange } from "./face-pages";
+import { keptRead, keptWrite, textRead, wordRead, wordWrite } from "./kept.ts";
 // Liner Design's store and sidebar body load with the face, never for someone who stays in Code.
 const DesignSide = lazyAgain(() => import("./design/Layers").then((m) => m.DesignSide));
 // Liner Design's face: its tabs, Design Home and the canvas load the first time the window shows them.
@@ -72,13 +73,13 @@ const samePlace = (a: View, b: View) => a.kind === b.kind && ("id" in a ? a.id :
 /** A place as Back and Forward keep it: Home without the mode and words it opened with (Create add-on's), so going back doesn't start that again. */
 const trailed = (v: View): View => (v.kind === "home" ? { kind: "home", projectId: v.projectId } : { ...v });
 
-const readView = (): View => {
-  try {
-    return JSON.parse(sessionStorage.getItem("lc:view") || "") as View;
-  } catch {
-    return { kind: "home" };
-  }
+/** A kept place is trusted only for its outer kind, the words the View type names: a corrupted value starts at Home instead of passing its cast into the code. */
+const VIEW_KINDS = ["home", "addons", "session", "wall", "usage", "routines", "routine", "compare", "app"];
+const isView = (v: unknown): v is View => {
+  const kind = typeof v === "object" && v !== null ? (v as { kind?: unknown }).kind : undefined;
+  return typeof kind === "string" && VIEW_KINDS.includes(kind);
 };
+const readView = (): View => keptRead<View>(sessionStorage, "lc:view", { kind: "home" }, isView);
 
 /*
   F6 and ⇧F6 move between the window's areas, T3 Code's workspace areas (docs/user/keyboard-focus.md):
@@ -194,13 +195,13 @@ export function App() {
   };
   // Liner Code or Liner Design: the same sessions under either, remembered per window.
   const face = useFace();
-  const [sidebar, setSidebar] = useState(() => localStorage.getItem("lc:sidebar") !== "0");
+  const [sidebar, setSidebar] = useState(() => wordRead(localStorage, "lc:sidebar", ["0", "1"], "1") !== "0");
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [agentDialog, setAgentDialog] = useState<{ open: boolean; agent?: AgentProfile }>({ open: false });
   const agentEver = useRef(false);
   if (agentDialog.open) agentEver.current = true;
-  const [lastProject, setLastProject] = useState<string | undefined>(() => localStorage.getItem("lc:project") ?? undefined);
+  const [lastProject, setLastProject] = useState<string | undefined>(() => textRead(localStorage, "lc:project", null) ?? undefined);
 
   useEffect(() => startAgentBrowser(), []);
   // Files dropped where nothing takes them (the composer, the canvas and the panel take theirs) do nothing: the window never navigates to them.
@@ -250,10 +251,10 @@ export function App() {
     window.addEventListener("unhandledrejection", on);
     return () => window.removeEventListener("unhandledrejection", on);
   }, []);
-  useEffect(() => sessionStorage.setItem("lc:view", JSON.stringify(view)), [view]);
-  useEffect(() => localStorage.setItem("lc:sidebar", sidebar ? "1" : "0"), [sidebar]);
+  useEffect(() => keptWrite(sessionStorage, "lc:view", view), [view]);
+  useEffect(() => wordWrite(localStorage, "lc:sidebar", sidebar ? "1" : "0"), [sidebar]);
   useEffect(() => {
-    if (lastProject) localStorage.setItem("lc:project", lastProject);
+    if (lastProject) wordWrite(localStorage, "lc:project", lastProject);
   }, [lastProject]);
 
   const current = view.kind === "session" ? threads.find((t) => t.id === view.id) : undefined;
@@ -397,7 +398,7 @@ export function App() {
   // "Set up a way of working" in the composer opens Settings on that place.
   useEffect(() => {
     const on = (e: Event) => {
-      sessionStorage.setItem("lc:settings", String((e as CustomEvent).detail ?? "general"));
+      wordWrite(sessionStorage, "lc:settings", String((e as CustomEvent).detail ?? "general"));
       setSettings(true);
     };
     window.addEventListener("lc:open-settings", on);

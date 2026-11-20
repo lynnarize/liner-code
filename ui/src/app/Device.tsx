@@ -11,10 +11,11 @@ import { onStream, rpc } from "./engine";
 import { I } from "./icons";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 import { SurfaceNote } from "./Surfaces";
+import { textRead, wordWrite } from "./kept.ts";
 
 export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
   const [list, setList] = useState<{ devices: Device[]; ready: boolean; detail?: string } | null>(null);
-  const [udid, setUdid] = useState<string | null>(() => localStorage.getItem("lc:device"));
+  const [udid, setUdid] = useState<string | null>(() => textRead(localStorage, "lc:device", null));
   const [shot, setShot] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
   // The simulator doesn't say which it's in, so neither is marked until you pick one here.
@@ -52,7 +53,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
     });
   }, []);
   useEffect(() => {
-    if (udid) localStorage.setItem("lc:device", udid);
+    if (udid) wordWrite(localStorage, "lc:device", udid);
   }, [udid]);
 
   const dev = list?.devices.find((d) => d.udid === udid);

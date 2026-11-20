@@ -59,7 +59,8 @@ const opts = { skip };
 
 test("the test can see: under a transform the page is asked for every pixel of 1280 by 2523", opts, () => {
   const c = at("under a transform");
-  assert.equal(c.page.w, 1280);
+  // The whole case on failure: on a CI runner this read 0 wide once, and what the frame said is the only clue.
+  assert.equal(c.page.w, 1280, JSON.stringify(c));
   assert.equal(c.page.dpr, c.hostDpr);
   assert.ok(overdraw(c) > 10, `a canvas ${c.page.canvas.join(" by ")} for a box ${c.drawn.join(" by ")}`);
 });

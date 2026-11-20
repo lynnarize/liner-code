@@ -4,7 +4,7 @@ name: Zoom probe
 on:
   push:
     branches: [design-and-api-endpoints]
-    paths: [".github/zoom-diag/**", ".github/workflows/zoom-probe.yml"]
+    paths: [".github/zoom-diag/**", ".github/workflows/zoom-probe.yml", "desktop/test/browser-zoom*"]
   workflow_dispatch:
 jobs:
   probe:
@@ -20,3 +20,9 @@ jobs:
       # Electron's binary is fetched on first use, and its notice would land in the path below: fetch it first.
       - run: node node_modules/electron/install.js
       - run: '"$(node -e "console.log(require(\"electron\"))")" .github/zoom-diag/probe.cjs'
+      - run: node desktop/build.ts
+      # The zoom test on its own, then the whole desktop suite as Check runs it: which one fails says whether load matters.
+      - run: node --test desktop/test/browser-zoom.test.ts
+        continue-on-error: true
+      - run: npm test -w desktop
+        continue-on-error: true

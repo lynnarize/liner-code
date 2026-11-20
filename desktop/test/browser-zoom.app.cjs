@@ -45,6 +45,9 @@ async function run(name, css) {
     await new Promise((ok) => setTimeout(ok, 300));
     Object.assign(out, await wc.mainFrame.executeJavaScript(`(()=>{const r=f.getBoundingClientRect();return {page:self.heard,hostDpr:devicePixelRatio,client:[f.clientWidth,f.clientHeight],drawn:[r.width,r.height]}})()`));
     out.processes = wc.mainFrame.framesInSubtree.map((f) => f.processId);
+    // The frame's own size, read from inside it rather than from what it last posted: tells a late word from no size.
+    const inner = wc.mainFrame.framesInSubtree[1];
+    out.inner = inner ? await inner.executeJavaScript("[innerWidth, innerHeight, document.visibilityState]").catch((e) => String(e)) : null;
   } catch (e) {
     out.error = String(e);
   }

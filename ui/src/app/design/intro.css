@@ -1,6 +1,6 @@
 /*
   Liner Design's first-open sheet (Intro.tsx): a picture on the canvas ground, the four points under
-  it, Start drawing. The app's sheet (.lc-sheet, 24px corners on the scrim) and its tokens; the
+  it, Start drawing. The app's sheet (.lc-sheet, 18px corners on the scrim) and its tokens; the
   pictures are drawn here, with Foreshore's own colours for its swatches. Each picture plays a short
   story and plays it again; still ([data-still], Reduce motion) each rests where it ends.
 */

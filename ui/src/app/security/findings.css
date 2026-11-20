@@ -535,7 +535,7 @@
 .lf-x-dismiss svg {
   color: var(--l-ink-3);
 }
-/* What the actions will do, in a few words: it takes the room left on the row and goes under the buttons when there is none, never cut with "…". */
+/* What the actions will do, in a few words: it takes the room left on the row, and when there is none the buttons go under it (the hint comes before them in the markup), never cut with "…". */
 .lf-x-hint {
   flex: 1 1 120px;
   min-width: 0;
@@ -545,10 +545,6 @@
   color: var(--l-ink-3);
   text-align: right;
   text-wrap: balance;
-}
-/* The hint on a line of its own (a narrow panel) reads from the left, under the buttons it explains. */
-.lf-x-act-bar > .lc-grow {
-  flex: 1 0 0px;
 }
 .lf-x-hint-l {
   margin-right: 0;

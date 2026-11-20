@@ -107,7 +107,6 @@
   object-fit: contain;
 }
 
-
 /* ---------- Your prompts, at the thread's left edge ----------
    One tick a prompt, spread 9px apart and squeezed to fit when there are many, centred on what
    you can see of the conversation like the Rail on the right. The one you're reading under is

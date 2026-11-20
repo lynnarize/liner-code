@@ -555,6 +555,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
       className="lc-session"
       data-panel={dock.open || undefined}
       data-wide={(dock.open && dock.full) || undefined}
+      data-left-wide={leaving?.full || undefined}
       data-panes={dock.open && dock.panes.length > 1 ? 2 : undefined}
       data-beside={beside || undefined}
       data-resizing={resizing || undefined}

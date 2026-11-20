@@ -358,12 +358,13 @@ html[data-motion="quick"] .ld-face {
 }
 @container ld-bar (max-width: 520px) {
   .ld-srv,
-  .ld-who {
+  .ld-bar .ld-who {
     display: none;
   }
 }
 @container ld-bar (max-width: 420px) {
-  .ld-ver {
+  .ld-ver,
+  .ld-own-t {
     display: none;
   }
 }
@@ -389,7 +390,12 @@ html[data-motion="quick"] .ld-face {
   cursor: pointer;
   transition: background 140ms ease;
 }
+/* After Show the sidebar the title keeps 2px clear of that button: only its first place in the row needs the full pull. */
+.ld-bar > .lc-tb + .lc-pop > .ld-tt {
+  margin-left: -4px;
+}
 .ld-bar .lc-pop:has(> .ld-tt) {
+  display: flex;
   flex: 0 1 auto;
   min-width: 0;
 }

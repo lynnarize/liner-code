@@ -235,7 +235,7 @@ html[data-native="mac"] .lc-wel {
   box-sizing: border-box;
   padding: 0 12px;
   border: 1px solid var(--l-line);
-  border-radius: var(--lc-r-card);
+  border-radius: 999px;
   background: var(--l-surface);
   font: inherit;
   font-size: 13px;

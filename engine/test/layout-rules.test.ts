@@ -150,9 +150,10 @@ test("The panel keeps its card while it closes, and a narrow session keeps its f
   const open = blocks(css, ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])");
   assert.ok(open.some((b) => value(b, "justify-self") === "stretch" && value(b, "width") === "auto" && value(b, "min-width") === "0"), "the open card no longer stretches to its column");
   assert.ok(look.some((b) => value(b, "width") === "calc(max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px))) - 8px)"), "the width it closes at does not take the card's 8px margin off");
-  const flatClosing = blocks(css, '.lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel');
+  // L13 renamed these closing selectors to the panel's own [data-leaving] mark: the session has lost [data-panel] by then.
+  const flatClosing = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-leaving]');
   assert.ok(flatClosing.some((b) => value(b, "--lc-card-top") === "0px" && value(b, "margin") === "0" && value(b, "border-radius") === "0" && value(b, "box-shadow") === "none"), "a narrow session's panel does not stay flat while it closes");
-  const sessClosing = blocks(css, '.lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]');
+  const sessClosing = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"][data-leaving]');
   assert.ok(sessClosing.some((b) => value(b, "align-self") === "stretch" && value(b, "height") === "auto" && value(b, "max-height") === "none"), "a narrow session's Session panel does not stay flat while it closes");
 });
 
@@ -292,7 +293,9 @@ test("the classes nothing references are gone from every stylesheet", () => {
 });
 
 test("the sidebar's width is said once", () => {
-  assert.equal((sheet("app.css").match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
+  const css = sheet("app.css");
+  assert.equal((css.match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
+  assert.ok(css.includes("--lc-side: 264px"), "the one declaration is not --lc-side: 264px, so a wrong width would pass");
 });
 
 test("the corner scale declares its four tokens", () => {
@@ -319,4 +322,75 @@ test("corners follow the four-size scale outside the skipped ranges", () => {
       assert.fail(`${f.pathname}:${i + 1} has an off-scale corner outside the skipped ranges: ${lines[i].trim()}`);
     }
   }
+});
+
+test("the 2x ring override names the open card's selector beside the bare one, so the ring is half a pixel", () => {
+  const css = sheet("app.css");
+  const open = ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])";
+  const bare = ".lc-session:not([data-wide]) .lc-body > .lc-panel";
+  const lists = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sels: m[1].split(",").map((s) => s.trim().replace(/\s+/g, " ")), body: m[2] }));
+  assert.ok(lists.some((b) => b.sels.includes(open) && b.sels.includes(bare) && (value(b.body, "box-shadow") ?? "").includes("0.5px")), "the 2x override does not carry the open card's selector, so the card rule's 1px ring wins on a Retina screen");
+});
+
+test("a narrow session's closing panel is named by its own mark, and the dead [data-panel] closing copy is gone", () => {
+  const css = sheet("app.css");
+  const narrow = [...css.matchAll(/@container lc-session \(max-width: 786px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]);
+  assert.ok(narrow.length, "app.css does not hold the 786px session container");
+  const closing = narrow.flatMap((c) => blocks(c, ".lc-session:not([data-wide]) .lc-body > .lc-panel[data-leaving]"));
+  assert.ok(closing.some((b) => value(b, "border-radius") === "0"), "the narrow closing panel is not named by its own [data-leaving] mark, so the bare card rule turns it into a card while it fades");
+  assert.equal(blocks(css, ".lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel").length, 0, "the closing copy that asks for [data-panel] is still there: the session has lost that mark by then, so it never matches");
+});
+
+test("a panel that was the whole paper closes flat, told by the session's data-left-wide", () => {
+  const wide = blocks(sheet("app.css"), ".lc-session[data-left-wide] .lc-body > .lc-panel[data-leaving]");
+  assert.ok(wide.some((b) => value(b, "box-shadow") === "none" && value(b, "border-radius") === "0" && value(b, "margin") === "0"), "no data-left-wide rule keeps a closing full-canvas panel flat: it flashes as a card with a ring");
+});
+
+test("the first Remove on an add-on's sheet keeps its size and corner, while the confirm Remove stays without a height", () => {
+  const css = sheet("addons-page.css");
+  const own = blocks(css, ".lc-ao-remove:not(.lc-btn)");
+  assert.ok(own.some((b) => value(b, "height") === "32px"), "the first Remove is not a .lc-btn and has no rule giving it a height, so it reads as bare text");
+  const plain = blocks(css, ".lc-ao-remove");
+  assert.ok(plain.length > 0 && plain.every((b) => value(b, "height") === undefined), "the plain .lc-ao-remove rule carries a height, so the confirm .lc-btn would not take the button's size");
+});
+
+test("Design's title wrapper is a flex parent, so the title button shortens instead of running under the chip", () => {
+  const wrap = blocks(sheet("design/design-face.css"), ".ld-bar .lc-pop:has(> .ld-tt)");
+  assert.ok(wrap.some((b) => value(b, "display") === "flex"), "the title's wrapper is not a flex parent, so the button in it keeps its width and is drawn under the chip");
+});
+
+test("the On-its-own chip gives up its words before the title is cut", () => {
+  const words = blocks(sheet("design/design-face.css"), ".ld-own-t");
+  assert.ok(words.some((b) => value(b, "display") === "none"), "no narrow step hides the chip's words, so they hold their width while the title is cut");
+});
+
+test("Who is drawing really hides in a narrow row, outweighing its own later rule", () => {
+  const who = blocks(sheet("design/design-face.css"), ".ld-bar .ld-who");
+  assert.ok(who.some((b) => value(b, "display") === "none"), "the narrow step names .ld-who alone, so the later .ld-who { display: inline-flex } wins and it never hides");
+});
+
+test("with the sidebar hidden, Design's title keeps clear of Show the sidebar", () => {
+  const after = blocks(sheet("design/design-face.css"), ".ld-bar > .lc-tb + .lc-pop > .ld-tt");
+  assert.ok(after.some((b) => value(b, "margin-left") === "-4px"), "the title keeps its full -10px pull after the sidebar button, so its hover plate covers the button's last 4px");
+});
+
+test("the switch, the checks' dots and counts, and Setup's pills keep their round sides at 999px", () => {
+  const pills: [string, string][] = [
+    ["surfaces.css", ".lc-sinfo-switch"], ["design/checks.css", ".ld-ck-n"], ["design/checks.css", ".ld-ck-mark[data-more]"],
+    ["design/checks.css", ".ld-ck-mark"], ["setup.css", ".lc-wel-pill"],
+  ];
+  for (const [file, selector] of pills) {
+    const bs = blocks(sheet(file), selector);
+    assert.ok(bs.some((b) => value(b, "border-radius") === "999px"), `${selector} in ${file} is not a full pill: the corner scale flattened what was half its height`);
+  }
+});
+
+test("the add-on split button's halves take the field corner, and no 11px corner is left on the page", () => {
+  const css = sheet("addons-page.css");
+  const left = blocks(css, ".lc-ao-split > button:first-child");
+  assert.ok(left.some((b) => value(b, "border-radius") === "var(--lc-r-field) 0 0 var(--lc-r-field)"), "the split's first half keeps 11px inside a parent that went to 10");
+  const right = blocks(css, ".lc-ao-split-more");
+  assert.ok(right.some((b) => value(b, "border-radius") === "0 var(--lc-r-field) var(--lc-r-field) 0"), "the split's chevron half keeps 11px inside a parent that went to 10");
+  const stale = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => (value(m[2], "border-radius") ?? "").includes("11px"));
+  assert.equal(stale.length, 0, "a border-radius on the Add-ons page still draws 11px");
 });

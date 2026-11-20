@@ -382,7 +382,7 @@ export function OwnChip({ tab, project }: { tab: DesignTab; project: Project }) 
     }
   };
   return (
-    <Pop label="This design is on its own" align="end" width={420} triggerClass="lc-pb ld-own" trigger={<><I.folder size={14} /><span>On its own</span><I.chevD size={12} /></>}>
+    <Pop label="This design is on its own" align="end" width={420} triggerClass="lc-pb ld-own" trigger={<><I.folder size={14} /><span className="ld-own-t">On its own</span><I.chevD size={12} /></>}>
       {(close) =>
         choosing ? (
           <div className="ld-own-pop">

@@ -216,7 +216,6 @@
   }
 }
 
-
 /* ---------- Open a surface ---------- */
 .lc-spick {
   display: grid;
@@ -352,7 +351,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* In a flex row the ellipsis is its own: a path that's cut says so. */
 /*
   Context: a bar of ticks in each source's colour over the grey of what's free, a mark where the
   tool compacts, then each source as a chip. Resting on a chip lifts its ticks and dims the rest.
@@ -5968,7 +5966,7 @@ button.lc-sinfo-go:disabled {
   height: 18px;
   padding: 0;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 999px;
   background: var(--l-wash-2);
   cursor: pointer;
   transition: background 150ms ease;

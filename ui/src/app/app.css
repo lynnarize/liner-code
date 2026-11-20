@@ -7688,9 +7688,18 @@ html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel {
   background: color-mix(in oklab, var(--lc-paper) 86%, transparent);
 }
 @media (min-resolution: 2dppx) {
-  .lc-session:not([data-wide]) .lc-body > .lc-panel {
+  .lc-session:not([data-wide]) .lc-body > .lc-panel,
+  .lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving]) {
     box-shadow: 0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04);
   }
+}
+/* A panel that was the whole paper closes as it was, flat. The session has lost [data-wide] by then, so it says what it
+   left (Session.tsx, data-left-wide). */
+.lc-session[data-left-wide] .lc-body > .lc-panel[data-leaving] {
+  --lc-card-top: 0px;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"] {
   align-self: start;
@@ -7742,8 +7751,8 @@ html[data-native="mac"] .lc-sb-head {
     border-radius: 0;
     box-shadow: none;
   }
-  /* The flat look holds while it closes too, so the paper's header does not jump. */
-  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel {
+  /* The flat look holds while it closes too, so the paper's header does not jump. The session has lost [data-panel] by then, so the closing panel is named by its own mark. */
+  .lc-session:not([data-wide]) .lc-body > .lc-panel[data-leaving] {
     --lc-card-top: 0px;
     margin: 0;
     border-radius: 0;
@@ -7754,7 +7763,7 @@ html[data-native="mac"] .lc-sb-head {
     height: auto;
     max-height: none;
   }
-  .lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel[data-tab="session"] {
+  .lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"][data-leaving] {
     align-self: stretch;
     height: auto;
     max-height: none;

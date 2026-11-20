@@ -108,10 +108,10 @@
 }
 /* The pair keeps its round ends without clipping, so a focus ring shows whole. */
 .lc-ao-split > button:first-child {
-  border-radius: 11px 0 0 11px;
+  border-radius: var(--lc-r-field) 0 0 var(--lc-r-field);
 }
 .lc-ao-split-more {
-  border-radius: 0 11px 11px 0;
+  border-radius: 0 var(--lc-r-field) var(--lc-r-field) 0;
   justify-content: center;
   width: 34px;
   padding: 0;
@@ -457,6 +457,13 @@ button.lc-ao-open {
   font-weight: 500;
   color: var(--l-danger-text);
   cursor: pointer;
+}
+/* The first Remove is a text button of its own, not a .lc-btn: it keeps its size and corner. The confirm Remove is a
+   .lc-btn and takes that button's. */
+.lc-ao-remove:not(.lc-btn) {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--lc-r-field);
 }
 .lc-btn.lc-ao-remove {
   color: var(--l-danger-text);

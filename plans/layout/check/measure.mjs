@@ -73,8 +73,22 @@ if (await rail("Changes").count()) { await rail("Changes").click(); await wait(9
 // The smallest window with a surface open: is the panel still a card, and does its row show its tabs?
 await size(880, 580);
 out.panelNarrow = await page.evaluate(() => { const p = document.querySelector(".lc-panel"); if (!p) return null; const cs = getComputedStyle(p); const top = p.querySelector(":scope > .lc-panel-top"); return { margin: cs.margin, radius: cs.borderRadius, rowShown: top ? getComputedStyle(top).display !== "none" : false, tabsShown: top ? [...top.querySelectorAll("[role=tab], .lc-stab")].filter((t) => t.checkVisibility()).length : 0, paperHeaderHeight: top ? Math.round(top.getBoundingClientRect().height) : 0 }; });
+// Closing it there: the look it keeps while it fades. A card's corner on a panel that was the paper is the fault.
+const hide = () => page.locator('button[aria-label="Hide the panel"]:visible').first();
+if (out.panelNarrow && (await hide().count())) { await hide().click(); await wait(120); out.panelNarrow.closingRadius = await page.evaluate(() => { const p = document.querySelector(".lc-panel"); return p ? getComputedStyle(p).borderRadius : "gone"; }); await wait(700); }
 await size(1440, 900);
-await page.locator('.lc-rail-b[aria-label*="the panel"]').first().click().catch(() => {}); await wait(700);
+if (await hide().count()) { await hide().click(); await wait(700); }
+// Over the whole paper, closing: flat as it was (a card's corner is the fault). Then back beside the thread, hidden.
+if (await rail("Changes").count()) {
+  await rail("Changes").click(); await wait(1200);
+  const full = page.locator('.lc-rail-b[aria-label^="Open in the full canvas"]:visible').first();
+  if (await full.count()) {
+    await full.click(); await wait(1200); await hide().click(); await wait(120);
+    out.panelWide = { closingRadius: await page.evaluate(() => { const p = document.querySelector(".lc-panel"); return p ? getComputedStyle(p).borderRadius : "gone"; }) }; await wait(700);
+    await rail("Changes").click(); await wait(1200); await page.locator('button[aria-label="Leave the full canvas"]:visible').first().click().catch(() => {}); await wait(900);
+  }
+  if (await hide().count()) { await hide().click(); await wait(700); }
+}
 
 // The top row of each place: where its first words start, from the paper's left edge.
 const topText = () => page.evaluate(() => { const paper = document.querySelector(".lc-paper").getBoundingClientRect(); const bar = document.elementsFromPoint(paper.left + 200, paper.top + 24).map((e) => e.closest("header, .lc-top, .ld-bar")).find(Boolean); if (!bar) return null; let l = 1e9; const w = document.createTreeWalker(bar, NodeFilter.SHOW_TEXT); const rg = document.createRange(); for (let n = w.nextNode(); n; n = w.nextNode()) { if (!n.textContent.trim() || !n.parentElement.checkVisibility() || n.parentElement.closest(".l-sr-only")) continue; rg.selectNodeContents(n); for (const q of rg.getClientRects()) if (q.width > 0) l = Math.min(l, q.left); } return l < 1e9 ? Math.round((l - paper.left) * 10) / 10 : null; });
@@ -99,21 +113,29 @@ if (await first.count()) {
   await size(1440, 900); await page.keyboard.press("Escape"); await wait(400);
 }
 
-// Design: the top row at the smallest window. Any two of its items overlapping is the fault.
+// Design: the top row at the smallest window. Any two of its buttons overlapping is the fault (the buttons themselves:
+// a wrapper can shrink under a button that does not).
 await face("Design");
 const sd = page.getByText("Start drawing"); if (await sd.count()) { await sd.first().click(); await wait(900); }
 out.topRowTextLeft.designHome = await topText();
-if (!(await page.locator(".ld-tr, .lc-sl-row").count())) { const box = page.locator("textarea").first(); await box.click(); await box.fill("Design a home screen for the tide tables"); await page.keyboard.press("Enter"); await wait(32000); }
-else { await page.locator(".lc-sb .lc-sl-row, .lc-sb .ld-tr").first().click(); await wait(2500); }
+if (!(await page.locator(".lc-sb .ld-file, .lc-sb .ld-tr, .lc-sb .lc-sl-row").count())) { const box = page.locator("textarea").first(); await box.click(); await box.fill("Design a home screen for the tide tables"); await page.keyboard.press("Enter"); await wait(32000); }
+else { await page.locator(".lc-sb .ld-file:visible, .lc-sb .lc-sl-row:visible, .lc-sb .ld-tr:visible").first().click(); await wait(2500); }
 if (await page.locator(".ld-bar").count()) {
   await size(880, 580);
-  out.designBar = await page.evaluate(() => { const bar = document.querySelector(".ld-bar"); const br = bar.getBoundingClientRect(); const kids = [...bar.children].filter((c) => c.checkVisibility() && c.getBoundingClientRect().width > 1).map((c) => c.getBoundingClientRect()).sort((a, b) => a.left - b.left); let overlap = 0; for (let i = 0; i < kids.length - 1; i++) overlap = Math.max(overlap, kids[i].right - kids[i + 1].left); return { itemsOverlapBy: Math.round(Math.max(0, overlap)), pastRightEdge: Math.round(Math.max(0, ...kids.map((k) => k.right - br.right))) }; });
+  out.designBar = await page.evaluate(() => { const bar = document.querySelector(".ld-bar"); const br = bar.getBoundingClientRect(); const kids = [...bar.querySelectorAll(":scope > button, :scope > .lc-pop > button, :scope > span > button, :scope > span > .lc-pop > button")].filter((c) => c.checkVisibility() && c.getBoundingClientRect().width > 1).map((c) => c.getBoundingClientRect()).sort((a, b) => a.left - b.left); let overlap = 0; for (let i = 0; i < kids.length - 1; i++) overlap = Math.max(overlap, kids[i].right - kids[i + 1].left); return { itemsOverlapBy: Math.round(Math.max(0, overlap)), pastRightEdge: Math.round(Math.max(0, ...kids.map((k) => k.right - br.right))) }; });
   await size(1440, 900);
 }
 
 // Settings: where the crumbs' words start.
 await face("Code"); await page.locator(".lc-sb-foot > button.lc-ib").click(); await wait(1200);
 out.topRowTextLeft.settings = await topText();
+
+// The docked card's ring on a 2x screen: half a pixel, open (1px here is the fault).
+const page2 = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light", deviceScaleFactor: 2 })).newPage();
+await page2.goto(url); await page2.waitForTimeout(4000); await page2.locator(".lc-sl-row").first().click(); await page2.waitForTimeout(1500);
+if (!(await page2.locator(".lc-panel").count())) { await page2.locator('.lc-rail-b[aria-label^="Changes"]').first().click(); await page2.waitForTimeout(1300); }
+out.panel.ringAt2x = await page2.evaluate(() => getComputedStyle(document.querySelector(".lc-panel")).boxShadow.match(/0px 0px 0px ([\d.]+px)/)?.[1] ?? null);
+await page2.locator('button[aria-label="Hide the panel"]:visible').first().click().catch(() => {}); await page2.waitForTimeout(700);
 
 console.log(JSON.stringify(out, null, 2));
 await browser.close();

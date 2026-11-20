@@ -1,0 +1,20 @@
+# Throwaway: prints how a framed page is sized on the Mac runner, to find why browser-zoom.test.ts's transform case
+# reads 0 wide there (CI run 44704625376). It never fails the build; delete it with .github/zoom-diag once read.
+name: Zoom probe
+on:
+  push:
+    branches: [design-and-api-endpoints]
+    paths: [".github/zoom-diag/**", ".github/workflows/zoom-probe.yml"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: '"$(node -e "console.log(require(\"electron\"))")" .github/zoom-diag/probe.cjs'

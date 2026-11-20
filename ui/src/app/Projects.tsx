@@ -22,7 +22,7 @@ type Tab = "here" | "mac" | "github";
 type GitHub = { gh: "ready" | "missing" | "signed-out"; detail?: string; login?: string; repos: GitHubRepo[] };
 
 // Scanning and asking GitHub take a moment, so the answers are kept while the app is open.
-let found: Promise<FoundRepo[]> | null = null;
+let found: Promise<{ repos: FoundRepo[]; detail?: string }> | null = null;
 let github: Promise<GitHub> | null = null;
 const tilde = os.tilde;
 
@@ -137,12 +137,13 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
   const root = useEngine((s) => s.settings.projectsRoot);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
-  const [mac, setMac] = useState<FoundRepo[] | null>(null);
+  const [mac, setMac] = useState<{ repos: FoundRepo[]; detail?: string } | null>(null);
   const [gh, setGh] = useState<GitHub | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const loadMac = (again = false) => {
-    if (again || !found) found = rpc("projects.scan", {}).catch(() => []);
+    // A failed scan keeps its words, as the GitHub tab does: an empty list alone would read as no repositories.
+    if (again || !found) found = rpc("projects.scan", {}).then((repos) => ({ repos })).catch((e) => ({ repos: [] as FoundRepo[], detail: e instanceof Error ? e.message : String(e) }));
     setMac(null);
     void found.then(setMac);
   };
@@ -207,7 +208,8 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
             <p className="l-shimmer lc-mp-none">Looking through your code folders</p>
           ) : (
             <>
-              {mac
+              {mac.detail && <p className="lc-pr-warn lc-pc-warn">{mac.detail}</p>}
+              {mac.repos
                 .filter((r) => match(r.name, r.path, r.remote))
                 .map((r) => {
                   const p = projects.find((x) => x.path === r.path);
@@ -224,7 +226,7 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                     />
                   );
                 })}
-              {mac.length === 0 ? <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p> : !mac.some((r) => match(r.name, r.path, r.remote)) && <p className="lc-quiet lc-mp-none">No repository here matches that.</p>}
+              {mac.repos.length === 0 ? !mac.detail && <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p> : !mac.repos.some((r) => match(r.name, r.path, r.remote)) && <p className="lc-quiet lc-mp-none">No repository here matches that.</p>}
               <Sep />
               <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={14} />} disabled={busy !== null} onPick={() =>
                   void bridge.pickFolder().then((path) => {

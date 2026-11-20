@@ -17,7 +17,7 @@ here that share its files — 018, 020, 027 — or edit only the regions each pl
 |------|-------|----------|--------|------------|--------|
 | [015](015-ci-goes-green.md) | CI goes green: the fifth flake tamed, the bundle built on every check | P1 | S | — | DONE |
 | [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | DONE |
-| [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | TODO |
+| [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | DONE |
 | [018](018-one-keyboard-pattern.md) | One keyboard pattern: tablists, radio groups, menus, the add-on sheet, the checks' names | P1 | M | L13 committed (shared files) | TODO |
 | [019](019-storage-and-one-press.md) | A storage-less window keeps working; Compact and Send-now take one press | P1 | S | after 017 (Settings.tsx) | TODO |
 | [020](020-motion-scroll-and-rescroll.md) | Reduce Motion's last three spinners; every page scroller; Changes re-scroll | P1 | S | L13 committed (shared sheets) | TODO |
@@ -129,6 +129,28 @@ The previous run's rules below still hold, plus:
   aria-live="polite" kept; the stage machine and CSS unchanged. SessionInfo's re-ask is "Look again", as on the five other
   faces. NOT SEEN (owner's gates): a push-only shipment on an already-pushed branch saying "up to date" (the Demo measuring
   build has no reachable push remote), VoiceOver reading one stage at a time, and the Look again button on screen. No STOP.
+- **017** DONE — commit "A failed read says so instead of reading as empty, and a dismissed notice stays away". Seven source
+  tests seen RED then GREEN (a seventh pins Updates' toolShown wiring, per the plan's own every-fix-has-a-test rule); the four
+  pure toolShown tests pass by design and the old-filter pin documents the bug (passes before and after). 11/11 tests;
+  typecheck and build exit 0. Docked Changes keeps a failed diff said (SurfaceNote "The changes didn't open", three-state as
+  the Review); Settings' memory/rules editors keep their fields, say the failure with role=alert and retry with Look again;
+  AddByHand says "That isn't JSON yet: …" with aria-invalid/describedby; Usage says the failure instead of a confident $0
+  (hero, charts and table only when data present; the page's Look again now retries the summary too); Projects' Mac scan keeps
+  its error as the GitHub tab does; Design Home's relist failure is said with an inline Look again instead of an endless
+  shimmer; a dismissed notice stays away in every tool state through the new pure update-notices.ts. Choices recorded (the
+  plan's fallbacks): .lc-ao-why is scoped to .lc-ao-from, so the alerts use app-owned lc-sinfo-note (no CSS edited anywhere);
+  toolShown's latest widened to optional to match contracts (predicate byte-identical to the plan); the Settings failed-guard
+  precedes the null-guard for TS narrowing; Projects took the plan's { detail } variant. **OWNER DECISION (step 5, like plan
+  006):** a dismissal now holds across state changes at the SAME version — a tool put away while 'waiting' stays away when it
+  becomes 'updated', until a newer version comes out; if the owner wants 'updated' to speak again, narrow toolShown to the
+  settled states. Executor observation for that ruling: engine/src/updates.ts dismiss() does not persist a dismissal made
+  while 'updated' (it resets the tool to current/available), so the decision bites on waiting/available→updated transitions;
+  engine untouched, out of scope. SEEN on screen (per-browser RPC interception, the measuring engine untouched; screenshots
+  looked at): the manifest form invalid and valid; the docked Changes note staying after the toast fades; both Settings
+  editors failed and successful; Usage failed (no $0) and successful; Projects' Mac failure banner; Design Home's failure note
+  and success list. NOT SEEN: a real pruned checkpoint on disk, a project folder actually removed outside the app, the engine
+  genuinely unreachable (one method aborted in the probe browser only), the dismissed-notice round-trip (the Demo build shows
+  no notices at all), VoiceOver announcing the alerts. No STOP.
 
 ---
 

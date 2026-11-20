@@ -16,6 +16,8 @@ import { LimitRow, ModelTag } from "./ui";
 export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
   const [days, setDays] = useState<"7" | "30" | "month">("month");
   const [data, setData] = useState<UsageSummary | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [again, setAgain] = useState(0);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const addons = useEngine((s) => s.addons);
@@ -26,14 +28,15 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
 
   useEffect(() => {
     let live = true;
+    setFailed(null);
     // Whole local days from midnight, so 'This month' (n = today's date) starts on the 1st.
     rpc("usage.summary", { days: n })
       .then((d) => live && setData(d))
-      .catch(() => live && setData(null));
+      .catch((e) => live && (setData(null), setFailed(e instanceof Error ? e.message : String(e))));
     return () => {
       live = false;
     };
-  }, [n, threads]);
+  }, [n, threads, again]);
 
   const t = data?.totals;
   const maxAgent = Math.max(1e-9, ...(data?.byAgent ?? []).map((a) => a.costUsd || a.tokens / 1e6));
@@ -66,6 +69,12 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
         <span className="lc-quiet">Estimates at API prices, not your bill</span>
       </header>
       <div className="lc-usage-in">
+        {/* A failed read is said, not a confident $0; the first read shimmers instead. */}
+        {failed ? (
+          <p className="lc-sinfo-note" role="alert">{failed}</p>
+        ) : data === null ? (
+          <p className="l-shimmer lc-sinfo-note">Reading your usage</p>
+        ) : (
         <div className="lc-usage-top">
           <section className="lc-frame lc-usage-hero">
             <div className="lc-fcard">
@@ -89,7 +98,9 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
             <Tile label="Most expensive turn" value={money(t?.priciest?.costUsd ?? 0)} note={t?.priciest?.title ?? "—"} />
           </div>
         </div>
-        <Limits />
+        )}
+        <Limits again={again} onAgain={() => setAgain((n) => n + 1)} />
+        {data && (
         <div className="lc-usage-mid">
           {anyCost ? (
             <BarChart title="Spend per day" subtitle={days === "month" ? new Date().toLocaleDateString("en-US", { month: "long" }) : `Last ${n} days`} data={spend} height={190} format={(v) => `$${v.toFixed(v < 10 ? 2 : 0)}`} />
@@ -123,6 +134,8 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
             </div>
           </section>
         </div>
+        )}
+        {data && (
         <section className="lc-frame">
           <div className="lc-fcard">
             <div className="lc-usage-h">
@@ -170,6 +183,7 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
             </table>
           </div>
         </section>
+        )}
       </div>
     </div>
   );
@@ -250,10 +264,9 @@ function Budget({ spent, budget, editing, onEdit }: { spent: number | null; budg
 }
 
 /** Each plan's windows, as the tool reports them: how much is used, and when it resets. */
-function Limits() {
+function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
   const tools = useEngine((s) => s.limits);
   const [asking, setAsking] = useState(true);
-  const [again, setAgain] = useState(0);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     let live = true;
@@ -276,7 +289,7 @@ function Limits() {
           <b>Limits</b>
           <span className="lc-quiet">What each plan has left, from the tool itself</span>
           <span className="lc-grow" />
-          <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" disabled={asking} onClick={() => setAgain((n) => n + 1)}>
+          <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" disabled={asking} onClick={onAgain}>
             <I.refresh size={14} />
           </button>
         </div>

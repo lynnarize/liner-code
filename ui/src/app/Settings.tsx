@@ -2557,12 +2557,13 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
   const [project, setProject] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const parsed = useMemo(() => {
+  // The parse's own words, kept beside the manifest: a grey Add it with no reason reads as a broken form.
+  const [parsed, why] = useMemo(() => {
     try {
       const m = JSON.parse(text) as { id?: unknown; secrets?: { name?: unknown; label?: unknown }[] };
-      return { id: String(m.id ?? ""), secrets: Array.isArray(m.secrets) ? m.secrets.map((k) => ({ name: String(k.name ?? ""), label: String(k.label ?? k.name ?? "") })).filter((k) => k.name) : [] };
-    } catch {
-      return null;
+      return [{ id: String(m.id ?? ""), secrets: Array.isArray(m.secrets) ? m.secrets.map((k) => ({ name: String(k.name ?? ""), label: String(k.label ?? k.name ?? "") })).filter((k) => k.name) : [] }, ""] as const;
+    } catch (e) {
+      return [null, e instanceof Error ? e.message : String(e)] as const;
     }
   }, [text]);
   const add = async () => {
@@ -2592,9 +2593,17 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
         onChange={(e) => setText(e.target.value)}
         spellCheck={false}
         aria-label="The connection's manifest"
+        aria-invalid={(Boolean(text.trim()) && !parsed) || undefined}
+        aria-describedby={Boolean(text.trim()) && !parsed ? "lc-st-addhand-why" : undefined}
         autoFocus
         placeholder={'{\n  "apiVersion": 1,\n  "id": "linear",\n  "kind": "connection",\n  "name": "Linear",\n  "server": { "http": { "url": "https://mcp.linear.app/mcp", "headers": { "Authorization": "Bearer ${LINEAR_API_KEY}" } } },\n  "secrets": [{ "name": "LINEAR_API_KEY", "label": "Linear key" }]\n}'}
       />
+      {text.trim() && !parsed && (
+        <p id="lc-st-addhand-why" className="lc-sinfo-note" role="alert">
+          {/* The message's first words only: the rest is position numbers, or the whole manifest echoed back. */}
+          That isn't JSON yet: {why.split(",")[0].split(" ").slice(0, 6).join(" ")}
+        </p>
+      )}
       {Boolean(parsed?.secrets.length) && (
         <div className="lc-st-form-g">
           {parsed!.secrets.map((k) => (
@@ -2730,13 +2739,26 @@ function Projects() {
 /** What agents saved about a project with memory_add: every new session there starts with it. */
 function MemoryEditor({ project }: { project: Project }) {
   const [facts, setFacts] = useState<string[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [again, setAgain] = useState(0);
   useEffect(() => {
     void rpc("memory.list", { projectId: project.id })
-      .then(setFacts)
-      .catch(() => setFacts([]));
-  }, [project.id]);
-  if (!facts) return null;
+      .then((f) => (setFacts(f), setFailed(null)))
+      .catch((e) => setFailed(e instanceof Error ? e.message : String(e)));
+  }, [project.id, again]);
+  // The field stays while the first read is out, and says a failed one: empty words would read as nothing saved.
+  if (failed)
+    return (
+      <Field title="What agents remember" below>
+        <p className="lc-sinfo-note" role="alert">{failed}</p>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setFailed(null), setFacts(null), setAgain((n) => n + 1))}>
+          <I.refresh size={14} />
+          Look again
+        </button>
+      </Field>
+    );
+  if (!facts) return <Field title="What agents remember" note={<span className="l-shimmer">Reading what agents saved</span>} below />;
   const add = () => {
     if (!draft.trim()) return;
     void rpc("memory.add", { projectId: project.id, fact: draft })
@@ -2773,14 +2795,27 @@ function MemoryEditor({ project }: { project: Project }) {
 
 function RulesEditor({ project }: { project: Project }) {
   const [rules, setRules] = useState<ProjectRules | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [again, setAgain] = useState(0);
   // What you've written so far: a press outside closes the pop, and that mustn't lose it.
   const draft = useRef<string | null>(null);
   useEffect(() => {
     void rpc("project.rules", { id: project.id })
-      .then(setRules)
-      .catch(() => setRules(null));
-  }, [project.id]);
-  if (!rules) return null;
+      .then((r) => (setRules(r), setFailed(null)))
+      .catch((e) => setFailed(e instanceof Error ? e.message : String(e)));
+  }, [project.id, again]);
+  // The field stays while the first read is out, and says a failed one instead of vanishing.
+  if (failed)
+    return (
+      <Field title="Rules for every agent" below>
+        <p className="lc-sinfo-note" role="alert">{failed}</p>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setFailed(null), setRules(null), setAgain((n) => n + 1))}>
+          <I.refresh size={14} />
+          Look again
+        </button>
+      </Field>
+    );
+  if (!rules) return <Field title="Rules for every agent" note={<span className="l-shimmer">Reading the rules</span>} />;
   const { claude, agents, linked } = rules;
   const same = linked || (claude !== undefined && agents !== undefined && claude.trim() === agents.trim());
   const note = !claude && !agents ? "None yet. Every agent here reads what you write." : same ? "One text for every agent: AGENTS.md, which CLAUDE.md points to." : !agents ? "Only in CLAUDE.md, so Codex, OpenCode and Cursor don't see them." : !claude ? "Only in AGENTS.md, so Claude Code doesn't see them." : "CLAUDE.md and AGENTS.md say different things.";

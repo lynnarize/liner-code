@@ -38,7 +38,7 @@ import { toComposer } from "./Find";
 import { LinkedSurface, PrSurface } from "./Pr";
 import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
-import { Guide, MoreFiles, SURFACES, surfaceOf, TurnPicker, Viewed, type SurfaceId, type Tab } from "./Surfaces";
+import { Guide, MoreFiles, SURFACES, surfaceOf, SurfaceNote, TurnPicker, Viewed, type SurfaceId, type Tab } from "./Surfaces";
 import { undoTurn } from "./undo";
 import { entering } from "./look";
 import { early, lazyAgain } from "./early";
@@ -647,6 +647,7 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
   const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? null);
   const cp = cps.find((c) => c.id === pick);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
+  const [diffErr, setDiffErr] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [view, setView] = useState<"unified" | "split">(() => (localStorage.getItem("lc:view") as "split") ?? "unified");
   const [viewed, setViewed] = useState<Set<string>>(new Set());
@@ -660,6 +661,7 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
     if (!pick) return setDiff([]);
     let live = true;
     setDiff(null);
+    setDiffErr(null);
     void rpc("checkpoint.diff", { threadId: thread.id, itemId: pick })
       .then((d) => {
         if (!live) return;
@@ -671,6 +673,7 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
         setDiff([]);
         setTotal(0);
         // An empty diff alone would read as a turn that changed nothing.
+        setDiffErr(e instanceof Error ? e.message : String(e));
         fail(e);
       });
     return () => {
@@ -721,6 +724,10 @@ function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: stri
           <div className="lc-diff-wait">
             <span className="l-shimmer">Reading the changes</span>
           </div>
+        ) : diffErr ? (
+          <SurfaceNote icon={<I.alert size={20} />} title="The changes didn't open">
+            {diffErr}
+          </SurfaceNote>
         ) : (
           <CodeDiff files={diff} title={picker} view={view} onViewChange={setView} maxHeight={4000} />
         )}

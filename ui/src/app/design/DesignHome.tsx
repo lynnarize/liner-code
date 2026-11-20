@@ -339,6 +339,8 @@ function PickUp() {
 
 type Listed = { project: Project; files: DesignFileInfo[] };
 let listed: Listed[] | null = null;
+// A failed design.all is said, not an endless "Looking for designs": its words stay until a read succeeds.
+let listFailed: string | null = null;
 const listFns = new Set<() => void>();
 let asking = 0;
 let slowly = 0;
@@ -353,11 +355,15 @@ function relist() {
     void rpc("design.all", {}).then(
       (l) => {
         listed = l;
+        listFailed = null;
         listFns.forEach((f) => f());
         // What the open designs' rows say of them when nothing runs there (Tabs.tsx).
         for (const x of l) for (const f of x.files) if (!f.unreadable) knowFrames(tabKey({ projectId: x.project.id, file: f.id }), f.frames);
       },
-      () => {},
+      (e) => {
+        listFailed = e instanceof Error ? e.message : String(e);
+        listFns.forEach((f) => f());
+      },
     );
   }, 150);
 }
@@ -511,7 +517,17 @@ export function DesignFiles() {
         <I.search size={14} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter designs" aria-label="Filter designs" />
       </label>
-      {list === null ? <div className="ld-none l-shimmer">Looking for designs</div> : rows.length ? <div className="lc-sl-list ld-files">{rows}</div> : <div className="ld-none">{q ? "No design has that in its name." : "No designs yet. Say what to make on the right, or press New design."}</div>}
+      {list === null ? (
+        listFailed ? (
+          <div className="ld-none">
+            <p className="lc-sinfo-note" role="alert">
+              {listFailed} <button type="button" className="lc-link l-focus" onClick={() => relist()}>Look again</button>
+            </p>
+          </div>
+        ) : (
+          <div className="ld-none l-shimmer">Looking for designs</div>
+        )
+      ) : rows.length ? <div className="lc-sl-list ld-files">{rows}</div> : <div className="ld-none">{q ? "No design has that in its name." : "No designs yet. Say what to make on the right, or press New design."}</div>}
       <ContextMenu at={m ? { x: m.x, y: m.y } : null} label={m ? `${m.file.title}: what to do with it` : "Design"} onClose={() => (setMenu(null), setSure(false), setChoose(false))} width={choose ? 400 : 260}>
         {(close) =>
           m && choose ? (

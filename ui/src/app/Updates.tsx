@@ -12,6 +12,7 @@ import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { plural } from "./model";
+import { toolShown } from "./update-notices";
 import "./updates.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -101,7 +102,7 @@ export function noticesOf(u: Updates, modes: { app: string; tools: string }) {
   const app = modes.app !== "off" && u.dismissed.app !== u.app.latest ? appNotice(u.app) : null;
   if (app) out.push(app);
   if (modes.tools === "off") return out;
-  const shown = u.tools.filter((t) => !(t.state === "available" && u.dismissed[t.id] === t.latest));
+  const shown = u.tools.filter((t) => toolShown(t, u.dismissed));
   const offered = shown.filter((t) => t.state === "available");
   const queued = shown.filter((t) => t.state === "waiting");
   const done = shown.filter((t) => t.state === "updated");

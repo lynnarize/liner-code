@@ -1,3 +1,129 @@
+# Fix plans from the deep audit of 20 November 2026
+
+Written by the advisor session on 2026-11-20 against commit `bfb0ebc` (branch `design-and-api-endpoints`, Liner Code 0.3.0 beta).
+Eight parallel read-only auditors (engine core, providers, features, security, performance, tests, UI polish/detail,
+tech-debt/deps/DX/docs) plus the advisor's own direction pass produced **82 findings**; the advisor spot-vetted 23 of
+them against the code (all held) and wrote the top ~55 into the sixteen plans below, clustered by theme. The full
+findings files are in the advisor's scratch (`improve-audit/findings-*.md`); every plan inlines its own evidence.
+The advisor changed no code. The previous run (001–014) is finished and its record is kept below, unchanged.
+
+**L13 first:** the layout job's last plan (`plans/layout/L13-after-the-audit.md`) is carried out in the working tree
+but uncommitted at this writing. Commit it (its own prompt: `plans/layout/PROMPT-L13.md`) before running the plans
+here that share its files — 018, 020, 027 — or edit only the regions each plan names, as they instruct.
+
+## Execution order and status
+
+| Plan | Title | Priority | Effort | Depends on | Status |
+|------|-------|----------|--------|------------|--------|
+| [015](015-ci-goes-green.md) | CI goes green: the fifth flake tamed, the bundle built on every check | P1 | S | — | DONE |
+| [016](016-the-push-card-says-what-happened.md) | The push card says what happened; one stage at a time to a screen reader; "Look again" | P1 | S | — | TODO |
+| [017](017-a-failed-read-is-said.md) | A failed read is said, not shown as empty (Changes, Settings, Usage, Projects, Design Home, manifest form, notices) | P1 | M | — | TODO |
+| [018](018-one-keyboard-pattern.md) | One keyboard pattern: tablists, radio groups, menus, the add-on sheet, the checks' names | P1 | M | L13 committed (shared files) | TODO |
+| [019](019-storage-and-one-press.md) | A storage-less window keeps working; Compact and Send-now take one press | P1 | S | after 017 (Settings.tsx) | TODO |
+| [020](020-motion-scroll-and-rescroll.md) | Reduce Motion's last three spinners; every page scroller; Changes re-scroll | P1 | S | L13 committed (shared sheets) | TODO |
+| [021](021-browser-back-and-forward.md) | Browser's Back and Forward grey when there is nowhere to go | P2 | M | — | TODO |
+| [022](022-commit-switch-update-hold-the-thread.md) | Commit, switch and tool update hold the thread; autoPull investigated | P1 | M | — | TODO |
+| [023](023-the-engine-checks-before-it-works.md) | The engine checks before it works: addon-check, boot, MCP key, the walk, endpoint http, turn-grant links | P1 | M | — | TODO |
+| [024](024-git-quoting-and-merges.md) | Git's quoting and merges stop fooling attribution and the small-change pass | P1 | S | — | TODO |
+| [025](025-wind-down-guards.md) | Deleted-thread sink calls, the surface heartbeat, Stop's disk-full listeners | P1 | S | after 023 (server.ts) | TODO |
+| [026](026-surfaces-survive-the-bad-day.md) | Design/Device survive a huge file, wedged simctl, backslash filter, transient git, gh banner, dead watcher | P2 | M | — | TODO |
+| [027](027-the-dock-stands-still.md) | The dock stands still while the open session streams (measure first) | P2 | M | L13 committed; after 020 (Panel.tsx) | TODO |
+| [028](028-four-provider-details.md) | ACP refusal is an error; Codex tokens clamp; PROMPTED bounded; model choices deduped | P2 | S | — | TODO |
+| [029](029-codex-keeps-the-guard.md) | Codex keeps the destructive-command guard at Full (investigate + real-Codex gate) | P1 | M | after 028 (providers) | TODO |
+| [030](030-the-swap-checks-at-the-move.md) | The swap script checks the signature itself, right before the move | P2 | M | — | TODO |
+
+Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
+
+**Recommended order:** 015 first (it unblocks the release gate — CI is red on main and the desktop steps have never
+run). Then the UI polish cluster 016→017→019→018→020→021 (the owner's stated priority; 017 before 019 and 020 before
+027 because they share files). Then the engine cluster one at a time: 022, 023, 025, 024, 026, 028. Then 027 (needs
+the measuring build). 029 and 030 last — they carry real-tool / real-machine gates.
+
+**Shared files (run sequentially, not in parallel):** Settings.tsx (017, 019); SessionInfo.tsx (018, 019);
+Panel.tsx (017, 020, 027); Session.tsx (018, 027, L13); server.ts (023, 025); runtime.ts (022, 024, 025);
+app.css/surfaces.css/addons-page.css/findings.css (020, L13); providers (028, 029). Engine plans also follow the
+previous run's rule: one at a time, never in parallel.
+
+**Real-tool / real-machine gates (not done until the owner runs them):** 029 (real Codex against a fake local API),
+030 (the signed-copy swap rehearsal), 026 (simctl/log stream on a real simulator), 022 (real git hooks' variety),
+028 (refusal wording per agent). 015's CI is unverified until the owner pushes. The UI plans' on-screen checks are
+the owner's eyes or the measuring build — each plan says "not seen" where it could not look.
+
+## Not planned, and why
+
+| Finding | Why it has no plan |
+|---|---|
+| SEC-01 endpoint/add-on keys reach spawned processes via env (SECURITY_MODEL drift) | Needs a per-tool handoff decision (Codex env_key / OpenCode {env:} read env by design) + a real-tool run; the doc-drift half is a sentence the owner should approve with the mechanism. Recommended: extend plan 004's key-file pattern where the tool allows, document the exceptions. |
+| SEC-04 the proxy strips the dev server's CSP/XFO | Framing needs the XFO strip; keeping CSP with frame-ancestors relaxed needs real dev-server checks. A decision + a probe, not a blind fix. |
+| SEC-06 DSH sandbox denies read but not hard-link of secrets; some credential paths unlisted | LOW confidence — SBPL/XNU link() semantics need a real-Mac probe first (investigate plan on request). |
+| PROV-03 Claude plan-window utilization units disagree (0–1 vs percent) | Which unit the experimental usage API returns needs the SDK/real-tool check; the fix is one line once confirmed. |
+| PROV-06 endpoint key redaction only on errors, not streamed answers | Needs delta-buffering care (a key split across chunks); plan on request with a real-endpoint echo test. |
+| CORE-07 compare.keep --3way can leave conflict markers in the main checkout | Rollback must not destroy the person's own uncommitted work; needs a scratch-repo characterization + a design (apply through a throwaway index, or name the residue). |
+| CORE-08 search/import read whole histories synchronously | M, valuable; the async walk already exists to reuse — plan on request (it was outside this run's cap). |
+| FEAT-02 provisional version copy dropped on fast turn succession | MED — needs a characterization test of two overlapping turns first; the version lifecycle is delicate. |
+| FEAT-03 canvas.restore's sync copy+hash | M — restore must stay atomic-ish; plan on request with the async queue pattern. |
+| FEAT-07 proxy HTML buffering unbounded, no upstream timeout | MED — the user's own local server; robustness, plan on request. |
+| FEAT-08 forged `built` link from design.json | MED — buildlinks.ts consumption not fully traced; investigate first. |
+| FEAT-09 freePath's 50-try fallback can overwrite another session's file | LOW — the n>50 clause may be a deliberate bail; investigate before fixing. |
+| FEAT-13 hung DSH plugin call holds its slot | LOW — the agent-side MCP client may impose its own timeout; investigate the real call path. |
+| PERF-03 dock open/close animates grid tracks; PERF-04 lazy Changes; PERF-05 mirror retokenizes | Measure first (CDP frame times / chunk KB / typing latency) — the plans would be guesses without numbers. |
+| DEBT-01 cwdOf expression ×27; DEBT-03 ~20 falsely-public UI symbols; DEBT-04 14 test-only engine exports; PERF-02 usage.jsonl never trimmed | Cheap, safe, queued — say the word and they become one "engine/UI bookkeeping" plan. DEBT-04 needs the owner's E5-precedent call (document seams vs inject). |
+| TEST-02 Windows risk rules untested on macOS CI; TEST-04 quit sequence untested; TEST-05 six doing.ts helpers; TEST-06 endpoint's four branches | Queued test plans — say the word. TEST-02 is the strongest (the Full-access guard's Windows half has zero effective coverage). |
+| DEBT-02 three stdio tool-server copies | M, touches agent tool processes — needs the real-tool run; held like F2. |
+| DEBT-05 Electron 44→45, SDK 0.3.310→0.3.329; DEBT-06 TS 5.9→7, Vite 7→8 | Release-gated bumps, each its own change (CLAUDE.md's pin rules); schedule, don't bundle. |
+| DEBT-08 SECURITY_MODEL says 0.2.9; BACKEND's macOS floor matches nothing built | The version line is a release-process fix; the floor needs the packaged Info.plist inspected first (owner). |
+| DEBT-09 CHANGELOG-next empty while 12 commits sit past v0.3.0 | The owner's voice + a release.sh checklist item; the commit subjects are already user-facing sentences to draft from. |
+| DEBT-10 engine logging has no structure/request ids | M — measure against real support cases first; must not log keys or prompts. |
+| Two-pane dock rules unreachable since 0.2.2; the layout "Not planned" backlog (panel shapes, icon sizes, dialogs, tooltips, fractional type…) | Design decisions — the owner's rule: a mockup before a redesign. Recorded in plans/layout/README.md. |
+| Windows CI job (DEBT-07's other half) | Needs a mac-only test inventory + a Windows runner shakedown; the first run surfaces unknown path/spawn failures a fix plan cannot bound. Investigate first. |
+
+## Findings considered and rejected (this run)
+
+The auditors' own dismissed candidates, kept so the next run does not re-audit them:
+- CORE: store.removeProject orphan logs (api.project.remove drops every thread first); firstLine hang on an ended
+  stdin (the shell keeps stdin open); updates/state.json non-atomic write (constructor tolerates corruption, small
+  file); refused-undo snapshot refs accumulate (forget cleans them at delete); doctor probe env stripping (strictly
+  cleaner than a real session's env); launch.ts port race (the loser exits early and says so).
+- UI: sessionPrAgent's stale thread.status (engine mode defaults to queue — harmless); notification click with a
+  hidden window (send() calls show()); Dock badge vs sidebar counts (both use needsYou).
+- PERF/DEBT verified-merged since 11-18 (NOT debt): F5 asking-test + usage totals, F7 version-compare/bundle-id,
+  A13 KEEP=20 hold/release, C8 eviction + flat state.json + findLastIndex, C17 incremental usage read, A16 Security
+  throttle, A11 isBlank memo, D6 opacity/transform pulses, font preload; CSS scans found 0 unused
+  keyframes/props/classes; contracts 0 dead exports; BACKEND route list and README data-send claims accurate.
+- The previous run's rejections (below) still hold.
+
+## What this audit did not look at
+
+Routines internals (off by decision), `ui/src/liner` internals (vendored), `mac/`, the Demo provider, `site/` and the
+untracked folders. No real-tool runs (Cursor, Grok, Antigravity have never been run; Claude/Codex/OpenCode only by
+the owner's earlier rehearsals). No Windows runtime behaviour. No app runs or timings by the auditors (read-only) —
+the measure-first items say so. Settings.tsx, Timeline.tsx, Sidebar.tsx, Composer.tsx had targeted hotspot passes,
+not line-by-line; design Canvas/Frame/Drop and security Overview/ScanSession internals are partly read;
+security-checks/bringing-in/demo/tools, creator, canvas-html internals, buildlinks, watch and the small engine files
+have sampled coverage (the FEAT auditor's coverage note lists them). The packaged Info.plist was not inspected.
+
+## Rules that hold for every plan (this run)
+
+The previous run's rules below still hold, plus:
+- Test commands in this harness need `env -u NODE_TEST_CONTEXT -u NODE_TEST_WORKER_ID` or node --test silently skips
+  every file (the CI workflow itself does not need it).
+- L13's uncommitted work is in the tree: plans that share its files say how to sequence; commit only your plan's files.
+- One local commit per plan, the plan's own message. Never push. Honour each plan's STOP conditions.
+
+## Executor notes (this run)
+
+(One line per finished plan: commit, what was not verified, any STOP.)
+
+- **015** DONE — commit "CI passes on a cold runner, and the app's bundle is built on every check". The fork-during-Reviewer-read
+  wait in reviewer.test.ts is now a 20s clock deadline instead of a ~4s tick budget (the cause of CI run 44493395572's single
+  failure, 1426/1427); 19/19 in four local runs including one under build load. check.yml gains `npm run build`, the
+  design-and-api-endpoints push trigger, and checkout/setup-node v5 (tags confirmed to exist; the latest majors are v7 — the
+  plan pins v5, the owner may prefer v7 later). Typecheck and build exit 0. **Owed to the owner:** CI on GitHub is unverified
+  until pushed; the desktop CI steps have still never executed anywhere. No STOP. L13 was already committed (dbcddff) before
+  this run began, so the index's "L13 first" precondition is satisfied.
+
+---
+
 # Fix plans from the audit of 19 November 2026
 
 Written by the advisor session on 2026-11-19 against commit `6970155` (branch `design-and-api-endpoints`, Liner Code 0.2.9).

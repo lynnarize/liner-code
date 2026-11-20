@@ -3,7 +3,7 @@
 name: Check
 on:
   push:
-    branches: [main]
+    branches: [main, design-and-api-endpoints]
   pull_request:
   workflow_dispatch:
 jobs:
@@ -11,13 +11,15 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # The bundle users load: tsc alone misses import-graph, CSS and chunk failures.
+      - run: npm run build
       # One file at a time: the timing tests fail at random under parallel load.
       - run: npm run test:steady -w engine
       - run: node desktop/build.ts

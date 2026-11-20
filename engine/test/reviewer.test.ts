@@ -361,7 +361,9 @@ test("a fork while the Reviewer reads the last change takes that turn along: it 
     const { createApi } = await import("../src/api.ts");
     const api = createApi(store, runtime, process.env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
     const working = runtime.send("t", "add a dark mode toggle to settings");
-    for (let i = 0; i < 400 && !reading; i++) await tick();
+    // A cold CI runner can take seconds to reach the Reviewer's read: wait on the clock, not a tick count.
+    const deadline = Date.now() + 20_000;
+    while (!reading && Date.now() < deadline) await tick();
     assert.ok(reading && runtime.isRunning("t"), "the Reviewer reads");
     const fork = (await api.call("thread.create", { projectId: "p", forkOf: "t" })) as Thread;
     assert.equal(fork.turns, 1);

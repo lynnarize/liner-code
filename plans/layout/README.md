@@ -48,6 +48,8 @@ page, the corner scale); the rest is listed under "Not planned" with the facts, 
 | L11 | `L11-dead-and-superseded-rules.md` | Nothing visible: the losing copies of rules are removed | medium | n/a |
 | L12 | `L12-corner-scale.md` | Corners follow one scale | medium | no |
 
+| L13 | `L13-after-the-audit.md` | What the audit of L01 to L12 found: the ring at 2x, a closing panel's shape, Remove, Design's title, pills | low | steps 1, 2a and 4 tried in the app |
+
 Order: L01 to L12 as numbered. L05 must come before L06. L11 must come after L05 and L06 (they remove some of the same lines).
 L12 is last and is the only plan that changes the look of healthy screens. The owner confirmed it on 2026-11-19: run it.
 
@@ -190,7 +192,212 @@ first (your own rule: a mockup before a redesign).
 | Settings' sidebar rows are 34px at 14 medium, the main sidebar's 32px at 13 regular | `settings.css:164-185` against `app.css:1064-1074`, `7693-7699` | Small, but it restyles a whole column |
 | Setup is a different shell | No paper, a 300px rail with a hairline | It is the newest page; likely intended |
 
+## The advisor's audit of the work, 2026-11-20
+
+Audited at `bfb0ebc`: twelve commits on top of `125db4f`, one per plan, nothing pushed. Four reviewers read every diff
+against its plan and ran each new test against its parent commit; the advisor then checked each claimed fault in the
+running app (the measuring build, 1x and 2x, 1440×900 down to 880×580) and compared captures with those taken before the work.
+
+**Verdict: the work follows the plans, and the app is better on every number the plans named. Seven faults remain.
+Six of them come from the plans, one from the way a plan was carried out. All are in `L13-after-the-audit.md`.**
+
+**What holds**
+
+- Every commit changes only what its plan names. No formatter ran, no `!important`, nothing appended as an override block,
+  nothing under `ui/src/liner/`, Routines, `mac/`, the Demo provider or `CHANGELOG.md`. `engine/src`, `desktop/` and
+  `contracts/` are untouched.
+- Every new test fails on its parent commit for the reason its plan gives, and passes on its own (checked by running, all 12).
+- `npm run typecheck` 0, `npm run build` 0, layout and face tests 40 of 40. `npm test`: 1,465 of 1,467; the two failures
+  ("checks: a big repository never holds the engine's thread for long", "sidekick: a brief that waited in line…") are
+  timing tests, ran while a browser was measuring, and pass alone (10 of 10, and 29 of 29 twice).
+- Measured against the baseline above, every key moved to its plan's target and no other key moved: menus 14px; the card
+  on whole pixels (992 / 396); Files' find field 8px in; Commit on Send's row; the narrow panel flat; thread and composer
+  text on one edge (486 / 486, 298 / 298) and your message ending where Send does; the top row's words at 20 on all four
+  faces; Add-ons on the page pattern with a 300px note; the face switch; the finding footer and Design's row inside the window.
+- L11 removed 199 lines and no deletion changes what is drawn (each checked against the rule that survives and the markup).
+- L09's Findings threshold is 1228px, not the plan's 958. The plan's number was wrong by its own rule (unchanged with the
+  sidebar closed); the executor's is right. Seen: Usage folds at a 880px page, the finding panel narrows by the page.
+
+**Faults (all in L13)**
+
+| # | From | What the person sees | Whose |
+|---|---|---|---|
+| 1 | L06 | On a Retina screen the open panel's ring is 1px, not half a pixel (measured at 2x) | executor: the card rule became a selector list that outweighs the 2x override |
+| 2 | L06 | A panel that was the paper (narrow session, full canvas) flashes as a card with a ring while it closes (seen frame by frame) | plan: its closing selectors ask for `[data-panel]`, which `Session.tsx` has already removed |
+| 3 | L03 | "Remove {name}…" on an add-on's sheet is bare text with no padding (read; the Demo has no add-on) | plan: it took the size off both Remove buttons, and only one is a `.lc-btn` |
+| 4 | L01 | At 880×580 Design's title is still drawn under "On its own" (seen). The row no longer leaves the window | plan and its measure: the script compared wrappers, and the wrapper shrinks under a button that does not |
+| 5 | L01 | "Who is drawing" never hides in a narrow row (read) | plan: a later rule of the same weight wins |
+| 6 | L08 | With the sidebar hidden, Design's title plate covers the last 4px of Show the sidebar (seen) | plan: −10px against a 6px gap |
+| 7 | L12 | A switch, the checks' dots and counts, and Setup's pills have flat sides: 9→8 and 15→14 were half-heights, not corners (read) | plan: the table had no rule for pills |
+
+Smaller, also in L13: two comments in `findings.css` that say the opposite of what happens, a rule there that does
+nothing, "24px" in `intro.css`, two doubled blank lines and one orphaned comment from L11, and a test that would pass
+with the wrong sidebar width.
+
+**Not faults, but said plainly**
+
+- **Executor notes stop at L06.** L07 to L12 were done and committed without a note, a measure output or a final test run
+  on record. The numbers for them above are the advisor's.
+- **Two panes cannot be reached** (`dock.ts` has made no second pane since 0.2.2), so that half of L06 fixes rules nobody
+  can meet. The plan should not have planned it. Delete those rules or bring two panes back: the owner's call.
+- **L11 skipped five listed items without saying so** (one rightly: the plan was wrong about `scan.css:264-267`).
+  Nothing visible depends on them.
+- **L12, nested corners.** With four steps, eight inner boxes now have the same corner as the box round them
+  (1 to 2px off concentric). Listed in L13 under "Not in this plan".
+- **The measure script** made a new Demo design on every run (it looked for the wrong row class), which is why the
+  executor's build has 24 of them. Fixed, with four new keys: `panel.ringAt2x`, `panelNarrow.closingRadius`,
+  `panelWide.closingRadius`, and `designBar.itemsOverlapBy` now compares the buttons themselves.
+- Not seen by anyone: the traffic-light indent on the Mac shell, a real add-on's sheet, a switch in Session info, the
+  lean page's fold, anything at 2x other than the ring.
+
 ## Executor notes
 
 (The model that runs the plans fills this in: for each plan `DONE <commit>`, `BLOCKED <one line why>` or `SKIPPED <why>`, and
 anything it could not verify.)
+
+Baseline measured before the first plan (`/tmp/layout-before.json`, commit `125db4f`): matches the README's baseline on every
+key. No difference to report.
+
+- **L01 DONE `9c05294`.** Both source tests written first and seen to fail for the plan's stated reasons, then pass;
+  typecheck and build pass. Measured at 880×580: `findingFoot.pastRightEdge` 35→0, `findingFoot.tallestChild` 94→31,
+  `designBar.pastRightEdge` 63→0; every other measure key byte-identical (the `setup` key only prints on a first launch).
+  At 1440×900 both rows verified unchanged by a read-only Playwright probe: the footer is one 60px row with a one-line hint,
+  the Design bar stays 44px with no item hidden, no overlap and no overflow. Notes: (1) OwnChip's words sit in a classless
+  `<span>` (`design/Tabs.tsx:385`), so step 2's "add that class's selector" branch was inapplicable; the chip was left as it
+  is, `Tabs.tsx` untouched, and the measured target still passes. (2) When the footer wraps at 880 the buttons drop under the
+  hint (DOM order), not the hint under the buttons as the plan's prose says; the plan's comment was used verbatim and the
+  numeric Verify criteria pass. (3) No screen was inspected by eye — all visual claims are computed-style/geometry probe
+  readouts, not screenshots looked at.
+- **L02 DONE `a171aaa`.** Logic test written first, failed with `ERR_MODULE_NOT_FOUND` (face-pages.ts absent), then both
+  tests pass; typecheck and build pass; L01's tests still pass. Measured `faceSwitch.addonsPageStillShown` true→false; all
+  67 other keys unchanged. A Playwright probe confirmed Code session → Security → Code returns the same session thread, and
+  Add-ons → Design shows Design with the Add-ons page gone. The plan's fallback was used: `face.ts` cannot load under Node
+  (`ERR_UNKNOWN_FILE_EXTENSION` for `./face.css`, confirmed by two probes), so `keptOnFaceChange` lives in the new
+  `ui/src/app/face-pages.ts`; `face.ts` untouched. Full suite caveat: under heavy parallel machine load (load averages
+  11–24) `npm test` never exited 0 in one shot — 1420/1431 twice with different timing-test subsets; every failing file
+  passes in isolation (antigravity 53/53 twice after one isolated flake; desktop run separately 49/49). No engine or desktop
+  test imports the changed modules except the new face-change test, so these are load flakes, not regressions; a quiet
+  full-suite re-run is recorded in the final pass below.
+- **L03 DONE `2916281`.** Both source tests written first and seen to fail for the plan's stated reasons (absolute top row;
+  860px/26px), then pass; typecheck and build pass. Measured: `addons.noteWidth.width` 1313→300, `pageScrollsSideways`
+  true→false, `h1Size` 26px→24px, `gutter` 40px→32px, `colWidth` 860→760, `topRowPosition` absolute→static, `h1Top` 48→76;
+  all 61 other keys unchanged. Probes: the info button's centre sits on the subtitle's line box (delta 0); the note portals
+  at 300px wide, 5 lines, inside the window; the scroller fills the paper to its bottom and at 1440×360 scrolls with nothing
+  clipped (the 96px bottom padding visible at max scroll). Screenshots were looked at (note wrap; page bottom at max scroll).
+  The Remove button was not seen on a genuinely opened Details sheet — the Demo build lists no add-ons — verified instead by
+  the source diff and an injected-button cascade readout (Keep it and Remove both pill 999px/30px high, Remove keeps its
+  danger colour). Minor: the plan's drift comment names line 38 for the h1 font-size; the declaration is at line 40 (content
+  matches).
+- **L04 DONE `390167f`.** Both source tests written first and seen to fail (plain `.lc-pop-panel` selector + the 13px block;
+  1px row gaps), then pass — 6 tests green; typecheck and build pass. Measured `menu.radius` 16px→14px; all 67 other keys
+  unchanged. Row gaps changed to 2px in the nine row lists the plan's table names (`.lc-envp`, `.lc-env-in`, `.lc-who-scroll`,
+  `.lc-rvm`, `.lc-qp-list`, `.lc-crp`, `.lc-cr-files`, `.lc-ao-ways`, `.lc-pc-list`), each confirmed a list of rows with a
+  hover wash. Left at 1px, per the plan's criterion: `.lc-sl-acts` (the row's action icons, not rows), `.lc-team` and `.lc-qp`
+  (their gaps separate header/list tracks, not rows). The sidebar-heading menu keeps padding 5px/gap 0, corner 13→14px.
+  Screenshots were looked at for the composer's menus, the Crew menu, the Add-ons ways menu and the heading menu: 14px
+  corners, no scrollbar (scrollHeight == clientHeight in each). `.lc-pc-list` cannot be opened in the Demo build (model lists
+  exclude Demo) — verified by the source test and an injected-element cascade readout instead. Noticed, not fixed (the plan
+  names only the gap): `.lc-qp-list`'s `max-height: calc(34px * 8 + 7px)` is sized for 1px gaps — eight 34px rows at 2px gaps
+  need 286px against 279px, so the eighth row scrolls a little; left as the plan's scope dictates.
+- **L05 DONE `d511352`.** Five source tests (one per value-changing step), each written first and seen to fail for its stated
+  reason, each green at its own step before the next; 11 tests green overall; typecheck and build pass with no CSS warning.
+  Measured: `cardX`/`cardW` 991.4/396.6 → 992/396 on all five surfaces; `Changes.footVsSend` −8→0; `Files.firstBoxTop` 2→8;
+  `Agents.textLeft` 14→16. Consequential changes, all explained by the plan: `Files.textTop` 42.8→48.8 (the first text sits
+  below the find field and moves with it), `Browser.textLeft` 49.8→49.5 (centred empty-state text in a 0.6px narrower card),
+  `threadBesidePanel.youRight`/`sendRight` +1 (the thread gains the rounded-away 0.625px). 51 keys unchanged, including
+  `panelNarrow` and every whole-paper value; Session/Changes/Agents `textTop` (10–12.5) left as they are — the plan's table
+  marks them "fine". Probes: the 520ms grid animation interpolates with `round()` (no snap, the column never 0, console
+  clean); the bottom panel's Terminal really resolves padding-top 0 (it lives outside `.lc-panel`); wide mode keeps all the
+  old values through the var fallbacks; the MoreFiles line was verified by injection at the component's real DOM position
+  plus a screenshot (16px inset, aligned with the diff text, Commit row intact). Not seen: Browser's address bar with a real
+  page open (the plan marks it not required; opening a URL would hit the network), Linked/Device/add-on-banner with real
+  content (the Demo has none), MoreFiles with >60 changed files (the Demo sample has 1) — verified by source tests and
+  injected-element cascade readouts, labelled as such. Step 5 is unscoped as the plan writes it: Agents' text starts 16px in
+  over the whole paper too (was 14).
+- **L06 DONE `d7f6ac7`.** Four source tests written first, each seen to fail for its stated reason, each green at its own
+  step; 15 layout-rules tests and 29 panels tests pass; typecheck and build pass. Step 1: the four `lc-session` containers
+  700→786px and dock's two-pane handover 860→946px (the `@media 860` Add-ons rule and the unnamed container in surfaces.css
+  untouched); a 1000×700 probe (session 730, inside D6's band) shows the panel now taking the paper where it used to squeeze
+  to ~256px; 1440×900 measured byte-identical after the step (the plan's STOP guard). Step 2: measured `panelNarrow.margin`
+  "8px 0px 8px 8px"→"0px" and `panelNarrow.radius` 14px→0px, `rowShown` true, header 44px; `panel.*` at 1440 unchanged —
+  these two keys are the ONLY changes in the whole plan's measure diff (66 keys identical). Step 3: the close fade verified
+  headlessly (real shell not run — Demo isolation): ~100ms into close `animationName: lc-panel-out`, opacity 0.27, card look
+  and ring held, panel detached by ~450ms, repeat runs identical, no page errors. Step 4: the open-state two-pane width rule
+  replaced by the plan's closing-only rule. Full `npm test` under load (averages 7–17): 1441/1444 twice, the SAME three
+  timing tests (owners ×2, security-checks ×1); each passes in isolation (5/5, 10/10, 15/15 together), desktop 49/49
+  separately — load flakes, the change is CSS + a source-test file only. **Findings for the owner (left exactly as the plan
+  writes, neither is a plan STOP):** (1) `Session.tsx:556-558` drops `data-panel`/`data-wide`/`data-panes` while leaving, so
+  step 3's duplicated flat selectors and step 4's closing-only two-pane width rule NEVER MATCH in a real close: the narrow
+  closing panel keeps the CARD look for its 220ms fade (verified), and a real two-pane close would use the single-pane
+  closing width. Making the close flat would need a Session.tsx change or selectors beyond the plan's letter — not done.
+  (2) Two panes are unreachable through the UI in any build since 0.2.2 (`dock.ts`: "nothing makes a second"); an honest drag
+  attempt executed the drop but `data-panes` stayed null. **Two panes not seen** — the open-state fix (the plan's actual bug:
+  dock's width rule outweighing the card's `width: auto`) verified by injected-state cascade readouts: column 647px whole,
+  card 639 = 647 − 8, right edge = rail's left, 8px gap, ring present; a screenshot corner was looked at. (3) Formulation
+  deviation, forced by the no-modify-existing-tests rule: the card look rule names the open-state selector beside the bare
+  one in a selector list (declarations written once, comment says why) so L05's source test still finds `--lc-card-top` on
+  the card's own selector; `justify-self`/`width`/`min-width` stay on the open state alone. (4) The known rail overrun while
+  closing was observed (302px past the rail mid-fade) and left alone as the plan defers it. Not live-verified headless: the
+  traffic-light 946 copy (no `data-native="mac"` in a browser) and the 2dppx ring (dpr 1) — source-tested verbatim copies.
+- **L07 DONE `0581410`** — "The conversation's text and the composer's text share their left edge, and your message ends
+  where Send does". Carried out by another session during this orchestrator's auth outage; no executor note was left on
+  record. The advisor's audit checked the diff against the plan, the test against its parent, and the numbers: thread and
+  composer text on one edge (486/486 wide, 298/298 beside the panel), your message ending where Send does.
+- **L08 DONE `f0193fe`** — "The top row's first word starts at the same place in Code, Design, Security and Settings".
+  Same record as L07. Audited: the top row's words at 20 on all four faces. Its fault 6 (Design's title plate covering the
+  Show-sidebar button) is L13 step 4d.
+- **L09 DONE `b1431d0`** — "Usage, a design's lean page and a finding's panel fold by the room they have, sidebar open or
+  not". Same record as L07. Audited: Usage folds at an 880px page, the finding panel narrows by the page. The Findings
+  threshold is 1228px, not the plan's 958 — the plan's number was wrong by its own rule (unchanged with the sidebar closed);
+  the executor's is right.
+- **L10 DONE `68f1510`** — "Rows that touched stand apart, a doubled gap is single, and notices sit under the top row as it
+  is now". Same record as L07. Audited with the rest: every key moved to its plan's target and no other key moved.
+- **L11 DONE `42c5f9e`** — "The stylesheets no longer carry rules that a later one always overrode". Same record as L07.
+  Audited: 199 lines removed, no deletion changes what is drawn (each checked against the surviving rule and the markup).
+  Five listed items were skipped without a note (one rightly: the plan was wrong about `scan.css:264-267`); nothing visible
+  depends on them.
+- **L12 DONE `bfb0ebc`** — "Corners come in four sizes: 8 for a row, 10 for a field, 14 for a card or a menu, 18 for the
+  paper". Same record as L07. Audited: the scale applied; eight inner boxes now sit 1–2px off concentric (listed in L13
+  under "Not in this plan"); the flat-sided pills (fault 7) are L13 step 5.
+- **L13 DONE `dbcddff`** — "The panel's ring is half a pixel again, a closing panel keeps the shape it had, Design's title
+  gives way to its chips, and pills are round". Steps 1–2 had already been applied by a previous executor (idle since
+  07:01); the orchestrator verified them before resuming (41 tests, typecheck, `ringAt2x` 0.5px, both `closingRadius` 0px)
+  and did not redo them. Steps 3–6 were carried out test-first: seven new tests, each seen to fail for the plan's stated
+  reason and then pass; the one existing-test change the plan names (the sidebar-width test also asserts `--lc-side:
+  264px`) is a guard that passes before and after by design; L06's closing test was updated to the renamed selectors
+  because step 2's "the dead `[data-panel]` copy is gone" assertion forces it. 48/48 layout-rules tests; typecheck and
+  build pass. Measured, the four fault keys: `panel.ringAt2x` 1px→**0.5px**, `panelNarrow.closingRadius` 14px→**0px**,
+  `panelWide.closingRadius` 14px→**0px**, `designBar.itemsOverlapBy` 103→**0**; every other key as before. The executor's
+  clean full measure run changed only `itemsOverlapBy` (70 of 71 keys identical); the orchestrator's two full runs under
+  load showed the documented Browser port-scan race (the script's 1300ms wait samples the surface mid-scan), proven
+  environmental by a wait-for-settled probe reading Browser byte-identical to before (textTop 242, textLeft 49.5,
+  firstBoxTop 573, card 992/396/872) and by the executor's stash diagnostic. Seen on screenshots: Design's row at 880×580
+  (overlap 0, title 131px ending in "…", chip 49px icon+chevron), the row byte-identical at 1440×900 with `designHome` 20,
+  the sidebar-hidden gap (button 26–58, title box from 60, words at 70), the checks' dots and counts fully round on the
+  Demo design's findings (Checks 10), and the Add-ons split button's 10px outer corners with a square seam. Not seen: the
+  first Remove on a real add-on sheet (the Demo lists no add-on — injected cascade readout: 32px high, 0 10px padding,
+  10px corner; the confirm Remove identical to Keep it), the Session-info switch (needs a connection/add-on — injected
+  readout 999px at 30×18), Setup's pill (the Setup chunk loads only on first launch — source test asserts 999px), and a
+  real `.ld-who` (the Demo presence draws none — labelled injected cascade: hidden at bar 318, shown at 1440). Step 6: the
+  inert `.lf-x-act-bar > .lc-grow` rule deleted with `findingFoot` unmoved (82/31/0); the two findings comments now say
+  what happens (the buttons go under the hint), intro.css says 18px, the doubled blank lines and the orphaned comment are
+  gone. A panel closing beside the thread at 1440 is still a card for its fade (radius 14px, ring, `lc-panel-out`,
+  detached by ~250ms) — step 2's STOP holds. The commit also carries the audit's measure-script update and the L13 plan
+  files; the notes themselves follow in the record commit below (a commit cannot name its own hash). Left for the owner,
+  as L13's "Not in this plan" lists: the unreachable two-pane rules, eight inner corners 1–2px off concentric,
+  `.lc-ship-morph`'s 1px, the unproven-dead L11 leftovers, and the rail overrun while closing.
+
+## Final pass (2026-11-20, after L13)
+
+- `npm run typecheck` 0, `npm run build` 0 (the pre-existing chunk-size warning only).
+- `engine/test/layout-rules.test.ts` 48/48, `engine/test/face-change.test.ts` 2/2, `engine/test/panels.test.ts` 29/29.
+- Full `npm test` on the settling machine: 1465/1477 — twelve failures, all in the known timing-sensitive families
+  (antigravity, audit-codex-acp, outside, owners, polish-features, polish-providers, providers, security-checks, sidekick),
+  run while the 1-minute load average was 7–19. Isolation protocol: seven of the nine files pass alone on the first try;
+  antigravity 53/53 and owners 5/5 on a second alone run (both are documented load flakes); desktop separately 49/49,
+  0 skipped, at load 2.2. Every failure resolved in isolation; the work since the audit is UI CSS, one TSX attribute and
+  source tests — `engine/src`, `desktop/src` and `contracts/src` untouched — so these are load flakes, not regressions.
+- Measure record: `/tmp/layout-before.json` (baseline at `125db4f`), per-plan `/tmp/layout-L01.json` … `/tmp/layout-L06.json`,
+  `/tmp/layout-l13-before.json`, `/tmp/layout-L13.json` (the executor's clean run) and the orchestrator's settled-probe
+  readouts; copies in the orchestrator's scratch dir. The advisor's audit of L01–L12 is above; L13's four keys are at
+  target and no other measured key moved.

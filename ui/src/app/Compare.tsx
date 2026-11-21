@@ -9,10 +9,10 @@ import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { toast } from "@liner/components/toast/toast";
 import { loadItems, rpc, useEngine, useItems } from "./engine";
-import { I } from "./icons";
+import { MARK_WORD, StateMark, type MarkState } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, money, plural, sumLines, threadModel } from "./model";
 import { reviewHeld } from "./session-state";
-import { Badge, Lines, ModelTag } from "./ui";
+import { Lines, ModelTag, ShowSidebar } from "./ui";
 
 export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string; sidebar: boolean; onSidebar: () => void; onOpen: (threadId: string) => void; onDone: (threadId: string) => void }) {
   const all = useEngine((s) => s.threads);
@@ -41,16 +41,14 @@ export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string
     <div className="lc-usage lc-cmp">
       <header className="lc-top" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
         <h1 className="lc-title">{title}</h1>
         <span className="lc-quiet lc-cmp-n">{running ? `${running} of ${threads.length} still working` : `${plural(threads.length, "answer")}, pick one`}</span>
         <span className="lc-grow" data-drag />
         {threads.length > 0 && (
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-pressed={diffs} onClick={() => setDiffs((d) => !d)}>
-            {diffs ? "Hide the diffs" : "Show the diffs"}
+            {diffs ? "Hide the changes" : "Show the changes"}
           </button>
         )}
       </header>
@@ -83,6 +81,7 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
   const files = [...new Map(cps.flatMap((c) => c.files).map((f) => [f.path, f])).values()];
   const lines = sumLines(files);
   const turn = (items ?? []).filter((x) => x.kind === "turn").pop();
+  const state: MarkState = t.status === "running" ? "working" : t.status === "waiting" && !reviewHeld(t) ? "needs" : t.status === "limited" ? "limit" : t.status === "error" ? "problem" : "done";
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   useEffect(() => {
     if (!diffs || t.status === "running" || !cps.length) return;
@@ -95,7 +94,7 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
     };
   }, [diffs, t.status, cps.length]);
   const u = t.usage;
-  // A column that changed nothing has no diff to ask for: it says so, rather than show its answer under "Hide the diffs".
+  // A column that changed nothing has no diff to ask for: it says so, rather than show its answer under "Hide the changes".
   const shown = diffs ? (diff ?? (t.status !== "running" && !cps.length ? [] : null)) : null;
   return (
     <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={modelLabel(model, providers)}>
@@ -103,7 +102,11 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
         <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={14} />
         <span className="lc-quiet">{a.name !== modelLabel(model, providers) ? a.name : ""}</span>
         <span className="lc-grow" />
-        {t.status === "running" ? <span className="l-shimmer lc-cmp-s">Working</span> : t.status === "waiting" && !reviewHeld(t) ? <Badge tone="warn">Waits for you</Badge> : t.status === "limited" ? <Badge tone="warn">Hit its limit</Badge> : t.status === "error" ? <Badge tone="danger">A problem</Badge> : <Badge tone="ok">Done</Badge>}
+        {/* How each one stands, as a session's row says it: the mark stays mounted so a change plays, and the words are the mark's. */}
+        <span className="lc-cmp-s">
+          <StateMark state={state} size={12} brand={markOf(model)} />
+          {MARK_WORD[state]}
+        </span>
       </header>
       <dl className="lc-cmp-stats">
         <div>
@@ -121,7 +124,7 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
       </dl>
       <div className="lc-cmp-body">
         {shown ? (
-          shown.length ? <CodeDiff files={shown} view="unified" maxHeight={100000} /> : <p className="lc-quiet">No changes.</p>
+          shown.length ? <CodeDiff files={shown} view="unified" maxHeight={100000} defaultWrap /> : <p className="lc-quiet">No changes.</p>
         ) : last?.kind === "text" ? (
           <StreamedMarkdown className="lc-md" text={last.text} streaming={last.streaming} animate={false} />
         ) : (

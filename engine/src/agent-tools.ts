@@ -958,7 +958,8 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     if (!r.allow) return text(`denied: the person said no to the mode ${name}${r.reason ? `, and said: “${r.reason}”` : ""}. Nothing was added.`);
     const id = `mode-${uid("a").slice(-8)}`;
     const model = t.model ?? (t.agent.startsWith("@") ? t.agent.slice(1) : (this.store.agents.find((a) => a.id === t.agent)?.model ?? t.agent));
-    this.store.setAgents([...this.store.agents, { id, name, role: description || "A mode", glyph: "spark", specialty: "custom", model, effort: t.effort ?? "medium", soul: instructions, ...(skills.length ? { skills } : {}), ...(contextFiles.length ? { contextFiles } : {}) }]);
+    // The session's level when the person gave it one, else none: a mode an agent wrote isn't the person picking a level.
+    this.store.setAgents([...this.store.agents, { id, name, role: description || "A mode", glyph: "spark", specialty: "custom", model, effort: t.effort ?? "", soul: instructions, ...(skills.length ? { skills } : {}), ...(contextFiles.length ? { contextFiles } : {}) }]);
     return text(`applied: the mode ${name} is added (agent:${id}). The person picks it beside the project when they start a session, and can set it as the new-session default in Settings › Modes. It gives a model these instructions; it doesn't choose the model.`);
   }
 

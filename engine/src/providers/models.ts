@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
-import { jsonLines, killTree, run, spawn, which } from "../exec.ts";
+import { jsonLines, killTree, run, runBounded, spawn, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 
 const LEVELS: Record<string, { label: string; description: string }> = {
@@ -21,15 +21,18 @@ const LEVELS: Record<string, { label: string; description: string }> = {
   ultra: { label: "Ultra", description: "The deepest this model offers" },
 };
 
-/** An effort level by its tool's name for it, with the description the tool gave, if any. */
+/**
+  An effort level by its tool's name for it, with the description the tool gave, if any. A level Liner Code knows gets its label;
+  one it has never seen keeps the tool's own word, so what the picker lists is what the tool said.
+*/
 export function effortOf(id: string, description?: string): EffortInfo {
   const known = LEVELS[id];
-  return { id, label: known?.label ?? id.charAt(0).toUpperCase() + id.slice(1), description: description || known?.description };
+  return { id, label: known?.label ?? id, description: description || known?.description };
 }
 
-/** Claude Code's extras on top of its effort levels. */
-export const ULTRACODE: EffortInfo = { id: "ultracode", label: "Ultracode", description: "Extra high, plus multi-agent workflows" };
-export const ULTRATHINK: EffortInfo = { id: "ultrathink", label: "Ultrathink", description: "Thinks as hard as it can on every turn" };
+/** Claude Code's extras on top of its effort levels: Liner Code's own, not levels the model reports, so marked `extra`. */
+export const ULTRACODE: EffortInfo = { id: "ultracode", label: "Ultracode", description: "Extra high, plus multi-agent workflows", extra: true };
+export const ULTRATHINK: EffortInfo = { id: "ultrathink", label: "Ultrathink", description: "Thinks as hard as it can on every turn", extra: true };
 
 /** "Nous Portal · anthropic/claude-opus-5.5" or "OpenCode/Big Pickle": where it comes from, and its name. */
 function split(name: string): { group?: string; label: string } {
@@ -109,6 +112,10 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
       current = state?.currentModelId ?? "";
       for (const m of state?.availableModels ?? []) out.push({ id: m.modelId, ...split(m.name ?? m.modelId), description: (m.description ?? "").replace(/^Provider: [^•]*•?\s*/, "").replace(/^current$/, ""), isDefault: m.modelId === current });
     }
+    // The levels the session lists for the model it opened on (OpenCode 2's "effort" option, category thought_level) are that
+    // model's own; it lists them for no other model, so the rest have none until a session on them says.
+    const levels = thoughtLevels(s.configOptions);
+    if (levels.length) for (const m of out) if (m.isDefault) m.efforts = levels;
     const now = out.find((m) => m.isDefault);
     return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with` }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
   } finally {
@@ -116,6 +123,106 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     signal?.removeEventListener("abort", onAbort);
     killTree(child);
   }
+}
+
+/** Dollars per million tokens as the picker shows a price: "$4", "$1.40", "$0.145". */
+function dollars(n: number): string {
+  if (Number.isInteger(n)) return `$${n}`;
+  const s = String(n);
+  return `$${s.split(".")[1]?.length === 1 ? n.toFixed(2) : s}`;
+}
+
+/** A price entry of OpenCode's model list ({ input, output } in dollars per million tokens), or null when it isn't one. */
+const costOf = (c: unknown): { input: number; output: number } | null => {
+  const x = c as { input?: unknown; output?: unknown } | null;
+  return x && typeof x.input === "number" && typeof x.output === "number" && Number.isFinite(x.input) && Number.isFinite(x.output) && x.input >= 0 && x.output >= 0 ? { input: x.input, output: x.output } : null;
+};
+
+/**
+  OpenCode's models as `opencode api GET /api/model` prints them (its `model.list`, OpenCode 2): `{ data: [model…] }`, each with
+  its provider (Zen is "opencode", Go "opencode-go"), its bare id, its name, its `variants` (the effort levels it takes from that
+  provider, in OpenCode's order: GLM-5.3 low, high, max; Kimi K3 on Go max alone) and its `cost` (the first entry its base price,
+  a later one with a context `tier` the price for long prompts; a free model all zeros, shown "$0"). Ids are "provider/id", as
+  its ACP session takes them. Only these fields are read: a model's `headers` and `settings` carry the person's account and are
+  never kept. Null when the answer isn't in that shape, so the caller asks the ACP session instead and no level or price is made up.
+*/
+export function opencodeModelList(stdout: string): ModelInfo[] | null {
+  let d: unknown;
+  try {
+    d = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const data = (d as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return null;
+  const out: ModelInfo[] = [];
+  for (const raw of data) {
+    const m = raw as { id?: unknown; providerID?: unknown; name?: unknown; enabled?: unknown; variants?: unknown; cost?: unknown } | null;
+    if (!m || typeof m.id !== "string" || !m.id || typeof m.providerID !== "string" || !m.providerID) continue;
+    // One OpenCode has switched off (its config, or deprecated) it won't run.
+    if (m.enabled === false) continue;
+    const row: ModelInfo = { id: `${m.providerID}/${m.id}`, label: typeof m.name === "string" && m.name.trim() ? m.name.trim() : m.id, description: "", group: m.providerID };
+    if (Array.isArray(m.variants)) {
+      const ids = m.variants.map((v) => (v as { id?: unknown } | null)?.id).filter((id): id is string => typeof id === "string" && Boolean(id));
+      if (ids.length) row.efforts = [...new Set(ids)].map((id) => effortOf(id));
+    }
+    const costs = Array.isArray(m.cost) ? m.cost : [];
+    const base = costs.find((c) => !(c as { tier?: unknown } | null)?.tier);
+    const price = costOf(base);
+    if (price) {
+      // The long-prompt price goes where Claude Code's does: the note.
+      const tier = costs.map((c) => ({ c: costOf(c), t: (c as { tier?: { type?: unknown; size?: unknown } } | null)?.tier })).find((x) => x.c && x.t?.type === "context" && typeof x.t.size === "number");
+      const size = tier ? (tier.t!.size as number) : 0;
+      const over = size % 1000 === 0 ? `${size / 1000}k` : String(size);
+      row.price = { input: dollars(price.input), output: dollars(price.output), ...(tier ? { note: `${dollars(tier.c!.input)}/${dollars(tier.c!.output)} for prompts over ${over}` } : {}) };
+    }
+    out.push(row);
+  }
+  return out.length ? out : null;
+}
+
+/** How long OpenCode's model listing may take, in ms, before it's ended and the session's list is used (a test shortens it). */
+export const OPENCODE_LIST = { ms: 30000 };
+
+/**
+  OpenCode's own list with each model's levels and price (opencodeModelList), asked of it standalone in `scratch`; null when it can't say.
+  Only OpenCode 2 has `opencode api`: 1.x could read "api" as a folder and start its interface, so `version` (its --version
+  line) must say 2 or later, and an unknown one isn't asked. Ended with all it started past OPENCODE_LIST.ms or on `signal`
+  (runBounded), so a listing that hangs never holds up the tool list or Check my tools.
+*/
+export async function opencodeModels(path: string, env: NodeJS.ProcessEnv, scratch: string, version: string | undefined, signal?: AbortSignal, timeout = OPENCODE_LIST.ms): Promise<ModelInfo[] | null> {
+  if (!opencodeApiIn(version) || signal?.aborted) return null;
+  mkdirSync(scratch, { recursive: true });
+  // Standalone: without it `opencode api` starts OpenCode's background service in a session of its own, which outlives
+  // this bound and the app, and a second OpenCode home holding its port makes every listing wait and fail.
+  const r = await runBounded(path, ["api", "--standalone", "GET", "/api/model"], { cwd: scratch, env, timeout, signal, input: "" });
+  return r.code === 0 && !r.cut ? opencodeModelList(r.stdout) : null;
+}
+
+/** Whether an OpenCode --version line is version 2 or later, which has `opencode api`. */
+export function opencodeApiIn(version: string | undefined): boolean {
+  const m = /(\d+)\.\d+\.\d+/.exec(version ?? "");
+  return Boolean(m && Number(m[1]) >= 2);
+}
+
+/**
+  The effort levels an ACP session's thinking option lists (category thought_level, a select) for the model it is on now, in
+  the tool's order and words. "default" goes: it is no level but the tool's own choice, which a session given no level keeps.
+  Anything not in that shape gives none.
+*/
+export function thoughtLevels(configOptions: unknown): EffortInfo[] {
+  if (!Array.isArray(configOptions)) return [];
+  const option = (configOptions as Json[]).find((c) => c && c.category === "thought_level" && (c.type === undefined || c.type === "select"));
+  type Choice = { value?: unknown; name?: unknown; description?: unknown; options?: Choice[] };
+  const choices = Array.isArray(option?.options) ? (option.options as Choice[]).flatMap((c) => (Array.isArray(c?.options) ? c.options : [c])) : [];
+  const out: EffortInfo[] = [];
+  for (const c of choices) {
+    if (typeof c?.value !== "string" || !c.value || c.value === "default" || out.some((e) => e.id === c.value)) continue;
+    const e = effortOf(c.value, typeof c.description === "string" ? c.description : undefined);
+    // A level Liner Code doesn't know is shown by the tool's own name for it, when it gave one.
+    out.push(e.label === c.value && typeof c.name === "string" && c.name.trim() ? { ...e, label: c.name.trim() } : e);
+  }
+  return out;
 }
 
 /** Thinking levels as a tool may name them in a model's id ("gemini-3.8-flash-high"), lowest first. */
@@ -167,10 +274,8 @@ export async function agyModels(path: string, env: NodeJS.ProcessEnv, families?:
       continue;
     }
     const efforts = [...new Set(levels)].sort((a, b) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b)).map((l) => effortOf(l));
-    // Liner Code's default, medium, where the model has it; else the nearest below it, else its lowest.
-    const below = efforts.filter((e) => LEVEL_ORDER.indexOf(e.id) <= LEVEL_ORDER.indexOf("medium"));
-    const defaultEffort = (efforts.find((e) => e.id === "medium") ?? below.at(-1) ?? efforts[0]).id;
-    out.push({ id: base, label: label.replace(/\s*\((minimal|low|medium|high|extra high|xhigh|max)\)\s*$/i, ""), description: "", efforts, defaultEffort });
+    // No default: agy doesn't say one in its list, and a session given no level thinks at agy's own (AcpSession.toEffort).
+    out.push({ id: base, label: label.replace(/\s*\((minimal|low|medium|high|extra high|xhigh|max)\)\s*$/i, ""), description: "", efforts });
   }
   return { signedIn: true, models: out };
 }

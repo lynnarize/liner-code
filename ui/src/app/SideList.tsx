@@ -4,18 +4,24 @@
   label, a folder that folds, a two-line row with its mark, and the counts pill in the top row.
   Liner 2.0: no borders, no fills, no dividers in the list; space and labels part the groups. The
   rows sit on the places' grid: a 24px mark column under their icons, the words on their text edge.
+  A row reads left to right (Rows.dc.html): the mark, the title and the time since it last did
+  something; under it what it does, how it ended or what it wants, and its facts at the line's end
+  (SideFacts: its own worktree, who works on it, its pull request's number). The Wall's tiles take
+  the same words (rowWords) and facts.
   Styles: app.css, the block headed "The sidebar's list parts" (class prefix lc-sl-).
 
-  Tints. A working mark's spinner takes `tint` (any CSS colour) when it is given; otherwise `brand`
-  (a model's MarkKind, as markOf gives it) colours it the way .lc-mk[data-s="run"][data-brand] does,
-  so a session's spinner is in its model's colour without a second list of colours here.
-  Action buttons in a row's `acts` or a folder's `actions`: use className "lc-sb-a l-focus" (22px).
+  Tints. A working mark's light takes `tint` (any CSS colour) when it is given; otherwise `brand`
+  (a model's MarkKind, as markOf gives it) colours it the way .lc-mk[data-s="working"][data-brand]
+  does, so a session's light is in its model's colour without a second list of colours here.
+  Action buttons in a row's `acts` or a folder's `actions`: use className "lc-sb-a l-focus" (24px in a row, 28px on a folder).
 */
-import { forwardRef, useRef, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { forwardRef, useRef, useSyncExternalStore, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import type { Thread } from "@contracts";
 import { cx } from "@liner/lib/hooks";
-import { I, Spinner, wt, type MarkKind } from "./icons";
+import { I, MARK_WORD, ModelMark, StateMark, type MarkKind } from "./icons";
+import { clock, plural } from "./model";
 import { Num, Pop } from "./ui";
-import type { SideState } from "./session-state";
+import { askWords, prSaid, reviewHeld, type MarkState, type PrTone, type SideState } from "./session-state";
 
 /**
   ↑ and ↓ in every face's list (.lc-sl-list): from a row or a folder's header to the next one as they
@@ -32,53 +38,34 @@ export function listArrows(e: KeyboardEvent<HTMLElement>) {
 
 export type { SideState } from "./session-state";
 
-const tinted = (tint?: string): CSSProperties | undefined => (tint ? { color: tint } : undefined);
+/**
+  Whether this window is focused. The open session in a focused window is being looked at, so every face's list draws it as
+  seen (session-state.ts, seenAsk and newsForYou), with no amber in its row, its folder or the pill.
+*/
+export function useWindowFocused() {
+  return useSyncExternalStore(
+    (f) => {
+      window.addEventListener("focus", f);
+      window.addEventListener("blur", f);
+      return () => {
+        window.removeEventListener("focus", f);
+        window.removeEventListener("blur", f);
+      };
+    },
+    () => document.hasFocus(),
+  );
+}
 
 /**
-  A row's mark, in the 24px column: the spinner while it works (in the agent's tint), the amber dot
-  with its halo when it needs you, the clock when its plan's limit stopped it, the error mark, a
-  small grey dot when it's done, the hollow ring before it starts. Each keeps its words for a screen
-  reader (`label` says something else, as a folded folder's "A session here is working").
+  A row's mark, in the 24px column: the state mark (icons.tsx StateMark) for how it stands. `state` is
+  a mark's state or a row's (session-state.ts SideState: limited and error draw as limit and
+  problem). Each keeps its words for a screen reader (`label` says something else, as a folded
+  folder's "One of its sessions is working"). A working mark takes `tint` or `brand` (the head
+  comment).
 */
-export function SideMark({ state, tint, brand, label }: { state: SideState; tint?: string; brand?: MarkKind; label?: string }) {
-  if (state === "working")
-    return (
-      <span className="lc-mk" role="img" data-s="run" data-brand={brand} aria-label={label ?? "Working"} style={tinted(tint)}>
-        <Spinner size={14} />
-      </span>
-    );
-  if (state === "needs")
-    return (
-      <span className="lc-mk" role="img" data-s="needs" aria-label={label ?? "Needs you"}>
-        <i />
-      </span>
-    );
-  if (state === "limited")
-    return (
-      <span className="lc-mk" role="img" data-s="needs" aria-label={label ?? "Limited"}>
-        <I.clock size={14} />
-      </span>
-    );
-  if (state === "error")
-    return (
-      <span className="lc-mk" role="img" data-s="error" aria-label={label ?? "Ran into a problem"}>
-        <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(14, 16, 1.6)} strokeLinecap="round" aria-hidden>
-          <circle cx="8" cy="8" r="5.75" />
-          <path d="M8 5.1v3.4M8 10.9v.01" />
-        </svg>
-      </span>
-    );
-  if (state === "new")
-    return (
-      <span className="lc-mk" role="img" data-s="new" aria-label={label ?? "Not started"}>
-        <i />
-      </span>
-    );
-  return (
-    <span className="lc-mk lc-sl-dot" role="img" data-s="done" aria-label={label ?? "Done"}>
-      <i />
-    </span>
-  );
+export function SideMark({ state, tint, brand, label }: { state: SideState | MarkState; tint?: string; brand?: MarkKind; label?: string }) {
+  const s: MarkState = state === "limited" ? "limit" : state === "error" ? "problem" : state;
+  return <StateMark state={s} tint={tint} brand={brand} label={label ?? MARK_WORD[s]} />;
 }
 
 /**
@@ -123,8 +110,9 @@ export function SideLabel({ name, count, icon, end }: { name: ReactNode; count?:
 /**
   A folder in the list: its header (the folder in the mark column, the name, a chevron that comes
   when you point at it or it has the keyboard, and stays while it's folded) and, while it's open,
-  its rows. Folded, its end says what hides in it: the amber dot when a session needs you, the
-  spinner when one works, then how many. `actions` take the end's place while you point at it.
+  its rows. Folded, its end says what hides in it: the needs mark when a session needs you, the
+  working mark when one works, then how many; open, its rows say it themselves, so the end is empty.
+  `actions` take the end's place while you point at it.
 */
 export function SideFolder({ name, count, open, onToggle, needs, working, tint, brand, icon, actions, onContextMenu, what = "sessions", children }: {
   name: string; count: number; open: boolean; onToggle: () => void; needs?: boolean; working?: boolean; tint?: string; brand?: MarkKind; icon?: ReactNode; actions?: ReactNode;
@@ -143,11 +131,13 @@ export function SideFolder({ name, count, open, onToggle, needs, working, tint, 
             <I.chevR size={12} />
           </span>
           <span className="lc-sl-fold-end">
-            {!open && needs && <span className="lc-sl-ndot" role="img" aria-label={`One of its ${what} needs you`} />}
+            {!open && needs && <SideMark state="needs" label={`One of its ${what} needs you`} />}
             {!open && working && <SideMark state="working" tint={tint} brand={brand} label={`One of its ${what} is working`} />}
-            <span className="lc-sl-count">
-              <Num value={count} />
-            </span>
+            {!open && (
+              <span className="lc-sl-count">
+                <Num value={count} />
+              </span>
+            )}
           </span>
         </button>
         {actions && <span className="lc-sl-acts">{actions}</span>}
@@ -160,17 +150,22 @@ export function SideFolder({ name, count, open, onToggle, needs, working, tint, 
 type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   mark: ReactNode;
   title: ReactNode;
-  sub?: ReactNode;
-  tone?: "warn" | "danger";
-  /** A 20px slot at the row's end, vertically centred: a pull request's mark, changes to review. */
-  end?: ReactNode;
-  /** The open one: on the plate, its title in full ink. Say it to a screen reader too (aria-current, aria-selected) in the root's props. */
+  /** The time since it last did something, at the title's end ("now", "2m", "2h", a day, a date: model.ts ago). */
+  ago?: string;
+  sub?: string;
+  /** The second line's colour: amber, red, or `strong`, a step darker than grey for something left for you (files to review). */
+  tone?: "warn" | "danger" | "strong";
+  /** Where it is, when no folder over the row says it (By status, Pinned, a group): a small folder and the project's name start the second line, before " · " and `sub`. */
+  where?: string;
+  /** Its facts, small and grey at the second line's end (SideFacts). They never wrap: the words give way. Never a state: the mark says that. */
+  facts?: ReactNode;
+  /** The open one: a small card, its title in full ink. Say it to a screen reader too (aria-current, aria-selected) in the root's props. */
   current?: boolean;
   /** Finished: the title steps back to the second ink, unless it's the open one. */
   quiet?: boolean;
   /** The title takes two lines and is never cut (Liner Security: no line ends in "…"). */
   wrap?: boolean;
-  /** Buttons that take the end's place while you point at the row or it has the keyboard (Pin, Snooze, Settle; a close cross). They sit outside `pick`, so no button is inside another. */
+  /** What sits at the title's end while you point at the row or it has the keyboard, in the time's place: 24px buttons (Code's Settle, Archive and ···; one where a row has one, a close cross, an Archive). It sits outside `pick`, so no button is inside another. */
   acts?: ReactNode;
   /** Props for the part that holds the mark and the words: give it the row's own control (role, tabIndex, onClick, onKeyDown) when the row has `acts`. */
   pick?: HTMLAttributes<HTMLDivElement>;
@@ -180,24 +175,32 @@ type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
 
 /**
   A row in the list, two lines and 44px high: the mark level with the title, the title at 13.5 in
-  ink, under it what it is doing now or how it ended, and a 20px end. Its root takes a ref and any
-  props (drag, a context menu, a hover card); its words are in `pick`.
+  ink with the time at its end, and under it what it is doing now, how it ended or what it wants,
+  with its facts at the line's end. The open one (`current`) is a small card (app.css). Its root
+  takes a ref and any props (drag, a context menu, a hover card); its words are in `pick`.
 */
-export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow({ mark, title, sub, tone, end, current, quiet, wrap, acts, pick, children, className, ...rest }, ref) {
+export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow({ mark, title, ago, sub, tone, where, facts, current, quiet, wrap, acts, pick, children, className, ...rest }, ref) {
+  const words = where ? (sub ? `${where} · ${sub}` : where) : sub;
   // The second line is drawn anew when it says something else ("Reading a.ts", then "Running npm test"), so the new words fade in
   // over the old one's place; a line other than the one the row came with is a swap, which fades even where the row came without its fade (data-fresh, app.css).
-  const first = useRef(sub);
+  const first = useRef(words);
   return (
     <div ref={ref} {...rest} className={cx("lc-sl-row", className)} data-current={current || undefined} data-quiet={quiet || undefined} data-wrap={wrap || undefined}>
       <div {...pick} className={cx("lc-sl-pick", pick?.className)} onKeyDown={(e) => (pick?.onKeyDown?.(e), listArrows(e))}>
         <span className="lc-sl-mark">{mark}</span>
         <span className="lc-sl-title">{title}</span>
-        {sub !== undefined && sub !== null && sub !== "" && (
-          <span key={typeof sub === "string" ? sub : undefined} className="lc-sl-sub" data-tone={tone} data-swap={sub !== first.current || undefined}>
-            {sub}
+        {ago && <span className="lc-sl-ago">{ago}</span>}
+        {(words || facts) && (
+          <span className="lc-sl-l2">
+            {words && (
+              <span key={words} className="lc-sl-sub" data-tone={tone} data-swap={words !== first.current || undefined}>
+                {where && <I.folder size={12} />}
+                <span className="lc-sl-words">{words}</span>
+              </span>
+            )}
+            {facts && <span className="lc-sl-facts">{facts}</span>}
           </span>
         )}
-        {end && <span className="lc-sl-end">{end}</span>}
       </div>
       {acts && <span className="lc-sl-acts">{acts}</span>}
       {children}
@@ -206,9 +209,73 @@ export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow
 });
 
 /**
-  The top row's counts, at its far right: the spinner and how many sessions work, then the amber dot
-  and how many wait on you, each only while it's above nought; with both at nought, nothing. It
-  opens The Wall.
+  A row's facts, in this order and each only when it applies: the branch mark when it works in a
+  worktree of its own (its name in the tooltip), the mark of the model that works on it (a pair's
+  lead), and its pull request's number in mono, coloured by how it stands (PrTone). Bare marks, no
+  tiles. A session carries one pull request (Thread.pr), so the drawing's "+1" has nothing to
+  count yet.
+*/
+export function SideFacts({ branch, model, modelName, pr }: { branch?: string; model?: MarkKind; modelName?: string; pr?: { number: number; tone: PrTone; said: string } }) {
+  if (!branch && !model && !pr) return null;
+  return (
+    <>
+      {branch && (
+        <span className="lc-sl-fact" role="img" aria-label={`In its own worktree, on ${branch}`} title={`In its own worktree, on ${branch}`}>
+          <I.branch size={14} />
+        </span>
+      )}
+      {model && (
+        <span className="lc-sl-fact" role="img" aria-label={modelName ? `On ${modelName}` : "Its model"}>
+          <ModelMark kind={model} size={12} />
+        </span>
+      )}
+      {pr && (
+        <span className="lc-sl-pr" data-s={pr.tone} aria-label={`Pull request #${pr.number}, ${pr.said.toLowerCase()}`}>
+          #{pr.number}
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+  A session's second line, the same in every list and on The Wall: what it is doing while it works
+  (the engine's Thread.doing, the agents it sent after it), else how it stands or ended, the first
+  that applies: the Reviewer's block, what it waits on you for in its own words (askWords: amber
+  until you open it, `seenQ`), a problem, its plan's limit, a snooze, not started, its pull request
+  (prSaid), changes left to review (a step darker), else Finished. The time is the row's own, at
+  the title's end, so it is never said here. `asks`: the words are its question, which matters
+  more than where it is (a row's `where` steps aside for it).
+*/
+export function rowWords(t: Thread, o: { busy: boolean; agents?: number; seenQ?: boolean; snoozed?: boolean; now?: number }): { text: string; tone?: "warn" | "danger" | "strong"; asks?: boolean } {
+  const agents = o.agents ?? 0;
+  if (o.busy) {
+    const doing = t.status === "running" ? t.doing?.text || "Working" : "Working";
+    // The engine's own line for sending agents ("Sending an agent"): only how many are at work, not the same word twice.
+    if (agents > 0 && doing.startsWith("Sending an agent")) return { text: `${plural(agents, "agent")} at work` };
+    return { text: agents > 0 ? `${doing} · ${plural(agents, "agent")}` : doing };
+  }
+  if (reviewHeld(t)) return { text: "Reviewer blocked it" };
+  if (t.status === "waiting") return { text: askWords(t), tone: o.seenQ ? undefined : "warn", asks: true };
+  if (t.status === "error") return { text: "Ran into a problem", tone: "danger" };
+  if (t.status === "limited") return { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, o.now)}` : ""}`, tone: "warn" };
+  if (o.snoozed) {
+    if (t.wake) return { text: t.wake.kind === "checks" ? `Until #${t.wake.pr}'s checks finish` : `Until a reply on #${t.wake.pr}` };
+    if (t.snoozedUntil) return { text: `Until ${clock(t.snoozedUntil, o.now)}` };
+  }
+  if (t.turns === 0) return { text: "Not started" };
+  if (t.pr) {
+    const pr = prSaid(t.pr);
+    return { text: pr.text, tone: pr.tone };
+  }
+  if ((t.toReview ?? 0) > 0) return { text: `${plural(t.toReview!, "file")} to review`, tone: "strong" };
+  return { text: "Finished" };
+}
+
+/**
+  The top row's counts, at its far right: the working mark and how many sessions work, then the
+  needs mark and how many wait on you, each only while it's above nought; with both at nought,
+  nothing. It opens The Wall.
 */
 export function SideCounts({ working, waiting, tint, brand, onOpen }: { working: number; waiting: number; tint?: string; brand?: MarkKind; onOpen: () => void }) {
   if (working <= 0 && waiting <= 0) return null;
@@ -217,15 +284,13 @@ export function SideCounts({ working, waiting, tint, brand, onOpen }: { working:
     <button type="button" className="lc-sl-counts l-focus" aria-label={`${says}. Open The Wall`} title="The Wall: every session at once" onClick={onOpen}>
       {working > 0 && (
         <>
-          <span className="lc-mk" data-s="run" data-brand={brand} style={tinted(tint)} aria-hidden>
-            <Spinner size={14} />
-          </span>
+          <StateMark state="working" tint={tint} brand={brand} />
           <Num value={working} />
         </>
       )}
       {waiting > 0 && (
         <>
-          <span className="lc-sl-counts-dot" aria-hidden />
+          <StateMark state="needs" className="lc-sl-counts-needs" />
           <Num value={waiting} />
         </>
       )}

@@ -12,5 +12,7 @@ test("the Session surface's re-ask is named Look again, as on every other face",
   const session = face("SessionInfo.tsx");
   assert.ok(session.includes('aria-label="Look again"'), "the Session surface's re-ask is not named Look again");
   assert.ok(!session.includes('aria-label="Refresh"'), "the Session surface's re-ask still says Refresh");
-  assert.ok(face("AddonsPage.tsx").includes("Look again"), "Add-ons no longer carries the converged word");
+  // Add-ons, Settings and Usage say it through the one control that carries the word (ui.tsx LookAgain).
+  assert.ok(face("ui.tsx").includes('{looking ? "Looking" : "Look again"}'), "the shared Look again control no longer carries the converged word");
+  for (const f of ["AddonsPage.tsx", "Usage.tsx", "Settings.tsx"]) assert.ok(face(f).includes("<LookAgain "), `${f} no longer asks again with the shared Look again`);
 });

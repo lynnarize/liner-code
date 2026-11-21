@@ -10,7 +10,7 @@ import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "rea
 import type { GitCommit, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { ago, plural } from "./model";
 import { pushCount, shipLive, shipWords } from "./ship-words";
 
@@ -173,7 +173,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
                     <span className="h1" aria-hidden={!live.h1}>Committing</span>
                     <span className="h2" aria-hidden={!live.h2}>Pushing</span>
                     <span className="h3" aria-hidden={!live.h3}>
-                      <i />
+                      <StateMark state="done" size={12} />
                       Pushed
                     </span>
                   </span>
@@ -237,21 +237,19 @@ export function ShipCard({ thread }: { thread: Thread }) {
                 Commit and push
               </span>
               <span className="x1" aria-hidden={!live.x1}>
-                <span className="lc-ship-spin" aria-hidden />
-                <span className="l-shimmer">Committing {plural(s.files, "file")}</span>
+                <StateMark state="working" size={14} />
+                Committing {plural(s.files, "file")}
               </span>
               <span className="x2" aria-hidden={!live.x2}>
-                <span className="lc-ship-spin" aria-hidden />
-                <span className="l-shimmer">
-                  {words.pushing}
-                </span>
+                <StateMark state="working" size={14} />
+                {words.pushing}
               </span>
               <span className="x3" aria-hidden={!live.x3}>
-                <I.check size={14} />
+                <StateMark state="done" size={14} />
                 Pushed to {remote}
               </span>
               <span className="x4" aria-hidden={!live.x4}>
-                {s.error ? <I.alert size={14} /> : <I.check size={14} />}
+                <StateMark state={s.error ? "problem" : "done"} size={14} />
                 {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : words.pushed}
               </span>
             </span>

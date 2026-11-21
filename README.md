@@ -193,8 +193,10 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   projects, models, tools, sessions or errors. Settings › General › Share anonymous usage counts
   turns it off, and so does LINER_NO_USAGE=1. Besides its own releases from GitHub and the tools'
   versions on npm, it fetches the Agent Client Protocol registry when you look for agents to add,
-  and reaches GitHub through your `gh` sign-in for pull requests. Hermes's own update check runs a
-  `git fetch`.
+  and reaches GitHub through your `gh` sign-in for pull requests: when you open one, and once a
+  minute in the background for a session's open pull request while its checks run (two hours at
+  most), while Settings has sessions settle when it merges, or while a snoozed session waits on it.
+  Hermes's own update check runs a `git fetch`.
 - **Changes are checked by another maker.** By default the Reviewer reads each change, and it's a
   model of another maker than the ones that wrote it whenever one is ready. So with Claude Code and
   Codex both here, diffs Claude writes also go to OpenAI through Codex, billed to that account. A
@@ -377,7 +379,7 @@ engine/                    the local backend (Node, TypeScript run directly, one
   src/sidekick.ts          lead + sidekick: what each is told, a brief's time cap, what the lead reads back
   src/review.ts            the Reviewer's prompt and findings, the fix the lead is sent, Reviewer decides, Claude run modes and subagents
   src/routines.ts          routines (switched off for now: ROUTINES_ON in contracts): triggers, AI steps, the code gate, actions, test runs
-  src/watch.ts             auto-settle and snooze until checks finish or someone replies
+  src/watch.ts             auto-settle, snooze until checks finish or someone replies, running checks kept current
   src/updates.ts           Liner Code's releases on GitHub (download, check, stage) and the agent tools' own updaters
   src/surfaces.ts          files, the terminal (a Python pty bridge), gh pull requests, ports, the iOS Simulator
   src/proxy.ts             the Browser surface's proxy: console, element picking, offline
@@ -472,7 +474,7 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 | --- | --- | --- | --- | --- |
 | Claude Code | Claude Agent SDK, your installed `claude` | yes, every access level | yes, and real forks | plans with ExitPlanMode, asks with AskUserQuestion |
 | Codex CLI | `codex app-server` | yes: commands, edits and MCP tools (an older Codex's `exec` maps access to its sandbox) | yes | models come from `codex debug models` |
-| OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with |
+| OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with; each model's effort levels and price from its own list (`opencode api --standalone GET /api/model`, asked only of OpenCode 2 or later, which has it), else its ACP session's |
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |
 | Cursor, Grok Build | ACP (`cursor-agent acp`, `grok agent stdio`) | yes | when the agent can | Beta: the drivers haven't been run against the real tools yet |
 | Demo | scripted | yes | – | edits only its sample project |

@@ -17,7 +17,7 @@ import { toast } from "@liner/components/toast/toast";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { bridge, ghInstall } from "./bridge";
 import { getState, isCheckpoint, rpc, subscribe, useEngine, useItemsWhere } from "./engine";
-import { I, Spinner } from "./icons";
+import { I, StateMark } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
 import { PrCard } from "./PrCard";
 import { prLine, SurfaceNote } from "./Surfaces";
@@ -80,7 +80,7 @@ function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () 
 }
 
 const stateBadge = (pr: PrInfo) =>
-  pr.state === "MERGED" ? <Badge tone="accent">Merged</Badge> : pr.state === "CLOSED" ? <Badge tone="neutral">Closed</Badge> : pr.isDraft ? <Badge tone="neutral">Draft</Badge> : <Badge tone="ok">Open</Badge>;
+  pr.state === "MERGED" ? <Badge tone="accent" mark="merged">Merged</Badge> : pr.state === "CLOSED" ? <Badge tone="neutral">Closed</Badge> : pr.isDraft ? <Badge tone="neutral" mark="pr">Draft</Badge> : <Badge tone="ok" mark="pr">Open</Badge>;
 
 const CHECK: Record<PrInfo["checks"][number]["state"], PrCheck["state"]> = { pass: "passed", fail: "failed", pending: "running", skipped: "passed" };
 // Stopped already (Stop pressed while a step was being asked): its abort has been and gone, so it ends here.
@@ -740,8 +740,9 @@ function PrConsole({ threadId, run, agentName }: { threadId: string; run: Tool; 
           <code>{run.input}</code>
           <span className="lc-quiet">on {os.here}</span>
           <span className="lc-grow" />
-          <span className="lc-prcon-st" key={run.status}>
-            {running ? <Spinner size={12} /> : run.status === "done" ? <I.check size={12} /> : <I.close size={12} />}
+          {/* Mounted once so a run's change of state plays across the mark's dots. */}
+          <span className="lc-prcon-st">
+            <StateMark state={running ? "working" : run.status === "done" ? "done" : "problem"} size={12} />
             {running ? "Running" : run.status === "done" ? "Passed" : "Failed"}
           </span>
           {!running && <span className="lc-quiet l-num">{duration(run.seconds)}</span>}

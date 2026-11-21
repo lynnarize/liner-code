@@ -338,7 +338,7 @@ test("tier 1 without Liner Code's tools running says so rather than failing", as
   }
 });
 
-test("tier 3: a tool's test message goes on its account, with no session, and its use is logged under check", async () => {
+test("tier 3: a tool's test message goes on its account at no effort level, with no session, and its use is logged under check", async () => {
   const { store, doctor } = rig([info("claude", "Claude Code", { models: [{ id: "claude-opus-5-5", label: "Opus", description: "", isDefault: true }, { id: "claude-haiku-5", label: "Haiku", description: "" }] }), info("codex", "Codex", { signedIn: false })]);
   const opened: OpenOptions[] = [];
   const saved = { claude: providers.claude, codex: providers.codex };
@@ -352,6 +352,7 @@ test("tier 3: a tool's test message goes on its account, with no session, and it
     assert.equal(opened[0].model, "claude-haiku-5", "the quickest model, which costs least");
     assert.equal(opened[0].ephemeral, true);
     assert.equal(opened[0].access, "read");
+    assert.equal(opened[0].effort, "", "no level, so a model that doesn't list low isn't failed by it");
     assert.equal(store.threads.length, 0);
     const used = store.usage(0);
     assert.equal(used.length, 1);

@@ -83,7 +83,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
                 <Row key={p.projectId} title={p.name} on={p.projectId === scope.projectId} onPick={() => (close(), setSecurityScope({ projectId: p.projectId }))} />
               ))}
               {/* Never-scanned folders wait behind one quiet row, so the menu stays short with many projects. */}
-              {!everyProject && unscanned > 0 && <Row title={`${unscanned} not scanned yet`} note="Show them too" onPick={() => setEveryProject(true)} />}
+              {!everyProject && unscanned > 0 && <Row title={`${unscanned} not scanned yet`} note="Show them too" icon={<I.chevD size={16} />} onPick={() => setEveryProject(true)} />}
             </>
           )}
         </Pop>
@@ -346,7 +346,7 @@ function Nothing({ picked, projectId, noProject }: { picked?: string; projectId?
         <b>No project to scan yet</b>
         <span>Add a folder you work on, then scan it. A scan reads your code for what someone could misuse; the free checks run on this Mac with no agent and cost nothing.</span>
         <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
-          Add a folder
+          Add a project
         </button>
       </div>
     );

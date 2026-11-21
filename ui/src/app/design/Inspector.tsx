@@ -1,6 +1,6 @@
 /*
   Liner Design's inspector: the column at the right of the canvas, in the panel's place. Its top
-  row holds the tabs (inspect/tabs.ts: Style and Code here, Build and Checks from later builders),
+  row holds the tabs (inspect/tabs.ts: Style and HTML here, Build and Checks from later builders; HTML, not "Code", which is the other face's name),
   then the selected layer's name and kind, a body that scrolls, and a foot level with the
   composer that other parts fill (inspect/slots.ts). Which tab is up is kept per window.
 
@@ -9,6 +9,7 @@
 import { useState, type ReactNode } from "react";
 import type { NodeRef } from "@contracts";
 import { frameOf, useDesign } from "./store";
+import { D } from "./Rail";
 import { FOOT } from "./inspect/slots";
 import { TABS } from "./inspect/tabs";
 import "./inspector.css";
@@ -24,29 +25,8 @@ const tabAtStart = () => {
 
 const KIND: Record<NodeRef["kind"], string> = { stack: "Stack", text: "Text", image: "Picture", box: "Box" };
 
-/** The kind's glyph, drawn as the app's icons are (16 grid, 1.5 strokes, round). */
-const Glyph = ({ kind }: { kind: NodeRef["kind"] | "frame" }) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    {kind === "stack" ? (
-      <>
-        <rect x="3.25" y="3.25" width="9.5" height="3.5" rx="1" />
-        <rect x="3.25" y="9.25" width="9.5" height="3.5" rx="1" />
-      </>
-    ) : kind === "text" ? (
-      <path d="M3.75 4.25h8.5M8 4.25v8" />
-    ) : kind === "image" ? (
-      <>
-        <rect x="2.75" y="3.25" width="10.5" height="9.5" rx="1.5" />
-        <path d="m3.25 11.25 3-3 2.5 2.5 1.5-1.5 2.5 2.5" />
-        <circle cx="10.25" cy="6" r=".9" />
-      </>
-    ) : kind === "frame" ? (
-      <path d="M5.25 2.75v10.5M10.75 2.75v10.5M2.75 5.25h10.5M2.75 10.75h10.5" />
-    ) : (
-      <rect x="3.25" y="3.25" width="9.5" height="9.5" rx="1.5" />
-    )}
-  </svg>
-);
+/** The kind's glyph: the rail's own (Rail.tsx D), so a box, a text, a picture, a stack and a frame look one way in the rail, Layers and here. */
+const Glyph = ({ kind }: { kind: NodeRef["kind"] | "frame" }) => (kind === "stack" ? <D.stack /> : kind === "text" ? <D.text /> : kind === "image" ? <D.picture /> : kind === "frame" ? <D.frame /> : <D.box />);
 
 /** The selected layer's name and kind, or the frame's. */
 function Head() {

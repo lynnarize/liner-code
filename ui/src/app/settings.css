@@ -2,8 +2,8 @@
   Settings' sidebar, on the ground: the way back with Settings' name, you, a bordered field that
   finds a setting, the places in their groups (the first unlabelled, a hairline between them),
   and under the open place the sections of its page on a thin line, a bright bar gliding to the
-  one you're reading. Back to sessions sits at the foot. The places' rows are 34px at 13.5; the
-  open one wears the plate and a semibold name.
+  one you're reading. The way back is the one at the top (and Esc). The places' rows are 32px at
+  13.5, as the sidebar's places are; the open one wears the plate and a semibold name.
 */
 .lc-st-side {
   display: flex;
@@ -78,7 +78,7 @@ html[data-native="mac"] .lc-st-side {
   margin: 1px 0 0 -4px;
   padding: 1px 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 13px;
@@ -166,7 +166,7 @@ html[data-native="mac"] .lc-st-side {
   align-items: center;
   gap: 11px;
   width: 100%;
-  height: 34px;
+  height: 32px;
   box-sizing: border-box;
   padding: 0 10px;
   border: 0;
@@ -273,46 +273,6 @@ html[data-native="mac"] .lc-st-side {
 }
 @media (hover: hover) {
   .lc-st-sec:hover {
-    color: var(--l-ink);
-  }
-}
-
-/* The way back, at the foot. */
-.lc-st-back {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 36px;
-  box-sizing: border-box;
-  margin-top: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--l-ink-2);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-st-back > svg {
-  flex: none;
-  color: var(--l-ink-3);
-  transition: color 140ms ease;
-}
-@media (hover: hover) {
-  .lc-st-back:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-  .lc-st-back:hover > svg {
     color: var(--l-ink);
   }
 }
@@ -428,7 +388,7 @@ html[data-native="mac"] .lc-st-side {
 /* Settings › Add-ons: a connection's version menu, a removed one's line under them, a run without any, and adding one by hand. */
 .lc-pick.lc-st-ver {
   gap: 3px;
-  height: 26px;
+  height: 28px;
   padding: 0 8px;
   border-radius: 8px;
   background: none;

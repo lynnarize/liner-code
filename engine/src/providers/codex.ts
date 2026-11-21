@@ -44,11 +44,24 @@ type CodexItem = {
   message?: string;
 };
 
+/** One model of `codex debug models`, as its catalog says it. */
+type CodexListed = { slug: string; display_name?: string; description?: string; visibility?: string; priority?: number; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string; description?: string }[] };
+
+/**
+  A model of Codex's catalog as the picker shows it: its effort levels are the ones Codex lists for it, in its order and words, and
+  its default is Codex's own when that is one of them (a default it doesn't list would be a level the model doesn't take).
+*/
+export function codexListed(m: CodexListed): ModelInfo {
+  const efforts = (m.supported_reasoning_levels ?? []).map((e) => effortOf(e.effort, e.description));
+  const defaultEffort = efforts.some((e) => e.id === m.default_reasoning_level) ? m.default_reasoning_level : undefined;
+  return { id: m.slug, label: m.display_name ?? m.slug, description: m.description ?? "", efforts, defaultEffort };
+}
+
 /** The models this Codex sign-in can use, from its own catalog. */
 async function catalog(bin: string, env: NodeJS.ProcessEnv) {
   const r = await run(bin, ["debug", "models"], { env, timeout: 20000 });
   try {
-    const d = JSON.parse(r.stdout) as { models: { slug: string; display_name?: string; description?: string; visibility?: string; priority?: number; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string; description?: string }[] }[] };
+    const d = JSON.parse(r.stdout) as { models: CodexListed[] };
     return d.models.filter((m) => m.visibility === "list").sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   } catch {
     return [];
@@ -284,7 +297,7 @@ export const codex: Provider = {
     const appServer = appServers.get(path) === true;
     // The models that reason get detailed summaries asked for on each turn.
     for (const m of listed) if (m.supported_reasoning_levels?.length) reasoning.add(m.slug);
-    const models: ModelInfo[] = listed.map((m) => ({ id: m.slug, label: m.display_name ?? m.slug, description: m.description ?? "", efforts: (m.supported_reasoning_levels ?? []).map((e) => effortOf(e.effort, e.description)), defaultEffort: m.default_reasoning_level }));
+    const models: ModelInfo[] = listed.map(codexListed);
     const usable = !configured || models.some((m) => m.id === configured);
     // The configured model goes first when this sign-in can use it; otherwise the catalog's own order.
     if (configured && usable) models.sort((a, b) => Number(b.id === configured) - Number(a.id === configured));

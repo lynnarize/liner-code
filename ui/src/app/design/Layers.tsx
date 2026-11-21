@@ -1,13 +1,19 @@
 /*
   The Design face's sidebar body: the lean (the project's DESIGN.md, a press away from its page),
   the skills it loads, the design file's pages, and Layers: the page's frames as top rows, the
-  picked frame's outline under it from the bridge, a dot on a frame an agent is drawing. A press
+  picked frame's outline under it from the bridge. A frame's row reads as a row in the list does: its
+  mark (the frame, or the working mark while an agent draws it), its name, its facts at the end (its
+  checks, its build state, or that nothing is drawn or its file is gone), and while you point at it
+  one ··· with Rename, Duplicate and Delete (the canvas's label, ⌘D and Delete). A press
   picks; ⌘[ and ⌘] move what's picked up or down in its stack, here or on the canvas.
 */
 import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { toast } from "@liner/components/toast/toast";
 import type { DesignFile, DesignFrame, TreeNode } from "@contracts";
-import { I } from "../icons";
+import { I, StateMark } from "../icons";
 import { SideLabel } from "../SideList";
+import { Pop, Row, Sep } from "../ui";
+import { keys } from "../os";
 import { parentIn } from "./Canvas";
 import { LayerMark } from "./BuildTab";
 import { LayerChecks } from "./ChecksTab";
@@ -67,7 +73,7 @@ function SkillRows() {
   const skills = useDesign((s) => s.file?.lean.skills ?? NONE);
   return (
     <>
-      {skills.slice(0, 3).map((n) => (
+      {skills.map((n) => (
         <div key={n} className="ld-tr" title={`The ${n} skill is loaded for this design`}>
           <span className="ld-sl" aria-hidden>
             /
@@ -75,7 +81,6 @@ function SkillRows() {
           {n}
         </div>
       ))}
-      {skills.length > 3 && <div className="ld-tr" data-rest>+{skills.length - 3} more</div>}
     </>
   );
 }
@@ -140,6 +145,7 @@ function LayerList() {
   const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => isBlank(s, f)).map((f) => f.id).join(","));
   const blank = (f: { id: string }) => blanks.split(",").includes(f.id);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [naming, setNaming] = useState<string | null>(null);
   const frames = (file?.frames ?? []).filter((f) => f.page === page);
   const selKey = sel.map((x) => `${x.frame}:${x.node ?? ""}`).join(",");
   useEffect(() => {
@@ -191,23 +197,84 @@ function LayerList() {
               >
                 {on ? <I.chevD size={12} /> : <I.chevR size={12} />}
               </button>
-              <D.frame size={14} />
-              <b className="ld-ell">{f.name}</b>
-              {isGone(f) && (
-                <span className="ld-ly-gone" title={`Its file is gone: ${f.path ?? `frames/${f.id}.html`}`}>
-                  file gone
-                </span>
+              {/* The mark column: the frame, or the working mark in its agent's canvas colour (its ring's) while one draws it. */}
+              <span className="ld-ly-mk">{p ? <StateMark state="working" tint={p.lead ? "var(--ld-lead)" : "var(--ld-side)"} label={`${p.name} is drawing this`} /> : <D.frame size={14} />}</span>
+              {naming === f.id ? (
+                <input
+                  className="lc-sb-rename"
+                  aria-label={`Rename ${f.name}`}
+                  defaultValue={f.name}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") (e.currentTarget.value = f.name), e.currentTarget.blur();
+                  }}
+                  onBlur={(e) => {
+                    const v = e.currentTarget.value.trim();
+                    if (v && v !== f.name) design.rename(f.id, v);
+                    setNaming(null);
+                  }}
+                />
+              ) : (
+                <b className="ld-ell">{f.name}</b>
               )}
-              {!isGone(f) && blank(f) && <span className="ld-m">empty</span>}
-              {!isGone(f) && !blank(f) && <LayerMark frame={f} />}
-              {!isGone(f) && !blank(f) && <LayerChecks frame={f.id} />}
-              {p && <span className="ld-pd" data-lead={p.lead || undefined} aria-label={`${p.name} is drawing this`} />}
+              {/* Its facts, in the list's order: checks, then the build state; or the words that say why it has neither. */}
+              <span className="ld-ly-facts">
+                {isGone(f) ? (
+                  <span className="ld-ly-gone" title={`Its file is gone: ${f.path ?? `frames/${f.id}.html`}`}>
+                    File gone
+                  </span>
+                ) : blank(f) ? (
+                  <span className="ld-m">Nothing drawn yet</span>
+                ) : (
+                  <>
+                    <LayerChecks frame={f.id} />
+                    <LayerMark frame={f} />
+                  </>
+                )}
+              </span>
+              {naming !== f.id && <FrameMore f={f} onRename={() => setNaming(f.id)} />}
             </div>
             {on && root && <Nodes frame={f.id} node={root} depth={1} open={open} onToggle={toggle} picked={picked} />}
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** A frame's ···: what the canvas does to it by key (rename on its label, ⌘D, Delete), by name. */
+const OLD_SHOWN = "An old turn is shown: go back to now to change the design";
+function FrameMore({ f, onRename }: { f: DesignFrame; onRename: () => void }) {
+  // A kept copy shown (Versions) refuses every change, so its rows wait, saying why, as the rest of the canvas does then.
+  const old = useDesign((s) => s.scrub !== undefined);
+  return (
+    // Its presses are the menu's, not the row's (which picks the frame).
+    <span className="ld-ly-acts" onClick={(e) => e.stopPropagation()}>
+      <Pop label={`${f.name}: what to do with it`} menu align="end" width={220} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: old ? OLD_SHOWN : "Rename, duplicate or delete" }} trigger={<I.more size={14} />}>
+        {(close) => (
+          <div title={old ? OLD_SHOWN : undefined}>
+            <Row title="Rename" icon={<I.edit size={16} />} disabled={old} onPick={() => (close(), onRename())} />
+            <Row title="Duplicate" icon={<I.copy size={16} />} end={keys("mod+d")} disabled={old} onPick={() => (close(), void design.copyFrames([f.id]))} />
+            <Sep />
+            <Row
+              title="Delete"
+              icon={<I.trash size={16} />}
+              disabled={old}
+              onPick={() => {
+                close();
+                // As Delete on the canvas: one step, with Undo in its toast, said only when the frame went.
+                void design.removeFrames([f.id]).then((step) => step && toast("Took the frame away", { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } }));
+              }}
+            />
+          </div>
+        )}
+      </Pop>
+    </span>
   );
 }
 

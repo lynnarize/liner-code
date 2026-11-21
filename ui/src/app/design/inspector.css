@@ -101,8 +101,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -186,10 +186,10 @@
   flex: 1;
   place-items: center;
   min-width: 0;
-  height: 24px;
+  height: 28px;
   padding: 0 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--l-ink-3);
   font: inherit;
@@ -355,8 +355,8 @@
 }
 .ld-swt {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: var(--lc-r-row);

@@ -31,16 +31,6 @@
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-/* The panel's toggle says which way it goes by its place, not by a plate: shut, it's the session
-   header's last button; open, the panel row's, on the same spot. */
-.lc-sbar-b[data-panel-toggle][aria-pressed="true"] {
-  background: none;
-}
-@media (hover: hover) {
-  .lc-sbar-b[data-panel-toggle]:hover {
-    background: var(--l-wash);
-  }
-}
 
 /* ---------- The dock: one or two panes, a strip over each ---------- */
 .lc-dockpanes {
@@ -49,7 +39,7 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 /* The strip is the panel's header, on the top row: 44 high, its last button 10px in from the
-   paper's edge, as the session header's is, so the panel's toggle keeps its place open or shut. */
+   paper's edge, as the session header's is. */
 .lc-dockpanes > .lc-stabs {
   grid-row: 1;
   min-width: 0;
@@ -253,37 +243,37 @@
   white-space: nowrap;
 }
 .lc-addon-strip .lc-pick {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--lc-r-row);
 }
 /* The model an app asks (access.ai), on its strip: a quiet pill that opens the popup. */
+/* The model an app asks, as the message box's who chip reads: the maker's mark bare, the name, 28 high. */
 .lc-appmodel-chip {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 5px;
-  height: 24px;
+  gap: 6px;
+  height: 28px;
   max-width: 180px;
-  padding: 0 9px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 999px;
-  background: var(--lc-well);
+  border-radius: var(--lc-r-row);
+  background: none;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--l-ink-2);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
 .lc-appmodel-chip > svg {
   flex: none;
-  color: var(--l-ink-3);
+  color: var(--l-ink-2);
 }
 @media (hover: hover) {
   .lc-appmodel-chip:hover {
-    background: var(--lc-field);
+    background: var(--l-wash-2);
     color: var(--l-ink);
   }
 }
@@ -724,18 +714,6 @@
   display: grid;
   gap: 10px;
 }
-.lc-offer-bar {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-}
-.lc-offer-bar > div {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--l-ink);
-  transition: width 600ms var(--l-spring-smooth);
-}
 .lc-offer-steps {
   display: grid;
   gap: 4px;
@@ -750,17 +728,8 @@
   align-items: center;
   gap: 8px;
 }
-.lc-offer-steps li > svg {
-  color: var(--l-line-2);
-}
 .lc-offer-steps li[data-now] {
   color: var(--l-ink);
-}
-.lc-offer-steps li[data-now] > svg {
-  color: var(--l-ink);
-}
-.lc-offer-steps li[data-done] > svg {
-  color: oklch(0.6 0.15 152);
 }
 .lc-offer-note {
   display: flex;
@@ -774,19 +743,14 @@
   align-items: center;
   gap: 10px;
 }
+/* How it ended, bare in a 20px place: the state mark, or an act's icon. */
 .lc-offer-tick {
   display: grid;
   flex: none;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
+  width: 20px;
+  height: 20px;
   color: var(--l-ink-3);
-}
-.lc-offer-done[data-good] .lc-offer-tick {
-  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
-  color: var(--l-ok-text);
 }
 .lc-offer-said {
   display: grid;

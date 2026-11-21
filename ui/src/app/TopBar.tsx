@@ -26,6 +26,23 @@ export function openSurface(threadId: string, tab: Tab) {
 }
 
 /*
+  The open session's full canvas, reachable from a surface: Session registers it, Changes' menu
+  calls it. The right edge's + has the same row, so every surface can get to it.
+*/
+const canvases = new Map<string, { toggle: () => void; full: () => boolean }>();
+/** The open session's full canvas, reachable from a surface: Session registers it, Changes' menu calls it. */
+export function onFullCanvas(threadId: string, f: { toggle: () => void; full: () => boolean }) {
+  canvases.set(threadId, f);
+  return () => {
+    if (canvases.get(threadId) === f) canvases.delete(threadId);
+  };
+}
+export function fullCanvas(threadId: string): { toggle: () => void; full: boolean } | undefined {
+  const f = canvases.get(threadId);
+  return f && { toggle: f.toggle, full: f.full() };
+}
+
+/*
   Whether the window's keys are this session's. Open beside shows two, and only the side you're in
   takes them: what a session holds that listens on the window (its composer, Review) asks here.
   Alone, or outside a session, it's always yes.

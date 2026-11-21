@@ -1,5 +1,5 @@
 /*
-  A failed read is said, not shown as empty (plan 017): the docked Changes, Settings' memory and rules
+  A failed read is said, not shown as empty (plan 017): Changes (Review.tsx, docked or full), Settings' memory and rules
   editors, Usage, Projects' Mac scan, Design Home's list, the by-hand manifest form and Home's notices
   each keep waiting, failed and empty apart. These are SOURCE tests — the faces are component markup,
   so the wiring is read from the file as written (precedent: layout-rules.test.ts).
@@ -21,25 +21,29 @@ const span = (src: string, from: string, to?: string) => {
 };
 const count = (src: string, re: RegExp) => (src.match(re) ?? []).length;
 
-test("the docked Changes keeps a failed diff said, as the Review does", () => {
-  const changes = span(app("Panel.tsx"), "function Changes(");
-  assert.ok(/setDiffErr\(/.test(changes), "the docked Changes keeps no failed state for its diff read");
-  assert.ok(changes.includes(`title="The changes didn't open"`), "a failed diff is not said with the Review's own words");
+test("Changes keeps a failed diff said, in the panel and the full canvas alike", () => {
+  // The docked Changes is Review now (Panel.tsx mounts it in both places).
+  assert.ok(/<Review thread=\{thread\}/.test(span(app("Panel.tsx"), 'if (t === "changes")', 'if (t === "agents")')), "the docked Changes is not Review, so these checks read the wrong face");
+  const changes = span(app("Review.tsx"), "export function Review(", "One file of the diff");
+  assert.ok(/setDiffErr\(/.test(changes), "Changes keeps no failed state for its diff read");
+  assert.ok(changes.includes(`title="The changes didn't open"`), "a failed diff is not said");
   assert.ok(/setDiffErr\(e instanceof Error \? e\.message : String\(e\)\)/.test(changes), "the failure keeps the engine's words");
   assert.ok(/Reading the changes/.test(changes), "the wait while the diff reads is gone");
 });
 
-test("the docked Changes keeps its turn picker when a diff fails, so another turn is one press away", () => {
-  // The picker rides in CodeDiff's strip, which a failed diff doesn't draw: the note has to carry it.
-  const changes = span(app("Panel.tsx"), "function Changes(");
-  const note = span(changes, `title="The changes didn't open"`, "</SurfaceNote>");
-  assert.ok(/action=\{picker\}/.test(note), "a failed diff leaves the docked Changes with no turn picker");
+test("Changes keeps its turn picker when a diff fails, so another turn is one press away", () => {
+  // The picker rides in Changes' own row, drawn above whatever the diff's read came to, so a failed one keeps it.
+  const changes = span(app("Review.tsx"), "export function Review(", "One file of the diff");
+  const row = span(changes, '<div className="lc-rv-strip">', "{finding && (");
+  assert.ok(/<TurnPicker /.test(row), "the turn picker is no longer in Changes' own row");
+  assert.ok(changes.indexOf('<div className="lc-rv-strip">') < changes.indexOf("diff === null ?"), "the row is drawn only for some of the diff's states");
 });
 
 test("Settings' memory and rules editors say a failed read instead of empty or gone", () => {
   const editors = span(app("Settings.tsx"), "function MemoryEditor(", "function RulesForm(");
   assert.ok(count(editors, /role="alert"/g) >= 2, "both editors say the failure with role=alert");
-  assert.ok(count(editors, /Look again/g) >= 2, "both editors offer a Look again retry");
+  // The retry is the one Look again control (ui.tsx LookAgain), as every list's.
+  assert.ok(count(editors, /<LookAgain onLook=/g) >= 2, "both editors offer a Look again retry");
   assert.ok(!/\.catch\(\(\) => setFacts\(\[\]\)\)/.test(editors), "memory.list still answers a failure with empty facts");
   assert.ok(!/\.catch\(\(\) => setRules\(null\)\)/.test(editors), "project.rules still answers a failure by vanishing the field");
 });
@@ -112,4 +116,27 @@ test("the by-hand manifest form names a JSON fault in whole words, with where it
   assert.equal(fault(""), "Unexpected end of JSON input");
   const hand = app("Settings.tsx");
   assert.ok(hand.includes("That isn't JSON yet: ${jsonFault("), "the form does not name the fault through jsonFault");
+});
+
+test("one agent at work is said once, by the live line, not also by the strip over the box", () => {
+  const crew = app("Crew.tsx");
+  const strip = span(crew, "export function CrewStrip(", "export function LoneStop(");
+  // Exactly one agent while the turn runs: the strip is not drawn (the crew chip's rule, two or more).
+  assert.match(crew, /const lone = \(thread: Thread, working: Tool\[\]\) => working\.length === 1 && thread\.status === "running";/);
+  assert.match(strip, /if \(!crew \|\| !working\.length \|\| lone\(thread, working\)\) return null;/, "the strip still shows for one agent");
+  // Its Stop, same words, at the live line's end.
+  const stop = span(crew, "export function LoneStop(", "/* ---------- the Agents surface");
+  assert.match(stop, /stopAll\(thread\.id, working\)/);
+  assert.match(stop, /stopWord\(working, /);
+  assert.match(app("Session.tsx"), /<LiveLine threadId=\{thread\.id\} end=\{<LoneStop thread=\{thread\} \/>\} \/>/, "the session's live line has no Stop for its one agent");
+  // The live line's newest step says what that agent is doing, in the trail's words.
+  assert.match(app("Timeline.tsx"), /verb=\{`\$\{isSidekick\(agent\) \? "Sidekick" : agentName\(agent\)\} · \$\{agent\.agent\.now\}`\}/, "the newest step doesn't say what the agent is doing");
+});
+
+test("a step's mark is the state mark, with no ring, tick or cross of its own", () => {
+  const icons = app("icons.tsx");
+  const step = span(icons, "export function StepMark(");
+  assert.match(step, /<StateMark state=\{STEP_MARK\[state\]\}/, "StepMark draws its own shapes again");
+  assert.match(icons, /const STEP_MARK: Record<StepState, MarkState> = \{ waiting: "new", working: "working", done: "done", skipped: "new", failed: "problem" \};/);
+  assert.ok(!/lc-stepmark-(ring|tick|x|disc)/.test(icons + app("app.css")), "the old ring, tick or cross is drawn somewhere");
 });

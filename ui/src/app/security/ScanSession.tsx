@@ -5,8 +5,9 @@
   through the timeline's `draw` hook: your choices as its first message with where they came from, each finding as a row
   the moment it is reported (it opens the finding), your answers to its questions with "saved to SECURITY.md", and the
   second look as a second voice once the scan ends. Its questions dock at the composer as one card (Questions.tsx), and
-  the scan stays paused on them until you answer or skip: nothing here ever answers for you. The tray's status row says
-  how far it is (Stop) or how it ended (Fix the confirmed one, Open the findings); the panel beside the chat is what it
+  the scan stays paused on them until you answer or skip: nothing here ever answers for you. A working turn is the
+  app's live line at the chat's foot (Timeline.tsx LiveLine), as in any session; under it the tray's status row says
+  how far the scan is (Stop) or how it ended (Fix the confirmed one, Open the findings); the panel beside the chat is what it
   has found (FoundPanel). The top row has its name, the Read only tag, Scan again once it's done, and the panel's toggle.
 
   A fix is a session in a worktree that changes code: it gets the app's whole session view (Session.tsx), with its
@@ -21,16 +22,17 @@ import { toast } from "@liner/components/toast/toast";
 import { AskDock, useDockAsk } from "../Ask";
 import { Composer, type Outgoing, type RunSettings } from "../Composer";
 import { getState, loadItems, rpc, threadOf, useEngine, useItems } from "../engine";
-import { I, ModelMark, Spinner } from "../icons";
-import { agentOf, duration, markOf, plural } from "../model";
+import { I, MARK_WORD, ModelMark, StateMark } from "../icons";
+import { agentOf, duration, markOf, plural, turnsOf } from "../model";
 import { Session } from "../Session";
-import { Timeline } from "../Timeline";
+import { LiveLine, Timeline } from "../Timeline";
 import * as os from "../os";
 import { FoundPanel, placeOf, type FoundData } from "./FoundPanel";
 import { SevMark, Tag, TwoLines } from "./parts";
 import { guessOf, onward, ScanQuestions, type QState, type QuestionItem } from "./Questions";
 import { mockMode, mockScan, type MockScan } from "./scan-mock";
 import { goSecurity, useScan, useSecurity } from "./store";
+import { useReadWhileShown } from "../unread";
 import "./scan.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -83,6 +85,8 @@ export function ScanSession({ sidebar, onSidebar, threadId }: { sidebar: boolean
 function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boolean; onSidebar: () => void }) {
   const tag = thread.security;
   const isScan = tag?.kind === "scan";
+  // On screen, it is read, as a session open in Code is: a question it asks stops being news (unread.ts).
+  useReadWhileShown(thread.id, thread.unread);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
@@ -258,6 +262,9 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
   const stop = () => void (mock ? undefined : (tag?.scan && running ? rpc("security.scan.stop", { id: tag.scan }) : rpc("thread.stop", { id: thread.id })).catch(fail));
 
   const finished = scan && (scan.state === "done" || scan.state === "stopped" || scan.state === "failed");
+  // The live line over the tray shows while the last turn runs (as LiveLine judges it) and says it is working with its own
+  // mark: the status row under it then only counts, or the two would stack two working marks.
+  const liveShown = useMemo(() => Boolean(turnsOf(items).at(-1)?.items.some((x) => x.kind === "turn" && x.status === "running")), [items]);
   const fresh = findings.filter((f) => scan && f.scan === scan.id);
   // Which held up: the second look's own word on each, else what the findings carry.
   const held = look?.results.filter((r) => r.state === "confirmed").map((r) => r.finding) ?? fresh.filter((f) => f.look.state === "confirmed").map((f) => f.id);
@@ -280,23 +287,18 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
     <AskDock dock={asking} />
   ) : isScan && scan && !finished ? (
     <div className="lc-trow" role="status">
-      <Spinner size={16} />
-      <span className="lc-trow-t lc-grow">{scan.looking ? `Second look · ${lookName ?? "another maker's model"} reads what it found` : ["Scanning", total ? `${done} of ${total} done` : "", left ?? ""].filter(Boolean).join(" · ")}</span>
+      {!liveShown && <StateMark state="working" brand={markOf(scan.looking ? (look?.by ?? scan.secondLook ?? thread.model ?? coder.model) : (thread.model ?? coder.model))} label={MARK_WORD.working} />}
+      <span className="lc-trow-t lc-grow">{scan.looking ? `Second look · ${lookName ?? "another maker's model"} reads what it found` : [liveShown ? "" : "Working", total ? `${done} of ${total} done` : "", left ?? ""].filter(Boolean).join(" · ")}</span>
       <button type="button" className="lc-trow-lk l-focus" onClick={stop}>
         Stop
       </button>
     </div>
   ) : isScan && scan && finished ? (
     <div className="lc-trow" role="status">
-      {scan.state === "done" ? <I.settle size={16} /> : <I.alert size={16} />}
+      <StateMark state={scan.state === "done" ? "done" : "problem"} label={scan.state === "done" ? MARK_WORD.done : scan.state === "stopped" ? "Stopped" : MARK_WORD.problem} />
       <span className="lc-trow-t lc-grow">
-        {scan.error ? scan.error.replace(/\.$/, "") : scan.state === "done" ? "Scan finished" : scan.state === "stopped" ? "Scan stopped" : "The scan didn't finish"} · {newCount ? `${plural(newCount, "new finding")}${scan.secondLook || look ? `, ${heldCount} confirmed` : ""}` : "nothing new found"}
+        {scan.error ? scan.error.replace(/\.$/, "") : scan.state === "done" ? "Finished" : scan.state === "stopped" ? "Stopped" : "Ran into a problem"} · {newCount ? `${plural(newCount, "new finding")}${scan.secondLook || look ? `, ${heldCount} confirmed` : ""}` : "nothing new found"}
       </span>
-      {scan.error && (
-        <button type="button" className="lc-trow-lk l-focus" onClick={() => goSecurity({ kind: "start", projectId: thread.projectId })}>
-          Scan again
-        </button>
-      )}
       {confirmed.length > 0 && (
         <button type="button" className="lc-trow-lk l-focus" title="Starts a session in a worktree of its own with this finding as its brief" onClick={() => void fix(confirmed[0])}>
           {confirmed.length === 1 ? "Fix the confirmed one" : "Fix the first confirmed one"}
@@ -322,13 +324,9 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
                 </button>
               )}
               <h1 className="lc-title">{thread.title}</h1>
-              {thread.access === "read" && (
-                <span className="ls-tag lsc-ro" title={isScan ? "A scan only reads: it stays at Read only" : "This session only reads"}>
-                  <I.lock size={12} />
-                  Read only
-                </span>
-              )}
+              {/* That it only reads is the message box's Permissions, locked at Read only: said once, there. */}
               <span className="lc-grow" data-drag />
+              {/* Scan again, once: here in the top row, for a scan that finished, stopped or ran into a problem. */}
               {isScan && finished && (
                 <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => goSecurity({ kind: "start", projectId: thread.projectId })}>
                   Scan again
@@ -341,7 +339,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
             <div className="lc-stage">
               <div ref={scroller} className="lc-scroll">
                 <div ref={contentRef} className="lc-scroll-in">
-                  <Timeline threadId={thread.id} items={mock ? items : undefined} docked seen={seen.current ?? NONE_SEEN} onReview={() => {}} onGrow={follow} draw={isScan ? drawOwn : undefined} />
+                  <Timeline threadId={thread.id} items={mock ? items : undefined} docked seen={seen.current ?? NONE_SEEN} onGrow={follow} draw={isScan ? drawOwn : undefined} />
                 </div>
               </div>
             </div>
@@ -352,6 +350,8 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
                   Latest
                 </button>
               )}
+              {/* A working turn's one live line, at the chat's foot over the tray, as in every session. */}
+              <LiveLine threadId={thread.id} items={mock ? items : undefined} draw={isScan ? drawOwn : undefined} />
               {project && (
                 <div className="lc-compose" onKeyDownCapture={takeGuess} onInputCapture={(e) => writing && e.target instanceof HTMLTextAreaElement && !e.target.value.trim() && setWriting(false)}>
                   <Composer
@@ -374,7 +374,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
               )}
             </div>
           </section>
-          {panel && <FoundPanel scanId={isScan ? (scan?.id ?? tag?.scan) : undefined} finding={tag?.finding} threadId={thread.id} projectId={thread.projectId} paused={Boolean(q)} left={left} data={data} onClose={() => setPanel(false)} />}
+          {panel && <FoundPanel scanId={isScan ? (scan?.id ?? tag?.scan) : undefined} finding={tag?.finding} threadId={thread.id} projectId={thread.projectId} paused={Boolean(q)} left={left} data={data} onClose={narrow ? () => setPanel(false) : undefined} />}
         </div>
       </div>
     </View.Provider>
@@ -517,16 +517,14 @@ function Voice({ ev }: { ev: Extract<SecurityItem, { type: "look" }> }) {
   return (
     <div className="lsc-voice">
       <div className="lc-head">
-        <span className="lc-disc lc-disc-model" style={{ width: 22, height: 22 }} aria-hidden>
-          <ModelMark kind={markOf(ev.by)} size={14} />
-        </span>
+        <ModelMark kind={markOf(ev.by)} size={16} />
         <b>{name}</b>
         <span className="lc-head-meta">· Second look · Read only{ev.state === "done" && ev.seconds ? ` · ${duration(ev.seconds)}` : ""}</span>
       </div>
       {ev.state === "running" ? (
         <p className="lsc-voice-wait">
-          <Spinner size={14} />
-          <span className="l-shimmer">Reading what the scan found</span>
+          <StateMark state="working" brand={markOf(ev.by)} label={MARK_WORD.working} />
+          <span>Reading what the scan found</span>
         </p>
       ) : ev.state === "failed" ? (
         <p className="lsc-voice-wait">The second look didn't finish{ev.error ? `: ${ev.error}` : ""}. The findings stay unconfirmed.</p>

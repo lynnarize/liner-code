@@ -64,7 +64,7 @@
   margin: -2px -4px;
   padding: 2px 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   color: inherit;
@@ -135,7 +135,7 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 28px;
   padding: 0 11px;
   border: 0;
   border-radius: 8px;
@@ -218,10 +218,11 @@
 .lsc-cb svg {
   color: var(--l-ink-3);
 }
+/* Look at first: a field at the message box's 36. */
 .lsc-field {
   flex: 1;
   min-width: 0;
-  height: 32px;
+  height: 36px;
   padding: 0;
   border: 0;
   outline: none;
@@ -244,8 +245,9 @@
   gap: 12px;
   margin-top: 16px;
 }
+/* Start the scan at the app's large button, 36. */
 .lsc-go .lc-btn {
-  height: 34px;
+  height: 36px;
   padding: 0 16px;
 }
 
@@ -279,12 +281,6 @@
   box-shadow:
     -1px 0 0 var(--lc-hair, var(--ls-line)),
     -16px 0 40px -12px oklch(0 0 0 / 0.18);
-}
-.lsc-ro {
-  margin-left: 0;
-}
-.lsc-ro svg {
-  color: var(--l-ink-3);
 }
 /* The composer's access chip, held at Read only: there to read, nothing to open. */
 .lsc-scan .lc-access[data-locked],
@@ -409,20 +405,11 @@
 }
 
 /* ---------- The question card at the composer ---------- */
-.lsc-ask {
-  outline: none;
-  animation: l-swap-in 240ms var(--l-ease-out) backwards;
-}
-.lsc-ask-h {
-  padding: 2px 10px 8px;
-  font-size: 14.5px;
-  font-weight: 500;
-  line-height: 1.45;
-}
+/* The docked ask's card (surfaces.css, .lc-dask) with its answers as rows: only those are this file's. */
 .lsc-ask-opts {
   display: flex;
   flex-direction: column;
-  padding: 0 0 6px;
+  margin: 0 -2px;
 }
 .lsc-ask-opt {
   display: flex;
@@ -443,18 +430,20 @@
 .lsc-ask-opt[data-hl] {
   background: var(--l-wash-2);
 }
-.lsc-ask-opt kbd {
+.lsc-ask .lsc-ask-opt kbd {
   display: grid;
   flex: none;
   place-items: center;
   width: 18px;
   height: 18px;
+  padding: 0;
   border-radius: 5px;
+  background: none;
   box-shadow: inset 0 0 0 1px var(--l-line-2);
   font: 500 11px/1 var(--l-font-body);
   color: var(--l-ink-3);
 }
-.lsc-ask-opt[aria-checked="true"] kbd {
+.lsc-ask .lsc-ask-opt[aria-checked="true"] kbd {
   background: var(--l-ink);
   box-shadow: none;
   color: var(--l-on-ink);
@@ -473,7 +462,6 @@
 }
 .lsc-ask-free {
   margin: 0;
-  padding: 0 10px 10px;
   font-size: 13px;
   color: var(--l-ink-3);
 }

@@ -48,36 +48,16 @@
 .lc-ao-info {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
+  margin-block: -4px;
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
   color: var(--l-ink-3);
   cursor: help;
 }
-.lc-ao-ghost {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.lc-ao-ghost[data-busy] svg {
-  animation: lc-ao-spin 700ms linear infinite;
-}
-@keyframes lc-ao-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @media (hover: hover) {
-  .lc-ao-ghost:hover,
   .lc-ao-info:hover {
     background: var(--lc-well);
     color: var(--l-ink);
@@ -227,15 +207,8 @@ button.lc-ao-open {
   font-weight: 500;
   color: var(--l-ink);
 }
-.lc-ao-tag {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
-  color: var(--l-danger-text);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 500;
+.lc-ao-mk {
+  margin-left: 8px;
 }
 .lc-ao-row[data-state="failed"] small {
   color: var(--l-danger-text);
@@ -461,7 +434,7 @@ button.lc-ao-open {
 /* The first Remove is a text button of its own, not a .lc-btn: it keeps its size and corner. The confirm Remove is a
    .lc-btn and takes that button's. */
 .lc-ao-remove:not(.lc-btn) {
-  height: 32px;
+  height: 30px;
   padding: 0 10px;
   border-radius: var(--lc-r-field);
 }
@@ -491,7 +464,7 @@ button.lc-ao-open {
   color: var(--l-ink);
 }
 .lc-ao-from > .lc-input {
-  height: 44px;
+  height: 36px;
   padding: 0 14px;
   border-radius: var(--lc-r-field);
   font-size: 15px;
@@ -552,9 +525,9 @@ button.lc-ao-open {
 }
 .lc-btn.lc-ao-go {
   justify-content: center;
-  height: 44px;
+  height: 36px;
   border-radius: var(--lc-r-field);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
 }
 .lc-btn.lc-ao-go:disabled {

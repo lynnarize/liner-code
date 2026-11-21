@@ -2,11 +2,11 @@
   Choosing a project, the way GitHub Desktop adds one: the projects already here, the Git
   repositories found on this Mac, or your repositories on GitHub (through the GitHub CLI,
   signed in as you), which clone with one press. Picking one that isn't here yet adds it.
-  Home's quick pick is the small one, as Devin's folder picker: your projects on one line each,
-  the last used first, with the folder's path after the name, and the ways to add one under them;
-  From GitHub and Find on this Mac open the full chooser in its place.
+  Home's quick pick is the small one: a find line, your projects on one line each, the last used
+  first, with the folder's path at the row's end, then Add a project and Manage projects; From
+  GitHub and Find on this Mac open the full chooser in its place.
 */
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ROUTINES_ON, type FoundRepo, type GitHubRepo, type Project } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
@@ -14,6 +14,7 @@ import { bridge, ghInstall } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { listedProjects, since } from "./model";
+import { BackRow, FindField, rove } from "./Models";
 import { Row, Sep } from "./ui";
 import * as os from "./os";
 import "./models.css";
@@ -26,36 +27,21 @@ let found: Promise<{ repos: FoundRepo[]; detail?: string }> | null = null;
 let github: Promise<GitHub> | null = null;
 const tilde = os.tilde;
 
-/** How many projects the quick pick shows before it offers a find field. */
-const QUICK = 8;
-
-/** One line in the quick pick: an icon, a name, then something grey after it, and a check at the end. `hl`: what Enter in the find field picks. */
-function QuickRow({ icon, title, note, on, hl, onPick }: { icon: ReactNode; title: string; note?: string; on?: boolean; hl?: boolean; onPick: () => void }) {
-  return (
-    <button type="button" className="lc-qp-row l-focus" data-on={on || undefined} data-hl={hl || undefined} aria-pressed={on === undefined ? undefined : on} title={note ? `${title} · ${note}` : undefined} onClick={onPick}>
-      <span className="lc-qp-icon">{icon}</span>
-      <span className="lc-qp-name">{title}</span>
-      {/* The path ends where the folder is: a long one gives way at its start, so its end stays. */}
-      {note ? <span className="lc-qp-path">{`\u200e${note}\u200e`}</span> : <span className="lc-grow" />}
-      {on && <I.check size={14} />}
-    </button>
-  );
-}
-
 /**
-  Home's project picker, compact: Recent, your projects one line each (the last used first, the
-  rest by name, eight at most; with more, a find field over them that looks through all), then
-  Add folder, From GitHub and Find on this Mac, and `more` (Home's own rows) at the end. The two
-  that look further open the full chooser on that tab, in the same panel, with Recent over it to
-  come back and `more` under it.
+  Home's project picker, a small card: the find line the model picker has (no box, a hairline under it), your projects one
+  30px row each (the last used first, the rest by name; past six the list scrolls inside the card), each with its path at
+  its end and a tick on the one picked; then, under a hairline, two rows: Add a project, which opens in place the ways to
+  add one (a folder on this Mac, from GitHub, found on this Mac) and `more` (Home's own: a scratch folder, the sample), and
+  Manage projects, which is Settings › Projects. From GitHub and Find on this Mac open the full chooser in the same place.
+  Only the list scrolls: the card is never taller than its room (--lc-pop-room, ui.tsx Pop) and the foot stays put.
 */
-export function ProjectQuickPick({ value, onPick, more = [] }: { value?: string; onPick: (p: Project) => void; more?: { title: string; icon: ReactNode; onPick: () => void }[] }) {
+export function ProjectQuickPick({ value, onPick, more = [], close }: { value?: string; onPick: (p: Project) => void; more?: { title: string; icon: ReactNode; onPick: () => void }[]; close?: () => void }) {
   const all = useEngine((s) => s.projects);
   const threads = useEngine((s) => s.threads);
-  const [full, setFull] = useState<Tab | null>(null);
+  const [view, setView] = useState<"" | "add" | Tab>("");
   const [query, setQuery] = useState("");
-  // The find field has the keyboard: Enter there picks the first project shown, marked so.
-  const [finding, setFinding] = useState(false);
+  const find = useRef<HTMLInputElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   // When you last worked in each project: its newest session's last activity.
   const used = useMemo(() => {
     const m = new Map<string, number>();
@@ -63,69 +49,70 @@ export function ProjectQuickPick({ value, onPick, more = [] }: { value?: string;
     return m;
   }, [threads]);
   const projects = useMemo(() => listedProjects(all).sort((a, b) => (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || a.name.localeCompare(b.name)), [all, used]);
-  const many = projects.length > QUICK;
   const q = query.trim().toLowerCase();
-  const shown = q ? projects.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)) : projects.slice(0, QUICK);
+  const shown = q ? projects.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)) : projects;
   const add = (path: string | null) => {
     if (!path) return;
     void rpc("project.add", { path }).then(onPick, (e: Error) => toast.error(e.message));
   };
-  const extras = more.map((m) => <QuickRow key={m.title} icon={m.icon} title={m.title} onPick={m.onPick} />);
-  // The full chooser in its place, with the way back to the short list over it and Home's own rows under it.
-  if (full)
-    return (
-      <div className="lc-qp">
-        <QuickRow icon={<I.chevL size={14} />} title="Recent" onPick={() => setFull(null)} />
-        <ProjectChooser value={value} onPick={onPick} initialTab={full} extra={extras.length ? (<><Sep />{extras}</>) : undefined} />
-      </div>
-    );
-  // The arrow keys go over the rows (and up from the first, back to the find field); Escape is the panel's.
-  const arrows = (e: KeyboardEvent<HTMLDivElement>) => {
-    if ((e.key !== "ArrowDown" && e.key !== "ArrowUp") || e.altKey || e.metaKey || e.ctrlKey || e.nativeEvent.isComposing) return;
-    const field = e.currentTarget.querySelector<HTMLInputElement>(".lc-qp-find input");
-    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>(".lc-qp-row:not(:disabled)")];
-    if (!rows.length) return;
-    e.preventDefault();
-    const down = e.key === "ArrowDown";
-    const i = rows.indexOf(document.activeElement as HTMLElement);
-    const to = i < 0 ? (down ? rows[0] : rows[rows.length - 1]) : down ? (rows[i + 1] ?? field ?? rows[0]) : (rows[i - 1] ?? field ?? rows[rows.length - 1]);
-    to.focus();
-    to.scrollIntoView({ block: "nearest" });
+  // Into a list in place and back out, the keyboard following: to its first row going in, to the row that opened it coming back.
+  const go = (v: "" | "add" | Tab) => {
+    const was = view;
+    setView(v);
+    requestAnimationFrame(() => (v === "add" && was !== "" ? card.current?.querySelector<HTMLElement>(`[data-opens="${was}"]`) : v ? card.current?.querySelector<HTMLElement>("[data-rove]:not(:disabled), input") : card.current?.querySelector<HTMLElement>('[data-opens="add"]'))?.focus({ preventScroll: true }));
   };
-  return (
-    <div className="lc-qp" onKeyDown={arrows}>
-      {many && (
-        <div className="lc-mp-find lc-qp-find">
-          <I.search size={14} />
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setFinding(true)}
-            onBlur={() => setFinding(false)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.nativeEvent.isComposing || !shown[0]) return;
-              e.preventDefault();
-              onPick(shown[0]);
-            }}
-            placeholder="Find a project"
-            aria-label="Find a project"
-            spellCheck={false}
-          />
-        </div>
-      )}
-      {projects.length > 0 && <div className="lc-qp-head">{q ? "Projects" : "Recent"}</div>}
-      <div className="lc-qp-list">
-        {shown.map((p, i) => (
-          <QuickRow key={p.id} icon={<I.folder size={16} />} title={p.name} note={tilde(p.path)} on={p.id === value} hl={finding && i === 0} onPick={() => onPick(p)} />
+  // Up and Down walk the rows and the foot (Models.tsx rove); a letter typed on a row goes to Find; Escape steps back out of a list in place before the panel closes.
+  const keys = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && view && !e.defaultPrevented) return void (e.preventDefault(), go(view === "add" ? "" : "add"));
+    if (e.key === "Enter" && e.target === find.current && !e.nativeEvent.isComposing && shown[0]) return void (e.preventDefault(), onPick(shown[0]));
+    const typing = e.target instanceof HTMLInputElement;
+    if (!view && !typing && e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) return void find.current?.focus();
+    rove(e, card.current);
+  };
+  let body: ReactNode;
+  if (view === "mac" || view === "github")
+    body = (
+      <>
+        <BackRow name={view === "github" ? "From GitHub" : `Find on ${os.here}`} label="Back to the ways to add a project" onBack={() => go("add")} />
+        <ProjectChooser value={value} onPick={onPick} initialTab={view} />
+      </>
+    );
+  else if (view === "add")
+    body = (
+      <>
+        <BackRow name="Add a project" label="Back to your projects" onBack={() => go("")} />
+        <Row rove title={`A folder on ${os.here}`} end="Choose it" icon={<I.folderPlus size={16} />} onPick={() => void bridge.pickFolder().then(add)} />
+        <Row rove title="From GitHub" end="Clone one" icon={<I.pr size={16} />} opens="github" onPick={() => go("github")} />
+        <Row rove title={`Find on ${os.here}`} end="Repositories" icon={<I.laptop size={16} />} opens="mac" onPick={() => go("mac")} />
+        {more.length > 0 && <Sep />}
+        {more.map((m) => (
+          <Row key={m.title} rove title={m.title} icon={m.icon} onPick={m.onPick} />
         ))}
-        {q && shown.length === 0 && <p className="lc-quiet lc-qp-none">No project matches that.</p>}
-      </div>
-      {projects.length > 0 && <Sep />}
-      <QuickRow icon={<I.folderPlus size={16} />} title="Add folder…" onPick={() => void bridge.pickFolder().then(add)} />
-      <QuickRow icon={<I.pr size={16} />} title="From GitHub…" onPick={() => setFull("github")} />
-      <QuickRow icon={<I.laptop size={16} />} title={`Find on ${os.here}…`} onPick={() => setFull("mac")} />
-      {extras}
+      </>
+    );
+  else
+    body = (
+      <>
+        <div className="lc-pk-top">
+          <FindField value={query} onChange={setQuery} field={find} label="Find a project" autoFocus />
+        </div>
+        {/* No label over it: the list is only your projects, the last used first, found or not. */}
+        <div className="lc-qp-list" role="group" aria-label="Your projects">
+          {shown.map((p) => (
+            <Row key={p.id} rove keepIcon title={p.name} which={tilde(p.path)} whichPath on={p.id === value} icon={<I.folder size={16} />} onPick={() => onPick(p)} />
+          ))}
+          {q && shown.length === 0 && <p className="lc-quiet lc-qp-none">No project matches that.</p>}
+          {!q && projects.length === 0 && <p className="lc-quiet lc-qp-none">No projects yet.</p>}
+        </div>
+        <div className="lc-qp-foot">
+          <Row rove title="Add a project" icon={<I.plus size={16} />} opens="add" onPick={() => go("add")} />
+          <Row rove title="Manage projects" icon={<I.settings size={16} />} onPick={() => (close?.(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "projects" })))} />
+        </div>
+      </>
+    );
+  return (
+    <div ref={card} className="lc-qp" data-view={view || undefined} onKeyDown={keys}>
+      {body}
     </div>
   );
 }
@@ -190,15 +177,18 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
         ]}
         aria-label="Where to choose from"
       />
-      <div className="lc-mp-find lc-pc-find">
-        <I.search size={14} />
-        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tab === "github" ? "Find a repository" : "Find a project"} aria-label="Find" spellCheck={false} />
+      {/* The one find line every picker has (the model picker's): no box, a hairline under it. */}
+      <div className="lc-pk-top lc-pc-find">
+        <label className="lc-mp-find">
+          <I.search size={16} />
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tab === "github" ? "Find a repository" : "Find a project"} aria-label="Find" spellCheck={false} />
+        </label>
       </div>
       <div className="lc-pc-list">
         {tab === "here" && (
           <>
             {here.map((p) => (
-              <Row key={p.id} title={p.name} note={[p.remote ?? tilde(p.path), noRemote(p.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")} on={p.id === value} icon={<I.folder size={14} />} onPick={() => onPick(p)} />
+              <Row key={p.id} title={p.name} which={p.remote ?? tilde(p.path)} whichPath={!p.remote} note={[p.remote ?? tilde(p.path), noRemote(p.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")} on={p.id === value} icon={<I.folder size={16} />} onPick={() => onPick(p)} />
             ))}
             {here.length === 0 && <p className="lc-quiet lc-mp-none">{q ? "No project matches that." : `No projects yet. Find one on ${os.here} or on GitHub.`}</p>}
           </>
@@ -217,9 +207,11 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                     <Row
                       key={r.path}
                       title={r.name}
+                      which={tilde(r.path)}
+                      whichPath
                       note={[tilde(r.path), r.branch, r.lastCommitAt ? since(r.lastCommitAt) : "", noRemote(r.remote) ? "no GitHub remote" : ""].filter(Boolean).join(" · ")}
                       on={p?.id === value}
-                      icon={<I.folder size={14} />}
+                      icon={<I.folder size={16} />}
                       end={busy === r.path ? <span className="l-shimmer">Adding</span> : p ? <span className="lc-quiet">Added</span> : undefined}
                       disabled={busy !== null}
                       onPick={() => (p ? onPick(p) : void add(r.path, () => rpc("project.add", { path: r.path })))}
@@ -228,12 +220,12 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                 })}
               {mac.repos.length === 0 ? !mac.detail && <p className="lc-quiet lc-mp-none">No Git repositories in the usual folders.</p> : !mac.repos.some((r) => match(r.name, r.path, r.remote)) && <p className="lc-quiet lc-mp-none">No repository here matches that.</p>}
               <Sep />
-              <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={14} />} disabled={busy !== null} onPick={() =>
+              <Row title="Choose a folder…" note={`Any folder on ${os.here}`} icon={<I.plus size={16} />} disabled={busy !== null} onPick={() =>
                   void bridge.pickFolder().then((path) => {
                     if (path) void add(path, () => rpc("project.add", { path }));
                   })
                 } />
-              <Row title="Look again" icon={<I.refresh size={14} />} onPick={() => loadMac(true)} />
+              <Row title="Look again" icon={<I.refresh size={16} />} onPick={() => loadMac(true)} />
             </>
           ))}
         {tab === "github" &&
@@ -278,8 +270,8 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                       }
                       note={[r.description, r.pushedAt ? `pushed ${since(r.pushedAt)}` : ""].filter(Boolean).join(" · ")}
                       on={Boolean(p && p.id === value)}
-                      icon={<I.pr size={14} />}
-                      end={busy === r.fullName ? <span className="l-shimmer">Cloning</span> : p ? <span className="lc-quiet">Here</span> : <span className="lc-pc-clone">Clone</span>}
+                      icon={<I.pr size={16} />}
+                      end={busy === r.fullName ? <span className="l-shimmer">Cloning</span> : p ? <span className="lc-quiet">Added</span> : <span className="lc-pc-clone">Clone</span>}
                       disabled={busy !== null}
                       onPick={() => (p ? onPick(p) : void add(r.fullName, () => rpc("project.clone", { url: r.fullName })))}
                     />

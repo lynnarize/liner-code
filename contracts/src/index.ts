@@ -68,16 +68,29 @@ export function nearestEffort(asked: string, efforts: { id: string }[], fallback
 export const rank = (a: Access) => ({ read: 0, ask: 1, edits: 2, auto: 3, review: 3, full: 4 })[a];
 /** How hard it thinks, by the tool's own name for it: low, medium, high, xhigh, max, and Claude Code's ultracode and ultrathink. */
 export type Effort = string;
-export type EffortInfo = { id: string; label: string; description?: string };
+/**
+  One effort level. `extra` marks one Liner Code adds on top of the levels the tool reported (Claude Code's Ultracode and
+  Ultrathink: a setting and a word in the prompt, not levels of the model), so the picker can show them apart.
+*/
+export type EffortInfo = { id: string; label: string; description?: string; extra?: boolean };
 
 /** A model as its tool reports it. `id` is what the tool takes; `group` is where it comes from inside the tool (an ACP agent's provider). */
 export type ModelInfo = {
   id: string;
   label: string;
   description: string;
-  /** The effort levels the tool accepts for this model, lowest first. None: it doesn't take one. */
+  /**
+    The effort levels the tool reported for this model, lowest first, in its own words, never a shared list or another model's
+    (models differ: one has no medium). None: the tool takes none for it, or didn't say.
+  */
   efforts?: EffortInfo[];
+  /** The level the tool says it runs at when none is given. Unset when it doesn't say: the tool's own default then applies. */
   defaultEffort?: string;
+  /**
+    What the tool says a million tokens in and out cost, with the currency sign ("$4", "$20"), for weighing models in the picker.
+    `note` is what it adds about other rates ("$0.50/$2.50 for prompts over 100k"). Absent when the tool doesn't say.
+  */
+  price?: { input: string; output: string; note?: string };
   /** Older models, folded away in the picker. */
   legacy?: boolean;
   group?: string;
@@ -386,6 +399,12 @@ export type Thread = {
   agentsAtWork?: number;
   /** What it is doing right now, in a few plain words, while a turn runs: the sidebar's second line. Unset when no turn runs. */
   doing?: { text: string };
+  /**
+    What it waits on you for, in a few plain words, while it does: a question's own words, or what an approval would let it do
+    ("Run npm test?", "Edit tides.js?"), from the newest ask still open (doing.ts, askingOf). The rows' second line, in amber.
+    The engine sets it as the session waits and clears it as it stops waiting; unset in sessions saved before it.
+  */
+  asking?: { text: string };
   /** Messages you wrote while it worked, sent in order when the turn ends. */
   queue?: QueuedMessage[];
   /** The Reviewer's last word on this session's changes. */
@@ -398,8 +417,11 @@ export type Thread = {
   wake?: { kind: "checks" | "reply"; pr: number; seen?: number };
   /** One of several models given the same ask, to compare and keep one. */
   compare?: { id: string; base: string };
-  /** The pull request this session's branch opened. */
-  pr?: { number: number; url: string; state: string };
+  /**
+    The pull request this session's branch opened. `checks`: how its checks stood when the app last read the pull request (the PR
+    card's pr.status, and the minute's watch when it follows the pull request), unset until then or when it has none.
+  */
+  pr?: { number: number; url: string; state: string; checks?: PrChecks };
   /** A routine's run. */
   routine?: { id: string; run: string };
   /**
@@ -473,8 +495,11 @@ export type QueuedMessage = { id: string; text: string; at: number; files?: stri
 export type Question = { question: string; header?: string; options: { label: string; description?: string; suggested?: boolean; guess?: string }[]; multiSelect?: boolean };
 
 export type ToolKind = "read" | "edit" | "write" | "exec" | "search" | "fetch" | "think" | "task" | "web" | "other";
-/** One step of an agent's own: what it did, as its row in the timeline would say it. */
-export type AgentStep = { title: string; toolKind: ToolKind; status: "running" | "done" | "failed"; path?: string };
+/**
+  One step of an agent's own: what it did, as its row in the timeline would say it, and when it began (`at`, where the tool
+  says). A thought it had between steps is a step of kind "think", its words as the title, never counted as a tool.
+*/
+export type AgentStep = { title: string; toolKind: ToolKind; status: "running" | "done" | "failed"; path?: string; at?: number };
 /**
   An agent a model sent off to do part of the work (Claude Code's Agent tool), on that call's row:
   who it is, what it was asked, what it does now and what it sent back. The model that sent it
@@ -1010,8 +1035,8 @@ export const WRITER_CANCELLED = "Stopped writing.";
 export type PrTestResult = { state: "passed" | "failed" | "skipped"; command?: string; summary: string; seconds?: number };
 export type Finding = { file: string; line?: number; endLine?: number; severity: "blocking" | "note"; note: string };
 
-/** One file's before and after, for the diff card. */
-export type FileDiff = { path: string; before?: string; after?: string; from?: string };
+/** A changed file's text before and after. `status` is git's word for it: a missing side alone can't say, as a side git couldn't show (a submodule) is missing too. */
+export type FileDiff = { path: string; before?: string; after?: string; from?: string; status?: FileChange["status"] };
 
 export type Settings = {
   /** You've been through the first run. */
@@ -1021,15 +1046,22 @@ export type Settings = {
   /** The Reviewer reads each change before it's yours: on unless false. A session's own `review` comes first. */
   review?: boolean;
   /**
-    What a new session starts with: a pair (lead and sidekick), the best model alone, or the fast one
-    alone. Unset: a pair when two different models are ready, else one model.
+    What a new session starts with: a pair (lead and sidekick), or one model ("@<provider>:<model>",
+    picked in the same panel as the message box's). "best" and "fast", saved before, are the lead
+    alone and the sidekick alone. Unset: a pair when two different models are ready, else one model.
   */
-  start?: "pair" | "best" | "fast";
+  start?: "pair" | "best" | "fast" | `@${string}`;
   /** Models you moved to another class as a sidekick, by model ref (tuning.ts, sidekickClassOf); the rest are placed by the lists. */
   classes?: Record<string, SidekickClass>;
+  /**
+    The source a person chose for a model that a tool offers from several, kept so the picker opens where they left it:
+    "<tool>/<label>" for a model, "last:<tool>" for the source chosen last, "switch:<tool>" for where the source switch was
+    left. Only strings are kept, and only so many (api.ts, settings.save).
+  */
+  modelSources?: Record<string, string>;
   /** How a pair's lead hands work over, unless a session says otherwise. Unset is automatic (tuning.ts, waysOf). */
   handOver?: HandOver;
-  /** The effort a session gets when it becomes a pair, through nearestEffort for its lead's model. Unset is "medium". */
+  /** The effort a session gets when it becomes a pair, through nearestEffort for its lead's model. Unset: the lead model's default level where its tool lists one, else none (api.ts, draftThread). */
   pairEffort?: Effort;
   /** How many times the Reviewer sends blocking findings back before it's yours (default 2). */
   reviewRounds?: number;
@@ -1343,6 +1375,28 @@ export type PrInfo = {
   requested: string[];
   threadId?: string;
 };
+
+/**
+  How a session's pull request's checks stand, as its row says it: running while any hasn't ended, else failed (how many) or passed.
+  While running, `since` is when Liner first read them running (keptSince), so the minute's watch follows them for two hours and no more.
+*/
+export type PrChecks = { state: "running" | "passed" | "failed"; failed?: number; since?: number };
+/**
+  A pull request's checks as one fact: running while any is still pending, else failed with how many failed, else passed;
+  nothing when it has none (a skipped check neither passes nor fails it). The PR card's checks (PrInfo) and the watch's read
+  of gh both come through here, so the row never disagrees with the card.
+*/
+export function prChecksOf(checks: Pick<PrInfo["checks"][number], "state">[]): PrChecks | undefined {
+  const counted = checks.filter((c) => c.state !== "skipped");
+  if (!counted.length) return undefined;
+  if (counted.some((c) => c.state === "pending")) return { state: "running" };
+  const failed = counted.filter((c) => c.state === "fail").length;
+  return failed ? { state: "failed", failed } : { state: "passed" };
+}
+/** Whether two readings of the checks say the same, so an unchanged one isn't saved again. */
+export const sameChecks = (a?: PrChecks, b?: PrChecks) => a?.state === b?.state && a?.failed === b?.failed;
+/** A new reading of the checks with when they were first read running carried over from the saved one, else now; nothing kept once they end. */
+export const keptSince = (saved: PrChecks | undefined, read: PrChecks | undefined, now = Date.now()): PrChecks | undefined => (read?.state === "running" ? { ...read, since: saved?.state === "running" && saved.since ? saved.since : now } : read);
 /** What a pull request card draws: your commits over the base, what reached the base since, and where they clash. */
 export type PrPicture = {
   branch: string;
@@ -1973,6 +2027,7 @@ export function newerVersion(a?: string, b?: string) {
   return false;
 }
 export * from "./cast.ts";
+export * from "./lineup.ts";
 export * from "./tuning.ts";
 export * from "./panel.ts";
 export * from "./dsh.ts";

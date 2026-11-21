@@ -9,7 +9,7 @@ import type { ContextPart, ContextSource, FileChange, Item, LimitWindow, PrInfo,
 import { toast } from "@liner/components/toast/toast";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { checkpointsOf, compact, duration, modelLabel, money, plural, sumLines } from "./model";
 import { liveOf, Tick, type Mark } from "./Timeline";
 import { Lines, PanelHead } from "./ui";
@@ -162,17 +162,17 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
   );
 }
 
-/** The pull request's checks as one count: passed (a skipped one counts) of all, the dot amber while any runs and red once one fails. */
+/** The pull request's checks as one count: passed (a skipped one counts) of all, with the state mark: checks while any runs, problem once one fails, ready when all passed. */
 function ChecksLine({ checks }: { checks: PrInfo["checks"] }) {
   const passed = checks.filter((c) => c.state === "pass" || c.state === "skipped").length;
   const failed = checks.filter((c) => c.state === "fail");
   const running = checks.filter((c) => c.state === "pending").length;
-  const state = failed.length ? "fail" : running ? "running" : "ok";
+  const state = failed.length ? "problem" : running ? "checks" : "ready";
   const title = failed.length ? `Failed: ${failed.map((c) => c.name).join(", ")}` : running ? `${running} still running` : "Every check passed";
   return (
     <Line icon={<I.check size={14} />} title={title}>
       <span className="lc-grow">Checks</span>
-      <i className="lc-sinfo-dot" data-state={state} aria-hidden />
+      <StateMark state={state} size={12} />
       <span className="l-num">
         {passed}/{checks.length}
       </span>

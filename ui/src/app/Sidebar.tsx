@@ -9,14 +9,17 @@
   session is put away: Snoozed, Settled and Archive), Carry on, the sort, your groups and a new
   project. By folder: Pinned and your groups, then a folder for each project, what needs you first
   in it, a fork under the session it came from. By status: Pinned, Needs you, Working, your groups,
-  Complete. Every row is two lines on the places' grid (SideList.tsx): how it stands in the mark
-  column under their icons, the title on their text edge, and under it what the session is doing
-  now or how it ended; a pull request's mark at its end. Carry on, from the menu, opens a panel
+  Finished. Every row is two lines on the places' grid (SideList.tsx): how it stands in the mark
+  column under their icons, the title on their text edge with the time at its end, and under it
+  what the session is doing now, wants or how it ended, with its facts at the line's end (its pull
+  request's number, its model, its own worktree). Carry on, from the menu, opens a panel
   beside the sidebar with the work begun elsewhere (changes not committed in the project you were
   last in, sessions in Claude Code and Codex not brought in yet). The list takes all the room down
   to the foot and dissolves where it runs on past an edge, so nothing draws a line.
-  Pointing at a row shows Pin, Snooze and Settle in its end's place (P, S and D from the keyboard);
-  resting on it brings a card beside the sidebar with the rest of its story. One plate marks the open session.
+  Pointing at a row shows Settle, Archive and a ··· at its title's end (a project's folder, one ···); the ···
+  opens its menu (the right-click's: pin, settle, the snoozes and the groups as lists in its place,
+  rename, archive; P, S, D and F2 from the keyboard); resting on it brings a card beside the sidebar
+  with the rest of its story. One plate, a small card, marks the open session.
   ⌘-click picks rows and ⇧-click a run of them; with more than one picked, a bar settles, snoozes,
   archives or moves them all at once. Esc lets them go.
 */
@@ -28,12 +31,14 @@ import { bridge } from "./bridge";
 import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark, N, type MarkKind } from "./icons";
-import { agentOf, ago, bucketOf, clock, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, reviewHeld, since, type Bucket } from "./model";
-import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, StatusMark } from "./ui";
-import { SideCounts, SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "./SideList";
-import { asksYou, needsYou, sideStateOf, waitsOnYou } from "./session-state";
+import { agentOf, ago, bucketOf, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
+import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep } from "./ui";
+import type { Box } from "./menu-place";
+import { rowWords, SideCounts, SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused } from "./SideList";
+import { asksYou, markLabelOf, markStateOf, needsYou, newsForYou, prSaid, seenAsk, waitsOnYou, worksNow } from "./session-state";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
+import { BackRow } from "./Models";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import { FACE_NAME, type Face } from "./face";
@@ -174,7 +179,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const groups = useEngine((s) => s.groups);
   const routines = useEngine((s) => s.routines);
   const runs = useEngine((s) => s.runs);
-  const [menu, setMenu] = useState<{ t: Thread; x: number; y: number } | null>(null);
+  // Where a session's menu opens: the pointer for a right-click, or under the row's ··· (`under`, and the row's box, `row`): menu-place.ts.
+  const [menu, setMenu] = useState<{ t: Thread; x: number; y: number; under?: Box; row?: Box } | null>(null);
   const [naming, setNaming] = useState<{ forThread?: string } | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const projects = useEngine((s) => s.projects);
@@ -256,15 +262,18 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   /*
     Needs you, in this panel, is needsYou (above), as the Dock counts it: one asking you something, or
     finished and not read. bucketOf (Settle the project) also counts one not started; here that is
-    under Complete, with its own words.
+    under Finished, with its own words.
   */
   const needs = (t: Thread) => needsYou(t, now);
   // Working, in this panel: its turn runs, or agents it sent still work and it doesn't need you. One answered while you were away whose agents still work is working; it reads as answered once they're done. The rows, By status, a folded folder, a folder's order and the pill all take this one test.
-  const works = (t: Thread) => t.status === "running" || (!asksYou(t) && Boolean(t.agentsAtWork));
-  // The top row's counts: the sessions on The Wall that work (as it sorts them: a turn running, or agents it sent still at work) and those that need you.
-  // Liner Security's too: The Wall, the Dock and the tray count them.
+  const works = worksNow;
+  // The top row's counts: the sessions on The Wall that work (as it sorts them: a turn running, or agents it sent still at work) and those that need you
+  // and are news (a question you've opened and left isn't: seenAsk). Liner Security's too: The Wall, the Dock and the tray count them.
   const onWallNow = everyThread.filter((t) => onTheWall(t, now));
-  const wallWaits = onWallNow.filter(needs).length;
+  // The open session in a focused window is being looked at: never news, so its row, its folder and the pill show no amber for it (newsForYou).
+  const focused = useWindowFocused();
+  const looking = (t: Thread) => focused && t.id === current;
+  const wallWaits = onWallNow.filter((t) => newsForYou(t, now, looking(t))).length;
   const wallWorking = onWallNow.filter(works);
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
@@ -306,10 +315,10 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const sections = [...projects.filter((p) => p.kind !== "design" && !p.demoFor).map((p) => ({ id: p.id, name: p.name })), { id: DESIGNS, name: "Designs" }, { id: "", name: "No project" }]
       .map((x) => ({ ...x, list: top.filter(inSection(x.id)), all: here.filter(inSection(x.id)) }))
       .filter((x) => x.list.length > 0)
-      // What a folded folder says: how many it holds, whether one needs you, and the first that works (its spinner is in that one's tint).
-      .map(({ all, ...x }) => ({ ...x, ids: all.map((t) => t.id), count: all.length, needs: all.filter(needs).length, working: all.find(works) }));
+      // What a folded folder says: how many it holds, whether one needs you and is news (seenAsk), and the first that works (its working mark is in that one's tint).
+      .map(({ all, ...x }) => ({ ...x, ids: all.map((t) => t.id), count: all.length, needs: all.filter((t) => newsForYou(t, now, looking(t))).length, working: all.find(works) }));
     return { sections, forks };
-  }, [byBucket, projects, order, now]);
+  }, [byBucket, projects, order, now, current, focused]);
 
   useEffect(() => {
     const sc = scroller.current;
@@ -476,7 +485,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     }
     toast(`Settled ${plural(go.length, "session")} in ${name}`, { description: still ?? "It comes back to the list with its next session.", action: { label: "Undo", onClick: () => void Promise.all(before.map((b) => rpc("thread.update", b))) }, duration: 6000 });
   };
-  const [projMenu, setProjMenu] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
+  const [projMenu, setProjMenu] = useState<{ id: string; name: string; x: number; y: number; under?: Box; row?: Box } | null>(null);
 
   const rowKeys = (e: KeyboardEvent, t: Thread) => {
     // ⌘, ⌃ and ⌥ keys are the app's (⌘⇧D opens Changes), not Pin, Snooze or Settle.
@@ -489,7 +498,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     else if (e.key === "F2") setRenaming(t.id);
     else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setMenu({ t, x: r.left + 24, y: r.bottom });
+      // The row's box goes too, so a menu that must open above stands clear of the row rather than over it (menu-place.ts).
+      setMenu({ t, x: r.left + 24, y: r.bottom, row: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } });
     }
     // ↑ and ↓ are SideRow's, as in every face's list, folder headers included (SideList.tsx, listArrows).
     else return;
@@ -555,7 +565,11 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     };
   }, [card !== null]);
 
-  /** The card's contents: the title, where it is, then how it stands, who works, where, what changed, and the keys. */
+  /**
+    The card's contents: only what the row doesn't say. The title in full, where it is (its project and branch), who works on
+    it by name (the row has their mark only), the Mac and whether it has a worktree of its own, when it started and what it has
+    used, then the keys. How it stands, its pull request, its changes and when it last moved are the row's.
+  */
   const cardBody = (t: Thread) => {
     const bucket = standing(t, place(t), now);
     const project = projects.find((p) => p.id === t.projectId);
@@ -566,15 +580,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const model = modelLabel(ref, providers);
     // "Opus 5.5 + Sol" for a pair; "Forge on Sonnet 5.5"; a model on its own is named once.
     const team = on.pair ? `${on.pair.name}: ${on.pair.lead} leads, ${on.pair.side} works` : coder.name === model ? model : `${coder.name} on ${model}`;
-    const run = t.routine ? runs.find((r) => r.id === t.routine!.run) : undefined;
-    // A pair's sidekick is in its name already; the agents besides it are counted.
-    const sentNow = Math.max(0, (sent.get(t.id) ?? 0) - (on.pair ? 1 : 0));
-    const said = cardState(t, bucket, on.who, now, run);
-    const state = sentNow ? { ...said, text: `${said.text} with ${plural(sentNow, "agent")}` } : said;
-    const changes = [(t.toReview ?? 0) > 0 ? `${plural(t.toReview!, "file")} changed, not committed` : "", t.pr ? `pull request #${t.pr.number}${t.pr.state ? `, ${t.pr.state.toLowerCase()}` : ""}` : ""].filter(Boolean).join(" · ");
     const u = t.usage;
     const ctx = u?.contextTokens && u.contextWindow ? Math.round((u.contextTokens / u.contextWindow) * 100) : null;
-    const last = [`Last move ${agoLong(t.updatedAt, now)}`, ctx !== null ? `${ctx}% of context` : "", u?.costUsd ? money(u.costUsd) : ""].filter(Boolean).join(" · ");
+    const used = [`Started ${agoLong(t.createdAt, now)}`, ctx !== null ? `${ctx}% of context` : "", u?.costUsd ? money(u.costUsd) : ""].filter(Boolean).join(" · ");
     // ⌘1 to ⌘9 go down the sidebar as it shows (App's sidebarOrder).
     const n = [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].findIndex((r) => r.dataset.row === t.id) + 1;
     return (
@@ -595,10 +603,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         </p>
         <div className="lc-sbc-facts">
           <span className="lc-sbc-i">
-            <StatusMark t={t} bucket={bucket} brand={markOf(on.ref)} />
-          </span>
-          <span data-tone={state.tone}>{state.text}</span>
-          <span className="lc-sbc-i">
             <ModelMark kind={markOf(ref)} size={14} />
           </span>
           <span>{team}</span>
@@ -608,16 +612,10 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           <span>
             {machine} · {t.worktree ? "in its own worktree" : "in the project folder"}
           </span>
-          {changes && (
-            <>
-              <span className="lc-sbc-i">{(t.toReview ?? 0) > 0 ? <I.changes size={14} /> : <I.pr size={14} />}</span>
-              <span>{changes}</span>
-            </>
-          )}
           <span className="lc-sbc-i">
             <I.clock size={14} />
           </span>
-          <span>{last}</span>
+          <span>{used}</span>
         </div>
         <p className="lc-sbc-keys">
           <span>
@@ -639,14 +637,17 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     );
   };
 
-  /** A session's row (SessionRow, below the sidebar), with what it needs from here. */
-  const row = (t: Thread, shelf: Bucket, forks?: { n: number; open: boolean }) => {
+  /** Where a session is, said on its row when no folder over it says so: its project, or for a design where the design lives. */
+  const whereOf = (t: Thread) => (t.design ? designWhere(t, projects) : (projects.find((p) => p.id === t.projectId)?.name ?? "No project"));
+  /** A session's row (SessionRow, below the sidebar), with what it needs from here. `loose`: no folder sits over it, so its row names its project. */
+  const row = (t: Thread, shelf: Bucket, forks?: { n: number; open: boolean }, loose = false) => {
     drawn.push(t.id);
     return (
       <SessionRow
         key={t.id}
         t={t}
         shelf={shelf}
+        where={loose ? whereOf(t) : undefined}
         now={now}
         agents={agents}
         providers={providers}
@@ -657,6 +658,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         picked={picked.has(t.id)}
         picking={picked.size > 0}
         described={card?.id === t.id}
+        menuOpen={menu?.t.id === t.id}
+        looking={looking(t)}
         forks={forks?.n}
         forksOpen={forks?.open}
         seen={seenRows.current}
@@ -682,14 +685,31 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     ts.length > 0 && drawn.push(`§${name}`) > 0 && (
       <section key={name} className="lc-sb-sec" aria-label={name} {...(extra.pin ? drop("pinned") : {})}>
         {!extra.bare && <SideLabel name={name} count={ts.length} icon={extra.pin ? <I.pin size={12} /> : undefined} />}
-        {ts.map((t) => row(t, extra.bucket ?? place(t)))}
+        {ts.map((t) => row(t, extra.bucket ?? place(t), undefined, true))}
       </section>
     );
+  /** Takes a group away: its sessions go back to their projects, and Undo brings it back with them in it. */
+  const removeGroup = (g: (typeof groups)[number]) => {
+    const before = groups;
+    void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) }).then(
+      () => toast(`Removed the ${g.name} group`, { description: "Its sessions are back in their projects.", action: { label: "Undo", onClick: () => void rpc("groups.save", { groups: before }) }, duration: 5000 }),
+      (e: Error) => toast.error(e.message),
+    );
+  };
   const groupBlocks = () =>
     byGroup.map(({ g, list: ts }) => (drawn.push(`§${g.id}:${ts.length ? "" : "empty"}`),
       <section key={g.id} className="lc-sb-sec" aria-label={g.name} {...drop(`group:${g.id}`)}>
-        <SideLabel name={g.name} count={ts.length} />
-        {ts.length ? ts.map((t) => row(t, place(t))) : <p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
+        <SideLabel
+          name={g.name}
+          count={ts.length}
+          end={
+            // Its one action, so its one button, shown while you point at the label.
+            <button type="button" className="lc-sb-a lc-sb-gx l-focus" aria-label={`Remove the ${g.name} group`} title="Remove the group: its sessions go back to their projects" onClick={() => removeGroup(g)}>
+              <I.close size={14} />
+            </button>
+          }
+        />
+        {ts.length ? ts.map((t) => row(t, place(t), undefined, true)) :<p className="lc-sb-hint">Drag a session here, or right-click one.</p>}
       </section>
     ));
   /** A list with nothing in it says what's missing, and how to fill it. */
@@ -808,18 +828,18 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             const pick = (v: View) => () => (close(), setView(v));
             return (
               <>
-                <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
-                <Row title="By status" icon={<I.list size={14} />} keepIcon on={view === "status"} onPick={pick("status")} />
+                <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
+                <Row title="By status" icon={<I.list size={16} />} keepIcon on={view === "status"} onPick={pick("status")} />
                 <Sep />
-                {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={14} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
-                <Row title="Settled" icon={<I.settle size={14} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
-                <Row title="Archive" icon={<I.box size={14} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
+                {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={16} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
+                <Row title="Settled" icon={<I.settle size={16} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
+                <Row title="Archive" icon={<I.box size={16} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
                 {carryCount > 0 && (
                   <>
                     <Sep />
                     <Row
                       title="Carry on"
-                      icon={<I.carry size={14} />}
+                      icon={<I.carry size={16} />}
                       end={
                         <span className="lc-sb-carry-n">
                           <Num value={carryCount} />
@@ -842,41 +862,15 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                   <>
                     <Sep />
                     <PanelHead>Your groups</PanelHead>
+                    {/* How many each holds; a group is removed from its own label in the list. */}
                     {groups.map((g) => (
-                      <Row
-                        key={g.id}
-                        title={g.name}
-                        end={
-                          <span className="lc-sb-gacts">
-                            {threads.filter((t) => t.group === g.id && !t.archived).length}
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="lc-sb-gdel l-focus"
-                              aria-label={`Remove the ${g.name} group`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key !== "Enter" && e.key !== " ") return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void rpc("groups.save", { groups: groups.filter((x) => x.id !== g.id) });
-                              }}
-                            >
-                              <I.close size={12} />
-                            </span>
-                          </span>
-                        }
-                        onPick={close}
-                      />
+                      <Row key={g.id} title={g.name} end={threads.filter((t) => t.group === g.id && !t.archived).length || undefined} onPick={close} />
                     ))}
                   </>
                 )}
                 <Sep />
-                <Row title="Add a project" icon={<I.plus size={14} />} end={keysOf("open-project")} onPick={() => (close(), addProject())} />
-                <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), setNaming({}))} />
+                <Row title="Add a project" icon={<I.plus size={16} />} end={keysOf("open-project")} onPick={() => (close(), addProject())} />
+                <Row title="New group" icon={<I.plus size={16} />} onPick={() => (close(), setNaming({}))} />
               </>
             );
           }}
@@ -918,16 +912,23 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                   icon={x.id === DESIGNS ? <I.edit size={16} /> : undefined}
                   onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}
                   actions={
-                    <>
-                      <button type="button" className="lc-sb-a l-focus" aria-label={`Settle the finished sessions in ${x.name}`} title="Settle the project: its finished sessions go to Settled" onClick={() => void settleProject(x.id, x.name)}>
-                        <I.settle size={14} />
-                      </button>
-                      {x.id && x.id !== DESIGNS && (
-                        <button type="button" className="lc-sb-a l-focus" aria-label={`New session in ${x.name}`} title="New session here" onClick={() => onNew(x.id)}>
-                          <I.plus size={14} />
-                        </button>
-                      )}
-                    </>
+                    // One ··· opening the folder's menu, the right-click's: New session here, Settle the project, Fold.
+                    <button
+                      type="button"
+                      className="lc-sb-a l-focus"
+                      aria-label={`New session, settle and more for ${x.name}`}
+                      title="New session, settle and more"
+                      aria-haspopup="menu"
+                      aria-expanded={projMenu?.id === x.id}
+                      data-open={projMenu?.id === x.id || undefined}
+                      onClick={(e) => {
+                        // Hung under the ···, right edges on one line (menu-place.ts), or from the folder's left edge with no room for that.
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setProjMenu({ id: x.id, name: x.name, x: r.right, y: r.bottom, under: r, row: e.currentTarget.closest(".lc-sl-fold")?.getBoundingClientRect() });
+                      }}
+                    >
+                      <I.more size={14} />
+                    </button>
                   }
                 >
                   {x.list.map(branch)}
@@ -941,8 +942,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
               {block("Needs you", byBucket.needs.filter(needs), { bucket: "needs" })}
               {block("Working", [...byBucket.working, ...byBucket.needs.filter((t) => !needs(t) && works(t))].sort(newest))}
               {groupBlocks()}
-              {/* Not started is finished work here: under Complete, with its own mark and words. */}
-              {block("Complete", [...byBucket.needs.filter((t) => !needs(t) && !works(t)), ...byBucket.open].sort(newest))}
+              {/* Not started is finished work here: under Finished, with its own mark and words. */}
+              {block("Finished", [...byBucket.needs.filter((t) => !needs(t) && !works(t)), ...byBucket.open].sort(newest))}
             </>
           )}
           {view === "snoozed" && block("Snoozed", byBucket.snoozed, { bucket: "snoozed", bare: true })}
@@ -986,7 +987,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                 {pickedThreads.some((t) => t.group) && (
                   <>
                     <Sep />
-                    <Row title="Out of their groups" onPick={() => (close(), void bulk("Moved", { group: null }, "Out of their groups"))} />
+                    <Row title="Out of their groups" icon={<I.minus size={16} />} onPick={() => (close(), void bulk("Moved", { group: null }, "Out of their groups"))} />
                   </>
                 )}
               </>
@@ -1004,43 +1005,36 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         return t && createPortal(<SessionCard el={card!.el} side={nav.current}>{cardBody(t)}</SessionCard>, document.body);
       })()}
 
-      <ContextMenu at={projMenu} label={projMenu ? `Actions for ${projMenu.name}` : "A project"} onClose={() => setProjMenu(null)} width={250}>
+      <ContextMenu at={projMenu} label={projMenu ? `Actions for ${projMenu.name}` : "A project"} onClose={() => setProjMenu(null)} width={PROJ_MENU_W}>
         {(close) =>
           projMenu && (
             <>
-              {projMenu.id && <Row title="New session here" icon={<I.plus size={14} />} onPick={() => (close(), onNew(projMenu.id))} />}
-              <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={14} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
-              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={14} />} onPick={() => (close(), foldProject(projMenu.id, tree.sections.find((x) => x.id === projMenu.id)?.ids ?? []))} />
+              {projMenu.id && projMenu.id !== DESIGNS && <Row title="New session here" icon={<I.plus size={16} />} onPick={() => (close(), onNew(projMenu.id))} />}
+              <Row title="Settle the project" note="Its finished sessions go to Settled" icon={<I.settle size={16} />} onPick={() => (close(), void settleProject(projMenu.id, projMenu.name))} />
+              <Row title={shutProjects.includes(projMenu.id) ? "Show its sessions" : "Fold its sessions"} icon={<I.chevD size={16} />} onPick={() => (close(), foldProject(projMenu.id, tree.sections.find((x) => x.id === projMenu.id)?.ids ?? []))} />
             </>
           )
         }
       </ContextMenu>
 
-      <ContextMenu at={menu} label={menu ? `Actions for ${menu.t.title}` : "Actions"} onClose={() => setMenu(null)} width={250}>
+      <ContextMenu at={menu} label={menu ? `Actions for ${menu.t.title}` : "Actions"} onClose={() => setMenu(null)} width={ROW_MENU_W}>
         {(close) =>
           menu && (
-            <>
-              {onBeside && current && current !== menu.t.id && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={14} />} onPick={() => (close(), onBeside(menu.t.id))} />}
-              {!menu.t.archived && (
-                <>
-                  <Row title={menu.t.pinned ? "Unpin" : "Pin"} end="P" onPick={() => (close(), void act(menu.t, "pin"))} />
-                  <Row title="Snooze for an hour" end="S" onPick={() => (close(), void act(menu.t, "snooze", snoozeTimes()[0].at))} />
-                  {menu.t.pr?.state === "OPEN" && <Row title={`Snooze until #${menu.t.pr.number}'s checks finish`} onPick={() => (close(), void wake(menu.t, "checks"))} />}
-                  <Row title={bucketOf(menu.t, now) === "settled" ? "Bring it back" : "Settle"} note={bucketOf(menu.t, now) === "settled" ? undefined : "Out of the way until it's busy again"} end="D" onPick={() => (close(), void act(menu.t, "settle"))} />
-                  <Sep />
-                  <PanelHead>Move to a group</PanelHead>
-                  {groups.map((g) => (
-                    <Row key={g.id} title={g.name} on={menu.t.group === g.id} onPick={() => (close(), void moveTo(menu.t, menu.t.group === g.id ? null : g.id))} />
-                  ))}
-                  <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), setNaming({ forThread: menu.t.id }))} />
-                  {menu.t.group && <Row title="Take it out of its group" onPick={() => (close(), void moveTo(menu.t, null))} />}
-                  <Sep />
-                </>
-              )}
-              <Row title="Rename" end="F2" onPick={() => (close(), setRenaming(menu.t.id))} />
-              <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" onPick={() => (close(), exportSession(menu.t.id))} />
-              {menu.t.archived ? <Row title="Bring it back" note="Out of Archive, back in the list" onPick={() => (close(), void unarchive(menu.t))} /> : <Row title="Archive" onPick={() => (close(), void archive(menu.t))} />}
-            </>
+            <SessionMenu
+              key={menu.t.id}
+              t={menu.t}
+              now={now}
+              groups={groups}
+              close={close}
+              beside={onBeside && current && current !== menu.t.id ? () => onBeside(menu.t.id) : undefined}
+              act={act}
+              wake={wake}
+              moveTo={moveTo}
+              newGroup={() => setNaming({ forThread: menu.t.id })}
+              rename={() => setRenaming(menu.t.id)}
+              archive={archive}
+              unarchive={unarchive}
+            />
           )
         }
       </ContextMenu>
@@ -1066,7 +1060,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
               </button>
             )}
             <button type="button" className="lc-sb-a l-focus" aria-label="Put it away" title="Put it away until a newer version" onClick={() => updates.dismiss("app")}>
-              <I.close size={12} />
+              <I.close size={14} />
             </button>
           </div>
         );
@@ -1198,11 +1192,12 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   ctl.current = {
     act,
     unarchive,
+    archive,
     wake,
     hideCard,
     pointAt,
     leaveRow,
-    menuAt: (t, x, y) => setMenu({ t, x, y }),
+    menuAt: (t, x, y, under, row) => setMenu({ t, x, y, under, row }),
     togglePick,
     pickRun,
     clearPicked,
@@ -1218,6 +1213,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   return out;
 }
 
+/** A session's menu and a folder's: their widths, so a row's or a folder's ··· can hang it from its right edge. */
+const ROW_MENU_W = 250;
+const PROJ_MENU_W = 250;
 /** The rows' glide (WAAPI's id for it), so a new one finishes the last first. */
 const GLIDE = "lc-sb-glide";
 /** Where an element sits in `root` by the layout (offsets, which a glide's translate doesn't move), with its size. */
@@ -1413,12 +1411,16 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side, onCount, opener }: {
   if (!count && !showing) return null;
   // By where the work is: what isn't committed first, then each tool's sessions, newest first in each.
   const sources = [...new Set(theirs.map((x) => x.tool))].sort((a, b) => toolOrder(a) - toolOrder(b));
-  /** A row as the list's rows are: the source's mark in the mark column, the title and what pressing it does, and under it the tool and the project. */
-  const line = (key: string, mark: ReactNode, title: string, where: string, does: string | undefined, tip: string, onPick: () => void) => (
+  /**
+    A row in the list's order (SideRow's parts, as a menu item): the source's mark in the mark column, the title and the time
+    since it last moved at its end, and under it the tool and the project. What pressing it does is in its tooltip. It has no
+    state to mark and no facts to give: it isn't a session here yet.
+  */
+  const line = (key: string, mark: ReactNode, title: string, where: string, at: number | undefined, tip: string, onPick: () => void) => (
     <button key={key} type="button" role="menuitem" className="lc-carry-row l-focus" title={tip} onClick={onPick}>
       <span className="lc-carry-mk">{mark}</span>
       <b>{title}</b>
-      {does && <span className="lc-carry-do">{does}</span>}
+      {at !== undefined && <span className="lc-carry-ago">{ago(at, now)}</span>}
       <span className="lc-carry-s">{where}</span>
     </button>
   );
@@ -1478,7 +1480,7 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side, onCount, opener }: {
                     <span>{xs.length}</span>
                   </div>
                   {xs.map((x) =>
-                    line(`${x.tool}:${x.id}`, <ModelMark kind={mark} size={14} />, x.title, `${name} · ${nameOf(x.projectId)}`, "Bring in", `From ${name} · ${nameOf(x.projectId)} · ${agoLong(x.at, now)}`, () => {
+                    line(`${x.tool}:${x.id}`, <ModelMark kind={mark} size={14} />, x.title, `${name} · ${nameOf(x.projectId)}`, x.at, `Bring it in from ${name} · ${nameOf(x.projectId)} · ${agoLong(x.at, now)}`, () => {
                       close();
                       bring(x);
                     }),
@@ -1542,10 +1544,92 @@ function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").T
           ))}
           {!tools.length && <p className="lc-quiet lc-pop-note">No plan has reported its limits yet. They show here once a session runs on Claude Code or Codex.</p>}
           <Sep />
-          <Row title="Usage and cost" icon={<I.usage size={14} />} onPick={() => (close(), onUsage())} />
+          <Row title="Usage and cost" icon={<I.usage size={16} />} onPick={() => (close(), onUsage())} />
         </div>
       )}
     </Pop>
+  );
+}
+
+/*
+  A session's ··· and right-click menu, one line a row as every menu's: Open beside, Pin (P), Settle (D),
+  Snooze until ›, Move to a group ›, Rename (F2), Export as Markdown, and past a line Archive. The
+  snooze times and the groups are lists that open in the menu's place with a way back on top (as
+  Home's From a branch and the who panel's Tool do): the keyboard lands on the list's first row, and
+  back (or Escape) on the row that opened it. The list goes when the menu closes, as this part does.
+  A row's states keep their rows: a settled one's Bring it back in Settle's place, Wake it now with
+  the snooze times, Take it out of its group with the groups, and an archived one's Bring it back in
+  Archive's. S still snoozes for an hour from the row itself (rowKeys); the hour's row says so.
+*/
+function SessionMenu({ t, now, groups, close, beside, act, wake, moveTo, newGroup, rename, archive, unarchive }: {
+  t: Thread;
+  now: number;
+  groups: { id: string; name: string }[];
+  close: () => void;
+  beside?: () => void;
+  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => Promise<void>;
+  wake: (t: Thread, kind: "checks" | "reply") => Promise<void>;
+  moveTo: (t: Thread, groupId: string | null) => Promise<void>;
+  newGroup: () => void;
+  rename: () => void;
+  archive: (t: Thread) => Promise<void>;
+  unarchive: (t: Thread) => Promise<void>;
+}) {
+  const [list, setList] = useState<"" | "snooze" | "group">("");
+  const box = useRef<HTMLDivElement>(null);
+  const focus = (sel: string) => requestAnimationFrame(() => box.current?.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true }));
+  const open = (which: "snooze" | "group") => (setList(which), focus("button:not(:disabled):not(.lc-who-back)"));
+  const back = () => {
+    const was = list;
+    setList("");
+    focus(`[data-opens="${was}"]`);
+  };
+  const settled = bucketOf(t, now) === "settled";
+  const snoozed = Boolean(t.snoozedUntil && t.snoozedUntil > now);
+  return (
+    <div ref={box} className="lc-sb-menu" onKeyDown={(e) => list && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), back())}>
+      {list === "snooze" ? (
+        <>
+          <BackRow name="Snooze until" menu onBack={back} />
+          {snoozeTimes().map((s, i) => (
+            // The hour's key is the row's own S (rowKeys), so its clock time is the tooltip; the others say theirs at the end.
+            <Row key={s.label} title={s.label} note={i === 0 ? s.note : undefined} end={i === 0 ? "S" : s.note} onPick={() => (close(), void act(t, "snooze", s.at))} />
+          ))}
+          {t.pr?.state === "OPEN" && (
+            <>
+              <Row title="Its checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
+              <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
+            </>
+          )}
+          {snoozed ? <Row title="Wake it now" icon={<I.undo size={16} />} onPick={() => (close(), void act(t, "wake"))} /> : null}
+        </>
+      ) : list === "group" ? (
+        <>
+          <BackRow name="Move to a group" menu onBack={back} />
+          {groups.map((g) => (
+            <Row key={g.id} title={g.name} on={t.group === g.id} onPick={() => (close(), void moveTo(t, t.group === g.id ? null : g.id))} />
+          ))}
+          <Row title="New group" icon={<I.plus size={16} />} onPick={() => (close(), newGroup())} />
+          {t.group && <Row title="Take it out of its group" icon={<I.minus size={16} />} onPick={() => (close(), void moveTo(t, null))} />}
+        </>
+      ) : (
+        <>
+          {beside && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={16} />} onPick={() => (close(), beside())} />}
+          {!t.archived && (
+            <>
+              <Row title={t.pinned ? "Unpin" : "Pin"} icon={<I.pin size={16} />} end="P" onPick={() => (close(), void act(t, "pin"))} />
+              <Row title={settled ? "Bring it back" : "Settle"} note={settled ? "Back to its project" : "Out of the way until it's busy again"} icon={settled ? <I.undo size={16} /> : <I.settle size={16} />} end="D" onPick={() => (close(), void act(t, "settle"))} />
+              <Row title="Snooze until" icon={<I.snooze size={16} />} opens="snooze" onPick={() => open("snooze")} />
+              <Row title="Move to a group" icon={<I.label size={16} />} opens="group" onPick={() => open("group")} />
+            </>
+          )}
+          <Row title="Rename" icon={<I.edit size={16} />} end="F2" onPick={() => (close(), rename())} />
+          <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" icon={<I.download size={16} />} onPick={() => (close(), exportSession(t.id))} />
+          <Sep />
+          {t.archived ? <Row title="Bring it back" note="Out of Archive, back in the list" icon={<I.undo size={16} />} onPick={() => (close(), void unarchive(t))} /> : <Row title="Archive" icon={<I.box size={16} />} onPick={() => (close(), void archive(t))} />}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1559,23 +1643,28 @@ function exportSession(threadId: string) {
 
 
 /*
-  A session's row, the same in every view (SideRow): in the mark column how it stands (the spinner
-  in its model's tint while it works, the amber dot while it waits on you, the clock, the error
-  mark, the ring before it starts, else a small grey dot); its title; under it what it is doing
-  now, or how it ended; at its end its pull request, or the changes it left to review. Pointing at
-  it, Pin, Snooze and Settle take the end's place. Who works on it, where and when are in the card
-  a resting pointer brings.
+  A session's row, the same in every view (SideRow, Rows.dc.html): in the mark column how it stands,
+  as the state mark (session-state.ts markStateOf: working in its model's tint, needs while it waits
+  on you, limit, problem, new before it starts, fresh while it finished unseen, its pull request's
+  states with its checks, else done); its title, and the time since it last did something at its
+  end; under it what it is doing now, what it waits on you for in its own words, or how it ended
+  (rowWords), with the project's name first where no folder says it, and at the line's end its facts
+  (SideFacts: its own worktree, its model, its pull request's number). Pointing at it, Settle, Archive
+  and the ··· that opens its menu take the time's place at the title's end. A question is amber until you open the session, grey after
+  and while you look at it (seenAsk). Who works on it by name, where, when it started and what it
+  has used are in the card a resting pointer brings.
   Its own memoised part: a session's news redraws its row alone, never the list; what it does is
   reached through `ctl`, which the sidebar keeps current, so the row takes no new callbacks.
 */
 type RowCtl = {
   act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => Promise<void>;
   unarchive: (t: Thread) => Promise<void>;
+  archive: (t: Thread) => Promise<void>;
   wake: (t: Thread, kind: "checks" | "reply") => Promise<void>;
   hideCard: () => void;
   pointAt: (id: string, el: HTMLElement) => void;
   leaveRow: () => void;
-  menuAt: (t: Thread, x: number, y: number) => void;
+  menuAt: (t: Thread, x: number, y: number, under?: Box, row?: Box) => void;
   togglePick: (id: string) => void;
   pickRun: (id: string) => void;
   clearPicked: () => void;
@@ -1587,6 +1676,8 @@ type RowCtl = {
 type RowProps = {
   t: Thread;
   shelf: Bucket;
+  /** Its project's name, when no folder over the row says it (By status, Pinned, a group, the put-away views). */
+  where?: string;
   now: number;
   agents: AgentProfile[];
   providers: ProviderInfo[];
@@ -1600,6 +1691,10 @@ type RowProps = {
   picking: boolean;
   /** The resting pointer's card tells about it. */
   described: boolean;
+  /** Its menu is open, from the ··· or a right-click. */
+  menuOpen: boolean;
+  /** The open session in a focused window: being looked at, so nothing in it is news (session-state.ts, seenAsk). */
+  looking: boolean;
   /** Its forks, and whether they show. */
   forks?: number;
   forksOpen?: boolean;
@@ -1607,7 +1702,7 @@ type RowProps = {
   seen: Set<string>;
   ctl: MutableRefObject<RowCtl>;
 };
-const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, run, working, current, renaming, picked, picking, described, forks, forksOpen, seen, ctl }: RowProps) {
+const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agents, providers, run, working, current, renaming, picked, picking, described, menuOpen, looking, forks, forksOpen, seen, ctl }: RowProps) {
   // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
   const bucket = standing(t, shelf, now);
   const on = onIt(t, agents, providers);
@@ -1642,83 +1737,52 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
   // A pair's sidekick is in its name already: the agents besides it are counted.
   const agentsNow = Math.max(0, working - (on.pair ? 1 : 0));
   const busy = !t.archived && (t.status === "running" || run?.status === "running" || (working > 0 && !asksYou(t)));
-  // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink.
-  const quiet = !busy && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
   // A row that first comes already open (a session just sent from Home) is there at once, so the plate under it is never empty; one drawn
   // before (By status moves a row to another section, which draws it anew) doesn't fade in again. Either keeps that for this row's life, so nothing plays when it changes.
   const [fresh] = useState(() => seen.has(t.id) || current);
   useEffect(() => void seen.add(t.id), []);
-  const state: SideState = sideStateOf(t, busy);
-  const said = rowLine(t, bucket, state, agentsNow, now);
-  const pr = t.pr ? prState(t.pr.state) : undefined;
-  // Finished while you were elsewhere: a blue dot until you open it, beside its pull request or changes mark.
-  const unseen = t.unread && (state === "done" || state === "new");
-  const marks = t.pr ? (
-    <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`Pull request #${t.pr.number}, ${pr}`}>
-      <I.pr size={14} />
-    </span>
-  ) : (t.toReview ?? 0) > 0 ? (
-    <span className="lc-sl-chg" role="img" aria-label={`${plural(t.toReview!, "file")} to review`}>
-      <I.changes size={14} />
-    </span>
-  ) : undefined;
-  const end = unseen ? (
-    <span className="lc-sl-ends">
-      {marks}
-      <span className="lc-sl-new" role="img" aria-label="Finished, not opened yet" />
-    </span>
-  ) : (
-    marks
-  );
+  // A question you've opened and left: the grey mark and grey words, as any second line (seenAsk). It still waits, in Needs you.
+  const seenQ = seenAsk(t, looking);
+  // The mark: finished while you were elsewhere is fresh until you open it, and its pull request shows once nothing else is news. Nothing at the row's end says state.
+  const mark = markStateOf(t, { busy, looking });
+  const said = rowWords(t, { busy, agents: agentsNow, seenQ, snoozed: bucket === "snoozed", now });
+  // Where it is, with no folder over it: a question takes the project's place (it matters more), and a plain "Finished" gives way to it (the mark says it).
+  const where = said.asks ? undefined : loose;
+  const sub = where && said.text === "Finished" ? undefined : said.text;
+  const facts = <SideFacts branch={t.worktree?.branch} model={markOf(on.ref)} modelName={modelLabel(on.ref, providers)} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />;
+  // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink, and so does one that left files for you to review.
+  const quiet = !busy && said.tone !== "strong" && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
+  // At the title's end while you point at it or it has the keyboard: Settle (D), Archive and the ··· that opens the row's menu (the right-click's), hung under it.
+  // Settle and Archive do what the menu's rows do, with the same Undo. An archived row has one, its way back.
+  const settled = bucketOf(t, now) === "settled";
   const acts = t.archived ? (
     <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void ctl.current.unarchive(t)}>
       <I.undo size={14} />
     </button>
   ) : (
     <>
-      <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? "Unpin" : "Pin"} title={t.pinned ? "Unpin (P)" : "Pin (P)"} aria-pressed={Boolean(t.pinned)} onClick={() => void ctl.current.act(t, "pin")}>
-        <I.pin size={14} />
+      <button type="button" className="lc-sb-a l-focus" aria-label={settled ? `Bring ${t.title || "New session"} back` : `Settle ${t.title || "New session"}`} title={settled ? "Bring it back (D)" : "Settle (D)"} onClick={() => (ctl.current.hideCard(), void ctl.current.act(t, "settle"))}>
+        {settled ? <I.undo size={14} /> : <I.settle size={14} />}
       </button>
-      <Pop label="Snooze until" align="end" width={230} menu triggerClass="lc-sb-a" trigger={<I.snooze size={14} />}>
-        {(close) => (
-          <>
-            <PanelHead>Snooze until</PanelHead>
-            {snoozeTimes().map((s) => (
-              <Row
-                key={s.label}
-                title={s.label}
-                end={s.note}
-                onPick={() => {
-                  close();
-                  void ctl.current.act(t, "snooze", s.at);
-                }}
-              />
-            ))}
-            {t.pr && t.pr.state === "OPEN" && (
-              <>
-                <Sep />
-                <PanelHead>Or until</PanelHead>
-                <Row title="Checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void ctl.current.wake(t, "checks"))} />
-                <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void ctl.current.wake(t, "reply"))} />
-              </>
-            )}
-            {t.snoozedUntil && t.snoozedUntil > now && (
-              <>
-                <Sep />
-                <Row
-                  title="Wake it now"
-                  onPick={() => {
-                    close();
-                    void ctl.current.act(t, "wake");
-                  }}
-                />
-              </>
-            )}
-          </>
-        )}
-      </Pop>
-      <button type="button" className="lc-sb-a l-focus" aria-label={bucket === "settled" ? "Bring it back" : "Settle"} aria-pressed={bucket === "settled"} title={bucket === "settled" ? "Bring it back (D)" : "Settle (D)"} onClick={() => void ctl.current.act(t, "settle")}>
-        <I.settle size={14} />
+      <button type="button" className="lc-sb-a l-focus" aria-label={`Archive ${t.title || "New session"}`} title="Archive" onClick={() => (ctl.current.hideCard(), void ctl.current.archive(t))}>
+        <I.box size={14} />
+      </button>
+      <button
+        type="button"
+        className="lc-sb-a l-focus"
+        aria-label={`Pin, snooze, rename and more for ${t.title || "New session"}`}
+        title="Pin, snooze, rename and more"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        data-open={menuOpen || undefined}
+        onClick={(e) => {
+          ctl.current.hideCard();
+          // Hung under the button, right edges on one line, or from the row's left edge with no room for that (menu-place.ts).
+          const r = e.currentTarget.getBoundingClientRect();
+          ctl.current.menuAt(t, r.right, r.bottom, r, e.currentTarget.closest(".lc-sl-row")?.getBoundingClientRect());
+        }}
+      >
+        <I.more size={14} />
       </button>
     </>
   );
@@ -1732,11 +1796,13 @@ const SessionRow = memo(function SessionRow({ t, shelf, now, agents, providers, 
       aria-current={current ? "page" : undefined}
       current={current}
       quiet={quiet}
-      mark={<SideMark state={state} brand={markOf(on.ref)} />}
+      mark={<SideMark state={mark} brand={markOf(on.ref)} label={seenQ ? "Waits for your answer" : markLabelOf(t, mark)} />}
       title={title}
-      sub={said.text}
+      ago={ago(t.updatedAt, now)}
+      sub={sub}
       tone={said.tone}
-      end={end}
+      where={where}
+      facts={facts}
       acts={acts}
       draggable={!renaming && !t.archived}
       onDragStart={(e) => {
@@ -1816,65 +1882,11 @@ function ProjectBadge({ name, none, design }: { name: string; none?: boolean; de
   );
 }
 
-/** A pull request's state, as its mark and words say it. */
-const prState = (state: string) => (state.toUpperCase() === "MERGED" ? "merged" : state.toUpperCase() === "CLOSED" ? "closed" : "open");
-
-/**
-  A row's second line: what the session is doing now while it works ("Reading Sidebar.tsx", the
-  engine's Thread.doing, with the agents it sent still at work after it), else how it stands or
-  how it ended, first that applies: the Reviewer's block, waiting on you, a problem, its plan's
-  limit, snoozed, not started, its pull request, changes to review, else finished and how long
-  ago. One finished while you were elsewhere says so with a blue dot at the row's end, not here.
-*/
-function rowLine(t: Thread, bucket: Bucket, state: SideState, agents: number, now: number): { text: string; tone?: "warn" | "danger" } {
-  if (state === "working") {
-    const doing = t.status === "running" ? t.doing?.text || "Working" : "Working";
-    // The engine's own line for sending agents ("Sending an agent"): only how many are at work, not the same word twice.
-    if (agents > 0 && doing.startsWith("Sending an agent")) return { text: `${plural(agents, "agent")} at work` };
-    return { text: agents > 0 ? `${doing} · ${plural(agents, "agent")}` : doing };
-  }
-  if (reviewHeld(t)) return { text: "Reviewer blocked it" };
-  if (t.status === "waiting") return { text: "Waits for your answer", tone: "warn" };
-  if (t.status === "error") return { text: "Ran into a problem", tone: "danger" };
-  if (t.status === "limited") return { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
-  if (bucket === "snoozed") {
-    if (t.wake) return { text: t.wake.kind === "checks" ? `Until #${t.wake.pr}'s checks finish` : `Until a reply on #${t.wake.pr}` };
-    if (t.snoozedUntil) return { text: `Until ${clock(t.snoozedUntil, now)}` };
-  }
-  if (t.turns === 0) return { text: "Not started" };
-  if (t.pr) return { text: `PR ${prState(t.pr.state)}` };
-  if ((t.toReview ?? 0) > 0) return { text: `${plural(t.toReview!, "file")} to review` };
-  // ago() says "now", "4m", "2h", then a day or a date: the minutes and hours read "ago" after them.
-  const a = ago(t.updatedAt, now);
-  return { text: `Finished · ${a === "now" ? "just now" : /^\d+[mh]$/.test(a) ? `${a} ago` : a}` };
-}
-
 /** "just now", "4 min ago", "2 hours ago", "yesterday". */
 const agoLong = (at: number, now: number) => {
   const m = Math.floor((now - at) / 60000);
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : since(at, now);
 };
-
-/** How a session stands, in the card: the row's words, said in full. */
-function cardState(t: Thread, bucket: Bucket, who: string, now: number, run?: { status: string; steps: unknown[]; subject?: { number: number } }): { text: string; tone?: "warn" | "danger" } {
-  if (run?.status === "running") return { text: `Working · a routine's run${run.subject ? ` on #${run.subject.number}` : ""}, step ${run.steps.length}` };
-  if (bucket === "snoozed") {
-    if (t.wake) return { text: t.wake.kind === "checks" ? `Snoozed · back when the checks on #${t.wake.pr} finish` : `Snoozed · back when someone replies on #${t.wake.pr}` };
-    if (t.snoozedUntil) return { text: `Snoozed · back ${clock(t.snoozedUntil, now)}` };
-  }
-  if (t.status === "running") {
-    if (t.goal?.status === "active") return { text: `Working · ${who} works toward its goal, turn ${t.goal.turns} of ${t.goal.max}` };
-    return { text: `Working · ${who} ${who.includes(" + ") ? "are" : "is"} at it` };
-  }
-  if (reviewHeld(t)) return { text: `Finished · the Reviewer blocked it${t.verdict?.note ? `: ${t.verdict.note}` : ""}` };
-  if (t.status === "waiting") return { text: `Needs you · ${who} ${who.includes(" + ") ? "wait" : "waits"} for your answer`, tone: "warn" };
-  if (t.status === "error") return { text: `Ran into a problem · ${who} stopped short`, tone: "danger" };
-  if (t.status === "limited") return { text: `Limited · ${who}'s plan ran out${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" };
-  if (t.turns === 0) return { text: "Not started · nothing asked yet" };
-  if (t.unread) return { text: `Finished · ${who} answered while you were away` };
-  if (bucket === "settled") return { text: "Settled · out of the way until it's busy again" };
-  return { text: `Done · ${who} finished, nothing waits on you` };
-}
 
 const CARD_ID = "lc-sb-card";
 const EDGE = 10;

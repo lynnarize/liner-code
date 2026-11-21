@@ -73,30 +73,31 @@ export function keepDock(threadId: string, d: DockState) {
 /*
   The panel's width beside the session, the same in every session: about a third of the paper
   until you drag its edge (app.css). The panel keeps PANE_MIN, and the thread THREAD_MIN, so its
-  composer keeps its controls.
+  composer keeps its controls. A surface can keep a width of its own under another key (Changes
+  does: Session.tsx), with more room kept for the thread.
 */
 const WIDTH_KEY = "lc:panel-w";
-const PANE_MIN = 320;
+export const PANE_MIN = 320;
 const THREAD_MIN = 420;
-const readWidth = () => {
+const readWidth = (key: string) => {
   try {
-    const n = Number(localStorage.getItem(WIDTH_KEY));
+    const n = Number(localStorage.getItem(key));
     return n >= PANE_MIN ? n : null;
   } catch {
     return null;
   }
 };
-export const usePanelWidth = () => useState<number | null>(readWidth);
+export const usePanelWidth = (key = WIDTH_KEY) => useState<number | null>(() => readWidth(key));
 
-/** The edge between the session and the panel: drag it, or use the arrow keys; double-click puts it back. */
-export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HTMLElement | null>; width: number | null; onWidth: (w: number | null) => void; onDrag: (on: boolean) => void }) {
+/** The edge between the session and the panel: drag it, or use the arrow keys; double-click puts it back. `store` is where the width is kept, `threadMin` what the thread keeps. */
+export function PanelGrip({ body, width, onWidth, onDrag, store = WIDTH_KEY, threadMin = THREAD_MIN }: { body: RefObject<HTMLElement | null>; width: number | null; onWidth: (w: number | null) => void; onDrag: (on: boolean) => void; store?: string; threadMin?: number }) {
   // While dragging: where the pointer and the width started (the edge moves with the pointer, from
   // wherever on the grip you took it), and the width it last asked for.
   const start = useRef<{ x: number; w: number } | null>(null);
   const last = useRef<number | null>(null);
   // Two panes show the dock 1.6 times the kept width (dock.css), so the edge works in kept widths.
   const k = () => (body.current?.closest<HTMLElement>(".lc-session")?.dataset.panes === "2" ? 1.6 : 1);
-  const fit = (w: number) => Math.round(Math.max(PANE_MIN, Math.min(w, ((body.current?.clientWidth ?? w * k() + THREAD_MIN) - THREAD_MIN) / k())));
+  const fit = (w: number) => Math.round(Math.max(PANE_MIN, Math.min(w, ((body.current?.clientWidth ?? w * k() + threadMin) - threadMin) / k())));
   // The width as it shows: a kept one can be more than this window leaves room for.
   const shown = () => {
     const el = body.current?.querySelector<HTMLElement>(":scope > .lc-panel");
@@ -105,8 +106,8 @@ export function PanelGrip({ body, width, onWidth, onDrag }: { body: RefObject<HT
   const keep = (w: number | null) => {
     onWidth(w);
     try {
-      if (w === null) localStorage.removeItem(WIDTH_KEY);
-      else localStorage.setItem(WIDTH_KEY, String(w));
+      if (w === null) localStorage.removeItem(store);
+      else localStorage.setItem(store, String(w));
     } catch {
       // storage is off: it lasts while the app is open
     }
@@ -306,7 +307,7 @@ export function prLine(pr: { state: string; checks: { state: string }[]; isDraft
   return pr.checks.length ? "checks pass" : "open";
 }
 
-/* ---------- The Changes tab's pieces, shared with the full-width Review (Review.tsx), which loads only when it opens ---------- */
+/* ---------- Changes' pieces, used by Review.tsx ---------- */
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 
@@ -364,7 +365,7 @@ export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pi
   );
 }
 
-/** The engine sends the first 60 files; here and in the side panel, the rest are counted (T3 Code: chat/ChangedFilesTree.tsx). */
+/** The engine sends the first 60 files; the rest are counted (T3 Code: chat/ChangedFilesTree.tsx). */
 export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: string | null }) {
   return (
     <p className="lc-rv-more lc-quiet">

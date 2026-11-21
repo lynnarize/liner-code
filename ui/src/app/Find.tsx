@@ -133,8 +133,8 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
       <button type="button" className="lc-ib l-focus" aria-label="Next match" disabled={!count} onClick={() => step(1)}>
         <I.chevD size={14} />
       </button>
-      <button type="button" className="lc-ib l-focus" aria-label="Close find" onClick={onClose}>
-        <I.close size={12} />
+      <button type="button" className="lc-ib l-focus" aria-label="Close find" title="Close" onClick={onClose}>
+        <I.close size={14} />
       </button>
     </div>
   );

@@ -33,6 +33,7 @@
 }
 .lc-up-bar {
   display: block;
+  width: 148px;
   height: 4px;
   overflow: hidden;
   border-radius: 99px;
@@ -62,10 +63,7 @@
   color: var(--l-danger-text);
 }
 
-/* A tool updating: its bar at the row's end, the updater's last line under its name. */
-.lc-up-bar {
-  width: 148px;
-}
+/* A tool updating: the working mark at the row's end, the updater's last line under its name. */
 .lc-up-step {
   display: block;
   overflow: hidden;

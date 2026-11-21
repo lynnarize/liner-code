@@ -16,7 +16,7 @@ export type InspectorTab = { id: string; label: string; count?: (s: DesignState)
 
 export const TABS: InspectorTab[] = [
   { id: "style", label: "Style", render: () => createElement(StyleTab) },
-  { id: "code", label: "Code", render: () => createElement(CodeTab) },
+  { id: "code", label: "HTML", render: () => createElement(CodeTab) },
   { id: "build", label: "Build", head: false, render: () => createElement(BuildTab) },
   { id: "checks", label: "Checks", count: () => checksCount(), head: false, render: () => createElement(ChecksTab) },
 ];

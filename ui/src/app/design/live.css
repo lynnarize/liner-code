@@ -2,7 +2,7 @@
   An agent's change, as it arrives on the canvas (Canvas.tsx, Frame.tsx). The settling of new pieces
   happens inside the frame with the Web Animations API (frame-agent.js); what's here is drawn on the
   canvas's overlay, never in a frame: a small change lit in the agent's colour for a moment, and a
-  "Changed" tag by the first one. Only opacity moves. The ring and the dots are in design-face.css.
+  "Changed" tag by the first one. Only opacity moves. The frame's ring is in design-face.css.
 */
 .ld-chg-set {
   --ld-pc: var(--ld-side);

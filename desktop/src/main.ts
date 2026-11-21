@@ -8,11 +8,12 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
 import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
 import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, type Live } from "./finish";
+import { fileIn, folderOf, openAsText, openIn as openInWith, type Opener } from "./editor";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
 import { mac, type Rect } from "./mac";
@@ -500,6 +501,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       return;
     case "openIn":
       return openIn(local(str(p.path)), str(p.app));
+    case "openFile":
+      return openFile({ threadId: str(p.threadId) || undefined, projectId: str(p.projectId) || undefined }, str(p.path));
     case "runInTerminal":
       return runInTerminal(str(p.command));
     case "openExternal":
@@ -639,16 +642,40 @@ function notify(title: string, body: string, thread?: string) {
 const EDITORS = ["com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92", "dev.zed.Zed", "com.apple.dt.Xcode"];
 const opens = (args: string[]) => new Promise<boolean>((resolve) => execFile("open", args, (err) => resolve(!err)));
 
-/** Opens the folder in an editor (the first you have), Terminal, or Finder. */
-async function openIn(path: string, where: string) {
-  if (!path) return;
-  if (isMac && where === "terminal" && (await opens(["-a", "Terminal", path]))) return;
-  if (isMac && where === "editor") for (const id of EDITORS) if (await opens(["-b", id, path])) return;
-  // On Windows: Windows Terminal in the folder, else a Command Prompt there (Explorer would only show it).
-  // The folder goes as the working directory, not through cmd.exe, which would run what follows an & in its name.
-  if (isWin && where === "terminal" && ((await started("wt.exe", ["-d", path])) || (await started(process.env.ComSpec || "cmd.exe", ["/c", "start", "", "cmd.exe"], true, path)))) return;
-  const err = await shell.openPath(path);
-  if (err) throw new Error(err);
+/** How the shell opens things for the page (editor.ts decides; this is the system it decides with). */
+const opener: Opener = {
+  isMac,
+  isWin,
+  editors: EDITORS,
+  isFile: (p) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  },
+  real: (p) => realpathSync.native(p),
+  opens,
+  started: (cmd, args, hide, cwd) => started(cmd, args, hide, cwd),
+  openPath: (p) => shell.openPath(p),
+  showInFolder: (p) => shell.showItemInFolder(p),
+};
+
+/** Opens the folder in an editor (the first you have), Terminal, or Finder; a file is never opened as itself (editor.ts). */
+const openIn = (path: string, where: string) => openInWith(opener, path, where, process.env.ComSpec || "cmd.exe");
+
+/**
+  A file of a session, or of a project when there's no session, in your editor (Changes' and a
+  Security finding's "Open in your editor"). The folder is the engine's word for it, and the file must
+  sit inside it (editor.ts). With no editor of the list it opens as text (TextEdit) on a Mac and is
+  shown in its folder elsewhere: opening it as itself would run a script or a program an agent wrote.
+*/
+async function openFile(at: { threadId?: string; projectId?: string }, path: string) {
+  const s = (await engineRpc("state.get", {})) as Parameters<typeof folderOf>[0];
+  const folder = folderOf(s, at);
+  const r = folder ? fileIn(local(folder), local(path), realpathSync.native) : ({ why: "outside" } as const);
+  if ("why" in r) throw new Error(r.why === "gone" ? `${basename(path)} isn't there any more: it was deleted or moved since.` : at.threadId ? "Only a file in this session's folder opens from here." : "Only a file in this project's folder opens from here.");
+  return openAsText(opener, r.file);
 }
 
 /** Starts a program that carries on by itself; false when it couldn't. */

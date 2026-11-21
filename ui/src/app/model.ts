@@ -3,11 +3,14 @@
   which bucket a session sits in, and the one line under its title.
 */
 import type { Access, AgentProfile, EffortInfo, FileChange, Item, ModelInfo, PairTuning, Project, ProviderInfo, Thread } from "@contracts";
-import { familyOf, listedHere, nearestEffort, openCodeHasGo, splitModel } from "@contracts";
+import { familyOf, listedHere, openCodeHasGo, splitModel } from "@contracts";
+import { keptLevel, startLevel } from "./picker";
 export { isGoModel, openCodeHasGo } from "@contracts";
 import type { MarkKind } from "./icons";
 
-type Level = { id: Access; label: string; short: string; note: string };
+/** A permission level, by the one set of names every place that picks or shows one uses (the message box, a new agent, Settings). */
+export type AccessLevel = { id: Access; label: string; short: string; note: string };
+type Level = AccessLevel;
 /** The permissions you pick from: Auto (the default), Manual, Reviewer decides, and Full access last, apart. */
 export const ACCESS_LEVELS: Level[] = [
   { id: "auto", label: "Auto", short: "Auto", note: "Lets routine steps through, asks about the rest." },
@@ -21,49 +24,48 @@ const OWN_LEVELS: Level[] = [
   { id: "edits", label: "Edits on its own", short: "Edits on its own", note: "Edits files, asks before commands." },
 ];
 export const accessOf = (a: Access) => ACCESS_LEVELS.find((x) => x.id === a) ?? OWN_LEVELS.find((x) => x.id === a) ?? ACCESS_LEVELS[0];
+/** The permissions one of your agents can carry, by the same names: Read only, Manual, Edits on its own. */
+export const AGENT_LEVELS: Level[] = (["read", "ask", "edits"] as const).map(accessOf);
 
-/** For a tool that doesn't say which levels a model takes. */
-const EFFORTS: EffortInfo[] = [
-  { id: "low", label: "Low", description: "Fast, for small asks" },
-  { id: "medium", label: "Medium", description: "Thinks it through" },
-  { id: "high", label: "High", description: "Slower, checks its work" },
-];
-/** Claude Code's extras sit after the levels, apart from them. */
-export const EXTRA_EFFORTS = new Set(["ultracode", "ultrathink"]);
+/** Claude Code's extras sit after the levels, apart from them (picker.ts). */
+export { effortIn, effortParts, isExtraEffort, levelName } from "./picker";
 
 /** A model as its tool reported it. */
-function modelInfo(ref: string, providers: ProviderInfo[]): ModelInfo | undefined {
+export function modelInfo(ref: string, providers: ProviderInfo[]): ModelInfo | undefined {
   const { provider, model } = splitModel(ref);
   return providers.find((p) => p.id === provider)?.models.find((m) => m.id === model);
 }
 
-/** The effort levels a model takes, and which it uses when you don't pick. None: it takes no level. */
+/**
+  The effort levels a model takes, and which it uses when you don't pick: exactly what its tool reported for that model,
+  never a list of the app's, another model's, or a guess (DeepSeek's have no Medium). None: it takes no level, and the
+  app offers none.
+*/
 export function effortsFor(ref: string, providers: ProviderInfo[]): { list: EffortInfo[]; fallback: string | undefined } {
-  const { provider } = splitModel(ref);
-  const p = providers.find((x) => x.id === provider);
   const m = modelInfo(ref, providers);
-  if (m?.efforts) return { list: m.efforts, fallback: m.defaultEffort };
-  return p?.supports.effort ? { list: EFFORTS, fallback: "medium" } : { list: [], fallback: undefined };
+  return m?.efforts?.length ? { list: m.efforts, fallback: m.defaultEffort } : { list: [], fallback: undefined };
+}
+/**
+  The level a new session asks of a model alone: its own default when its tool names one, else "" (the tool's own default,
+  no tick in the picker). Never a word of the app's: a model whose tool lists low, high and max was once sent "medium" and
+  told every turn it had none (picker.ts startLevel).
+*/
+export function startEffort(ref: string, providers: ProviderInfo[]): string {
+  const { list, fallback } = effortsFor(ref.replace(/^@/, ""), providers);
+  return startLevel(list, fallback);
 }
 
 /**
-  The effort a session gets as it becomes a pair: Settings' word for a pair's lead (Medium unless
-  set), as near as its lead's model takes. Planning and reading a diff rarely need more.
+  The effort a session gets as it becomes a pair: Settings' word for a pair's lead when you set one, as near as its lead's
+  model lists; unset, the lead's own default, else the tool's (picker.ts keptLevel).
 */
 export function pairEffortFor(leadRef: string, providers: ProviderInfo[], pairEffort?: string): string {
   const { list, fallback } = effortsFor(leadRef.replace(/^@/, ""), providers);
-  return nearestEffort(pairEffort ?? "medium", list, fallback);
+  return keptLevel(list, pairEffort, fallback, pairEffort !== undefined);
 }
 
 /** A session's own ways with another sidekick: the four that follow the sidekick's class go back to automatic, its word on handing over stays. */
 export const keepHandOver = (t?: PairTuning): PairTuning | undefined => (t?.handOver ? { handOver: t.handOver } : undefined);
-
-/** "Extra high effort", "Ultracode". */
-export function effortName(id: string, ref: string, providers: ProviderInfo[]) {
-  const e = effortsFor(ref, providers).list.find((x) => x.id === id) ?? EFFORTS.find((x) => x.id === id);
-  const label = e?.label ?? id.charAt(0).toUpperCase() + id.slice(1);
-  return EXTRA_EFFORTS.has(id) ? label : `${label} effort`;
-}
 
 /** "claude:claude-opus-5-5" → "Opus 5.5". */
 /** Makers' own spelling, for a name built from an id. */
@@ -169,6 +171,10 @@ export function markOf(ref: string): MarkKind {
   return TOOL_MARK[family] ?? "other";
 }
 
+/** A maker's name over its models in a list, by its mark: "DeepSeek", "GLM", "Kimi". A model only its tool's mark stands for has none. */
+const MAKER_NAMES: Partial<Record<MarkKind, string>> = { claude: "Claude", openai: "OpenAI", gemini: "Gemini", grok: "Grok", deepseek: "DeepSeek", qwen: "Qwen", mistral: "Mistral", meta: "Llama", kimi: "Kimi", glm: "GLM", minimax: "MiniMax", mimo: "MiMo", nvidia: "Nemotron", hermes: "Hermes" };
+export const makerName = (ref: string) => MAKER_NAMES[markOf(ref)] ?? "";
+
 export function providerLabel(ref: string, providers: ProviderInfo[]) {
   const { provider } = splitModel(ref);
   return providers.find((x) => x.id === provider)?.label ?? provider;
@@ -181,12 +187,12 @@ export function providerLabel(ref: string, providers: ProviderInfo[]) {
 export function agentOf(id: string | undefined, agents: AgentProfile[], providers: ProviderInfo[]): AgentProfile {
   if (id?.startsWith("@")) {
     const ref = id.slice(1);
-    return { id, name: modelLabel(ref, providers), role: providerLabel(ref, providers), glyph: "spark", specialty: "custom", model: ref, effort: "medium", soul: "" };
+    return { id, name: modelLabel(ref, providers), role: providerLabel(ref, providers), glyph: "spark", specialty: "custom", model: ref, effort: startEffort(ref, providers), soul: "" };
   }
   const found = agents.find((a) => a.id === id);
   if (found) return found;
-  if (id && id !== "demo") return { id, name: "A removed agent", role: "", glyph: "spark", specialty: "custom", model: "", effort: "medium", soul: "" };
-  return agents[0] ?? { id: "demo", name: "Demo", role: "", glyph: "spark", specialty: "custom", model: "demo:demo", effort: "low", soul: "" };
+  if (id && id !== "demo") return { id, name: "A removed agent", role: "", glyph: "spark", specialty: "custom", model: "", effort: "", soul: "" };
+  return agents[0] ?? { id: "demo", name: "Demo", role: "", glyph: "spark", specialty: "custom", model: "demo:demo", effort: startEffort("demo:demo", providers), soul: "" };
 }
 export const isModelAgent = (id?: string) => Boolean(id?.startsWith("@"));
 
@@ -244,7 +250,7 @@ export const threadModel = (t: Thread, agents: AgentProfile[], providers: Provid
 
 /** Every model the tools that are ready report, none left out: for a name, never for a list to pick from. */
 export function everyModel(providers: ProviderInfo[]) {
-  return providers.filter((p) => p.available && p.adapter).flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, label: m.label, description: m.description, provider: p.label, providerId: p.id, group: m.group, legacy: m.legacy, isDefault: m.isDefault })));
+  return providers.filter((p) => p.available && p.adapter).flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, label: m.label, description: m.description, provider: p.label, providerId: p.id, group: m.group, legacy: m.legacy, isDefault: m.isDefault, price: m.price })));
 }
 
 /**

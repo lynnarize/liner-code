@@ -15,6 +15,7 @@ import type { FindingSource, FindingState, SecondLookState, SecurityFinding, Sev
 import { DISMISS_LABEL, SEVERITIES, SEVERITY_LABEL, SOURCE_LABEL } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
+import { ago } from "../model";
 import { I } from "../icons";
 import { Pop, Row } from "../ui";
 import { FindingPanel } from "./FindingPanel";
@@ -291,7 +292,7 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
               {TABS.map((t) => (
                 <button key={t.value} type="button" role="tab" aria-selected={t.value === tab} className="ls-sg lf-tab l-focus" onClick={() => (setTab(t.value), open && open.state !== t.value && show(undefined))}>
                   {t.label}
-                  <span className="ls-num lf-q">{counts[t.value]}</span>
+                  <span className="ls-num">{counts[t.value]}</span>
                 </button>
               ))}
             </div>
@@ -309,7 +310,6 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
               <MultiChip label="Fix" value={fixes} options={FIXES} onChange={setFixes} />
               {query !== null ? (
                 <label className="lf-search">
-                  <I.search size={14} />
                   <input
                     autoFocus
                     value={query}
@@ -321,20 +321,16 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                       if (e.key === "ArrowDown" && shown[0]) (e.preventDefault(), focusRow(shown[0].id));
                     }}
                   />
-                  <button type="button" className="lf-clear l-focus" aria-label="Stop searching" onClick={() => setQuery(null)}>
-                    <I.close size={12} />
-                  </button>
                 </label>
               ) : (
                 <span className="lc-grow" />
               )}
-              {/* Search and sort keep together at the row's end, and wrap together when the row is narrow. */}
+              {/* Search and sort keep together at the row's end, and wrap together when the row is narrow. Search is one toggle, pressed
+                  while its field shows, as in a scan's Found panel and on Projects: pressed again it stops searching. */}
               <span className="lf-tools">
-                {query === null && (
-                  <button type="button" className="lc-tb lf-tb l-focus" aria-label="Search the findings" title="Search" onClick={() => setQuery("")}>
-                    <I.search size={16} />
-                  </button>
-                )}
+                <button type="button" className="lc-tb lf-tb l-focus" aria-pressed={query !== null} aria-label={query === null ? "Search the findings" : "Stop searching"} title={query === null ? "Search the findings" : "Stop searching"} onClick={() => setQuery(query === null ? "" : null)}>
+                  <I.search size={16} />
+                </button>
                 <Pop
                   label={`Sorted ${SORTS.find((s) => s.value === sort)!.label.toLowerCase()}. Change the order`}
                   menu
@@ -369,7 +365,11 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                     <button type="button" className="lf-rw l-focus" data-id={f.id} data-on={f.id === open?.id || undefined} aria-current={f.id === open?.id || undefined} tabIndex={f.id === (at >= 0 ? open!.id : shown[0].id) ? 0 : -1} onClick={() => show(f.id === open?.id ? undefined : f.id)}>
                       <SevMark severity={f.severity} />
                       <span className="lf-tl2">
-                        <b>{f.title}</b>
+                        {/* The time it last changed at the title's end, as a row in the sidebar has it. */}
+                        <span className="lf-l1">
+                          <b>{f.title}</b>
+                          <span className="lf-ago">{ago(f.updatedAt)}</span>
+                        </span>
                         <small>{[!scope.projectId && projects.length > 1 ? projectOf(f.projectId)?.name : "", rowNote(f)].filter(Boolean).join(" · ")}</small>
                       </span>
                     </button>

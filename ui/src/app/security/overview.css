@@ -89,7 +89,7 @@
   margin: 0 -6px 0 auto;
   padding: 3px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 12px;
@@ -544,7 +544,7 @@ button.lo-rw:hover {
   min-width: 0;
   padding: 4px 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   text-align: left;
@@ -587,8 +587,8 @@ button.lo-rw:hover {
 .lo-chev {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   color: var(--l-ink-3);
 }
 .lo-tr-in {

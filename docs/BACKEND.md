@@ -38,7 +38,7 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
                                           ├─ Codex CLI     (`codex exec --json`, one process a turn)
                                           ├─ Hermes, OpenCode (ACP: JSON-RPC over stdio)
                                           ├─ git           (snapshots under refs/liner/, worktrees)
-                                          ├─ gh            (pull requests, checks; routines poll it)
+                                          ├─ gh            (pull requests, checks; the watch reads a session's open one each minute while its checks run, for two hours at most, or it waits on it; routines poll it)
                                           ├─ python3 pty   (the Terminal surface)
                                           ├─ xcrun simctl  (the Device surface)
                                         POST /hooks/r/<id>?key=…  a routine's webhook (its own secret)
@@ -75,6 +75,15 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   back to the lead.
 - **Queue and steer.** Messages written during a turn queue and go as one message when it ends;
   steering pushes into a running Claude Code turn at its next step.
+- **Model lists.** Each tool is asked which models it has, with each model's effort levels, by a listing that runs no
+  model turn: at launch when the saved list (`models.json`) is half a day old or the tool's version changed, on Look
+  again in Models, and in Check my tools (30 seconds each). Claude Code: the Agent SDK's `supportedModels()` on a session
+  with no prompt (`~/.liner-code/probe`, your user settings only, 30 seconds), and a second one with the older models in
+  its picker (`modelPicker`) only when its answer isn't kept yet for that account and `claude --version`. Codex: `codex
+  debug models` (20 seconds). Antigravity: `agy models` (30 seconds). OpenCode 2 and later: `opencode api --standalone GET /api/model`
+  in the probe folder, its whole process group ended past 30 seconds or on a stop; an older OpenCode, or one whose list
+  fails, and every other ACP agent: `initialize` and `session/new` in the probe folder (45 seconds), then it is ended. All
+  run with the engine's environment; only a model's id, name, description, group, levels, default and price are kept.
 - **Storage.** `state.json` (written atomically, debounced) and one append-only JSONL log per
   thread; the newest line for an item wins and the log is rewritten when it grows. This is fine
   to tens of thousands of items per thread. Past that, move to `node:sqlite` (built into Node)

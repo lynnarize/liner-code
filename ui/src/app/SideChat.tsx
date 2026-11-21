@@ -2,24 +2,25 @@
   Side chat: ask about a session beside it, without stopping it or adding to it. Who you talk to
   in the session answers from a fork of its conversation (the engine's thread.side), reads what
   it needs and changes nothing, and nothing said here reaches the session. It knows the session up
-  to the turn it started from; Catch up starts it again from where the session is now.
+  to the turn it started from; Catch up starts it again from where the session is now. You write
+  in the same message box as everywhere (Composer), with Permissions held at Read only, and a
+  working answer is the same live line over it (LiveLine).
 */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
+import { Composer, type Outgoing, type RunSettings } from "./Composer";
 import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf } from "./model";
-import { Timeline } from "./Timeline";
-import { Disc, SendButton } from "./ui";
+import { LiveLine, Timeline } from "./Timeline";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
-/** What's being written to each session's side chat, while the app runs: the panel shuts, and you move between sessions. */
-const drafts = new Map<string, string>();
 
 export function SideChat({ thread, visible }: { thread: Thread; visible: boolean }) {
   const side = useEngine((s) => s.sides.find((x) => x.sideOf === thread.id));
+  const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
   const all = useItems(side?.id);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
@@ -27,13 +28,6 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
   const from = side?.sideFrom ?? thread.turns;
   // Its own turns: the session's, copied in when it started, stay out of sight.
   const items = useMemo(() => all.filter((x) => x.turn > from), [all, from]);
-  const [text, setTextState] = useState(() => drafts.get(thread.id) ?? "");
-  const setText = (v: string) => {
-    drafts.set(thread.id, v);
-    setTextState(v);
-  };
-  const [starting, setStarting] = useState(false);
-  const field = useRef<HTMLTextAreaElement>(null);
   const seen = useRef<Set<string> | null>(null);
   const { ref: scroller, contentRef, follow, stick } = useStickToBottom();
 
@@ -44,32 +38,39 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
     stick();
   }, [side?.id]);
   if (seen.current === null && items.length) seen.current = new Set(items.map((x) => x.id));
-  useEffect(() => {
-    if (visible) field.current?.focus({ preventScroll: true });
-  }, [visible]);
 
   const running = side?.status === "running";
   const behind = thread.turns - from;
-  const send = async () => {
-    const ask = text.trim();
-    if (!ask || starting) return;
-    setText("");
+  // The first question, or a choice of who answers, starts it, from where the session is now.
+  const started = async () => {
+    if (side) return side;
+    const s = await rpc("thread.side", { id: thread.id });
+    await loadItems(s.id);
+    return s;
+  };
+  const send = async (m: Outgoing) => {
     try {
-      let s = side;
-      // The first question starts it, from where the session is now.
-      if (!s) {
-        setStarting(true);
-        s = await rpc("thread.side", { id: thread.id });
-        await loadItems(s.id);
-      }
-      await rpc("thread.send", { id: s.id, text: ask });
+      const s = await started();
+      await rpc("thread.send", { id: s.id, text: m.text, files: m.files, mode: m.mode });
       stick();
     } catch (e) {
-      setText(ask);
+      // The box puts back what it sent.
       fail(e);
-    } finally {
-      setStarting(false);
+      throw e;
     }
+  };
+  // Who answers and how hard, as the box offers them: one model, never Fusion (the box is `aside`), and it only ever reads (the engine holds a side chat at Read only).
+  const base = side ?? thread;
+  const settings: RunSettings = { agent: base.agent, model: base.model, effort: base.effort ?? who.effort, access: "read" };
+  const update = (patch: Partial<RunSettings>) => {
+    void (async () => {
+      const s = await started();
+      const p: Parameters<typeof rpc<"thread.update">>[1] = { id: s.id };
+      if ("agent" in patch) p.agent = patch.agent;
+      if ("model" in patch) p.model = patch.model ?? null;
+      if ("effort" in patch) p.effort = patch.effort;
+      await rpc("thread.update", p);
+    })().catch(fail);
   };
   const again = async () => {
     try {
@@ -83,7 +84,6 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
   return (
     <div className="lc-sc">
       <div className="lc-sc-head">
-        <Disc agent={who} size={18} />
         <span className="lc-sc-note">
           <b>{who.name}</b> knows up to turn {from}
           {side && behind > 0 ? ` of ${thread.turns}` : ""}
@@ -97,7 +97,7 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
       <div ref={scroller} className="lc-sc-scroll">
         <div ref={contentRef} className="lc-sc-in">
           {side && items.length ? (
-            <Timeline threadId={side.id} items={items} seen={seen.current ?? new Set()} onReview={() => {}} onGrow={follow} />
+            <Timeline threadId={side.id} items={items} seen={seen.current ?? new Set()} onGrow={follow} />
           ) : (
             <div className="lc-sc-empty">
               <span className="lc-sc-empty-i">
@@ -111,28 +111,27 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
           )}
         </div>
       </div>
-      <form
-        className="lc-sc-compose"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <textarea
-          ref={field}
-          rows={1}
-          value={text}
-          aria-label={`Ask ${who.name} on the side`}
-          placeholder={running ? "Ask more: it goes when this answer ends" : `Ask ${who.name} about this session`}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-            e.preventDefault();
-            void send();
-          }}
-        />
-        <SendButton ready={Boolean(text.trim()) && !starting} stop={running && side ? { onStop: () => void rpc("thread.stop", { id: side.id }).catch(fail) } : undefined} label="Ask" title="Ask (Enter)" submit />
-      </form>
+      {side && <LiveLine threadId={side.id} items={items} docked={false} className="lc-sc-live" />}
+      {project && (
+        <div className="lc-compose">
+          <Composer
+            variant="session"
+            project={project}
+            thread={side}
+            draftKey={`side:${thread.id}`}
+            settings={settings}
+            onSettings={update}
+            onSend={send}
+            onStop={() => side && void rpc("thread.stop", { id: side.id }).catch(fail)}
+            busy={running}
+            placeholder={running ? "Ask more: it goes when this answer ends" : `Ask ${who.name} about this session`}
+            autoFocus={visible}
+            accessLock="A side chat only reads: it changes nothing"
+            checkOff
+            aside
+          />
+        </div>
+      )}
     </div>
   );
 }

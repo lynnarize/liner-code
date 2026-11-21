@@ -36,3 +36,10 @@ export function frameBox(w: number | null, zoom: number, room: number) {
   if (scale !== 1) style.zoom = scale;
   return { fit, scale, style };
 }
+
+/**
+  Whether a page width other than Desktop needs saying in the Browser's top row. A phone or tablet drawn at its own size
+  is a frame narrower than the stage, and that says it; one drawn smaller to fit fills the stage edge to edge, as Desktop
+  does, so nothing in the page tells it apart. Not measured yet (`room` 0), the frame says nothing either.
+*/
+export const widthUnseen = (w: number | null, room: number) => w !== null && (room <= 24 || frameBox(w, 1, room).fit < 1);

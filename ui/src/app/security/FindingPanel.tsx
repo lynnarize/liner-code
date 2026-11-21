@@ -2,7 +2,7 @@
   Liner Security: one finding, open in the panel beside the Findings list (board B). Its head (how bad, what the second
   look said, the finding before and after, close), its title and where it is, then its own tabs: Summary (the one
   sentence that says what someone can do with it, the second look, what is wrong, where, who can do it, what they get,
-  and the steps to see it), Code (every place it touches, each with Open in editor) and Activity (what happened to it,
+  and the steps to see it), Code (every place it touches, each with Open in your editor) and Activity (what happened to it,
   with times). The body scrolls and fades at its foot; the actions stay: Dismiss (with why), Ask about it, and Fix, which
   becomes Open the session while a fix is at work and Reopen once it is dismissed or fixed. Builder U2.
 
@@ -75,7 +75,7 @@ function Words({ text, tight }: { text: string; tight?: boolean }) {
 }
 
 /**
-  A piece of code with its line numbers, the lines that matter marked. `head`: its file and Open in editor above it (the
+  A piece of code with its line numbers, the lines that matter marked. `head`: its file and Open in your editor above it (the
   Code tab); `cap`: only its file's name above it (Summary, for a file other than the finding's own).
 */
 function Excerpt({ x, head, cap, onOpen }: { x: CodeExcerpt; head?: boolean; cap?: boolean; onOpen?: () => void }) {
@@ -87,8 +87,8 @@ function Excerpt({ x, head, cap, onOpen }: { x: CodeExcerpt; head?: boolean; cap
           <span className="lf-x-mono">{x.file}{x.hit.length ? `:${x.hit[0]}` : ""}</span>
           {onOpen && (
             <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={onOpen}>
-              <I.external size={13} />
-              Open in editor
+              <I.external size={14} />
+              Open in your editor
             </button>
           )}
         </div>
@@ -169,7 +169,7 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
   /** "2 of 4", read out with the arrows. */
   place?: string;
   projectName?: string;
-  /** The project's folder, for Open in editor. */
+  /** The project's folder, for Open in your editor. */
   projectPath?: string;
   /** After Dismiss or Reopen moved it out of the tab it was in, so the list can open the next one. */
   onActed?: (f: SecurityFinding) => void;
@@ -190,10 +190,11 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
   const codeCount = places.length || (f.file ? 1 : 0);
   const firstFound = f.activity.find((a) => a.kind === "found");
   const fixing = f.state === "open" && (f.fix?.state === "working" || f.fix?.state === "ready");
-  // Only a file that stays inside the project's folder opens; anything else has no Open in editor.
+  // Only a file that stays inside the project's folder opens; anything else has no Open in your editor. The shell checks it again
+  // against the project's folder as the engine has it, and never runs it (desktop/src/editor.ts).
   const open = (file: string) => {
-    const path = projectPath ? insideProject(projectPath, file) : null;
-    return path ? () => bridge.openIn(path, "editor") : undefined;
+    const path = projectPath && bridge.opensFiles() ? insideProject(projectPath, file) : null;
+    return path ? () => void bridge.openFile({ projectId: f.projectId }, path.slice(projectPath!.replace(/[\\/]+$/, "").length + 1)).catch(fail) : undefined;
   };
   const run = (p: Promise<unknown>) => (setBusy(true), void p.catch(fail).finally(() => setBusy(false)));
   const goThread = (id?: string) => id && goSecurity({ kind: "scan", threadId: id });
@@ -255,9 +256,9 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
 
         <div className="ls-segs lf-x-tabs" role="tablist" aria-label="About this finding">
           {([["summary", "Summary"], ["code", "Code", codeCount], ["activity", "Activity", f.activity.length]] as [Tab, string, number?][]).map(([id, label, n]) => (
-            <button key={id} type="button" role="tab" id={`lf-x-t-${id}`} aria-controls="lf-x-tab" aria-selected={tab === id} className="ls-sg lf-x-tab l-focus" onClick={() => setTab(id)}>
+            <button key={id} type="button" role="tab" id={`lf-x-t-${id}`} aria-controls="lf-x-tab" aria-selected={tab === id} className="ls-sg l-focus" onClick={() => setTab(id)}>
               {label}
-              {n !== undefined && <span className="ls-num lf-x-q">{n}</span>}
+              {n !== undefined && <span className="ls-num">{n}</span>}
             </button>
           ))}
         </div>
@@ -335,8 +336,8 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
                   <span className="lf-x-mono">{f.file}{f.line ? `:${f.line}` : ""}</span>
                   {open(f.file) && (
                     <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={open(f.file)}>
-                      <I.external size={13} />
-                      Open in editor
+                      <I.external size={14} />
+                      Open in your editor
                     </button>
                   )}
                 </div>

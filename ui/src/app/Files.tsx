@@ -346,12 +346,8 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
             </div>
             {c && marks.size > 0 && asSource && (
               <div className="lc-files-foot">
-                <span className="lc-cl-key" data-mark="added">
-                  added
-                </span>
-                <span className="lc-cl-key" data-mark="changed">
-                  changed
-                </span>
+                {/* One tint for a line the turn added or changed, as Changes tints what it added. */}
+                <span className="lc-cl-key">Changed this turn</span>
                 <span className="lc-grow" />
                 <span className="lc-quiet">
                   {turnAgent}, turn {c.turn}

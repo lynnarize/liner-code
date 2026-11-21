@@ -16,9 +16,9 @@
   A side chat doesn't run in plan mode, which makes every turn end in a plan or a question, even
   "hello": it runs in the default mode with the editing tools taken away, and answers directly.
 */
-import { getSessionMessages, query, type ElicitationRequest, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, query, type ElicitationRequest, type ModelInfo as SdkModel, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -32,6 +32,7 @@ import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
 import { subagentName } from "../review.ts";
 import { effortOf, skillsIn, ULTRACODE, ULTRATHINK } from "./models.ts";
+import { compareVersions, versionOf as nameVersion } from "../../../contracts/src/lineup.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
@@ -45,12 +46,108 @@ export const sdk = { query, getSessionMessages };
 */
 export const waits = { open: 90_000, link: 30_000, stop: 4_000, rules: 3_000, settle: 10_000 };
 
-/** Only until Claude Code answers: the engine asks it for its real list as it starts. */
+/**
+  Only until Claude Code answers: the engine asks it for its real list as it starts. No effort levels: those are Claude Code's
+  to say per model, and a guess here would show levels a model may not take.
+*/
 const FALLBACK: ModelInfo[] = [
   { id: "claude-opus-5-5", label: "Opus 5.5", description: "Best for everyday, complex tasks", isDefault: true },
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5", description: "Efficient for routine tasks" },
   { id: "claude-haiku-5-5", label: "Haiku 5.5", description: "Fastest for quick answers" },
-].map((m) => ({ ...m, efforts: ["low", "medium", "high"].map((e) => effortOf(e)), defaultEffort: "medium" }));
+];
+
+/**
+  The price Claude Code puts at the end of a model's description ("$4/$20 per Mtok", "$0.10/$0.50 per Mtok ($0.50/$2.50 for
+  prompts over 100k)"): input and output per million tokens, and what it says in brackets as a note. Null when the part isn't one.
+*/
+function priceOf(part: string): ModelInfo["price"] | null {
+  const m = /^(\S+)\/(\S+) per Mtok(?:\s*\((.+)\))?$/.exec(part.trim());
+  return m ? { input: m[1], output: m[2], ...(m[3] ? { note: m[3] } : {}) } : null;
+}
+
+/**
+  A Claude Code model as the picker names it. Claude Code's displayName is the family alone ("Opus") and the version sits at the
+  front of its description ("Opus 5.5 · Best for everyday, complex tasks · $4/$20 per Mtok"), where every other tool's rows say
+  it in the name. So that first part is the name when it is the display name with a version added, and it leaves the
+  description so the row doesn't say it twice; else the version comes from the id ("claude-opus-5-5" is 5.5, a date at the end
+  isn't one); else the name stays as the tool gives it. A name that already has a version is left alone. The price at the
+  description's end goes to `price` (priceOf), so the description is what the model is for. Pure, and running it twice changes
+  nothing (a price taken off before is kept), so a list saved before it (models.json, tools.json) is named the same way when it is read.
+*/
+export function claudeModelName(m: { id: string; label: string; description: string; price?: ModelInfo["price"] }): { label: string; description: string; price?: ModelInfo["price"] } {
+  const named = versionedName(m);
+  const parts = named.description.split(" · ");
+  const price = parts.length ? priceOf(parts[parts.length - 1]) : null;
+  if (price) return { label: named.label, description: parts.slice(0, -1).join(" · "), price };
+  return m.price ? { ...named, price: m.price } : named;
+}
+
+function versionedName(m: { id: string; label: string; description: string }): { label: string; description: string } {
+  const label = m.label.trim();
+  const parts = m.description.split(" · ");
+  if (nameVersion(label)) return parts.length > 1 && parts[0] === label ? { label, description: parts.slice(1).join(" · ") } : { label, description: m.description };
+  if (label && parts[0].startsWith(`${label} `) && /^\S*\d/.test(parts[0].slice(label.length + 1))) return { label: parts[0], description: parts.slice(1).join(" · ") };
+  const words = m.id.replace(/\[[^\]]*\]$/, "").split("-");
+  if (words[0] !== "claude") return { label: m.label, description: m.description };
+  // A release date at the end ("-20251101") says when, not which version.
+  if (words.length > 2 && /^\d{8}$/.test(words[words.length - 1])) words.pop();
+  const nums: string[] = [];
+  while (words.length > 2 && /^\d{1,2}$/.test(words[words.length - 1])) nums.unshift(words.pop()!);
+  if (!nums.length || !label) return { label: m.label, description: m.description };
+  const version = nums.join(".");
+  // The version goes after the family's word, so "Opus (1M context)" reads "Opus 5.5 (1M context)".
+  const first = label.split(" ");
+  const named = first[0].toLowerCase() === words.slice(1).join("-").toLowerCase() ? [first[0], version, ...first.slice(1)].join(" ") : `${label} ${version}`;
+  return { label: named, description: m.description };
+}
+
+/**
+  Older Claude models Claude Code still runs when asked for by id, though its own list names only the current ones: the
+  picker offers them under "Older versions". Ids as Anthropic names them; one Claude Code lists itself is never added twice.
+*/
+const OLDER: { id: string; label: string }[] = [
+  { id: "claude-fable-5-1", label: "Fable 5.1" },
+  { id: "claude-fable-5", label: "Fable 5" },
+  { id: "claude-opus-5", label: "Opus 5" },
+  { id: "claude-opus-4-8", label: "Opus 4.8" },
+  { id: "claude-sonnet-5", label: "Sonnet 5" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+];
+
+/** What an older model Liner Code adds says of itself: Claude Code said nothing about it. */
+const OLDER_WORDS = "An older version";
+
+/**
+  Claude Code's list with the older models after it, marked legacy so they sit with the older versions. One Claude Code
+  described itself (listModels asks it about them) keeps what it said; one it didn't has no effort levels and no price, since
+  only Claude Code can say those per model (another model's would be a guess: levels differ). An older model added by a list
+  saved before this (with its family's levels copied onto it) is added again as it is now. A model Claude Code lists by id alone
+  ("Fable 5.2") was marked legacy too, though nothing newer of its family exists: that mark goes, so it reads as current.
+*/
+export function claudeWithOlder<T extends ModelInfo>(list: T[]): T[] {
+  if (!list.length) return list;
+  const ours = (m: ModelInfo) => m.description === OLDER_WORDS && OLDER.some((o) => o.id === m.id);
+  const named = list.filter((m) => !ours(m)).map((m) => ({ ...m, ...claudeModelName(m) }));
+  const have = new Set(named.map((m) => m.id));
+  const added = OLDER.filter((o) => !have.has(o.id)).map((o) => ({ id: o.id, label: o.label, description: OLDER_WORDS, legacy: true }) as T);
+  const all = [...named, ...added];
+  const newer = (m: ModelInfo) => {
+    const v = nameVersion(m.label);
+    return Boolean(v && all.some((x) => { const w = nameVersion(x.label); return w && w.family === v.family && compareVersions(w.version, v.version) > 0; }));
+  };
+  return all.map((m) => (m.legacy && !OLDER.some((o) => o.id === m.id) && !newer(m) ? { ...m, legacy: undefined } : m));
+}
+
+/** A list of Claude Code's models as the picker shows it: each named (claudeModelName), the older ones added (claudeWithOlder). */
+export const claudeModelsNamed = <T extends ModelInfo>(list: T[]): T[] => claudeWithOlder(list);
+
+/**
+  A tool's model list as saved in models.json, named as it would be named now: one Claude Code gave before claudeModelName
+  says "Opus" (and its price in the description) until Claude Code is asked again (half a day, or its next update), so Claude
+  Code's own and its other accounts' ("claude.work") are named again as they are read. Any other tool's list is as it was saved.
+*/
+export const savedModelsNamed = (tool: string, list: ModelInfo[]): ModelInfo[] => (tool === "claude" || tool.startsWith("claude.") ? claudeModelsNamed(list) : list);
 
 const LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 /** What the SDK takes for one of our effort names: ultracode is extra high plus workflows; ultrathink is a word in the prompt. */
@@ -380,14 +477,14 @@ function formOf(schema: unknown, server: string): { key: string; question: Quest
   Opens Claude Code in `cwd` with no prompt to ask it something (its models, its limits, its commands), then closes it; null when
   it isn't installed. Through `sdk`, as a session is, so a test can stand in for it; its wait is cleared when it's answered.
 */
-async function probe<T>(env: NodeJS.ProcessEnv, cwd: string, ask: (q: Query) => Promise<T>, sources: ("user" | "project" | "local")[] = ["user"], late = "Claude Code didn't answer in time."): Promise<T | null> {
+async function probe<T>(env: NodeJS.ProcessEnv, cwd: string, ask: (q: Query) => Promise<T>, sources: ("user" | "project" | "local")[] = ["user"], late = "Claude Code didn't answer in time.", settings?: Options["settings"]): Promise<T | null> {
   const path = which("claude", env);
   if (!path) return null;
   const abort = new AbortController();
   const idle = async function* (): AsyncGenerator<SDKUserMessage> {
     await new Promise((r) => abort.signal.addEventListener("abort", r));
   };
-  const q = sdk.query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: sources, abortController: abort } });
+  const q = sdk.query({ prompt: idle(), options: { cwd, pathToClaudeCodeExecutable: sdkPath(path), env: { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: `liner-code/${VERSION}` }, settingSources: sources, abortController: abort, ...(settings ? { settings } : {}) } });
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([ask(q), new Promise<never>((_, no) => (timer = setTimeout(() => no(new Error(late)), 30000)))]);
@@ -397,10 +494,66 @@ async function probe<T>(env: NodeJS.ProcessEnv, cwd: string, ask: (q: Query) => 
   }
 }
 
-/** Claude Code's own model list: its current models by alias, then older ones it still runs. */
+/** One row of Claude Code's supportedModels() as the picker shows it: its levels as Claude Code says them for that model, then Liner Code's extras. */
+function claudeRow(m: SdkModel, id: string): ModelInfo {
+  const levels = m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? []);
+  const efforts = levels.map((e) => effortOf(e));
+  if (levels.includes("xhigh")) efforts.push(ULTRACODE);
+  if (m.supportsAdaptiveThinking !== false) efforts.push(ULTRATHINK);
+  // No defaultEffort: Claude Code doesn't say one per model, and a session given no level runs at Claude Code's own (sdkEffort).
+  return { id, ...claudeModelName({ id, label: m.displayName, description: m.description }), efforts };
+}
+
+/** The fields of Claude Code's answer about an older model that are kept between looks, and nothing else of it. */
+const OLDER_FIELDS = ["value", "resolvedModel", "displayName", "description", "supportsEffort", "supportedEffortLevels", "supportsAdaptiveThinking"] as const;
+
+/**
+  What Claude Code last said about the older models, by account (its CLAUDE_CONFIG_DIR) in `scratch`/claude-older.json, with the
+  Claude Code version that said it. Only the older models' rows, and only OLDER_FIELDS of each, are kept.
+*/
+type OlderSaid = Record<string, { version: string; rows: SdkModel[] }>;
+const olderFile = (scratch: string) => join(scratch, "claude-older.json");
+function olderSaid(scratch: string): OlderSaid {
+  try {
+    const v = JSON.parse(readFileSync(olderFile(scratch), "utf8")) as unknown;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as OlderSaid) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+  Claude Code's own model list: its current models by alias, then older ones it still runs. Those older ones are asked about in a
+  second look (the modelPicker setting, which adds them to its picker for that look alone and opens no turn), so each carries the
+  levels and price Claude Code says for it. That second look starts a second Claude Code, so it runs only when its answer isn't
+  kept yet for this account and this Claude Code version (claude --version, asked beside the main look): an update may change
+  what it says, nothing else does. It starts once the main look has ended, never beside it: two Claude Codes starting at once on
+  one config folder both write its files. A look that failed, or that described none of them (signed out, say), isn't kept, so
+  it is tried again next time rather than leaving them without levels till the next update. One it doesn't describe is added
+  with none (claudeWithOlder). The main list is used whatever the second look did. The person's own settings are untouched.
+*/
 async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<ModelInfo[]> {
   mkdirSync(scratch, { recursive: true });
+  const path = which("claude", env);
+  const account = env.CLAUDE_CONFIG_DIR ?? "";
+  const asked = path ? versionOf(path, env).catch(() => undefined) : Promise.resolve(undefined);
+  const olderLook = async (): Promise<SdkModel[] | null> => {
+    const version = await asked;
+    const kept = olderSaid(scratch)[account];
+    if (version && kept?.version === version && Array.isArray(kept.rows) && kept.rows.length) return kept.rows;
+    const rows = await probe(env, scratch, (q) => q.supportedModels(), ["user"], undefined, { modelPicker: { options: OLDER.map((o) => ({ model: o.id })) } }).catch(() => null);
+    if (!rows) return rows;
+    const older = rows.filter((m) => OLDER.some((o) => o.id === (m.resolvedModel ?? m.value))).map((m) => Object.fromEntries(OLDER_FIELDS.filter((k) => m[k] !== undefined).map((k) => [k, m[k]])) as SdkModel);
+    if (version && older.length)
+      try {
+        writeFileSync(olderFile(scratch), JSON.stringify({ ...olderSaid(scratch), [account]: { version, rows: older } }));
+      } catch {
+        // Not kept: it is asked again next time.
+      }
+    return older;
+  };
   const list = await probe(env, scratch, (q) => q.supportedModels());
+  const older = list ? await olderLook().catch(() => null) : null;
   if (!list) return [];
   {
     const chosen = list.find((m) => m.value === "default")?.resolvedModel;
@@ -410,13 +563,13 @@ async function listModels(env: NodeJS.ProcessEnv, scratch: string): Promise<Mode
       if (m.value === "default") continue;
       const id = m.resolvedModel ?? m.value;
       if (out.has(id)) continue;
-      const levels = m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? []);
-      const efforts = levels.map((e) => effortOf(e));
-      if (levels.includes("xhigh")) efforts.push(ULTRACODE);
-      if (m.supportsAdaptiveThinking !== false) efforts.push(ULTRATHINK);
-      out.set(id, { id, label: m.displayName, description: m.description, efforts, defaultEffort: levels.includes("medium") ? "medium" : levels[0], legacy: !current.has(id) || undefined, isDefault: id === chosen || undefined });
+      out.set(id, { ...claudeRow(m, id), legacy: !current.has(id) || undefined, isDefault: id === chosen || undefined });
     }
-    return [...out.values()];
+    for (const m of older ?? []) {
+      const id = m.resolvedModel ?? m.value;
+      if (!out.has(id) && OLDER.some((o) => o.id === id)) out.set(id, { ...claudeRow(m, id), legacy: true });
+    }
+    return claudeWithOlder([...out.values()]);
   }
 }
 
@@ -1889,13 +2042,20 @@ class ClaudeSession implements ProviderSession {
       if (text) run.text = text;
       const steps = [...(run.agent.steps ?? [])];
       for (const b of m.message.content) {
+        // Its thinking, where the model shows it: a thought between its steps (AgentStep "think"), not a tool. Its place in
+        // `calls` keeps the steps and their call ids side by side.
+        if (b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim()) {
+          steps.push({ title: short(b.thinking.replace(/\s+/g, " ").trim(), 300), toolKind: "think", status: "done", at: Date.now() });
+          run.calls.push("");
+          continue;
+        }
         if (b.type !== "tool_use") continue;
         const input = (b.input ?? {}) as Record<string, unknown>;
         const { title, path } = titleOf(b.name, input, this.o.cwd);
-        steps.push({ title, toolKind: kindOf(b.name), status: "running", ...(path ? { path } : {}) });
+        steps.push({ title, toolKind: kindOf(b.name), status: "running", ...(path ? { path } : {}), at: Date.now() });
         run.calls.push(b.id);
         said.now = title;
-        said.tools = Math.max(run.agent.tools ?? 0, run.calls.length);
+        said.tools = Math.max(run.agent.tools ?? 0, run.calls.filter(Boolean).length);
         if (OUTLIVES.test(b.name)) this.lasting = true;
         if (b.name === "Agent" || b.name === "Task") {
           this.tools.set(b.id, { name: b.name, input });

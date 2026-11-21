@@ -47,28 +47,19 @@
   flex: none;
   color: var(--l-ink-4);
 }
-/* Which version: a quiet pill, its dot green while it's the file as it is now. */
+/* Which version: a quiet pill, "Live" while it's the file as it is now (a fact, so a word, not a dot). */
 .lc-dz-ver {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: 28px;
   margin-left: 2px;
   padding: 0 8px;
   border-radius: 999px;
   font-size: 12px;
   color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
-}
-.lc-dz-ver > i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--l-ink-4);
-}
-.lc-dz-ver > i[data-live] {
-  background: var(--l-ok);
 }
 .lc-dz-ver > svg {
   color: var(--l-ink-4);
@@ -77,40 +68,6 @@
   .lc-dz-name:hover,
   .lc-dz-ver:hover {
     background: var(--l-wash);
-  }
-}
-/* The size it's drawn at: three icons in one quiet group. */
-.lc-dz-sizes {
-  display: inline-flex;
-  flex: none;
-  gap: 1px;
-  margin-right: 4px;
-  padding: 2px;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash);
-}
-.lc-dz-sizes > button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    color 160ms ease;
-}
-.lc-dz-sizes > button[aria-pressed="true"] {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-dz-sizes > button:hover {
-    color: var(--l-ink);
   }
 }
 .lc-dz-bar > .lc-ib {
@@ -125,7 +82,7 @@
   white-space: nowrap;
 }
 /* In a narrow panel the bar keeps the design's name: Build says it with its icon, the version
-   drops "Live" (its green dot says it), and the sizes and buttons pull in. */
+   drops "Live", and the buttons pull in. */
 @container (max-width: 560px) {
   .lc-dz-wide {
     display: none;
@@ -137,16 +94,10 @@
     margin-left: 2px;
     padding-inline: 9px;
   }
-  .lc-dz-sizes > button {
-    width: 24px;
-  }
 }
 @container (max-width: 470px) {
   .lc-dz-build > span {
     display: none;
-  }
-  .lc-dz-bar > .lc-ib {
-    width: 26px;
   }
 }
 /* Narrower still, the bar takes two lines: the design and its version, then how it's drawn and
@@ -170,14 +121,6 @@
   max-height: 360px;
   padding: 4px;
   overflow: auto;
-}
-.lc-dz-acts {
-  display: grid;
-  gap: 2px;
-  padding: 6px 6px 2px;
-}
-.lc-dz-acts > .lc-btn {
-  justify-content: flex-start;
 }
 
 /* ---------- The canvas ---------- */
@@ -280,8 +223,8 @@
 .lc-dz-zoom > button {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -340,7 +283,7 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--lc-well);
   cursor: zoom-in;
 }
@@ -393,12 +336,6 @@
 .lc-dz-open {
   color: var(--l-accent-text);
 }
-.lc-dz-open > i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 /* In the chat: wider than the text (to 880), centred on it, the design with nothing round it. In
    whole pixels, width and place, so the scaled design's edges land on the pixel grid. */
 .lc-dz-inline {
@@ -447,7 +384,7 @@
 }
 .lc-dz-chip {
   left: 12px;
-  height: 26px;
+  height: 28px;
   padding: 0 10px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -553,19 +490,13 @@ html[data-native="mac"] .lc-dz-full-bar {
 }
 
 /* ---------- 0.2.7, third pass: no designs yet, the Design face's start ---------- */
-/* Where it lives (Home's two-way switch), what it's drawn for, then New design, stacked and centred. */
+/* Where it lives and what it's drawn for (a chip each, as Design Home has them), then New design, stacked and centred. */
 .lc-dz-start {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   margin-top: 10px;
-}
-.lc-dz-start > .lc-home-where > button {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---------- A session's Liner Design file: a small view of its canvas (DesignMini.tsx) ---------- */
@@ -705,6 +636,7 @@ html[data-native="mac"] .lc-dz-full-bar {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 4px;
   height: 16px;
   padding: 0 5px;
   border-radius: 4px;
@@ -758,41 +690,13 @@ html[data-native="mac"] .lc-dz-full-bar {
     color: var(--l-ink);
   }
 }
-/* An agent on the frame: a ring in its colour that breathes outward while it works, as on the canvas (design-face.css .ld-pres). */
+/* An agent on the frame: a ring in its colour, as on the canvas (design-face.css .ld-pres); that it works is the state mark in its tag. */
 .lc-dm-box[data-on] {
   --lc-dm-c: var(--ld-side);
   box-shadow: 0 0 0 1.5px var(--lc-dm-c);
 }
 .lc-dm-box[data-on="lead"] {
   --lc-dm-c: var(--ld-lead);
-}
-.lc-dm-box[data-on]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  box-shadow: 0 0 0 1.5px var(--lc-dm-c);
-  opacity: 0;
-  pointer-events: none;
-  animation: lc-dm-breathe 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-@keyframes lc-dm-breathe {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  80%,
-  100% {
-    transform: scale(1.06);
-    opacity: 0;
-  }
-}
-html[data-motion="quick"] .lc-dm-box[data-on]::after {
-  animation: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-dm-box[data-on]::after {
-    animation: none;
-  }
 }
 /* Narrow: Open in Liner Design keeps its words on a line of its own under the title. */
 @container (max-width: 340px) {

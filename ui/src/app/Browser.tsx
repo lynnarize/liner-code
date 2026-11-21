@@ -20,12 +20,13 @@ import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
 import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
-import { frameBox } from "./browserFrame";
+import { frameBox, widthUnseen } from "./browserFrame";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { launchNote, useLaunch } from "./launch";
 import { SurfaceNote } from "./Surfaces";
-import { EnvLine, PanelHead, Pop } from "./ui";
+import { EnvLine, PanelHead, Pop, Row } from "./ui";
+import { ChoiceChip, SendBox } from "./Composer";
 import * as os from "./os";
 
 /** A console line; `n` names it for good, so the list keys stay put as old lines drop off its top. */
@@ -539,6 +540,11 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   }, [target !== null]);
   // What a page pixel is drawn at (its zoom, times the fit), and the frame's size and zoom for it.
   const { fit, scale, style: box } = frameBox(w, zoom, room);
+  // Offline from the ··· and from its chip in the top row alike.
+  const setOff = (on: boolean) => {
+    setOffline(on);
+    cmd("offline", { on });
+  };
 
   /*
     Where the ask card sits: under the element, inside the stage. The page's pixels are drawn at its
@@ -686,6 +692,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         >
           <input className="lc-br-addr lc-mono" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Address" spellCheck={false} />
         </form>
+        {/* The message box's rule: a choice under the ··· that differs from its default shows as a chip you can cross off. Offline shows nowhere in the page, and a phone or tablet drawn smaller to fit looks like Desktop (browserFrame.ts widthUnseen); zoom and the theme show in the page. */}
+        {w !== null && widthUnseen(w, room) && <ChoiceChip className="lc-br-chip" icon={width === "phone" ? <I.device size={14} /> : <I.tablet size={14} />} label={width === "phone" ? "Phone" : "Tablet"} clear={{ label: "Back to Desktop width", onClear: () => setWidth("desktop") }} />}
+        {offline && <ChoiceChip className="lc-br-chip" icon={<I.offline size={14} />} label="Offline" clear={{ label: "Go back online", onClear: () => setOff(false) }} />}
         <button
           type="button"
           className="lc-ib l-focus"
@@ -719,18 +728,14 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
             )}
           </Pop>
         )}
-        {(own || (shownServer && shownServer.status !== "stopped")) && (
-          <button type="button" className="lc-ib l-focus" aria-label={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port}`} title={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port} (${own!.process})`} onClick={() => void stopIt()}>
-            <I.stop size={12} />
-          </button>
-        )}
-        <button type="button" className="lc-ib l-focus" aria-label="Open in your browser" title="Open in your browser" disabled={target.port === null && !proxy} onClick={() => bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`)}>
-          <I.external size={14} />
-        </button>
-        {/* More: the page's zoom, and light or dark (T3 Code: preview/PreviewMoreMenu.tsx). */}
-        <Pop label="More for the page" align="end" width={240} triggerClass="lc-ib" trigger={<I.more size={14} />}>
-          {() => (
+        {/* The top row keeps the everyday tools; the rest is under one ···: open it in your browser, stop its server, the page's zoom, light or dark, its width and offline (T3 Code: preview/PreviewMoreMenu.tsx). */}
+        <Pop label="More for the page" align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+          {(close) => (
             <div className="lc-br-more">
+              <Row title="Open in your browser" icon={<I.external size={16} />} disabled={target.port === null && !proxy} onPick={() => (close(), bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`))} />
+              {(own || (shownServer && shownServer.status !== "stopped")) && (
+                <Row title={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port}`} note={shownServer ? undefined : own!.process} icon={<I.stop size={16} />} onPick={() => (close(), void stopIt())} />
+              )}
               <PanelHead end={zoom === 1 ? undefined : `${Math.round(zoom * 100)}%`}>Zoom</PanelHead>
               <div className="lc-br-zoomrow">
                 <button type="button" className="lc-ib l-focus" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => zoomBy(-1)}>
@@ -758,32 +763,31 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
                 />
               </div>
               <p className="lc-pop-foot">The page's prefers-color-scheme follows this, for pages that style both.</p>
+              <PanelHead>Page width</PanelHead>
+              <div className="lc-br-zoomrow">
+                <Segmented
+                  size="sm"
+                  value={width}
+                  onValueChange={(v) => setWidth(v)}
+                  options={[
+                    { value: "desktop", label: "Desktop" },
+                    { value: "tablet", label: "Tablet" },
+                    { value: "phone", label: "Phone" },
+                  ]}
+                  aria-label="Page width"
+                />
+              </div>
+              <div className="lc-br-zoomrow">
+                <Switch
+                  size="sm"
+                  checked={offline}
+                  onCheckedChange={setOff}
+                  label="Offline"
+                />
+              </div>
             </div>
           )}
         </Pop>
-      </div>
-      <div className="lc-br-opts">
-        <Segmented
-          size="sm"
-          value={width}
-          onValueChange={(v) => setWidth(v)}
-          options={[
-            { value: "desktop", label: "Desktop" },
-            { value: "tablet", label: "Tablet" },
-            { value: "phone", label: "Phone" },
-          ]}
-          aria-label="Page width"
-        />
-        <span className="lc-grow" />
-        <Switch
-          size="sm"
-          checked={offline}
-          onCheckedChange={(on) => {
-            setOffline(on);
-            cmd("offline", { on });
-          }}
-          label="Offline"
-        />
       </div>
       <div ref={stage} className="lc-br-stage" data-width={width}>
         {/* Over the page rather than in its place, so a No leaves it as it was. */}
@@ -829,7 +833,7 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         {picking && <span className="lc-br-hint l-glass">Point at an element and click it. Escape stops.</span>}
         {driving > 0 && !picking && (
           <span className="lc-br-hint lc-br-agent l-glass" role="status">
-            <span className="lc-br-agent-dot" aria-hidden />
+            <StateMark state="working" size={12} />
             {agentName} is using this page
           </span>
         )}
@@ -839,26 +843,11 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
               <span className="lc-code">{picked.selector}</span>
               <span className="lc-quiet lc-br-ask-p">{picked.text ? `“${picked.text.slice(0, 48)}${picked.text.length > 48 ? "…" : ""}”` : picked.path}</span>
               <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => setPicked(null)}>
-                <I.close size={12} />
+                <I.close size={14} />
               </button>
             </div>
-            <input
-              className="lc-input"
-              autoFocus
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={`Ask ${agentName} about this`}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) void ask();
-                if (e.key === "Escape") setPicked(null);
-              }}
-            />
-            <div className="lc-br-ask-f">
-              <span className="lc-quiet">Sends the element and where it sits</span>
-              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!question.trim()} onClick={() => void ask()}>
-                Ask {agentName}
-              </button>
-            </div>
+            {/* The message box's field and Send, as the canvas's comment card has them: the element goes with your words. */}
+            <SendBox autoFocus value={question} onChange={setQuestion} label={`Ask ${agentName} about this. Sends the element and where it sits`} placeholder={`Ask ${agentName} about this`} onSend={() => void ask()} onEscape={() => setPicked(null)} />
           </div>
         )}
       </div>
@@ -977,14 +966,14 @@ function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: Lau
             )}
             {on ? (
               <button type="button" className="lc-br-lgo l-focus" aria-label={`Stop ${s.name}`} title="Stop" disabled={busy} onClick={() => onStop(s.name)}>
-                {s.status === "starting" && <span className="lc-br-lspin" aria-hidden />}
+                {s.status === "starting" && <StateMark state="working" size={12} className="lc-br-lspin" />}
                 <span className="lc-br-lstop" aria-hidden>
-                  <I.stop size={10} />
+                  <I.stop size={12} />
                 </span>
               </button>
             ) : (
               <button type="button" className="lc-br-lgo l-focus" aria-label={`Run ${s.name}`} title={s.problem ?? (s.ask ? FIRST : "Run")} disabled={busy || Boolean(s.problem)} onClick={() => onRun(s.name)}>
-                {busy ? <span className="lc-br-lspin" aria-hidden /> : <I.play size={14} />}
+                {busy ? <StateMark state="working" size={12} className="lc-br-lspin" /> : <I.play size={14} />}
               </button>
             )}
           </li>

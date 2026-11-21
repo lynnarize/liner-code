@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@liner/pro/pr-flow/pr-flow";
 import { useSeen } from "@liner/lib/hooks";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { plural } from "./model";
 
 const BUSY: PrStage[] = ["creating", "checking", "resolving", "testing", "merging"];
@@ -87,7 +87,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
           {branch}
         </span>
         <span className="lc-prc-state" data-tone={tone} key={stage}>
-          {(stage === "ready" || merged || (pr && !busy && stage !== "conflicts")) && <i />}
+          {(stage === "ready" || merged || (pr && !busy && stage !== "conflicts")) && <StateMark state={merged ? "merged" : stage === "ready" ? "ready" : "pr"} size={12} />}
           {merged ? "Merged" : stage === "ready" ? "Open" : SAYS[stage]}
         </span>
       </div>
@@ -196,7 +196,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
             {checks.map((k) => (
               <li key={k.id} data-state={k.state} title={k.detail}>
                 <span className="lc-prc-ck" aria-hidden>
-                  {k.state === "passed" ? <I.check size={14} /> : k.state === "failed" ? <I.close size={12} /> : <span />}
+                  <StateMark state={k.state === "passed" ? "done" : k.state === "failed" ? "problem" : k.state === "running" ? "checks" : "new"} size={12} />
                 </span>
                 {k.label}
                 <span className="lc-prc-cm" key={k.state}>
@@ -208,9 +208,10 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
         </div>
       )}
       <div className="lc-prc-line">
-        <span className="lc-prc-status" data-tone={tone} role="status" key={line.replace(/\d+/g, "#")}>
-          {busy ? <span className="lc-ship-spin" aria-hidden /> : tone === "ok" ? <I.check size={14} /> : tone === "warn" ? <I.alert size={14} /> : null}
-          <span className={busy ? "l-shimmer" : undefined}>{stage === "ready" && !status ? "Ready to merge" : line}</span>
+        {/* The mark stays mounted while the words cross-blur, so a change of stage plays across its dots. */}
+        <span className="lc-prc-status" data-tone={tone} role="status">
+          {(busy || tone) && <StateMark state={busy ? "working" : tone === "warn" ? "needs" : merged ? "merged" : "ready"} size={14} />}
+          <span key={line.replace(/\d+/g, "#")}>{stage === "ready" && !status ? "Ready to merge" : line}</span>
         </span>
         <span className="lc-grow" />
         {want === "open" && (

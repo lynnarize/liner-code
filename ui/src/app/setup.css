@@ -135,14 +135,13 @@ html[data-native="mac"] .lc-wel {
   column-gap: 14px;
   padding: clamp(10px, 2.2vh, 14px) 0;
 }
+/* A row's state mark in a 20px place, its colour the mark's own. */
 .lc-wel-st {
-  color: var(--l-ok);
-}
-.lc-wel-st[data-state="todo"] {
-  color: var(--l-ink-4);
-}
-.lc-wel-st[data-state="warn"] {
-  color: var(--l-warn);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
 }
 .lc-wel-rt {
   display: flex;

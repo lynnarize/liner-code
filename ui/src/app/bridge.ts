@@ -71,6 +71,15 @@ export const bridge = {
   openIn(path: string, app: "finder" | "terminal" | "editor") {
     if (isNative()) void call("openIn", { path, app }).catch(() => {});
   },
+  /** Whether a file of a session can be opened in your editor: the Electron shell only (the Swift one and a browser can't). */
+  opensFiles: () => Boolean(shell()),
+  /**
+    A file in your editor, its path relative to a session's folder, or to a project's when there's no
+    session. The shell reads the folder from the engine and opens the file only when it sits inside it.
+  */
+  openFile(at: { threadId: string } | { projectId: string }, path: string): Promise<void> {
+    return call<void>("openFile", { ...at, path });
+  },
   /** Runs a sign-in command in Terminal, where the tool can ask for what it needs. */
   runInTerminal(command: string) {
     if (isNative()) return void call("runInTerminal", { command }).catch(() => {});

@@ -11,9 +11,11 @@ import type { Lean, Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { pairOf } from "../Crew";
 import { rpc, useEngine } from "../engine";
-import { I } from "../icons";
+import { I, StateMark } from "../icons";
 import { agentOf } from "../model";
 import { NamedSwitch, Pop, Row } from "../ui";
+import * as os from "../os";
+import { seedComposer } from "../Composer";
 import { cornerChoices, setLean, useLean } from "./lean";
 import { bringBack, useOffLean, walkAgain, type OffFinding } from "./leanwalk";
 import { addValue, closeLean, faceUp, isChanged, refreshLean, revOf, setSkill, useLeanOpen, useLoaded, useSkills, writeLeanText } from "./Skills";
@@ -81,12 +83,23 @@ function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; pr
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
+  // Words for the dock's box, to finish there and send with its Send: the page closes on them.
+  const seed = async (text: string) => {
+    try {
+      const id = thread?.id ?? (await design.session());
+      if (!id) return;
+      closeLean();
+      seedComposer(id, text);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   return (
     <div ref={me} className="ld-lp" role="region" aria-label="The lean">
       <header className="ld-bar ld-lp-bar" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
+          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
             <I.sidebar size={16} />
           </button>
         )}
@@ -95,17 +108,15 @@ function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; pr
           {file?.title ?? "Design"}
         </button>
         <span className="ld-crumb">Lean</span>
+        {/* The design's name before "Lean" is the way back to the canvas: one control for it. */}
         <span className="lc-grow" data-drag />
-        <button type="button" className="lc-pb ld-lp-q l-focus" onClick={closeLean}>
-          Back to the canvas
-        </button>
       </header>
       <div className="ld-lp-in">
         <SkillTiles cwd={cwd} />
         <div className="ld-lp-cols">
           <Editor cwd={cwd} lean={lean} mock={mock} where={project.kind === "design" ? "this design's folder" : project.name} who={who} onAsk={() => void ask(`Write the project's DESIGN.md: the lean every design here follows. Read the code and the design files first. ${SECTIONS}`, "to write DESIGN.md", "Write DESIGN.md, the lean every design here follows")} />
           <section className="ld-lp-read" aria-label="What Liner reads from it">
-            <Sources lean={lean} who={who} onAsk={ask} />
+            <Sources lean={lean} onAsk={ask} onSeed={seed} />
             <Read lean={lean} title={file?.title ?? "this design"} threadId={thread?.id ?? ""} />
           </section>
         </div>
@@ -134,7 +145,7 @@ function SkillTiles({ cwd }: { cwd?: string }) {
               {others.map((s) => (
                 <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} disabled={!hasFile} onPick={() => setSkill(s.name, !loaded.includes(s.name))} />
               ))}
-              {!others.length && <Row title="No other skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" disabled />}
+              {!others.length && <Row title="No other skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" keepNote disabled />}
             </>
           )}
         </Pop>
@@ -322,9 +333,8 @@ function Editor({ cwd, lean, mock, where, who, onAsk }: { cwd?: string; lean: Le
 
 // ---------- Where the rules come from
 
-function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: (text: string, said: string, shown?: string) => Promise<void> }) {
+function Sources({ lean, onAsk, onSeed }: { lean: Lean | null; onAsk: (text: string, said: string, shown?: string) => Promise<void>; onSeed: (text: string) => Promise<void> }) {
   const file = useDesign((s) => s.file);
-  const [site, setSite] = useState("");
   const builtin = lean?.off === "builtin";
   const ownFile = Boolean(lean) && !builtin;
   const switchTo = async (l: NonNullable<typeof file>["lean"]) => {
@@ -342,21 +352,10 @@ function Sources({ lean, who, onAsk }: { lean: Lean | null; who: string; onAsk: 
         <Pop label="A built-in lean" width={280} triggerClass="ld-lp-chip" triggerAttrs={{ "aria-pressed": builtin }} trigger={<>{builtin && <I.check size={14} />}A built-in</>} menu>
           {(close) => <Row title="Liner 2.0" note="Liner Code's own look: flat surfaces, hairlines, one accent" on={builtin} disabled={!file} onPick={() => (close(), file && void switchTo({ skills: file.lean.skills, builtin: "liner-2" }))} />}
         </Pop>
-        <Pop label="Rules from a site" width={340} triggerClass="ld-lp-chip" trigger={<>From a site</>}>
-          {(close) => (
-            <form className="ld-brand" onSubmit={(e) => (e.preventDefault(), site.trim() && (close(), void onAsk(`Read ${site.trim()} and write the project's DESIGN.md from its look: its colours, type, spacing and corners. ${SECTIONS}`, "to write DESIGN.md from the site", `Write DESIGN.md from the look of ${site.trim()}`)))}>
-              <b>From a site</b>
-              <span className="lc-quiet">{who} reads the site and writes DESIGN.md from its look.</span>
-              <input className="ld-field" value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://" aria-label="The site's address" autoFocus />
-              <span className="ld-brand-f">
-                <span className="lc-grow" />
-                <button type="submit" className="lc-btn" data-kind="ink" disabled={!site.trim()}>
-                  Ask {who}
-                </button>
-              </span>
-            </form>
-          )}
-        </Pop>
+        {/* Not a second box: the ask goes into the dock's own, the caret after "https://" for the address, and its Send sends it. */}
+        <button type="button" className="ld-lp-chip l-focus" title="Puts the ask in the box under the canvas: add the site's address, then Send" onClick={() => void onSeed(`Read this site and write the project's DESIGN.md from its look: its colours, type, spacing and corners. ${SECTIONS}\n\nThe site: https://`)}>
+          From a site
+        </button>
         <button type="button" className="ld-lp-chip l-focus" onClick={() => void onAsk(`Read this project's code for its look (its CSS, theme, tokens and components) and write DESIGN.md from it. ${SECTIONS}`, "to write DESIGN.md from your code", "Write DESIGN.md from this project's code")}>
           From my code
         </button>
@@ -527,11 +526,14 @@ function OffList({ title, off, busy, at, builtin }: { title: string; off: OffFin
         Off the lean in {title} {at > 0 && <span className="ld-lp-n">{off.length}</span>}
         <span className="lc-grow" />
         <button type="button" className="lc-pb ld-lp-q l-focus" disabled={busy} onClick={walkAgain}>
-          {busy ? <span className="l-shimmer">Reading the frames</span> : "Check again"}
+          {busy ? "Reading the frames" : "Check again"}
         </button>
       </div>
       {at === 0 ? (
-        <span className="ld-lp-note l-shimmer">Reading the frames</span>
+        <span className="ld-lp-note ld-lp-run">
+          <StateMark state="working" size={12} />
+          Reading the frames
+        </span>
       ) : off.length === 0 ? (
         <span className="ld-lp-note">Nothing in {title} is off the lean.</span>
       ) : (

@@ -73,6 +73,12 @@ html[data-motion="quick"] .ld-lp {
   font-size: 13px;
   color: var(--l-ink-3);
 }
+/* A walk of the frames at work: the working mark before its words. */
+.ld-lp-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* skills: a tile each, a switch at its corner */
 .ld-lp-skills {
@@ -450,62 +456,9 @@ html[data-motion="quick"] .ld-lp {
 .ld-fit-row .ld-lp-mono {
   color: var(--l-ink);
 }
-.ld-skill-chip {
-  font-family: var(--l-font-mono);
-  font-size: 13px;
-}
-.ld-skill-chip[aria-pressed="true"] {
-  background: var(--lc-plate);
-  color: var(--l-ink);
-}
 .ld-skills-b .ld-sl {
   width: auto;
   margin-right: 2px;
-}
-
-/* ---------- small asks in a popover: a brand, a site ---------- */
-.ld-brand {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  font-size: 13px;
-}
-.ld-brand > b {
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.ld-brand > .lc-quiet {
-  font-size: 13px;
-  line-height: 1.45;
-}
-.ld-field {
-  height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  outline: 0;
-  background: var(--lc-well);
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.ld-field::placeholder {
-  color: var(--l-ink-4);
-}
-.ld-field:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
-  outline-offset: 2px;
-}
-.ld-brand-f {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-.ld-brand-f > .lc-quiet {
-  flex: 1;
-  font-size: 12px;
 }
 
 @container ld-lp (max-width: 888px) {

@@ -16,7 +16,7 @@ import { PR_TEST_TOOL, type ApprovalGrant, type ApprovalWhy, type GrantKind, typ
 import { toast } from "@liner/components/toast/toast";
 import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { rpc, useEngine, useItemsWhere } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { accessOf, agentOf, plural } from "./model";
 import { Kbd, Pop, Row, Sep } from "./ui";
 import { askKey, bitsOf, rowsOf } from "./ask-text";
@@ -312,14 +312,16 @@ function Ways({ dock, yes, close }: { dock: DockAsk; yes: string; close: () => v
                 w.stays
               )
             }
+            // What the grant covers is read before it is given, so it stays under the row.
+            keepNote
             end={i === 0 ? <Kbd>{os.mod}↵</Kbd> : undefined}
             onPick={() => pick(g.kind)}
           />
         );
       })}
-      {offersTurn(it) && <Row title="Don't ask again this turn" note={`Until ${who} answers, this turn runs as Auto would. What Auto asks about still comes to you.`} onPick={() => pick("turn")} />}
+      {offersTurn(it) && <Row title="Don't ask again this turn" note={`Until ${who} answers, this turn runs as Auto would. What Auto asks about still comes to you.`} keepNote onPick={() => pick("turn")} />}
       <Sep />
-      <Row title={<span className="lc-quiet">What this session no longer asks about…</span>} onPick={() => setRules(true)} />
+      <Row title={<span className="lc-quiet">What this session no longer asks about…</span>} icon={<I.lock size={16} />} onPick={() => setRules(true)} />
     </>
   );
 }
@@ -371,7 +373,8 @@ export function AskDock({ dock }: { dock: DockAsk }) {
       dock.onKey(e);
     }}>
       <div className="lc-dask-top">
-        <span className="lc-dask-pip" aria-hidden />
+        {/* It waits on you: the needs-you mark, as its session's row shows; the red ring says when it can't be undone. */}
+        <StateMark state="needs" size={14} />
         <span className="lc-dask-who">{top}</span>
         {dock.total > 1 && (
           <>

@@ -278,6 +278,7 @@ export async function diffFiles(cwd: string, from: string, to: string, files: Fi
     out.push({
       path: f.path,
       from: f.from,
+      status: f.status,
       before: f.status === "added" ? undefined : await show(cwd, from, local(f.from ?? f.path, prefix, f.rel), left),
       after: f.status === "deleted" ? undefined : await show(cwd, to, local(f.path, prefix, f.rel), left),
     });

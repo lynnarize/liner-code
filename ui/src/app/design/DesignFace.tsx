@@ -1,9 +1,11 @@
 /*
   Liner Design's face of a design, in its tab: its design file on a canvas, and its session (the
   one begun from it, which it may not have yet: the first ask makes it). The top row holds the
-  design's name with a menu of the open ones (Tabs.tsx; the sidebar lists them too), who is
-  drawing, "On its own" for a design on its own, the zoom and Play; the rail, the canvas and the
-  dock fill the rest, and the inspector stands at the right. The sidebar's body for this face is
+  design's name with a menu of the open ones (Tabs.tsx; the sidebar lists them too), its kept
+  copies as one menu, the zoom and Play, and one ··· with the rest: the live frames' server, Show
+  in Finder, and Build in a project for a design on its own (who is drawing is on the frames and in
+  the sidebar, not here). The rail, the canvas and the dock fill the rest, and the inspector stands
+  at the right. The sidebar's body for this face is
   Layers.tsx's DesignSide, under the open designs.
 
   The keys here are the canvas's: V and H, F for a frame, R and T to add, Esc to go up, Delete,
@@ -17,9 +19,11 @@ import { rpc } from "../engine";
 import { I } from "../icons";
 import { matches } from "../keymap";
 import { Pop, Row, Sep } from "../ui";
+import { bridge } from "../bridge";
+import { ProjectChooser } from "../Projects";
 import * as os from "../os";
 import { patchTab, tabKey, type DesignTab } from "../face";
-import { close as closeTabHere, OwnChip, TabTitle } from "./Tabs";
+import { buildIn, close as closeTabHere, ownPlace, TabTitle } from "./Tabs";
 import { editText, frames, hearFrameKeys } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
@@ -28,12 +32,13 @@ import { Inspector } from "./Inspector";
 import { reorder } from "./Layers";
 import { insert, Rail } from "./Rail";
 import { design, getDesign, isBlank, takeVanished, useDesign } from "./store";
-import { LiveChip } from "./Live";
+import { useLiveServer } from "./Live";
 import { Versions } from "./Versions";
 import "./design-face.css";
 // E: the Lean page over the canvas, and whether it is up.
 import { LeanLayer } from "./LeanPage";
 import { isLeanOpen } from "./Skills";
+import { useReadWhileShown } from "../unread";
 
 // The face's big parts each read the store for themselves: the face drawn again (a tab shown, its loading) doesn't draw them again with it.
 const RailPart = memo(Rail);
@@ -154,7 +159,8 @@ async function remove() {
   for (const [frame, ids] of byFrame) await design.apply(frame, ids.map((id) => ({ id, remove: true as const })));
   if (whole.length) {
     const step = await design.removeFrames(whole);
-    toast(whole.length === 1 ? "Took the frame away" : `Took ${whole.length} frames away`, { duration: 5000, ...(step ? { action: { label: "Undo", onClick: () => step.undo() } } : {}) });
+    // Nothing went (an old turn shown, the engine refused): no toast says it did.
+    if (step) toast(whole.length === 1 ? "Took the frame away" : `Took ${whole.length} frames away`, { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } });
   }
 }
 
@@ -178,11 +184,90 @@ function zoomBy(el: HTMLElement | null, k: number) {
   design.view(z, { x: cx - ((cx - s.pan.x) * z) / s.zoom, y: cy - ((cy - s.pan.y) * z) / s.zoom });
 }
 
+const BUILD_IN = "Build in a project";
+/** Runs `run` when it leaves the page: a panel's content going with the panel. */
+function OnGone({ run }: { run: () => void }) {
+  const was = useRef(run);
+  was.current = run;
+  useEffect(() => () => was.current(), []);
+  return null;
+}
+
+/**
+  The top row's ···, as a surface's top row keeps its everyday tools out and the rest under one: the
+  live frames' server (useLiveServer), Show in Finder, and for a design on its own Build in a project,
+  which turns the menu into the project chooser in its place.
+*/
+function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
+  const live = useLiveServer();
+  const [choosing, setChoosing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const own = project.kind === "design";
+  // On its own, the design's folder is its project's; in a project, its folder under .liner/designs.
+  const folder = own ? project.path : `${project.path.replace(/\/+$/, "")}/.liner/designs/${tab.file}`;
+  const go = async (to: { projectId: string } | { path: string }, close: () => void) => {
+    setBusy(true);
+    try {
+      await buildIn(tab, to);
+      setChoosing(false);
+      close();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Back from the chooser puts focus on the row that opened it, or it would fall to the page with the button that had it.
+  const back = (from: HTMLElement) => {
+    const panel = from.closest<HTMLElement>(".lc-pop-panel");
+    setChoosing(false);
+    requestAnimationFrame(() => [...(panel?.querySelectorAll<HTMLElement>(".lc-row") ?? [])].find((r) => r.querySelector("b")?.textContent === BUILD_IN)?.focus({ preventScroll: true }));
+  };
+  return (
+    <>
+      <Pop label="More for this design" menu={!choosing} align="end" width={choosing ? 420 : 280} triggerClass="lc-tb l-focus" triggerAttrs={{ title: "More" }} trigger={<I.more size={16} />}>
+        {(close) => (
+          <>
+          {/* The menu closed (Escape, a click away) leaves the chooser behind it: the next ··· opens on the menu again. */}
+          <OnGone run={() => setChoosing(false)} />
+          {choosing ? (
+            <div className="ld-own-pop">
+              <button type="button" className="ld-own-back l-focus" onClick={(e) => back(e.currentTarget)}>
+                <I.chevL size={14} />
+                Build in a project
+              </button>
+              {busy ? (
+                <p className="ld-note ld-own-note">Moving the design in</p>
+              ) : (
+                <ProjectChooser
+                  onPick={(p) => void go({ projectId: p.id }, close)}
+                  extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={16} />} onPick={() => void bridge.pickFolder().then((path) => (path ? go({ path }, close) : undefined))} />}
+                />
+              )}
+            </div>
+          ) : (
+            <>
+              {live.rows && (
+                <>
+                  {live.rows(close)}
+                  <Sep />
+                </>
+              )}
+              <Row title={`Show in ${os.fileManager}`} note={own ? ownPlace(project) : undefined} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folder))} />
+              {own && <Row title={BUILD_IN} note="It moves into the project, conversation and all" icon={<I.link size={16} />} onPick={() => setChoosing(true)} />}
+            </>
+          )}
+          </>
+        )}
+      </Pop>
+      {live.floats}
+    </>
+  );
+}
+
 function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; onSidebar: () => void; cv: React.RefObject<HTMLDivElement | null>; tab: DesignTab; project: Project }) {
   const zoom = useDesign((s) => s.zoom);
-  const presence = useDesign((s) => s.presence);
   const play = useDesign((s) => s.tool === "play");
-  const who = Object.values(presence);
   return (
     <header className="ld-bar" data-drag>
       {!sidebar && (
@@ -192,32 +277,22 @@ function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; on
       )}
       <TabTitle />
       <span className="lc-grow" data-drag />
-      <LiveChip />
       <Versions />
-      {who.length > 0 && (
-        <span className="ld-who" role="img" aria-label={`Drawing now: ${who.map((p) => p.name).join(" and ")}`}>
-          {who.map((p) => (
-            <i key={`${p.name}${p.lead}`} data-lead={p.lead || undefined}>
-              {p.name.charAt(0).toUpperCase()}
-            </i>
-          ))}
-        </span>
-      )}
-      {project.kind === "design" && <OwnChip tab={tab} project={project} />}
       <Pop label={`Zoom, ${Math.round(zoom * 100)}%`} width={220} align="end" triggerClass="ld-zoom" trigger={<><span className="ld-num">{Math.round(zoom * 100)}%</span><I.chevD size={12} /></>} menu>
         {(close) => (
           <>
-            <Row title="Zoom in" end={<span className="ld-k">{os.mod}+</span>} onPick={() => (close(), zoomBy(cv.current, 1.25))} />
-            <Row title="Zoom out" end={<span className="ld-k">{os.mod}−</span>} onPick={() => (close(), zoomBy(cv.current, 0.8))} />
+            <Row title="Zoom in" icon={<I.plus size={16} />} end={<span className="ld-k">{os.mod}+</span>} onPick={() => (close(), zoomBy(cv.current, 1.25))} />
+            <Row title="Zoom out" icon={<I.minus size={16} />} end={<span className="ld-k">{os.mod}−</span>} onPick={() => (close(), zoomBy(cv.current, 0.8))} />
             <Sep />
-            <Row title="Zoom to fit" end={<span className="ld-k">{os.mod}1</span>} onPick={() => (close(), fit(cv.current))} />
-            <Row title="Actual size" end={<span className="ld-k">{os.mod}0</span>} onPick={() => (close(), fit(cv.current, "actual"))} />
+            <Row title="Zoom to fit" icon={<I.fit size={16} />} end={<span className="ld-k">{os.mod}1</span>} onPick={() => (close(), fit(cv.current))} />
+            <Row title="Actual size" icon={<I.actual size={16} />} end={<span className="ld-k">{os.mod}0</span>} onPick={() => (close(), fit(cv.current, "actual"))} />
           </>
         )}
       </Pop>
       <button type="button" className="lc-tb l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
         <I.play size={16} />
       </button>
+      <TopMore tab={tab} project={project} />
     </header>
   );
 }
@@ -235,6 +310,8 @@ function EmptyHint() {
 
 export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: DesignTab; project: Project; thread?: Thread; sidebar: boolean; onSidebar: () => void }) {
   const key = tabKey(tab);
+  // The design on screen is read, as a session open in Code is: a question it asks stops being news (unread.ts).
+  useReadWhileShown(thread?.id, thread?.unread);
   // The design's folder: its session's worktree when it runs in one, else the project's.
   const cwd = thread?.worktree?.path ?? project.path;
   // Only the open file's id and title: a frame dragged on the canvas draws nothing of the face round it.

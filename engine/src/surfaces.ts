@@ -384,12 +384,14 @@ type GhPr = {
   reviewRequests?: { login?: string; name?: string }[];
 };
 
+/** One of gh's statusCheckRollup entries as the PR card shows it: passed, failed, skipped or still pending. The watch reads checks through it too. */
+export function ghCheck(c: NonNullable<GhPr["statusCheckRollup"]>[number]): PrInfo["checks"][number] {
+  const v = (c.conclusion || c.state || c.status || "").toUpperCase();
+  const state = /SUCCESS|NEUTRAL/.test(v) ? "pass" : /FAIL|ERROR|CANCEL|TIMED|ACTION_REQUIRED/.test(v) ? "fail" : /SKIP/.test(v) ? "skipped" : "pending";
+  return { name: c.name || c.context || "Check", state, detail: v.toLowerCase() };
+}
+
 function toPr(p: GhPr): PrInfo {
-  const check = (c: NonNullable<GhPr["statusCheckRollup"]>[number]): PrInfo["checks"][number] => {
-    const v = (c.conclusion || c.state || c.status || "").toUpperCase();
-    const state = /SUCCESS|NEUTRAL/.test(v) ? "pass" : /FAIL|ERROR|CANCEL|TIMED|ACTION_REQUIRED/.test(v) ? "fail" : /SKIP/.test(v) ? "skipped" : "pending";
-    return { name: c.name || c.context || "Check", state, detail: v.toLowerCase() };
-  };
   return {
     number: p.number,
     title: p.title,
@@ -404,7 +406,7 @@ function toPr(p: GhPr): PrInfo {
     mergeable: p.mergeable,
     reviewDecision: p.reviewDecision,
     commits: (p.commits ?? []).map((c) => ({ sha: c.oid.slice(0, 7), title: c.messageHeadline })),
-    checks: (p.statusCheckRollup ?? []).map(check),
+    checks: (p.statusCheckRollup ?? []).map(ghCheck),
     reviews: (p.reviews ?? []).map((r) => ({ author: r.author?.login ?? "someone", state: r.state, at: r.submittedAt })),
     requested: (p.reviewRequests ?? []).map((r) => r.login ?? r.name ?? "").filter(Boolean),
   };

@@ -260,7 +260,7 @@ export function DesignIntro({ agent }: { agent?: string }) {
           {tab === 0 ? <Canvas agent={agentName} /> : tab === 1 ? <Change agent={agentName} /> : tab === 2 ? <Lean /> : <Build />}
         </div>
         <button type="button" className="ld-in-x" aria-label="Close" onClick={close}>
-          <I.close size={16} />
+          <I.close size={14} />
         </button>
         <div className="ld-in-copy">
           <div className="ld-in-kicker">Liner Design</div>

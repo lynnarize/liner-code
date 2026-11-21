@@ -1,41 +1,35 @@
 /*
-  Liner Security's sidebar body, in place of Code's sessions: Start a scan, Overview, Findings (how many are open),
-  Projects, and Try the running app (dimmed: later, does nothing); then "Sessions" with its one menu, its scans, fixes
-  and questions on the list parts every face shares (SideList.tsx): By folder (the default), each project a folder
-  holding its own, those needing you first, then those working, then the newest; or By kind, under Scans, Fixes and
-  Asked about. A row's second line says what its session is reading now, or how it ended; a fix ends in its pull
-  request's mark, a question in a speech mark. Then Bring in: GitHub alerts through gh, a SARIF report file. None of
-  these sessions shows in Code's list (Sidebar.tsx). Security's rule holds here: no line ends in "…", so titles wrap.
+  Liner Security's sidebar body, in place of Code's sessions: Start a scan, Overview, Findings (how many are open) and
+  Projects; then "Sessions" with its one menu, its scans, fixes and questions on the list parts every face shares
+  (SideList.tsx): By folder (the default), each project a folder holding its own, those needing you first, then those
+  working, then the newest; or By kind, under Scans, Fixes and Asked about. A row is Code's row (Rows.dc.html): the mark,
+  the title and the time since it last did something; under it what its session is doing now, what it asks you in its own
+  words, or how it ended, and at the line's end its facts (a question's speech mark, a fix's own worktree, the model, a
+  fix's pull request's number in its state's colour). A row that waits on you is amber until you open it, then grey, as in
+  Code's list (seenAsk), and only those not opened yet light a folded folder's dot. A fix or a question has one action,
+  Archive, as its one button. Then Bring in: GitHub alerts through gh, a SARIF report file. None of these sessions shows in
+  Code's list (Sidebar.tsx). Security's rule holds here: no line ends in "…", so titles wrap.
   Everything comes from the engine (security.side, and the threads and projects it already holds) and is asked again
   whenever Security changes.
 */
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ScanRecord, Thread } from "@contracts";
-import { useEngine } from "../engine";
+import { toast } from "@liner/components/toast/toast";
+import { rpc, useEngine } from "../engine";
 import { I, N, type MarkKind } from "../icons";
-import { agentOf, clock, markOf, plural } from "../model";
-import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
-import { reviewHeld, sideStateOf } from "../session-state";
-import { Pop, Row } from "../ui";
+import { agentOf, ago, clock, markOf, modelLabel, plural } from "../model";
+import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused, type SideState } from "../SideList";
+import { askWords, markLabelOf, markStateOf, prSaid, reviewHeld, seenAsk, sideStateOf, type MarkState } from "../session-state";
+import { Row } from "../ui";
 import { goSecurity, useSecurity, useSecurityPage, useSecurityProjects, type SecurityPage } from "./store";
-import { whenShort } from "./when";
 import "./security.css";
 import "./side.css";
 
 /**
-  How a scan went, in a few words: "2 new findings · 2h", "nothing new · yesterday", "asking you · now". It counts what was
-  new (counts.fresh), as the scan's own screen does; what was already open isn't news. Kept short enough for the sidebar.
+  How a scan that ended went, in a few words: "2 new findings", "Nothing new", "Stopped", "Ran into a problem". It counts what
+  was new (counts.fresh), as the scan's own screen does; what was already open isn't news. The time is the row's own.
 */
-export function scanNote(s: ScanRecord, now = Date.now()) {
-  const when = whenShort(s.finishedAt ?? s.startedAt, now);
-  const what = s.state === "running" ? "reading" : s.state === "asking" ? "asking you" : s.state === "stopped" ? "stopped" : s.state === "failed" ? "didn't finish" : s.counts.fresh ? plural(s.counts.fresh, "new finding") : "nothing new";
-  return `${what} · ${when}`;
-}
-/** scanNote as a line of its own begins: "2 new findings · 2h", "Nothing new · yesterday", "Didn't finish · 2h". */
-export const scanLine = (s: ScanRecord, now = Date.now()) => {
-  const note = scanNote(s, now);
-  return note.charAt(0).toUpperCase() + note.slice(1);
-};
+const scanEnd = (s: ScanRecord) => (s.state === "stopped" ? "Stopped" : s.state === "failed" ? "Ran into a problem" : s.counts.fresh ? plural(s.counts.fresh, "new finding") : "Nothing new");
 
 /** What the list shows: every project's scans, fixes and questions in its folder, or each kind under its label. */
 type View = "folder" | "kind";
@@ -65,8 +59,6 @@ const keep = (key: string, value: string) => {
   }
 };
 
-const prState = (state: string) => (state.toUpperCase() === "MERGED" ? "merged" : state.toUpperCase() === "CLOSED" ? "closed" : "open");
-
 /** Draws again once a minute while the window is shown (and at once when it is shown again), so "2m" and "yesterday" stay true. */
 function useMinute() {
   const [, setTick] = useState(0);
@@ -86,7 +78,8 @@ function useMinute() {
 }
 
 /** One row of the list, with what By folder sorts and folds it by: its project, how pressing it is (needs you, works, rests) and when it began. */
-type Item = { key: string; projectId: string; rank: 0 | 1 | 2; at: number; state: SideState; brand?: MarkKind; row: ReactNode };
+/** `seen`: it waits on you and you've opened it since, or are looking at it now, so it's no longer news (seenAsk). */
+type Item = { key: string; projectId: string; rank: 0 | 1 | 2; at: number; state: SideState; seen?: boolean; brand?: MarkKind; row: ReactNode };
 
 export function SecuritySide() {
   const page = useSecurityPage();
@@ -107,9 +100,13 @@ export function SecuritySide() {
   // Sessions that ask about a finding, and a scan's fork (tagged as a scan but not one: it has no record of its own), so it
   // stays reachable: newest first, a few, quiet under their own label. Never a side chat, never an archived session.
   const asks = threads.filter((t) => !t.sideOf && !t.archived && !hidden(t.projectId) && (t.security?.kind === "ask" || (t.security?.kind === "scan" && (Boolean(t.forkOf) || !t.security.scan)))).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
-  // A session's spinner in its model's colour, as Code's rows have it.
-  const brandOf = (t: Thread) => markOf(t.model ?? agentOf(t.agent, agents, providers).model);
+  // A session's model: its working light in the model's colour, and its mark among the row's facts, as Code's rows have them.
+  const refOf = (t: Thread) => t.model ?? agentOf(t.agent, agents, providers).model;
+  const brandOf = (t: Thread) => markOf(refOf(t));
   const opened = (threadId?: string) => Boolean(threadId) && page.kind === "scan" && page.threadId === threadId;
+  // The open session in a focused window is being looked at: never amber, in its row or its folder (seenAsk).
+  const focused = useWindowFocused();
+  const looking = (threadId?: string) => focused && opened(threadId);
 
   const pickView = (v: View) => {
     setView(v);
@@ -137,23 +134,49 @@ export function SecuritySide() {
 
   /** A session's mark, from how it stands. */
   const standing = (t: Thread): SideState => { const mark = sideStateOf(t); return mark === "new" ? "done" : mark; };
-  /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it. */
-  const live = (t: Thread, working: string): { text: string; tone?: "warn" | "danger" } | null =>
-    t.status === "running" ? { text: t.doing?.text || working } : t.status === "waiting" && !reviewHeld(t) ? { text: "Waits for your answer", tone: "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
+  /** A session's state mark, as Code's rows draw it (session-state.ts markStateOf): fresh until you open what finished while you were elsewhere, its pull request after. */
+  const markFor = (t: Thread): MarkState => { const mark = markStateOf(t, { looking: looking(t.id) }); return mark === "new" ? "done" : mark; };
+  /** The mark a row shows: a question you've opened and left is grey, its words grey too (seenAsk). */
+  const markOn = (state: SideState | MarkState, seen: boolean | undefined, brand?: MarkKind, label?: string) => <SideMark state={seen ? "done" : state} brand={brand} label={seen ? "Waits for your answer" : label} />;
+  /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it (rowWords): a question in its own words. */
+  const live = (t: Thread): { text: string; tone?: "warn" | "danger" } | null =>
+    t.status === "running" ? { text: t.doing?.text || "Working" } : t.status === "waiting" && !reviewHeld(t) ? { text: askWords(t), tone: seenAsk(t, looking(t.id)) ? undefined : "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
+  /** A session's facts, in the shared order: its own worktree, its model, its pull request's number. */
+  const factsOf = (t: Thread, lead?: ReactNode) => (
+    <>
+      {lead}
+      <SideFacts branch={t.worktree?.branch} model={brandOf(t)} modelName={modelLabel(refOf(t), providers)} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />
+    </>
+  );
+  /** A fix's or a question's one action: put away for good, with Undo, and a way back in Settings › Archive (Code's list leaves Security's sessions out). */
+  const archive = (t: Thread) =>
+    void rpc("thread.update", { id: t.id, archived: true }).then(
+      () => toast(`Archived ${t.title}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, archived: false }) } }),
+      (e: Error) => toast.error(e.message),
+    );
+  const archiveButton = (t: Thread) => (
+    <button type="button" className="lc-sb-a l-focus" aria-label={`Archive ${t.title}`} title="Archive" onClick={() => archive(t)}>
+      <I.box size={14} />
+    </button>
+  );
 
   const scanItem = (s: ScanRecord): Item => {
     const t = s.threadId ? threads.find((x) => x.id === s.threadId) : undefined;
-    const state: SideState = s.state === "running" ? "working" : s.state === "asking" ? "needs" : s.state === "stopped" || s.state === "failed" ? "error" : "done";
-    // A free checks run has no session: nothing to say it's reading but the word.
-    const sub = s.state === "running" ? t?.doing?.text || "Reading" : s.state === "asking" ? "Asking you" : scanLine(s, now);
+    // A scan that ended is an ordinary chat: while you talk with it, its row says what its session does, not how the scan ended.
+    const chat = s.state !== "running" && s.state !== "asking" && t && (t.status === "running" || (t.status === "waiting" && !reviewHeld(t))) ? t.status : undefined;
+    const state: SideState = s.state === "running" || chat === "running" ? "working" : s.state === "asking" || chat === "waiting" ? "needs" : s.state === "stopped" || s.state === "failed" ? "error" : "done";
+    // A free checks run has no session: nothing to say it's doing but the word.
+    const sub = s.state === "running" || chat === "running" ? t?.doing?.text || "Working" : s.state === "asking" || chat === "waiting" ? (t ? askWords(t) : "Needs you") : scanEnd(s);
     const brand = t ? brandOf(t) : undefined;
     const current = opened(s.threadId);
+    const seen = (s.state === "asking" || chat === "waiting") && Boolean(t && seenAsk(t, looking(t.id)));
     return {
       key: `scan:${s.id}`,
       projectId: s.projectId,
       rank: state === "needs" ? 0 : state === "working" ? 1 : 2,
       at: s.startedAt,
       state,
+      seen,
       brand,
       row: (
         <SideRow
@@ -162,10 +185,12 @@ export function SecuritySide() {
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
-          mark={<SideMark state={state} brand={brand} label={state === "error" ? (s.state === "stopped" ? "Stopped" : "Didn't finish") : undefined} />}
+          mark={markOn(state === "done" && t?.unread && !looking(t.id) ? "fresh" : state, seen, brand, state === "error" ? (s.state === "stopped" ? "Stopped" : "Ran into a problem") : undefined)}
           title={s.title}
+          ago={ago(t?.updatedAt ?? s.finishedAt ?? s.startedAt, now)}
           sub={sub}
-          tone={s.state === "asking" ? "warn" : undefined}
+          tone={state === "needs" && !seen ? "warn" : state === "error" && s.state === "failed" ? "danger" : undefined}
+          facts={t && factsOf(t)}
           pick={opener(() => (s.threadId ? goSecurity({ kind: "scan", threadId: s.threadId }) : goSecurity({ kind: "projects", projectId: s.projectId })))}
         />
       ),
@@ -174,15 +199,16 @@ export function SecuritySide() {
 
   const fixItem = (t: Thread): Item => {
     const state = standing(t);
-    const pr = t.pr ? prState(t.pr.state) : undefined;
-    const said = live(t, "Working") ?? (pr ? { text: `PR ${pr}` } : { text: `Ready to look at · ${whenShort(t.updatedAt, now)}` });
+    const said = live(t) ?? (t.pr ? prSaid(t.pr) : { text: "Ready to look at" });
     const current = opened(t.id);
+    const seen = state === "needs" && seenAsk(t, looking(t.id));
     return {
       key: `fix:${t.id}`,
       projectId: t.projectId,
       rank: state === "needs" ? 0 : state === "working" ? 1 : 2,
       at: t.createdAt,
       state,
+      seen,
       brand: brandOf(t),
       row: (
         <SideRow
@@ -191,17 +217,13 @@ export function SecuritySide() {
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
-          mark={<SideMark state={state} brand={brandOf(t)} />}
+          mark={markOn(markFor(t), seen, brandOf(t), markLabelOf(t, markFor(t)))}
           title={t.title}
+          ago={ago(t.updatedAt, now)}
           sub={said.text}
           tone={said.tone}
-          end={
-            t.pr && (
-              <span className="lc-sl-pr" data-pr={pr} role="img" aria-label={`A fix, its pull request #${t.pr.number} ${pr}`}>
-                <I.pr size={14} />
-              </span>
-            )
-          }
+          facts={factsOf(t)}
+          acts={archiveButton(t)}
           pick={opener(() => goSecurity({ kind: "scan", threadId: t.id }))}
         />
       ),
@@ -210,14 +232,16 @@ export function SecuritySide() {
 
   const askItem = (t: Thread): Item => {
     const state = standing(t);
-    const said = live(t, "Working") ?? { text: `Answered · ${whenShort(t.updatedAt, now)}` };
+    const said = live(t) ?? { text: "Answered" };
     const current = opened(t.id);
+    const seen = state === "needs" && seenAsk(t, looking(t.id));
     return {
       key: `ask:${t.id}`,
       projectId: t.projectId,
       rank: state === "needs" ? 0 : state === "working" ? 1 : 2,
       at: t.createdAt,
       state,
+      seen,
       brand: brandOf(t),
       row: (
         <SideRow
@@ -226,17 +250,20 @@ export function SecuritySide() {
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
-          mark={<SideMark state={state} brand={brandOf(t)} />}
+          mark={markOn(markFor(t), seen, brandOf(t))}
           title={t.title}
+          ago={ago(t.updatedAt, now)}
           sub={said.text}
           tone={said.tone}
-          end={
+          facts={factsOf(
+            t,
             t.security?.kind === "ask" ? (
-              <span className="lc-sl-chg" role="img" aria-label="A question about a finding">
+              <span className="lc-sl-fact" role="img" aria-label="A question about a finding">
                 <I.comment size={14} />
               </span>
-            ) : undefined
-          }
+            ) : undefined,
+          )}
+          acts={archiveButton(t)}
           pick={opener(() => goSecurity({ kind: "scan", threadId: t.id }))}
         />
       ),
@@ -270,19 +297,13 @@ export function SecuritySide() {
           <N.folder />
           <span>Projects</span>
         </button>
-        {/* Later, and only against your own dev server on this Mac: shown so you know it's coming, does nothing. */}
-        <button type="button" className="lc-sb-nav" data-later aria-disabled title="Later: trying the app you run on this Mac">
-          <N.target />
-          <span>Try the running app</span>
-          <small>later</small>
-        </button>
       </div>
 
       <SideHead title="Sessions" note={view === "kind" ? "By kind" : undefined} menuLabel="What the list shows">
         {(close) => (
           <>
-            <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
-            <Row title="By kind" icon={<I.list size={14} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
+            <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
+            <Row title="By kind" icon={<I.list size={16} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
           </>
         )}
       </SideHead>
@@ -304,7 +325,7 @@ export function SecuritySide() {
           folders.map((p) => {
             const working = p.items.find((x) => x.state === "working");
             return (
-              <SideFolder key={p.id} name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs")} working={Boolean(working)} brand={working?.brand}>
+              <SideFolder key={p.id} name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs" && !x.seen)} working={Boolean(working)} brand={working?.brand}>
                 {p.items.map((x) => x.row)}
               </SideFolder>
             );
@@ -334,19 +355,8 @@ export function SecuritySide() {
       </div>
 
       <section className="ls-side-bring" aria-label="Bring in">
-        <SideLabel
-          name="Bring in"
-          end={
-            <Pop label="Bring findings in from another tool" menu width={240} align="end" triggerClass="lc-ib ls-side-add l-focus" trigger={<I.plus size={14} />}>
-              {(close) => (
-                <>
-                  <Row title="GitHub alerts" note="Dependabot and code scanning, through gh" icon={<I.branch size={14} />} onPick={() => (close(), goSecurity({ kind: "findings", source: "github" }))} />
-                  <Row title="A report file" note="A SARIF file from another scanner" icon={<I.file size={14} />} onPick={() => (close(), goSecurity({ kind: "findings", source: "sarif" }))} />
-                </>
-              )}
-            </Pop>
-          }
-        />
+        {/* Its two rows are the way in: a + offering the same two again would be a second control for one purpose. */}
+        <SideLabel name="Bring in" />
         <SideRow
           wrap
           quiet

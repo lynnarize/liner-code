@@ -31,6 +31,7 @@ import { WayLabel, WaysOver } from "./Ways";
 import { PictureOver } from "./Pictures";
 import { design, frameOf, getDesign, isBlank, isGone, keepsView, useDesign, type Sel } from "./store";
 import { onLanding, takeLanding } from "../face";
+import { StateMark } from "../icons";
 
 const DRAG = 3;
 // A frame's label chips take only the frame: a pan or a zoom (a new place on screen, the same frame) draws none of them again.
@@ -616,12 +617,13 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                 {/* The row wraps onto a line it hides: with too little room, whole chips drop from the right (size, then the build state, then the checks); the name keeps its place and ends in an ellipsis. */}
                 {p && (
                   <span className="ld-ptag" data-lead={p.lead || undefined}>
+                    <StateMark state="working" size={12} tint="#fff" />
                     {p.name}
                   </span>
                 )}
                 {/* A frame whose file is gone carries its name and that, nothing else: no checks, no build state. */}
                 {isGone(f) ? (
-                  <span className="ld-ly-gone">file gone</span>
+                  <span className="ld-ly-gone">File gone</span>
                 ) : blank ? (
                   // Nothing drawn in it yet: its name and size, no checks or build state it hasn't earned.
                   <span className="ld-num">
@@ -639,8 +641,8 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
                   </>
                 )}
               </div>
-              {/* The ring breathes outward 7.5 px a side: a scale worked out from the box, so only transform and opacity move (design-face.css). */}
-              {p && <div className="ld-pres" data-lead={p.lead || undefined} style={{ ...b, ["--ld-gx" as string]: (b.width + 15) / Math.max(1, b.width), ["--ld-gy" as string]: (b.height + 15) / Math.max(1, b.height) }} />}
+              {/* The ring says which frame; the working mark in its tag says it works (design-face.css). */}
+              {p && <div className="ld-pres" data-lead={p.lead || undefined} style={b} />}
               <CompareOver frame={f} box={b} zoom={zoom} />
             </div>
           );

@@ -1,13 +1,18 @@
 /*
   What changes while nobody is looking: a session's pull request merges, its checks finish,
   someone replies, or nothing has happened for days. Every minute the engine looks, then
-  settles sessions into Done or wakes snoozed ones, as Settings says.
+  settles sessions into Done or wakes snoozed ones, as Settings says. A pull request whose
+  saved checks read running is looked at too, so its row doesn't say "Checks running" forever.
 */
 import type { Thread } from "../../contracts/src/index.ts";
+import { keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
 import { run } from "./exec.ts";
+import { ghCheck } from "./surfaces.ts";
 import type { Store } from "./store.ts";
 
 const EVERY = 60_000;
+/** How long checks first read running are followed for their own sake: a run that never ends isn't read from gh forever. */
+export const CHECKS_FOR = 2 * 3600_000;
 
 export class Watch {
   private timer: NodeJS.Timeout | null = null;
@@ -68,7 +73,9 @@ export class Watch {
         try {
           // Nothing has happened for days and nothing waits on you: it settles into Done.
           if (s.settleDays > 0 && !t.done && !t.pinned && t.status === "done" && !t.toReview && !t.unread && !t.agentsAtWork && now - t.updatedAt > s.settleDays * 86400000) this.settle(t, `Nothing happened for ${s.settleDays} days`);
-          if (t.pr && t.pr.state === "OPEN" && (s.settleOnMerge || t.wake)) await this.followPr(t);
+          // Checks still running are followed on their own too, but only their facts change for that: nothing settles or wakes.
+          const running = t.pr?.checks?.state === "running" && now - (t.pr.checks.since ?? now) < CHECKS_FOR;
+          if (t.pr && t.pr.state === "OPEN" && (s.settleOnMerge || t.wake || running)) await this.followPr(t);
         } catch {
           // gh is offline or the project moved; try again next minute
         }
@@ -82,7 +89,10 @@ export class Watch {
     const r = await run("gh", ["pr", "view", String(t.pr!.number), "--json", "state,statusCheckRollup,comments,reviews"], { cwd: this.cwd(t), env: this.env, timeout: 30000 });
     if (r.code !== 0) return;
     const v = JSON.parse(r.stdout) as { state: string; statusCheckRollup?: { status?: string; state?: string; conclusion?: string }[]; comments?: unknown[]; reviews?: unknown[] };
-    if (v.state !== t.pr!.state) this.store.patchThread(t.id, { pr: { ...t.pr!, state: v.state } });
+    // How its checks stand comes with the read it makes anyway, so the session's row says it as of this minute (prChecksOf).
+    // Running, when they were first read so is kept with the session (keptSince): the two hours above outlast a restart.
+    const checks = keptSince(t.pr!.checks, prChecksOf((v.statusCheckRollup ?? []).map(ghCheck)));
+    if (v.state !== t.pr!.state || !sameChecks(t.pr!.checks, checks) || t.pr!.checks?.since !== checks?.since) this.store.patchThread(t.id, { pr: { number: t.pr!.number, url: t.pr!.url, state: v.state, ...(checks ? { checks } : {}) } });
     const wake = (why: string) => {
       this.store.patchThread(t.id, { snoozedUntil: undefined, wake: undefined, unread: true });
       this.store.emit({ type: "notify", threadId: t.id, kind: "done", title: why, body: t.title });

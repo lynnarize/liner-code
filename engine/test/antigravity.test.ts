@@ -15,7 +15,7 @@ import type { Access } from "../../contracts/src/index.ts";
 import { ACCESS, emptyUsage, nearestEffort } from "../../contracts/src/index.ts";
 import { makerOf } from "../../contracts/src/cast.ts";
 import { acpProvider, ANTIGRAVITY, antigravity, checkGate, devWaits, homeTitle, isMcpWrap, levelNote, linerCall, standingNote, toolGate } from "../src/providers/acp.ts";
-import { agyModels } from "../src/providers/models.ts";
+import { acpModels, agyModels } from "../src/providers/models.ts";
 import type { ApprovalRequest, OpenOptions, TurnSink } from "../src/providers/types.ts";
 import { linerName, providers, Runtime, toolsNote } from "../src/runtime.ts";
 import * as canvas from "../src/canvas.ts";
@@ -383,7 +383,7 @@ test("antigravity: found or not, the gate applied, and its sign-in and models fr
   assert.ok(fake.read().every((m) => !m.method), "no initialize, no session/new");
 });
 
-test("antigravity: `agy models` read as models with their thinking levels as effort, medium by default where they have it", async () => {
+test("antigravity: `agy models` read as models with their thinking levels as effort, and no default it did not say", async () => {
   const fake = fakeAgy();
   const { signedIn, models } = await agyModels(fake.file, envOf(fake));
   assert.equal(signedIn, true);
@@ -391,9 +391,9 @@ test("antigravity: `agy models` read as models with their thinking levels as eff
   assert.deepEqual(Object.keys(by), ["gemini-3.8-flash", "gemini-3.1-pro", "claude-sonnet-4-6", "gpt-oss-120b-medium"]);
   assert.equal(by["gemini-3.8-flash"].label, "Gemini 3.8 Flash");
   assert.deepEqual(by["gemini-3.8-flash"].efforts!.map((e) => e.id), ["low", "medium", "high"]);
-  assert.equal(by["gemini-3.8-flash"].defaultEffort, "medium");
+  assert.equal(by["gemini-3.8-flash"].defaultEffort, undefined, "agy names no default: a session given no level thinks at its own");
   assert.deepEqual(by["gemini-3.1-pro"].efforts!.map((e) => e.id), ["low", "high"]);
-  assert.equal(by["gemini-3.1-pro"].defaultEffort, "low", "the nearest below medium");
+  assert.equal(by["gemini-3.1-pro"].defaultEffort, undefined);
   assert.equal(by["gpt-oss-120b-medium"].efforts, undefined, "listed once: its whole id, as its session names it");
   assert.equal(by["claude-sonnet-4-6"].label, "Claude Sonnet 4.6 (Thinking)");
   assert.deepEqual(await agyModels(fake.file, envOf(fake, { FAKE_MODELS: "out" })), { signedIn: false, models: [] });
@@ -414,6 +414,28 @@ test("antigravity: the effort picked is agy's thinking level, set as the session
   assert.ok(r.notices.some((n) => /has no “max” thinking level for this model, so it thinks at its own \(high\)/.test(n)), r.notices.join(" | "));
   // Its commands, as that session listed them, are what the composer offers.
   assert.deepEqual((await antigravity.commands!({}, process.cwd())).commands.map((c) => c.name), ["plan", "goal"]);
+});
+
+test("An ACP agent's model list gives the thinking levels its session lists to the model it opened on, and to no other", async () => {
+  const fake = fakeAgy();
+  const list = await acpModels([fake.file, "acp"], "Agy", envOf(fake, { FAKE_THOUGHT: "low,high,default", FAKE_BADMODEL: "gemini-3.8-flash" }), mkdtempSync(join(tmpdir(), "lc-acp-models-")));
+  const flash = list.find((m) => m.id === "gemini-3.8-flash");
+  assert.deepEqual(flash?.efforts?.map((e) => e.id), ["low", "high"], "its default is no level");
+  assert.equal(list.find((m) => m.id === "default")?.efforts, undefined);
+});
+
+test("An ACP agent's thinking levels as it sends them again after the session opened (a switch of model) are the ones the effort is held to", async () => {
+  const fake = fakeAgy();
+  const update = { sessionUpdate: "config_option_update", configOptions: [{ id: "thought_level", category: "thought_level", type: "select", currentValue: "max", options: [{ value: "max", name: "Max" }] }] };
+  const s = antigravity.open(opts(envOf(fake, { FAKE_THOUGHT: "low,medium,high", FAKE_PROMPT: JSON.stringify([update]) }), { effort: "low" }));
+  const r = recorder();
+  await s.turn("hi", r.sink, new AbortController().signal);
+  assert.ok(await s.update!({ model: "default", effort: "high", access: "edits" }));
+  await s.turn("again", r.sink, new AbortController().signal);
+  s.close();
+  const set = fake.read().filter((m) => m.method === "session/set_config_option" && m.params!.configId === "thought_level").map((m) => m.params!.value);
+  assert.deepEqual(set, ["low"], "high is no level of the model it is on now");
+  assert.ok(r.notices.some((n) => /has no “high” thinking level for this model, so it thinks at its own \(max\)/.test(n)), r.notices.join(" | "));
 });
 
 test("antigravity: the person's own connections reach agy only at Full, never in a side chat, and both the person and the model are told", async () => {

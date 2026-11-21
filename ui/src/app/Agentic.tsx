@@ -1,6 +1,7 @@
 /*
   Agentic features: your pair, the lead and the sidekick that new sessions start with (each
-  automatic until you pick one), and what a new session starts as (Pair, Best or Fast); how a pair
+  automatic until you pick one), and what a new session starts with (Fusion, or a model picked in the
+  message box's own panel); how a pair
   works, by the class of its sidekick, with your models in their classes; the lead in a pair (how it
   hands over, and its effort); then the Reviewer, which reads each change before it's yours. How one of your agents runs (with helpers
   or alone) is the agent's own setting, in Team.
@@ -13,7 +14,8 @@ import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark } from "./icons";
 import { allModels, markOf, modelLabel, plural } from "./model";
-import { ModelPop } from "./Models";
+import { EffortPick, ModelPop, startModel, StartPick } from "./Models";
+import { settingLevel } from "./picker";
 import { NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
 import "./agentic.css";
 
@@ -131,7 +133,7 @@ function Pick({ c, title, part, fallback, disabled }: { c: Pair; title: string; 
     if (part !== "checker" && oneModelPair(c, part, ref)) return part === "lead" ? toast("The lead and its sidekick are two different models", { description: "Pick another sidekick first, or another lead." }) : toast("The lead and its sidekick are two different models", { description: `${c.lead ? c.label(c.lead) : "The lead"} leads: pick another model to work for it.` });
     savePick(c.settings, part, ref);
   };
-  return <ModelPop label={title} value={c.picks[part] ?? "auto"} choices={[automatic]} width={440} onPick={pick} />;
+  return <ModelPop label={title} value={c.picks[part] ?? "auto"} choices={[automatic]} onPick={pick} />;
 }
 
 /**
@@ -153,22 +155,13 @@ const gone = (c: Pair, ref?: string) => Boolean(ref && !c.providers.some((p) => 
 
 /* ---------------------------------- Your pair ---------------------------------- */
 
-const STARTS = [
-  { value: "pair", label: "Fusion" },
-  { value: "best", label: "Best" },
-  { value: "fast", label: "Fast" },
-] as const;
-
 function YourPair({ c }: { c: Pair }) {
   const { settings, picks, lead, side, two, label } = c;
   // Unset, a new session starts as a pair when two different models are ready, else on the one there is.
   const start = settings.start ?? (two ? "pair" : "best");
-  const shown = start === "pair" && !two ? "best" : start;
-  const lines: Record<(typeof STARTS)[number]["value"], string> = {
-    pair: lead && side && two ? `${label(lead)} leads: it plans, decides and reviews, and hands ${label(side)} the work it can spell out.` : "The lead plans, decides and reviews; the sidekick does the work the lead hands it.",
-    best: lead ? `${label(lead)} alone, for the hardest work.` : "Your lead model alone.",
-    fast: side ? `${label(side)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.",
-  };
+  // Fusion, or the one model it starts on (a Best or Fast saved before reads as the lead or the sidekick alone).
+  const shown = startModel(start, c.cast);
+  const line = shown === "pair" ? (lead && side ? `${label(lead)} leads: it plans, decides and reviews, and hands ${label(side)} the work it can spell out.` : "The lead plans, decides and reviews; the sidekick does the work the lead hands it.") : shown ? `${label(shown)} alone.` : "No model is ready yet.";
   return (
     <Part
       title="Fusion"
@@ -189,14 +182,8 @@ function YourPair({ c }: { c: Pair }) {
           <Line title="Sidekick" note={<>Does the work the lead hands it: edits it can specify, the same change across files, slow test runs.{gone(c, picks.sidekick) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>}>
             <Pick c={c} title="Sidekick model" part="sidekick" fallback={c.fall.sidekick} />
           </Line>
-          <Line title="New sessions start with" note={two ? lines[shown] : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for Fusion.` : lead ? `Fusion needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."} below>
-            <Segmented
-              size="sm"
-              value={shown}
-              onValueChange={(v) => save({ start: v as EngineSettings["start"] })}
-              options={STARTS.map((s) => ({ value: s.value, label: s.label, disabled: !two && s.value !== "best" }))}
-              aria-label="New sessions start with"
-            />
+          <Line title="New sessions start with" note={two || shown !== c.lead ? line : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for Fusion.` : lead ? `Fusion needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."}>
+            <StartPick value={start} onPick={(v) => save({ start: v })} />
           </Line>
         </div>
       </div>
@@ -369,11 +356,6 @@ const HAND_OVER = [
   { id: "default", title: "By default", note: "Slow runs, edits across files and repeated changes go to the sidekick." },
   { id: "asked", title: "When asked", note: "The lead keeps the work unless you ask it to use its sidekick." },
 ] as const;
-const PAIR_EFFORTS = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-];
 
 /** How a pair's lead hands work over, and the effort a session gets when it becomes a pair. */
 function LeadInPair({ c }: { c: Pair }) {
@@ -410,8 +392,9 @@ function LeadInPair({ c }: { c: Pair }) {
               {(close) => HAND_OVER.map((h) => <Row key={h.id} title={h.title} note={h.note} on={hand === h.id} onPick={() => (save({ handOver: h.id === "auto" ? UNSET : h.id }), close())} />)}
             </Pop>
           </Line>
-          <Line title="Lead's effort in Fusion" note="Planning and reading a diff rarely need more than Medium. Alone, as Best, the lead keeps its own effort.">
-            <Segmented size="sm" value={settings.pairEffort ?? "medium"} onValueChange={(v) => save({ pairEffort: v })} options={PAIR_EFFORTS} aria-label="Lead's effort in Fusion" />
+          <Line title="The lead's effort" note="In Fusion, in the levels your lead's model takes. Planning and reading a diff rarely need its most. Alone, the lead keeps its own effort.">
+            {/* The levels your lead's model takes, as its tool lists them: Settings' word shows as the nearest it takes, unset as the lead's default. Its own default picked is no word (null): the engine refuses "". */}
+            <EffortPick modelRef={c.lead} value={settings.pairEffort ?? ""} label="The lead's effort" onChange={(v) => save({ pairEffort: settingLevel(v) ?? UNSET })} />
           </Line>
         </div>
       </div>

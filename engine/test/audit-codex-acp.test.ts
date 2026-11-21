@@ -5,12 +5,12 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer, get, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { acpProvider, delegatedTasks, delegateResults, setCancelMs } from "../src/providers/acp.ts";
+import { acpProvider, delegatedTasks, delegateResults, DETACHED_ROW, LIVE_LOG, OWN_WAITS, readLiveLog, setCancelMs } from "../src/providers/acp.ts";
 import { CodexServer, CodexServerSession } from "../src/providers/codex-server.ts";
 import { codex } from "../src/providers/codex.ts";
 import { askEndpoint } from "../src/providers/plain.ts";
@@ -148,6 +148,227 @@ test("acp: a delegate_task call is an agent row per task, from its first words t
   assert.deepEqual(one.at(-1)?.agent?.steps, [{ title: "read_file", toolKind: "other", status: "done" }]);
   assert.equal(two.at(-1)?.agent?.name, "Subagent");
   assert.equal(two.at(-1)?.agent?.state, "stopped");
+});
+
+/**
+  Hermes over ACP: delegate_task answers at once that its agents run in the background; when they're done its gateway answers
+  with what they found in a turn of its own, whose updates come with no prompt open. Out of turn here: a thought, a step, its
+  usage after that call to the model, a pause longer than the end's wait, then its answer and its usage at the turn's end.
+*/
+const HERMES_OWN = (pause: number) => acpAgent(`if (m.method === "session/prompt" && seen("session/prompt") === 1) {
+    const up = (u) => send({ method: "session/update", params: { sessionId: "s-1", update: { toolCallId: "d1", title: "delegate_task: 2 tasks", kind: "execute", ...u } } });
+    const own = (u) => send({ method: "session/update", params: { sessionId: "s-1", update: u } });
+    up({ sessionUpdate: "tool_call", status: "in_progress", content: [{ type: "content", content: { type: "text", text: "Delegating 2 tasks\\n\\n1. Review the update path\\n2. Review stored secrets" } }] });
+    setTimeout(() => {
+      up({ sessionUpdate: "tool_call_update", status: "completed", content: [{ type: "content", content: { type: "text", text: JSON.stringify({ status: "dispatched", mode: "background", count: 2 }) } }] });
+      send({ id: m.id, result: { stopReason: "end_turn" } });
+      setTimeout(() => {
+        own({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Both are back." } });
+        own({ sessionUpdate: "tool_call", toolCallId: "t2", title: "read_file", kind: "read", status: "in_progress" });
+        setTimeout(() => {
+          own({ sessionUpdate: "tool_call_update", toolCallId: "t2", status: "completed", content: [{ type: "content", content: { type: "text", text: "const signed = false;" } }] });
+          own({ sessionUpdate: "usage_update", size: 1000, used: 10 });
+          setTimeout(() => {
+            own({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The update path is unsigned." } });
+            own({ sessionUpdate: "usage_update", size: 1000, used: 20 });
+            own({ sessionUpdate: "config_option_update", configOptions: [] });
+          }, ${pause});
+        }, 30);
+      }, 150);
+    }, 40);
+    continue;
+  }`);
+const hermes = (fake: { file: string; log: string }, wake: OpenOptions["wake"]) => acpProvider("hermes" as ProviderInfo["id"], { label: "Hermes", cmd: [fake.file], login: "", detaches: true }).open(opts({ env: { ...process.env, FAKE_LOG: fake.log }, wake }));
+const waitFor = async (ok: () => boolean, ms = 4000) => {
+  const end = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+};
+
+test("acp: Hermes's agents sent to the background come back as a turn of its own, offered to the runtime and shown to its end, not cut at a usage update mid-turn", async () => {
+  const was = { ...OWN_WAITS };
+  Object.assign(OWN_WAITS, { settleMs: 60, quietMs: 500, silentMs: 3000, tailMs: 20 });
+  try {
+    const fake = script("agent", HERMES_OWN(250));
+    const wakes: WakeTurn[] = [];
+    const s = hermes(fake, (w) => void wakes.push(w));
+    const first = recorder();
+    await s.turn("resume, and spawn agents for faster work", first.sink, live());
+    const last = (k: string) => first.r.tools.filter((u) => u.key === k).at(-1)!;
+    for (const k of ["d1#0", "d1#1"]) {
+      assert.equal(last(k).agent?.background, true);
+      assert.equal(last(k).agent?.report, DETACHED_ROW, "not 'Working in the background' with nothing after it");
+    }
+    await waitFor(() => wakes.length === 1);
+    assert.equal(wakes[0].pending(), true);
+    const own = recorder();
+    const at = Date.now();
+    await wakes[0].run(own.sink, live());
+    assert.equal(own.r.text, "The update path is unsigned.", "its answer, after the pause past the mid-turn usage");
+    const took = Date.now() - at;
+    assert.ok(took >= 250, "it wasn't ended at the usage update after its step");
+    assert.ok(took < 250 + 400, `it ended on the usage after its answer, not on the quiet after its options: ${took} ms`);
+    assert.equal(own.r.tools.find((u) => u.key === "t2" && u.status === "done")?.output, "const signed = false;");
+    assert.equal(wakes[0].pending(), false);
+    // Its next prompt is an ordinary one: no note about agents.
+    await s.turn("and?", recorder().sink, live());
+    s.close();
+    const prompts = fake.read().filter((m) => m.method === "session/prompt").map((m) => JSON.stringify(m.params));
+    assert.ok(!prompts.some((p) => p.includes("delegate_task")), prompts.join("\n"));
+    assert.equal(wakes.length, 1);
+  } finally {
+    Object.assign(OWN_WAITS, was);
+  }
+});
+
+test("acp: a turn Hermes began by itself that ended before the runtime ran it shows whole at once; one you stop says it can't be stopped and passes unshown", async () => {
+  const was = { ...OWN_WAITS };
+  Object.assign(OWN_WAITS, { settleMs: 60, quietMs: 500, silentMs: 3000, tailMs: 20 });
+  try {
+    // Run late: it all came while the thread was busy, and was kept.
+    const one = script("agent", HERMES_OWN(50));
+    const wakes: WakeTurn[] = [];
+    const s = hermes(one, (w) => void wakes.push(w));
+    await s.turn("go", recorder().sink, live());
+    await waitFor(() => wakes.length === 1);
+    await new Promise((r) => setTimeout(r, 400));
+    const late = recorder();
+    await wakes[0].run(late.sink, live());
+    assert.equal(late.r.text, "The update path is unsigned.");
+    s.close();
+    // Stopped as it shows: Liner Code can't stop it, so it says so, ends here, and the rest of it passes without a second offer.
+    const two = script("agent", HERMES_OWN(250));
+    const wakes2: WakeTurn[] = [];
+    const s2 = hermes(two, (w) => void wakes2.push(w));
+    await s2.turn("go", recorder().sink, live());
+    await waitFor(() => wakes2.length === 1);
+    const stop = new AbortController();
+    const shown = recorder();
+    const running = wakes2[0].run(shown.sink, stop.signal);
+    await new Promise((r) => setTimeout(r, 60));
+    stop.abort();
+    await running;
+    assert.ok(shown.r.notices.some((n) => /can't stop a turn .* began by itself/.test(n.text)), JSON.stringify(shown.r.notices));
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(shown.r.text, "", "what came after Stop isn't shown");
+    assert.equal(wakes2.length, 1, "the rest of the same turn isn't offered again");
+    s2.close();
+  } finally {
+    Object.assign(OWN_WAITS, was);
+  }
+});
+
+test("acp: Hermes's live log of an agent reads as its steps: a call and its result, a thought, what it's doing now, and how it ended", () => {
+  const head = "=== Hermes subagent live transcript ===\ndelegation: d1   task: 0\ngoal: Review stored secrets\n========================================\n";
+  const lines = [
+    "10:02:13 user     | kickoff: Review stored secrets",
+    "10:02:14 tool     | -> read_file({'path': 'SECURITY.md'})",
+    "10:02:14 result   | read_file ok 0.1s: {\"content\": \"...\"}",
+    "10:02:20 think    | Keys are masked before the timeline writes them.",
+    "10:02:31 tool     | -> search_files({'pattern': 'PRIVATE KEY', 'path': 'engine'})",
+    "10:02:40 assistant| SECRETS-FINDING: nothing stored in plain text.",
+  ];
+  const now = new Date(2026, 10, 21, 10, 5, 0);
+  const live = readLiveLog(head + lines.join("\n"), now);
+  assert.deepEqual(live.steps.map((x) => [x.title, x.toolKind, x.status]), [["Read SECURITY.md", "read", "done"], ["Keys are masked before the timeline writes them.", "think", "done"], ["Search PRIVATE KEY", "search", "running"]]);
+  assert.equal(live.steps[0].at, new Date(2026, 10, 21, 10, 2, 14).getTime());
+  assert.equal(live.tools, 2, "a thought isn't a tool");
+  assert.equal(live.now, "Search PRIVATE KEY");
+  assert.equal(live.end, undefined);
+  const ended = readLiveLog([...lines, "10:02:41 final    | status=completed duration=28s summary: x", "10:02:41 final    | end status=completed"].join("\n"), now);
+  assert.equal(ended.end, "done");
+  assert.equal(ended.said, "SECRETS-FINDING: nothing stored in plain text.");
+  assert.equal(ended.steps.at(-1)?.status, "done", "what it had open ended with it");
+  assert.equal(readLiveLog("10:00:00 final    | end status=error exit_reason=x error: the model refused", now).end, "failed");
+  assert.equal(readLiveLog("10:00:00 final    | end status=interrupted", now).end, "stopped");
+  // A time later than now was yesterday's.
+  assert.equal(readLiveLog("23:59:00 think    | late", now).steps[0].at, new Date(2026, 10, 20, 23, 59, 0).getTime());
+});
+
+test("acp: Hermes's agents in the background show their live logs on their rows past the turn, and end there; a log outside its own folder isn't read", async () => {
+  const was = { ...LIVE_LOG };
+  Object.assign(LIVE_LOG, { everyMs: 30 });
+  try {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lc-hermes-home-")));
+    const dir = join(home, "cache", "delegation", "live", "deleg_1");
+    mkdirSync(dir, { recursive: true });
+    const log = join(dir, "task-0.log");
+    writeFileSync(log, "=== Hermes subagent live transcript ===\n");
+    const outside = join(realpathSync(mkdtempSync(join(tmpdir(), "lc-elsewhere-"))), "task-1.log");
+    writeFileSync(outside, "10:00:00 think    | not to be read\n");
+    const dispatch = JSON.stringify({ status: "dispatched", mode: "background", count: 2, delegation_id: "deleg_1", live_transcripts: [log, outside] });
+    const fake = script("agent", acpAgent(`if (m.method === "session/prompt") {
+      const up = (u) => send({ method: "session/update", params: { sessionId: "s-1", update: { toolCallId: "d1", title: "delegate_task: 2 tasks", kind: "execute", ...u } } });
+      up({ sessionUpdate: "tool_call", status: "in_progress", content: [{ type: "content", content: { type: "text", text: "Delegating 2 tasks\\n\\n1. Review stored secrets\\n2. Review the shell" } }] });
+      up({ sessionUpdate: "tool_call_update", status: "completed", content: [{ type: "content", content: { type: "text", text: ${JSON.stringify(dispatch)} } }] });
+      send({ id: m.id, result: { stopReason: "end_turn" } });
+      continue;
+    }`));
+    const s = acpProvider("hermes" as ProviderInfo["id"], { label: "Hermes", cmd: [fake.file], login: "", detaches: true }).open(opts({ env: { ...process.env, FAKE_LOG: fake.log, HERMES_HOME: home } }));
+    const { r, sink } = recorder();
+    await s.turn("send two agents", sink, live());
+    const row = (k: string) => r.tools.filter((u) => u.key === k).at(-1)!;
+    assert.equal(row("d1#0").agent?.state, "running", "at work in the background");
+    assert.equal(row("d1#0").agent?.report, undefined);
+    assert.equal(row("d1#1").agent?.report, DETACHED_ROW, "a log outside Hermes's own folder isn't followed");
+    // The turn is over; the agent writes on, and its row follows.
+    appendFileSync(log, "10:02:14 tool     | -> read_file({'path': 'SECURITY.md'})\n10:02:20 think    | Keys are masked.\n");
+    await waitFor(() => row("d1#0").agent?.steps?.length === 2);
+    assert.deepEqual(row("d1#0").agent?.steps?.map((x) => [x.title, x.status]), [["Read SECURITY.md", "running"], ["Keys are masked.", "done"]]);
+    assert.equal(row("d1#0").agent?.now, "Keys are masked.");
+    appendFileSync(log, "10:02:21 result   | read_file ok 0.1s: x\n10:02:40 assistant| Nothing stored in plain text.\n10:02:41 final    | end status=completed\n");
+    await waitFor(() => row("d1#0").agent?.state === "done");
+    assert.equal(row("d1#0").agent?.report, "Nothing stored in plain text.");
+    assert.equal(row("d1#0").agent?.steps?.[0].status, "done");
+    // Ended: it isn't followed any more.
+    const n = r.tools.length;
+    appendFileSync(log, "10:02:50 think    | after its end\n");
+    await new Promise((res) => setTimeout(res, 150));
+    assert.equal(r.tools.length, n);
+    s.close();
+  } finally {
+    Object.assign(LIVE_LOG, was);
+  }
+});
+
+test("acp: a Hermes agent still at work in the background when its session closes says on its row that it stopped, not that it works for good", async () => {
+  const was = { ...LIVE_LOG };
+  Object.assign(LIVE_LOG, { everyMs: 30 });
+  try {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lc-hermes-home-")));
+    const dir = join(home, "cache", "delegation", "live", "deleg_1");
+    mkdirSync(dir, { recursive: true });
+    const log = join(dir, "task-0.log");
+    writeFileSync(log, "10:02:14 tool     | -> read_file({'path': 'SECURITY.md'})\n");
+    const dispatch = JSON.stringify({ status: "dispatched", mode: "background", count: 1, delegation_id: "deleg_1", live_transcripts: [log] });
+    const fake = script("agent", acpAgent(`if (m.method === "session/prompt") {
+      const up = (u) => send({ method: "session/update", params: { sessionId: "s-1", update: { toolCallId: "d1", title: "delegate_task: 1 task", kind: "execute", ...u } } });
+      up({ sessionUpdate: "tool_call", status: "in_progress", content: [{ type: "content", content: { type: "text", text: "Delegating 1 task\\n\\n1. Review stored secrets" } }] });
+      up({ sessionUpdate: "tool_call_update", status: "completed", content: [{ type: "content", content: { type: "text", text: ${JSON.stringify(dispatch)} } }] });
+      send({ id: m.id, result: { stopReason: "end_turn" } });
+      continue;
+    }`));
+    const s = acpProvider("hermes" as ProviderInfo["id"], { label: "Hermes", cmd: [fake.file], login: "", detaches: true }).open(opts({ env: { ...process.env, FAKE_LOG: fake.log, HERMES_HOME: home } }));
+    const { r, sink } = recorder();
+    await s.turn("send an agent", sink, live());
+    const row = () => r.tools.filter((u) => u.key === "d1#0").at(-1)!;
+    await waitFor(() => row().agent?.steps?.length === 1);
+    assert.equal(row().agent?.state, "running");
+    // Another connection, a model it couldn't switch in place: the runtime closes the session, and Hermes's agents with it.
+    await s.close();
+    assert.equal(row().agent?.state, "stopped", "its row doesn't stay at work, counted in agentsAtWork, for the rest of the run");
+    assert.equal(row().agent?.now, undefined);
+    assert.deepEqual(row().agent?.steps?.map((x) => x.status), ["failed"], "the step it had open ended with it");
+    // Not followed any more: what its log gains after doesn't reach the row.
+    const n = r.tools.length;
+    appendFileSync(log, "10:02:20 think    | after the close\n");
+    await new Promise((res) => setTimeout(res, 150));
+    assert.equal(r.tools.length, n);
+  } finally {
+    Object.assign(LIVE_LOG, was);
+  }
 });
 
 test("acp: a session that failed to open starts again on the next turn, not on the same failure for good", async () => {
@@ -568,6 +789,8 @@ if (m.method === "thread/backgroundTerminals/list") { send({ id: m.id, result: {
   assert.equal(fake.read().filter((m) => m.method === "thread/backgroundTerminals/list").length, 5, "twice for the one found, three times for the one never listed");
 });
 
+/** An agent's steps without the time each began, which every one carries (checked here). */
+const untimed = (steps?: { at?: number }[]) => steps?.map(({ at, ...x }) => (assert.equal(typeof at, "number", "each step says when it began"), x));
 const SPAWN = (receiver: string) => `send({ method: "item/completed", params: { threadId: "root", turnId: "turn-1", item: { type: "collabAgentToolCall", id: "spawn-${receiver}", tool: "spawnAgent", senderThreadId: "root", receiverThreadIds: ["${receiver}"], prompt: "check the ${receiver} tests", status: "completed", agentsStates: {} } } });`;
 const KID_ENDS = (kid: string, status = "completed") => `
   send({ method: "item/completed", params: { threadId: "${kid}", turnId: "t-${kid}", item: { type: "agentMessage", id: "w-${kid}", text: "${kid} found 2 failures" } } });
@@ -579,6 +802,7 @@ test("codex: an agent it sends off gets a row: who it is, what it was asked, its
     send({ method: "thread/started", params: { thread: { id: "kid", parentThreadId: "root", agentRole: "explorer", agentNickname: "Ada" } } });
     send({ method: "turn/started", params: { threadId: "kid", turn: { id: "t-kid" } } });
     ${SPAWN("kid")}
+    send({ method: "item/completed", params: { threadId: "kid", turnId: "t-kid", item: { type: "reasoning", id: "rs1", summary: ["Run the tests", "first."], content: [] } } });
     send({ method: "item/started", params: { threadId: "kid", turnId: "t-kid", item: { type: "commandExecution", id: "c1", command: '/bin/zsh -lc "npm test"', status: "inProgress" } } });
     send({ method: "thread/tokenUsage/updated", params: { threadId: "kid", tokenUsage: { total: { totalTokens: 1800, inputTokens: 1500, outputTokens: 300 }, last: {} } } });
     setTimeout(() => {
@@ -598,7 +822,9 @@ test("codex: an agent it sends off gets a row: who it is, what it was asked, its
   assert.equal(live1.agent?.task, "check the kid tests");
   assert.equal(live1.agent?.taskId, "kid");
   assert.equal(live1.agent?.steerable, true);
-  assert.deepEqual(live1.agent?.steps, [{ title: "Run npm test", toolKind: "exec", status: "running" }]);
+  // Its reasoning is a thought between its steps, not a tool.
+  assert.deepEqual(untimed(live1.agent?.steps), [{ title: "Run the tests first.", toolKind: "think", status: "done" }, { title: "Run npm test", toolKind: "exec", status: "running" }]);
+  assert.equal(live1.agent?.tools, 1);
   assert.equal(live1.agent?.tokens, 1800);
   // A word for it, and Stop, reach its own thread's turn.
   assert.equal(await s.steerAgent!("kid", "only src"), true);
@@ -616,7 +842,7 @@ test("codex: an agent it sends off gets a row: who it is, what it was asked, its
   const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
   assert.equal(end.status, "done");
   assert.equal(end.agent?.report, "kid found 2 failures");
-  assert.equal(end.agent?.steps?.[0].status, "done");
+  assert.equal(end.agent?.steps?.[1].status, "done");
   // Its steps are its row's, not the turn's.
   assert.ok(!r.tools.some((u) => u.key === "c1"));
 });
@@ -646,7 +872,7 @@ test("codex: an agent still at work when the turn ends goes on in the background
   s.close();
   const end = r.tools.filter((u) => u.key === "spawn-kid").at(-1)!;
   assert.equal(end.agent?.report, "kid found 2 failures");
-  assert.deepEqual(end.agent?.steps, [{ title: "Run npm test", toolKind: "exec", status: "done" }]);
+  assert.deepEqual(untimed(end.agent?.steps), [{ title: "Run npm test", toolKind: "exec", status: "done" }]);
   assert.equal(new Set(r.tools.map((u) => u.key)).size, 1, "one agent, one row");
 });
 

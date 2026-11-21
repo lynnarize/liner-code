@@ -13,9 +13,12 @@ export function defaultAgents(): AgentProfile[] {
   return [{ id: "demo", name: "Demo", role: "Scripted run", glyph: "spark", specialty: "custom", model: "demo:demo", effort: "low", soul: "" }];
 }
 
-/** A session that talks to a model directly: "@claude:claude-opus-5-5". */
+/**
+  A session that talks to a model directly: "@claude:claude-opus-5-5". It has no effort of its own: a session on it that the
+  person never gave a level runs at its tool's default, rather than at a word nobody picked that the model may not list.
+*/
 export function modelAgent(id: string, label: string): AgentProfile {
-  return { id, name: label, role: "Model", glyph: "spark", specialty: "custom", model: id.slice(1), effort: "medium", soul: "" };
+  return { id, name: label, role: "Model", glyph: "spark", specialty: "custom", model: id.slice(1), effort: "", soul: "" };
 }
 
 /** The most of one context file an agent is handed, so a stray log can't fill its context. */

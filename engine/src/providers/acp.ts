@@ -7,18 +7,18 @@
   it inside the project.
 */
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { open as openFile, readFile, stat, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, posix, resolve, sep, win32, type PlatformPath } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { Access, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, AgentStep, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { randomBytes } from "node:crypto";
 import { below, closesOnExit, endAll, jsonLines, killTree, marked, markedPids, markFile, marking, processes, RUN_ENV, run, spawn, THREAD_ENV, threadMark, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
-import { acpCommands, acpModelRequest, acpModels, agyModels } from "./models.ts";
+import { acpCommands, acpModelRequest, acpModels, agyModels, opencodeModels } from "./models.ts";
 import { imagePart } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
@@ -222,6 +222,109 @@ export function delegateResults(text: string): DelegateResult[] | null {
 }
 /** "researcher" is "Researcher"; no role, "Subagent". */
 const roleName = (role?: string) => (role?.trim() ? role.trim().replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase()) : "Subagent");
+/**
+  Hermes's live log of one agent it sent to the background (its tools/delegation_live_log.py), whose path its dispatch names
+  (live_transcripts): `HH:MM:SS role | text` lines, each cut short and with its secrets masked. The roles: user (its brief),
+  start, think, assistant (its words), tool (`-> name(args)`), result (`name ok 0.2s: …`, `name ERROR …`) and final
+  (`status=completed …`, then `end status=…`). Read whole each time it grows, and read as the agent's steps on its row.
+*/
+export type LiveLog = { steps: AgentStep[]; tools: number; now?: string; said?: string; end?: "done" | "failed" | "stopped"; error?: string };
+export function readLiveLog(text: string, today = new Date()): LiveLog {
+  const out: LiveLog = { steps: [], tools: 0 };
+  // The steps still running, by index, with the tool each called: a result closes the first of its name.
+  const open: { i: number; name: string }[] = [];
+  const at = (h: number, m: number, sec: number) => {
+    const d = new Date(today);
+    d.setHours(h, m, sec, 0);
+    // A time later than now was yesterday's (an agent that ran over midnight).
+    if (d.getTime() > today.getTime() + 60_000) d.setDate(d.getDate() - 1);
+    return d.getTime();
+  };
+  for (const line of text.split("\n")) {
+    const m = /^(\d\d):(\d\d):(\d\d) (\S+?)\s*\| ?(.*)$/.exec(line);
+    if (!m) continue;
+    const [, h, mi, sec, role, said] = m;
+    const body = said.trim();
+    const when = at(Number(h), Number(mi), Number(sec));
+    if (role === "think" && body) out.steps.push({ title: body.slice(0, 300), toolKind: "think", status: "done", at: when });
+    else if (role === "assistant" && body) out.said = body;
+    else if (role === "tool") {
+      const t = /^->\s*([\w.:-]+)\(([\s\S]*)\)$/.exec(body);
+      const name = t?.[1] ?? body.replace(/^->\s*/, "");
+      open.push({ i: out.steps.push({ ...hermesStep(name, t?.[2] ?? ""), status: "running", at: when }) - 1, name });
+      out.tools++;
+    } else if (role === "result") {
+      const r = /^([\w.:-]+) (ok|ERROR)\b/.exec(body);
+      const k = Math.max(0, open.findIndex((o) => o.name === r?.[1]));
+      const o = open.splice(k, 1)[0];
+      if (o) out.steps[o.i] = { ...out.steps[o.i], status: r?.[2] === "ERROR" ? "failed" : "done" };
+    } else if (role === "final") {
+      const st = /^(?:end )?status=(\w+)/.exec(body)?.[1];
+      if (!st || st === "?") continue;
+      out.end = st === "completed" ? "done" : st === "interrupted" || st === "cancelled" ? "stopped" : "failed";
+      const e = /\berror: (.*)$/.exec(body)?.[1];
+      if (e) out.error = e;
+    }
+  }
+  // Ended: what it had open ended with it.
+  if (out.end) for (const o of open) out.steps[o.i] = { ...out.steps[o.i], status: out.end === "done" ? "done" : "failed" };
+  else out.now = [...out.steps].reverse().find((x) => x.status === "running" || x.toolKind === "think")?.title;
+  return out;
+}
+/** A Hermes tool call as a step's words: "Read updates.ts", "Search secret|token", "Run npm test". */
+function hermesStep(name: string, args: string): Omit<AgentStep, "status"> {
+  // Its arguments as the log has them: a dict's repr (`{'path': 'a.ts'}`), or the tool's own one-line preview.
+  const arg = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = new RegExp(`['"]${k}['"]\\s*:\\s*['"]([^'"]*)['"]`).exec(args)?.[1];
+      if (v) return v;
+    }
+    return args.trim().startsWith("{") ? "" : args.trim();
+  };
+  const cut = (v: string, n = 70) => (v.length > n ? `${v.slice(0, n - 1)}…` : v);
+  switch (name) {
+    case "read_file": {
+      const p = arg("path", "file_path");
+      return { title: p ? `Read ${cut(p)}` : "Read a file", toolKind: "read", ...(p ? { path: p } : {}) };
+    }
+    case "search_files":
+      return { title: `Search ${cut(arg("pattern", "query") || "files")}`, toolKind: "search" };
+    case "terminal":
+      return { title: `Run ${cut(arg("command") || "a command", 60)}`, toolKind: "exec" };
+    case "write_file":
+    case "patch": {
+      const p = arg("path", "file_path");
+      return { title: `${name === "patch" ? "Edit" : "Write"} ${p ? cut(p) : "a file"}`, toolKind: "edit", ...(p ? { path: p } : {}) };
+    }
+    case "web_search":
+      return { title: `Search the web for ${cut(arg("query") || "something", 60)}`, toolKind: "web" };
+    case "web_extract":
+      return { title: `Fetch ${cut(arg("url", "urls") || "a page", 60)}`, toolKind: "fetch" };
+    case "execute_code":
+      return { title: "Run a script", toolKind: "exec" };
+    default: {
+      const a = arg("path", "query", "command");
+      return { title: a ? `${name}: ${cut(a, 50)}` : name, toolKind: "other" };
+    }
+  }
+}
+/** How often an agent's live log is looked at, and how long one is followed at most. */
+export const LIVE_LOG = { everyMs: 700, maxMs: 6 * 60 * 60_000 };
+
+/** A delegation's row when its agents went to the background: what they find comes back in a turn the agent starts by itself (AcpSession.own). */
+export const DETACHED_ROW = "Working in the background: Hermes answers with what it finds in a turn of its own, after this one.";
+/** The updates that begin a turn the agent started by itself: words, a thought, a step, a plan (not its usage, title or commands). */
+const OWN_START = new Set(["agent_message_chunk", "agent_thought_chunk", "tool_call", "plan"]);
+/**
+  How a turn the agent began by itself is read to have ended, with no answer to a prompt to say so (AcpSession.own). Hermes's
+  gateway sends its usage after each step and once after its answer (then its options), so usage alone isn't an end: the end is
+  its answer's words with no step after them and nothing open, then its usage (settleMs) or nothing more for quietMs; updates
+  of its title, options or commands don't count. silentMs ends one that went quiet without an answer. tailMs: words or a
+  thought this soon after a turn of Liner Code's are that turn's tail. Seen on Hermes (caafe53, Nov 2026), through a fake model.
+*/
+export const OWN_WAITS = { settleMs: 1500, quietMs: 15_000, silentMs: 5 * 60_000, tailMs: 1000 };
+/** A turn the agent began by itself, as AcpSession.own holds it. */
+type Own = { state: "pending" | "running" | "dropping"; buf: Json[]; said: boolean; open: Set<string>; over?: boolean; timer?: NodeJS.Timeout; end?: () => void };
 /**
   And a model that won't take no. OpenCode goes on after each refusal (continue_loop_on_deny, below), so
   with nobody there to press Stop one that keeps trying would go on for good, where a refusal used to end it.
@@ -857,6 +960,16 @@ class AcpSession implements ProviderSession {
   private told: Access | undefined;
   /** What Liner Code ended at the end of the last turn, for the model to hear at the start of the next. */
   private endedLast = "";
+  /**
+    A turn the agent began by itself (AcpSpec.detaches): Hermes's gateway answering with what the agents it sent off found, in
+    a turn of its own after yours, whose updates come with no prompt of Liner Code's open. Pending: offered to the runtime
+    (o.wake), its updates kept till it runs. Running: shown as "Hermes carries on by itself". Dropping: you stopped it, or the
+    runtime let it go; Liner Code can't stop a turn it didn't start (ACP's session/cancel reaches only its own prompt), so the
+    rest of it passes unshown till it ends (OWN_WAITS), and the next one is offered again.
+  */
+  private own: Own | null = null;
+  /** When a turn of Liner Code's last ended (OWN_WAITS.tailMs). */
+  private endedAt = 0;
   /** The marker everything this session's agent starts carries (exec.ts Mark), for an agent whose work outlives its turn. */
   private mark: Mark = { value: randomBytes(9).toString("hex") };
   /** The markers of the processes it started and hasn't closed yet (close ends what holds each, and removes it). */
@@ -904,6 +1017,11 @@ class AcpSession implements ProviderSession {
   private terms = new Map<string, Term>();
   /** Hermes's delegations this turn, by call: the tasks each started with, read off its first words. A call is only shown in its turn, so they go with it. */
   private delegations = new Map<string, { goal: string; role?: string }[]>();
+  /**
+    Agents in the background whose live logs are followed onto their rows (readLiveLog), by row key: past their turn too, till each
+    ends. `end` says on its row that it stopped, for a session that closes first: its agents go with its process.
+  */
+  private follows = new Map<string, { timer: NodeJS.Timeout; end: () => void }>();
   private pid: string;
   private stderr = "";
   private o: OpenOptions;
@@ -1294,6 +1412,8 @@ class AcpSession implements ProviderSession {
       if ((params._meta as Json | undefined)?.isReplay === true) return;
       const u = params.update as Json;
       // Its commands as a session it opened for you lists them: what the composer offers for a tool asked no session of its own.
+      // Its options as they are now (OpenCode 2 sends them after a switch of model): the new model's own thinking levels.
+      if (u?.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) this.readThought(u);
       if (u?.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands)) heard(this.pid, this.o.cwd, (u.availableCommands as { name: string; description?: string; input?: { hint?: string } }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.input?.hint, source: "tool" as const })));
       return this.onUpdate(u);
     }
@@ -1536,7 +1656,131 @@ class AcpSession implements ProviderSession {
     return homeTitle(title, this.o.cwd, this.o.env.HOME || homedir());
   }
 
+  /** An update, for the turn that's open, or else for a turn the agent began by itself (own). */
   private onUpdate(u: Json) {
+    if (!u) return;
+    if (!this.sink) return this.idleUpdate(u);
+    this.showUpdate(u);
+    if (this.own?.state === "running") this.ownHeard(u);
+  }
+
+  /**
+    An update with no turn of Liner Code's open. From an agent whose turns can begin by themselves (AcpSpec.detaches), words, a
+    thought, a step or a plan begin one: it is offered to the runtime, which runs it as "carries on by itself" (now, or once the
+    thread is free), and its updates are kept till then. Anything else, and anything from another agent, has nothing to show on.
+  */
+  private idleUpdate(u: Json) {
+    const had = this.own;
+    if (had) {
+      if (had.state === "pending") had.buf.push(u);
+      return this.ownHeard(u);
+    }
+    // Just after a turn of Liner Code's, words or a thought may be its tail; a step it never had is new work (seen on Hermes:
+    // agents that came back at once had its own turn's first step 60 ms after yours ended).
+    const fresh = u.sessionUpdate === "tool_call" && !this.calls.has(String(u.toolCallId));
+    if (!this.known.detaches || !this.o.wake || !OWN_START.has(String(u.sessionUpdate)) || (!fresh && Date.now() - this.endedAt < OWN_WAITS.tailMs)) return;
+    const o: Own = { state: "pending", buf: [u], said: false, open: new Set() };
+    this.own = o;
+    this.ownHeard(u);
+    this.o.wake({
+      why: "what it sent off came back",
+      pending: () => this.own === o && o.state === "pending",
+      run: (sink, signal) => this.runOwn(o, sink, signal),
+      cancel: () => {
+        if (this.own !== o || o.state !== "pending") return;
+        o.state = "dropping";
+        o.buf = [];
+        if (o.over) this.own = null;
+      },
+    });
+  }
+
+  /** Runs a turn the agent began by itself on the runtime's sink: what it kept first, then the rest as it comes, till it ends. */
+  private runOwn(o: Own, sink: TurnSink, signal: AbortSignal) {
+    return new Promise<void>((done) => {
+      if (this.own !== o || o.state !== "pending" || this.sink) return done();
+      o.state = "running";
+      this.sink = sink;
+      this.signal = signal;
+      this.granted.clear();
+      this.reached.clear();
+      this.refused = 0;
+      this.readRefused = false;
+      this.kept.clear();
+      this.calls.clear();
+      this.shown.clear();
+      this.terms.clear();
+      this.delegations.clear();
+      this.heard = Date.now();
+      if (this.session) sink.session(this.session);
+      const finish = () => {
+        o.end = undefined;
+        signal.removeEventListener("abort", stop);
+        for (const timer of this.later.values()) clearTimeout(timer);
+        this.later.clear();
+        this.sink = null;
+        this.signal = null;
+        this.delegations.clear();
+        this.endedAt = Date.now();
+        done();
+      };
+      o.end = () => {
+        if (this.own === o) this.own = null;
+        clearTimeout(o.timer);
+        finish();
+      };
+      // Stop ends what shows here; the agent's own turn goes on where Liner Code can't reach it, and the rest of it passes unshown.
+      const stop = () => {
+        sink.notice(`Liner Code can't stop a turn ${this.cmd[0]} began by itself, so it goes on in ${this.cmd[0]} without showing here.`);
+        o.state = "dropping";
+        finish();
+      };
+      signal.addEventListener("abort", stop, { once: true });
+      for (const u of o.buf.splice(0)) this.showUpdate(u);
+      if (o.over) o.end();
+    });
+  }
+
+  /** Reads a turn the agent began by itself for its end (OWN_WAITS), whether it shows, waits to, or passes unshown. */
+  private ownHeard(u: Json) {
+    const o = this.own;
+    if (!o) return;
+    const kind = u.sessionUpdate;
+    // Its title, its options or its commands say nothing of where it is: Hermes sends its options just after the end's usage.
+    if (!OWN_START.has(String(kind)) && kind !== "tool_call_update" && kind !== "usage_update") return;
+    if (kind === "tool_call" || kind === "tool_call_update") {
+      const id = String(u.toolCallId);
+      if (kind === "tool_call") o.said = false;
+      if (u.status === "completed" || u.status === "failed") o.open.delete(id);
+      else if (kind === "tool_call" || u.status === "pending" || u.status === "in_progress") o.open.add(id);
+    } else if (kind === "agent_message_chunk" && blockText(u.content).trim()) o.said = true;
+    clearTimeout(o.timer);
+    const wait = !o.said ? OWN_WAITS.silentMs : kind === "usage_update" ? OWN_WAITS.settleMs : OWN_WAITS.quietMs;
+    o.timer = setTimeout(() => this.ownQuiet(o), wait);
+    o.timer.unref?.();
+  }
+  private ownQuiet(o: Own) {
+    if (this.own !== o) return;
+    // A step still open, or an ask on screen: not over, however quiet.
+    if (o.open.size || this.asking) {
+      o.timer = setTimeout(() => this.ownQuiet(o), OWN_WAITS.quietMs);
+      o.timer.unref?.();
+      return;
+    }
+    if (o.state === "running") return o.end?.();
+    if (o.state === "dropping") this.own = null;
+    else o.over = true;
+  }
+  /** A turn of Liner Code's begins, or the session closes: a turn the agent began by itself is let go (what's left shows on this one). */
+  private dropOwn() {
+    const o = this.own;
+    if (!o) return;
+    this.own = null;
+    clearTimeout(o.timer);
+    o.end?.();
+  }
+
+  private showUpdate(u: Json) {
     const sink = this.sink;
     if (!sink || !u) return;
     const kind = u.sessionUpdate;
@@ -1669,6 +1913,8 @@ class AcpSession implements ProviderSession {
     }
     const tasks = this.delegations.get(id)!;
     const results = status === "running" ? null : delegateResults(out);
+    // Sent to the background: the live log of each agent, where its dispatch names one (Hermes's live_transcripts).
+    const logs = status === "done" && !results ? this.liveLogs(out) : null;
     tasks.forEach((t, i) => {
       const r = results?.find((x) => x.index === i);
       const name = roleName(r?.role ?? t.role);
@@ -1683,12 +1929,105 @@ class AcpSession implements ProviderSession {
         rowStatus = r.status === "completed" ? "done" : r.status === "interrupted" ? "done" : "failed";
         if (r.status === "interrupted") agent.state = "stopped";
       } else if (status !== "running") {
-        // No results to read: it went to the background (Hermes reports back later), or failed whole.
+        // No results to read: it failed whole, or went to the background. Hermes then answers with what they found in a turn of
+        // its own, after this one (AcpSession.own): the row says where to look, rather than "working" for good.
         if (status === "failed") agent.report = out.trim() || undefined;
-        else agent.background = true;
+        else if (logs?.[i]) (agent.background = true), (agent.state = "running");
+        else (agent.background = true), (agent.report = DETACHED_ROW);
       }
       sink.tool({ key: `${id}#${i}`, tool: "delegate_task", toolKind: "task", title: `${name}: ${agent.task}`, input: t.goal, status: rowStatus, agent });
+      if (!r && status === "done" && logs?.[i]) this.follow(`${id}#${i}`, logs[i]!, agent, `${name}: ${agent.task}`, t.goal, sink);
     });
+  }
+
+  /**
+    The live logs a dispatch to the background names, one per task (Hermes's live_transcripts), each only where it should be:
+    a task-<n>.log under the agent's own cache/delegation/live, once links are followed. Null when it names none.
+  */
+  private liveLogs(out: string): (string | undefined)[] | null {
+    let paths: unknown;
+    try {
+      paths = (JSON.parse(out) as { live_transcripts?: unknown }).live_transcripts;
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(paths)) return null;
+    const env = this.o.env ?? {};
+    let root: string;
+    try {
+      root = realpathSync(join(env.HERMES_HOME || join(env.HOME || homedir(), ".hermes"), "cache", "delegation", "live"));
+    } catch {
+      return null;
+    }
+    return paths.map((p) => {
+      if (typeof p !== "string" || !/[\\/]task-\d+\.log$/.test(p)) return undefined;
+      try {
+        const real = realpathSync(p);
+        return real.startsWith(root + sep) ? real : undefined;
+      } catch {
+        return undefined;
+      }
+    });
+  }
+
+  /**
+    Follows one agent's live log onto its row (readLiveLog), every LIVE_LOG.everyMs while it grows, past the turn that sent it
+    (the runtime takes an agent's row after its turn has ended): its steps, its thoughts, what it's doing now, then how it
+    ended and its last words as its report. Ends with the agent, with the session, or after LIVE_LOG.maxMs.
+  */
+  private follow(key: string, path: string, base: NonNullable<ToolUpdate["agent"]>, title: string, input: string, sink: TurnSink) {
+    if (this.follows.has(key)) return;
+    const since = Date.now();
+    let size = -1;
+    let busy = false;
+    // What its row last said, for the word it ends on when the session closes before its log says it ended.
+    let last: NonNullable<ToolUpdate["agent"]> = base;
+    const stop = () => {
+      clearInterval(this.follows.get(key)?.timer);
+      this.follows.delete(key);
+    };
+    const look = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        if (Date.now() - since > LIVE_LOG.maxMs) return stop();
+        const now = (await stat(path)).size;
+        if (now === size) return;
+        size = now;
+        // Only its end when it's long: each line is cut short, so a whole megabyte is a very long run.
+        const f = await openFile(path, "r");
+        let text: string;
+        try {
+          const from = Math.max(0, now - 1024 * 1024);
+          const buf = Buffer.alloc(now - from);
+          await f.read(buf, 0, buf.length, from);
+          text = buf.toString("utf8");
+        } finally {
+          await f.close();
+        }
+        if (!this.follows.has(key)) return;
+        const log = readLiveLog(text);
+        const agent: NonNullable<ToolUpdate["agent"]> = { ...base, steps: log.steps.slice(-40), tools: log.tools || undefined, now: log.now, state: log.end ?? "running", ...(log.end ? { report: log.said ?? log.error ?? base.report } : {}) };
+        last = agent;
+        sink.tool({ key, tool: "delegate_task", toolKind: "task", title, input, status: "done", agent });
+        if (log.end) stop();
+      } catch {
+        // Not there yet, or gone: looked at again next time, till the most it's followed.
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(() => void look(), LIVE_LOG.everyMs);
+    timer.unref?.();
+    // The session closed with it still at work: its process, and the agents it sent, are ended, so its row says it stopped
+    // rather than working for good (and counting in agentsAtWork), as Claude Code's agents do when theirs closes (endRuns).
+    const end = () => {
+      stop();
+      const steps = (last.steps ?? []).map((x) => (x.status === "running" ? { ...x, status: "failed" as const } : x));
+      sink.tool({ key, tool: "delegate_task", toolKind: "task", title, input, status: "done", agent: { ...last, steps, now: undefined, state: "stopped" } });
+    };
+    this.follows.set(key, { timer, end });
+    void look();
   }
 
   async turn(text: string, sink: TurnSink, signal: AbortSignal, files: string[] = []) {
@@ -1714,6 +2053,7 @@ class AcpSession implements ProviderSession {
       this.soulSent = false;
       throw new ResumeFailed(`${this.cmd[0]} couldn't load its session ${lost}.`);
     }
+    this.dropOwn();
     this.sink = sink;
     this.signal = signal;
     this.granted.clear();
@@ -1886,6 +2226,7 @@ class AcpSession implements ProviderSession {
       this.sink = null;
       this.signal = null;
       this.delegations.clear();
+      this.endedAt = Date.now();
     }
   }
   private soulSent = false;
@@ -2055,7 +2396,7 @@ class AcpSession implements ProviderSession {
   */
   settled?: () => Promise<boolean>;
   private async settledNow() {
-    const idle = () => !this.sink && !this.gating && !this.asking && !this.pending.size;
+    const idle = () => !this.sink && !this.own && !this.gating && !this.asking && !this.pending.size;
     if (!this.known.endsWork || !this.session || this.lost || !(this.canResume || this.canLoad) || this.endedLast || this.refusedLast || this.notes.length || !idle()) return false;
     const child = this.child;
     // Its process is gone already (a turn's end ended it): its session loads in the next one.
@@ -2077,6 +2418,9 @@ class AcpSession implements ProviderSession {
     whatever else carries its marker, where `ps` reads environments. A frozen one is ended too, by endAll's SIGKILL.
   */
   close(): Promise<void> {
+    this.dropOwn();
+    for (const f of [...this.follows.values()]) f.end();
+    this.follows.clear();
     const child = this.child;
     this.child = null;
     // One still being checked before it starts doesn't start.
@@ -2185,6 +2529,7 @@ type Known = {
   failedWords?: RegExp;
   failed?: string;
   noModel?: (model: string) => string;
+  detaches?: boolean;
 };
 
 /** An access level as the timeline names it. */
@@ -2296,6 +2641,12 @@ export type AcpSpec = {
   failed?: string;
   /** What's said when the model you picked isn't one it will run. */
   noModel?: (model: string) => string;
+  /**
+    Its agents run past the turn that sent them, and what they find comes back in a turn it starts by itself (Hermes's
+    delegate_task, which always dispatches to the background over ACP, its gateway then answering in a turn of its own): that
+    turn's updates, which come with no prompt of Liner Code's open, are offered to the runtime as one (OpenOptions.wake).
+  */
+  detaches?: boolean;
 };
 
 /**
@@ -2395,6 +2746,15 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
       return { ...base, ...listedNow, available: true, version: gate.version, signedIn, supports: { ...base.supports, effort }, detail: signedIn === undefined ? `${detail}; it didn't say whether it's signed in` : detail };
     },
     models: async (env, scratch, signal) => {
+      // OpenCode 2 lists each model's effort levels and price in its own model list, which its ACP session doesn't carry: asked
+      // there first when it is the opencode program itself; an older one, or an answer in another shape, falls back to the session.
+      // Its version, from the gate's --version (kept while the program is the same file), says whether it has that list at all.
+      if (isOpenCode && /(^|[\\/])opencode(\.exe|\.cmd)?$/i.test(cmd[0])) {
+        const path = which(cmd[0], envOf(env));
+        const version = path && !signal?.aborted ? (await checkGate(path, envOf(env), spec.min ?? "0.0.0", label, cmd[0]).catch(() => null))?.version : undefined;
+        const own = path && version ? await opencodeModels(path, envOf(env), scratch, version, signal).catch(() => null) : null;
+        if (own) return [{ id: "default", label: `${label} default`, description: `The model ${label} is set up with` }, ...own];
+      }
       if (!spec.listed) return acpModels(cmd, label, envOf(env), scratch, signal);
       const path = which(cmd[0], envOf(env));
       const models = path ? (await listed(path, envOf(env))).models : [];
@@ -2434,14 +2794,14 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
             return path;
           }
         : undefined;
-      const known: Known = { levels: spec.modes, unasked: spec.unasked, gate, systemPrompt: spec.systemPrompt, endsWork: spec.endsWork, quietMs: spec.quietMs && (DEV_WAITS.quietMs ?? spec.quietMs), hintMs: spec.hintMs && (DEV_WAITS.hintMs ?? spec.hintMs), killAfterMs: spec.killAfterMs, tagged: spec.tagged, noWrites: spec.noWrites, refusal: spec.refusal, failedWords: spec.failedWords, failed: spec.failed, noModel: spec.noModel };
+      const known: Known = { levels: spec.modes, unasked: spec.unasked, gate, systemPrompt: spec.systemPrompt, endsWork: spec.endsWork, quietMs: spec.quietMs && (DEV_WAITS.quietMs ?? spec.quietMs), hintMs: spec.hintMs && (DEV_WAITS.hintMs ?? spec.hintMs), killAfterMs: spec.killAfterMs, tagged: spec.tagged, noWrites: spec.noWrites, refusal: spec.refusal, failedWords: spec.failedWords, failed: spec.failed, noModel: spec.noModel, detaches: spec.detaches };
       return new AcpSession({ ...o, env: isOpenCode ? { ...env, ...opencodeEnv(o.cwd, env, Boolean(o.mcp), o.scan ? OPENCODE_SCAN_DENIED : []) } : env, dirs: isOpenCode ? [...(o.dirs ?? []), opencodeOutputs(o.env)] : o.dirs }, cmd, spec.login, isOpenCode, id, known);
     },
   };
 }
 
 export const hermes: Provider = {
-  ...acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model" }),
+  ...acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model", detaches: true }),
   // Its limits are in your own config, which Liner Code doesn't change: a sidekick's brief is cut to fit them instead.
   toolWait: (env) => hermesWait(env),
   // OpenCode Go's windows, when Hermes has a Go key: they count for its opencode-go models only.

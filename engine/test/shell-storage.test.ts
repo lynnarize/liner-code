@@ -1,5 +1,5 @@
 /*
-  A storage-less window keeps working (plan 019, steps 2-4): the app shell, Settings, the docked Changes and Device
+  A storage-less window keeps working (plan 019, steps 2-4): the app shell, Settings, Changes (Review.tsx) and Device
   read and write their keeps through kept.ts, validated, with no bare storage call left. These are SOURCE tests —
   the wiring is read from the files as written (precedent: layout-rules.test.ts, said-states.test.ts).
   Run with `node --test engine/test/shell-storage.test.ts`.
@@ -53,11 +53,15 @@ test("Settings' preference reads validate their values and guard storage", () =>
   assert.ok(!/localStorage\.getItem\(/.test(settings) && !/sessionStorage\.getItem\(/.test(settings) && !/\.setItem\(/.test(settings), "a bare storage call remains in Settings");
 });
 
-test("the docked Changes' view choice is a known word, read and written guarded", () => {
-  const changes = span(app("Panel.tsx"), "function Changes(");
-  assert.ok(/wordRead\(localStorage, "lc:view", \["unified", "split"\], "unified"\)/.test(changes), "the view read is still a bare cast");
-  assert.ok(/wordWrite\(localStorage, "lc:view", view\)/.test(changes), "the view write is still bare");
-  assert.ok(!/localStorage\.getItem\(/.test(changes) && !/\.setItem\(/.test(changes), "a bare storage call remains in the docked Changes");
+test("Changes' view choice is a known word, read and written guarded, and so are its switches and viewed marks", () => {
+  // The docked Changes is Review now (Panel.tsx mounts it in the panel and the full canvas alike).
+  const changes = app("Review.tsx");
+  assert.ok(/wordRead\(localStorage, "lc:changes-view", \["unified", "split"\], wordRead\(localStorage, "lc:view", \["unified", "split"\], "unified"\)\)/.test(changes), "the view read is still a bare cast, or no longer falls back to the key released apps wrote");
+  assert.ok(/wordWrite\(localStorage, "lc:changes-view", view\)/.test(changes), "the view write is still bare, or still writes lc:view");
+  assert.ok(!/wordWrite\(localStorage, "lc:view"/.test(changes), "Changes still writes lc:view, the key the window's place uses in sessionStorage");
+  assert.ok(/wordRead\(localStorage, key, \["1", "0"\]/.test(changes), "wrap, spaces and hide tests are not read through the helper");
+  assert.ok(/keptRead\(localStorage, VIEWED, \{\}, isMarks\)/.test(changes), "the viewed marks are not read through the helper");
+  assert.ok(!/localStorage\.getItem\(/.test(changes) && !/\.setItem\(/.test(changes), "a bare storage call remains in Changes");
 });
 
 test("Device's remembered simulator is read and written guarded", () => {

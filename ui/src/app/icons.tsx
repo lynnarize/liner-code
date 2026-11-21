@@ -23,6 +23,8 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
 import { BRANDS, type Brand } from "./brands";
+import type { MarkState } from "./session-state";
+export type { MarkState } from "./session-state";
 
 /** The stroke, in grid units, that lands at the real weight for `size`; `w` is the icon's own weight at 1.5, kept in proportion. */
 export const wt = (size: number, grid: number, w = 1.5) => +((((size >= 14 ? 1.5 : 1.25) * grid) / size) * (w / 1.5)).toFixed(3);
@@ -64,6 +66,8 @@ export const I = {
   /** A panel along the foot; the old `bottom` was this drawing a quarter pixel off. */
   panelBottom: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.5" /><path d="M2.25 9.75h11.5" /></S>,
   split: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M8 2.75v10.5" /></S>,
+  /** A diff in one column: the frame ruled across its middle, the mirror of `split`. */
+  unified: (p: P) => <S {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="2.25" /><path d="M2.25 8h11.5" /></S>,
   /** The Wall: every session at once, four tiles. */
   wall: (p: P) => <S {...p}><rect x="2.25" y="2.25" width="4.5" height="4.5" rx="1.25" /><rect x="9.25" y="2.25" width="4.5" height="4.5" rx="1.25" /><rect x="2.25" y="9.25" width="4.5" height="4.5" rx="1.25" /><rect x="9.25" y="9.25" width="4.5" height="4.5" rx="1.25" /></S>,
   shrink: (p: P) => <S {...p}><path d="M2.75 9.25h4v4M13.25 6.75h-4v-4M9.25 6.75l4-4M6.75 9.25l-4 4" /></S>,
@@ -105,6 +109,10 @@ export const I = {
   close: (p: P) => <S {...p}><path d="m4.5 4.5 7 7M11.5 4.5l-7 7" /></S>,
   expand: (p: P) => <S {...p}><path d="M9.75 2.75h3.5v3.5M6.25 13.25h-3.5v-3.5M13.25 2.75l-4 4M2.75 13.25l4-4" /></S>,
   wrap: (p: P) => <S {...p}><path d="M2.75 4h10.5M2.75 8h8.25a2 2 0 0 1 0 4H8.5M2.75 12h3M10 10.5 8.5 12l1.5 1.5" /></S>,
+  /** Show spaces and tabs: the pilcrow, as editors mark their invisibles. */
+  pilcrow: (p: P) => <S {...p}><path d="M10.75 13.25V2.75M7.75 13.25V2.75M12.5 2.75H7a2.75 2.75 0 0 0 0 5.5h.75" /></S>,
+  /** Fold or unfold every file of a diff: two chevrons apart, up and down. */
+  fold: (p: P) => <S {...p}><path d="M4.75 6 8 2.75 11.25 6M4.75 10 8 13.25 11.25 10" /></S>,
   usage: (p: P) => <S {...p}><path d="M2.75 2.75v9.5a1 1 0 0 0 1 1h9.5M6 10.25V7.5M9 10.25v-5M12 10.25V8.5" /></S>,
   settings: (p: P) => <S {...p}><path d={GEAR} /><circle cx="8" cy="8" r="2" /></S>,
   globe: (p: P) => <S {...p}><circle cx="7.75" cy="7.75" r="5.5" /><path d="M2.25 7.75h11M7.75 2.25c1.45 1.55 2.2 3.4 2.2 5.5s-.75 3.95-2.2 5.5c-1.45-1.55-2.2-3.4-2.2-5.5s.75-3.95 2.2-5.5Z" /></S>,
@@ -184,6 +192,8 @@ export const I = {
   node: (p: P) => <S {...p}><circle cx="8" cy="8" r="4.75" /><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none" /></S>,
   minus: (p: P) => <S {...p}><path d="M3.5 8h9" /></S>,
   fit: (p: P) => <S {...p}><path d="M2.75 5.75v-3h3M13.25 5.75v-3h-3M2.75 10.25v3h3M13.25 10.25v3h-3" /></S>,
+  /** Actual size, 100%: a 1:1, as no other glyph here says it and `expand` already means the full canvas. */
+  actual: (p: P) => <S {...p}><path d="M4.25 5.5 5.75 4.25v7.5M10.25 5.5l1.5-1.25v7.5M8 6.75h.01M8 9.75h.01" /></S>,
   tool: (p: P) => <S {...p}><path d="M10.2 2.9a3.25 3.25 0 0 0-4 4.25L2.9 10.45a1.4 1.4 0 0 0 2 2L8.2 9.15a3.25 3.25 0 0 0 4.25-4l-2 2-1.6-.4-.4-1.6Z" /></S>,
   /** Liner's mark in small: two L-shaped turns round one centre, down and then along, the outer in ink and the inner in the accent (docs/brand/icon-2026/favicon.svg). For what an agent made, or an agent with no logo. */
   turn: (p: P) => <S {...p}><path d="M3 2.75V7.5a5.75 5.75 0 0 0 5.75 5.75H13" /><path d="M6.25 6v1.5a2.5 2.5 0 0 0 2.5 2.5h1" stroke="var(--l-accent)" /></S>,
@@ -252,9 +262,6 @@ const F20 = <rect x="2.75" y="3.75" width="14.5" height="12.5" rx="3.25" />;
 const B20 = <rect x="2.75" y="2.75" width="14.5" height="14.5" rx="3.5" />;
 export const N = {
   sidebar: (p: P) => <L {...p}>{F20}<path d="M7.75 3.75v12.5" /></L>,
-  panel: (p: P) => <L {...p}>{F20}<path d="M12.25 3.75v12.5" /></L>,
-  expand: (p: P) => <L {...p}><path d="M12.25 3.25h4.5v4.5M7.75 16.75h-4.5v-4.5M16.5 3.5l-5 5M3.5 16.5l5-5" /></L>,
-  shrink: (p: P) => <L {...p}><path d="M3.25 11.25h5.5v5.5M16.75 8.75h-5.5v-5.5M8.5 11.5l-5 5M11.5 8.5l5-5" /></L>,
   back: (p: P) => <L {...p}><path d="M8.75 4.75 3.5 10l5.25 5.25M3.75 10H16.5" /></L>,
   forward: (p: P) => <L {...p}><path d="M11.25 4.75 16.5 10l-5.25 5.25M16.25 10H3.5" /></L>,
   plus: (p: P) => <L {...p}><path d="M9.75 4v11.5M4 9.75h11.5" /></L>,
@@ -277,8 +284,11 @@ export const N = {
   shield: (p: P) => <L {...p}><path d="M10 3.25 15.75 5.4v4.35c0 3.6-2.35 6.05-5.75 7.1-3.4-1.05-5.75-3.5-5.75-7.1V5.4Z" /></L>,
   /** Findings: a list being looked through. */
   findings: (p: P) => <L {...p}><path d="M3.25 5.75h3.5M3.25 10h2.5M3.25 14.25h3.5" /><circle cx="12.25" cy="9.25" r="3.5" /><path d="m14.75 11.75 2 2" /></L>,
-  /** Try the running app: a target. */
-  target: (p: P) => <L {...p}><circle cx="10" cy="10" r="6.75" /><circle cx="10" cy="10" r="2.5" /></L>,
+  /** The surfaces the right edge's + opens (Side chat, Pull request, Linked pull requests, Device), drawn again on this grid so a lit one weighs what the four above it do. */
+  comment: (p: P) => <L {...p}><path d="M5.25 3.75h9.5a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2H9.75l-3.5 3v-3h-1a2 2 0 0 1-2-2v-5.5a2 2 0 0 1 2-2Z" /></L>,
+  pr: (p: P) => <L {...p}><circle cx="5.75" cy="4.75" r="1.75" /><circle cx="5.75" cy="15.25" r="1.75" /><circle cx="14.25" cy="15.25" r="1.75" /><path d="M5.75 6.5v7M14.25 13.5V8.25a2.5 2.5 0 0 0-2.5-2.5h-2.5M11.25 3.75l-2 2 2 2" /></L>,
+  link: (p: P) => <L {...p}><path d="M8.5 11.5a3.5 3.5 0 0 0 4.95 0l2.55-2.55a3.5 3.5 0 0 0-4.95-4.95l-.75.75M11.5 8.5a3.5 3.5 0 0 0-4.95 0L4 11.05A3.5 3.5 0 0 0 8.95 16l.75-.75" /></L>,
+  device: (p: P) => <L {...p}><rect x="5.75" y="2.75" width="8.5" height="14.5" rx="2.25" /><path d="M9.25 14.25h1.5" /></L>,
 };
 
 /** Whose model it is, or which tool runs it: its logo in the current ink. A model nobody's list knows gets a plain cube; the Demo gets the turn in one ink. */
@@ -309,44 +319,69 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
   );
 }
 
-/**
-  An agent at work: the waiting ring, with an accent arc travelling on it (ease in and out, so it
-  gathers and lets go rather than whirring). It is the same footprint as the ring before it, so a
-  step changes state without its mark changing size. The arc is in the current ink when its
-  holder tints it (a session's model), otherwise the accent; reduced motion slows it right down.
+/** Each state of the mark in words, for a screen reader and a tooltip: what a caller passes as `label` when it has nothing more exact to say. */
+export const MARK_WORD: Record<MarkState, string> = {
+  working: "Working",
+  needs: "Needs you",
+  fresh: "Finished, not opened yet",
+  done: "Finished",
+  new: "Not started",
+  pr: "Pull request open",
+  checks: "Checks running",
+  ready: "Ready to merge",
+  merged: "Merged",
+  problem: "Ran into a problem",
+  limit: "Hit its plan's limit",
+};
+
+/*
+  The dot and the gap for each box size. 14 is the drawing's (3px dots, 2.5 apart); the others keep
+  the box whole and every dot and gap on a whole device pixel at 2x, with the dot a near-constant 3px
+  so the mark reads as one at every size. A size off the set scales from 14.
 */
-export function Spinner({ size = 14 }: { size?: number }) {
+const MARK_GRID: Record<number, [number, number]> = { 12: [3, 1.5], 14: [3, 2.5], 16: [3, 3.5], 20: [4, 4] };
+const markGrid = (size: number): [number, number] => {
+  if (MARK_GRID[size]) return MARK_GRID[size];
+  const d = Math.max(2, Math.round((size * 6) / 14) / 2);
+  return [d, Math.max(1, (size - 3 * d) / 2)];
+};
+
+/**
+  How anything stands, as one mark everywhere (session-state.ts MarkState): nine dots in a 3×3 grid,
+  each state a shape and a colour. Working is a light running round the outer eight in the tint of
+  whose model it is (`tint`, any CSS colour, or `brand`, a model's MarkKind, as markOf gives it;
+  neither is the accent); checks is a light crossing corner to corner. A change of `state` plays
+  across the dots, so keep the mark mounted and change the state (don't key it by its state). With a
+  `label` it is an image that says its state; without one it is decoration. Styles: app.css, the
+  block headed "The state mark".
+*/
+export function StateMark({ state, size = 14, label, tint, brand, className }: { state: MarkState; size?: number; label?: string; tint?: string; brand?: MarkKind; className?: string }) {
+  const [d, g] = markGrid(size);
+  const style = { "--mk-d": `${d}px`, "--mk-g": `${g}px`, "--mk-tint": tint } as CSSProperties;
   return (
-    <svg className="lc-spin" width={size} height={size} viewBox="0 0 16 16" fill="none" strokeWidth={wt(size, 16)} aria-hidden>
-      <circle cx="8" cy="8" r="5.75" stroke="var(--l-wash-3)" />
-      <circle className="lc-spin-arc" cx="8" cy="8" r="5.75" stroke="currentColor" strokeLinecap="round" strokeDasharray="9 40" />
-    </svg>
+    <span className={className ? `lc-mk ${className}` : "lc-mk"} data-s={state} data-brand={brand} style={style} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
   );
 }
 
 export type StepState = "waiting" | "working" | "done" | "skipped" | "failed";
-const STEP_WORD: Record<StepState, string> = { waiting: "Waiting", working: "Working", done: "Done", skipped: "Skipped", failed: "Didn't finish" };
+const STEP_WORD: Record<StepState, string> = { waiting: "Waiting", working: "Working", done: "Finished", skipped: "Skipped", failed: "Ran into a problem" };
+/* A step's states in the state mark's shapes: a step that waits or was skipped has not started, so both are the faint shape and its words tell them apart. */
+const STEP_MARK: Record<StepState, MarkState> = { waiting: "new", working: "working", done: "done", skipped: "new", failed: "problem" };
 /**
-  How a step stands, for the Plan list and the agents: one mark with every state in the same
-  footprint, so a step changes state in place and the change plays (app.css, .lc-stepmark). Waiting is
-  the ring; working is the Spinner (the ring as a faint track, the accent arc travelling on it);
-  done is a soft disc with the tick drawn in; skipped is the ring dashed; failed is the ring in the
-  danger ink with a small ×. All the parts are always drawn and the state shows the ones it needs,
-  so don't key it by its state: a remount would skip the change. The ring is a real 1.25px, the
-  arc, tick and × follow the weight rule.
+  How a step stands, for the Plan list, the agents and the tool checks: the state mark (StateMark),
+  so a step reads the way a session does. It stays mounted while its state changes, so the change
+  plays across the dots; don't key it by its state. The class lc-stepmark is for where a list sets it.
 */
 export function StepMark({ state, size = 16, label, className }: { state: StepState; size?: number; label?: string; className?: string }) {
-  const ring = +((1.25 * 16) / size).toFixed(3);
-  const line = wt(size, 16);
-  return (
-    <span className={className ? `lc-stepmark ${className}` : "lc-stepmark"} data-s={state} role="img" aria-label={label ?? STEP_WORD[state]} style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <circle className="lc-stepmark-ring" cx="8" cy="8" r="5.75" strokeWidth={ring} />
-        <circle className="lc-stepmark-arc" cx="8" cy="8" r="5.75" strokeWidth={line} strokeDasharray="9 40" />
-        <circle className="lc-stepmark-disc" cx="8" cy="8" r="6.75" />
-        <path className="lc-stepmark-tick" d="M5.4 8.2 7.15 9.9 10.6 6.35" strokeWidth={line} />
-        <path className="lc-stepmark-x" d="m6.4 6.4 3.2 3.2M9.6 6.4l-3.2 3.2" strokeWidth={line} />
-      </svg>
-    </span>
-  );
+  return <StateMark state={STEP_MARK[state]} size={size} label={label ?? STEP_WORD[state]} className={className ? `lc-stepmark ${className}` : "lc-stepmark"} />;
 }

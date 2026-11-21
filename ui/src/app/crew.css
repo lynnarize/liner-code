@@ -5,7 +5,7 @@
 */
 
 /* ---------- marks ---------- */
-/* How each one stands is the Plan list's mark (.lc-stepmark in app.css) at 14px, the footprint the dots had. */
+/* How each one stands is the state mark (.lc-mk in app.css, through icons.tsx StepMark) at 14px; the faces only say who. */
 
 /* Stacked marks: the lead, then the agents it sent. */
 .lc-cr-faces {
@@ -26,23 +26,6 @@
 }
 .lc-cr-faces > span:first-child {
   margin-left: 0;
-}
-/* The lead's ring breathes outside its paper ring: a 1.5px accent ring on its own layer, by opacity
-   alone, so it doesn't repaint the header every frame as an animated box-shadow would. */
-.lc-cr-faces > span[data-lead]::after,
-.lc-cr-disc[data-on]::after {
-  content: "";
-  position: absolute;
-  inset: -3.5px;
-  border: 1.5px solid var(--l-accent);
-  border-radius: 50%;
-  pointer-events: none;
-  animation: lc-cr-ring 1.6s ease-in-out infinite;
-}
-@keyframes lc-cr-ring {
-  50% {
-    opacity: 0.25;
-  }
 }
 
 /* ---------- the header's chip ---------- */
@@ -347,6 +330,73 @@ button.lc-crp-r:hover {
   white-space: nowrap;
 }
 
+/* A row opened in place (Peek): its last few steps hang under its mark, as Claude Code shows them. */
+.lc-fan-ag[data-open] {
+  background: var(--l-wash);
+}
+.lc-fan-peek {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  padding: 4px 10px 8px 32px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-fan-steps {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-fan-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 20px;
+}
+.lc-fan-steps li > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-fan-steps li[data-state="running"] {
+  color: var(--l-ink);
+}
+.lc-fan-steps li[data-think],
+.lc-cr-steps li[data-think] {
+  font-style: italic;
+  color: var(--l-ink-3);
+}
+.lc-fan-hook {
+  flex: none;
+  width: 14px;
+  color: var(--l-ink-4);
+}
+.lc-fan-more {
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-fan-open {
+  height: 24px;
+  margin-top: 2px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-accent);
+  cursor: pointer;
+}
+.lc-fan-open:hover {
+  background: var(--l-wash);
+}
+
 /* ---------- the composer's line ---------- */
 /* A row of the composer tray's head (app.css .lc-trow): 36 high, on the tray's tint, no rule. */
 .lc-crs {
@@ -375,7 +425,7 @@ button.lc-crp-r:hover {
 }
 .lc-crs-stop {
   flex: none;
-  height: 26px;
+  height: 28px;
   padding: 0 10px;
   border: 0;
   border-radius: 8px;
@@ -449,8 +499,8 @@ button.lc-cr-bg:hover {
   flex: none;
   color: var(--l-ink-3);
 }
-.lc-cr-av,
-.lc-cr-disc {
+/* You, as a letter on a disc. */
+.lc-cr-av {
   display: grid;
   flex: none;
   place-items: center;
@@ -462,25 +512,19 @@ button.lc-cr-bg:hover {
   font-weight: 600;
   color: var(--l-ink-2);
 }
-/* At work, it takes the faces' paper ring, and their breathing ring outside it (above). */
-.lc-cr-disc[data-on] {
-  position: relative;
-  box-shadow: 0 0 0 2px var(--lc-paper);
-}
+/* A model's or an agent's mark in its place in a row: bare, as every model's and tool's mark is, with no plate round it. */
+.lc-cr-disc,
 .lc-cr-tile {
   display: grid;
   flex: none;
   place-items: center;
   width: 22px;
   height: 22px;
-  border-radius: var(--lc-r-row);
-  background: var(--lc-plate);
   color: var(--l-ink-2);
 }
 .lc-cr-tile[data-big] {
   width: 30px;
   height: 30px;
-  border-radius: var(--lc-r-row);
 }
 .lc-cr-t {
   display: grid;
@@ -740,37 +784,41 @@ button.lc-cr-bg:hover {
   font-size: 13px;
   color: var(--l-ink-2);
 }
-.lc-cr-steps li > span:last-child {
+.lc-cr-steps li > span:not(.lc-mk) {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-cr-steer {
-  display: flex;
+/* A thought has no mark: it sits where a step's words start. */
+.lc-cr-steps li[data-think] > span:not(.lc-mk) {
+  padding-left: 22px;
+  white-space: normal;
+}
+.lc-cr-steps li[data-state="running"]:last-child {
+  color: var(--l-ink);
+}
+.lc-cr-at {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.lc-cr-follow {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
+  font-weight: 400;
+}
+.lc-cr-earlier {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+/* The box that steers an agent is the shared one (app.css, .lc-sbox): only its place here. */
+.lc-cr-steer {
   margin-top: 14px;
-  padding: 0 10px 0 12px;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px var(--l-line);
-}
-.lc-cr-steer:focus-within {
-  box-shadow: 0 0 0 1.5px var(--l-accent);
-}
-.lc-cr-steer input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-  outline: none;
-}
-.lc-cr-steer input::placeholder {
-  color: var(--l-ink-4);
 }
 .lc-cr-heard {
   display: flex;
@@ -811,17 +859,6 @@ button.lc-cr-bg:hover {
 }
 .lc-todo li[data-s="working"] .lc-todo-own {
   color: var(--l-ink-3);
-}
-
-/* Still, as before: no accent ring, and the disc without the paper ring it only had while breathing. */
-@media (prefers-reduced-motion: reduce) {
-  .lc-cr-faces > span[data-lead]::after,
-  .lc-cr-disc[data-on]::after {
-    display: none;
-  }
-  .lc-cr-disc[data-on] {
-    box-shadow: none;
-  }
 }
 
 /* ---------- a pair's sidekick ---------- */

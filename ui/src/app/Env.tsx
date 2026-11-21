@@ -42,14 +42,14 @@ const THEN: { id: Then; title: string; note: string }[] = [
 
 /**
   The session's menu, opened from its title (Claude Code's title menu, TasteCode's chat menu): the
-  session's own actions first (rename, pin, open beside), then where it works: the machine and folder, your editor, project scripts, the branch,
+  session's own actions first (its details in the Session surface, rename, pin, open beside), then where it works: the machine and folder, your editor, project scripts, the branch,
   and committing what changed.
 */
 export function EnvMenu({ thread, project, files, lines, onChanges, onRename, actions }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; onRename: () => void; actions?: (close: () => void) => ReactNode }) {
   // The session's title is the button, with a small chevron, as in Claude Code. A double-click still renames it.
   return (
     <Pop
-      label={`${thread.title}: the session's menu, to rename it, pin it, or change where it works`}
+      label={`${thread.title}: the session's menu, its details, to rename it, pin it, or change where it works`}
       align="start"
       width={340}
       className="lc-tt-pop"

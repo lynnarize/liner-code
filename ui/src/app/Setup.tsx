@@ -10,13 +10,13 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { FoundRepo, ProviderInfo, Settings, SystemCheck } from "@contracts";
 import { castOf } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, ModelMark, type MarkKind } from "./icons";
+import { I, ModelMark, StateMark, type MarkKind } from "./icons";
 import { markOf, modelLabel, pairReady, plural, since } from "./model";
+import { startModel, StartPick } from "./Models";
 import * as os from "./os";
 import "./setup.css";
 
@@ -136,19 +136,13 @@ export function Setup({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Where a row stands: settled (a green tick), still to do (an empty ring), or needing you (an amber ring). */
+/** Where a row stands, as every step does (the state mark): finished, not started, or needing you. */
+const STATUS_MARK = { ok: "done", todo: "new", warn: "needs" } as const;
 function Status({ state }: { state: "ok" | "todo" | "warn" }) {
   return (
-    <svg className="lc-wel-st" data-state={state} width="20" height="20" viewBox="0 0 20 20" aria-hidden>
-      {state === "ok" ? (
-        <>
-          <circle cx="10" cy="10" r="9" fill="currentColor" />
-          <path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      ) : (
-        <circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      )}
-    </svg>
+    <span className="lc-wel-st">
+      <StateMark state={STATUS_MARK[state]} size={16} />
+    </span>
   );
 }
 
@@ -306,7 +300,7 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
       }
       end={
         <Tb expanded={open} controls="lc-wel-tools" onClick={() => toggle("tools")}>
-          {open ? "Done" : "Add more"}
+          {open ? "Close" : "Add more"}
         </Tb>
       }
       fold={
@@ -460,7 +454,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
       line={line}
       end={
         <Tb expanded={open} controls="lc-wel-projects" disabled={found === null} onClick={() => toggle("projects")}>
-          {open ? "Done" : "Choose"}
+          {open ? "Close" : "Choose"}
         </Tb>
       }
       fold={
@@ -521,6 +515,7 @@ function Work({ onStart }: { onStart: (s: Start) => void }) {
   const two = pairReady(pair);
   // Starts on what you have, so running the setup again doesn't change it; unset, a pair when there can be one.
   const [pick, setPick] = useState<Start>(() => settings.start ?? (two ? "pair" : "best"));
+  // Fusion asked for with one model ready is that model; a Best or Fast saved before reads as the model it means.
   const shown: Start = pick === "pair" && !two ? "best" : pick;
   useEffect(() => onStart(shown), [shown]);
   const name = (ref: string) => modelLabel(ref, providers);
@@ -533,13 +528,14 @@ function Work({ onStart }: { onStart: (s: Start) => void }) {
       {name(ref)}
     </>
   );
-  // Each way's line, drawn with its models' marks; `plain` is the same words for the tooltip when the line is cut short.
-  const ways: Record<Start, { name: string; line: ReactNode; plain: string }> = {
-    pair: two && pair ? { name: "Fusion", line: <>{model(pair.lead)} leads, {model(pair.sidekick)} helps</>, plain: `${name(pair.lead)} leads, ${name(pair.sidekick)} does the legwork it hands over` } : { name: "Fusion", line: "Needs two different models ready", plain: "Needs two different models ready" },
-    best: pair ? { name: "Best", line: <>{model(pair.lead)} alone, on everything</>, plain: `${name(pair.lead)} alone, on everything` } : { name: "Best", line: "The best model you connect, on everything", plain: "The best model you connect, on everything" },
-    fast: two && pair ? { name: "Fast", line: <>{model(pair.sidekick)} alone, for small, clear asks</>, plain: `${name(pair.sidekick)} alone, for small, clear asks` } : pair ? { name: "Fast", line: <>{model(pair.lead)} alone too, with one model ready</>, plain: `${name(pair.lead)} alone too, with one model ready` } : { name: "Fast", line: "A quicker model, for small, clear asks", plain: "A quicker model, for small, clear asks" },
-  };
-  const w = ways[shown];
+  // The line under the start, drawn with its models' marks; `plain` is the same words for the tooltip when the line is cut short.
+  const one = startModel(shown, pair);
+  const w: { name: string; line: ReactNode; plain: string } =
+    one === "pair" && pair
+      ? { name: "Fusion", line: <>{model(pair.lead)} leads, {model(pair.sidekick)} helps</>, plain: `${name(pair.lead)} leads, ${name(pair.sidekick)} does the legwork it hands over` }
+      : one
+        ? { name: name(one), line: <>{model(one)} alone, on everything</>, plain: `${name(one)} alone, on everything` }
+        : { name: "A model", line: "The model you connect, on everything", plain: "The model you connect, on everything" };
   return (
     <Row
       state="ok"
@@ -550,19 +546,7 @@ function Work({ onStart }: { onStart: (s: Start) => void }) {
           {w.line}
         </span>
       }
-      end={
-        <Segmented
-          size="sm"
-          value={shown}
-          onValueChange={(v) => setPick(v)}
-          options={[
-            { value: "pair", label: "Fusion", disabled: !two },
-            { value: "best", label: "Best" },
-            { value: "fast", label: "Fast", disabled: !two },
-          ]}
-          aria-label="Who works on a new session"
-        />
-      }
+      end={<StartPick value={shown} onPick={setPick} />}
     />
   );
 }

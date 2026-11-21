@@ -5,7 +5,7 @@
   is one of your named agents, laid over whichever model the session runs: named agents are only ever
   a way to give a model instructions.
 
-  Here: the picker under Home's composer, the chip beside a session's title, Settings › Modes,
+  Here: the rows Home's + menu opens, the chip beside a session's title, Settings › Modes,
   and the one way into a Workshop session from anywhere.
 */
 import { useState, type ReactNode } from "react";
@@ -17,14 +17,14 @@ import { toast } from "@liner/components/toast/toast";
 import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
 import { Glyph, I } from "./icons";
-import { Pop, Row, Sep } from "./ui";
+import { Row, Sep } from "./ui";
 import "./modes.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 const ICON: Record<"standard" | "creator", (p: { size?: number }) => ReactNode> = { standard: I.code, creator: I.blocks };
 const iconOf = (mode?: SessionMode) => (mode === "creator" ? ICON.creator : mode?.startsWith("agent:") ? I.agents : ICON.standard);
 /** A mode's icon: Standard's code brackets, Workshop's blocks, and one of yours drawn with its agent's own glyph. */
-function ModeIcon({ mode, agents, size }: { mode: SessionMode; agents: AgentProfile[]; size: number }) {
+export function ModeIcon({ mode, agents, size }: { mode: SessionMode; agents: AgentProfile[]; size: number }) {
   if (mode.startsWith("agent:")) {
     const a = agents.find((x) => `agent:${x.id}` === mode);
     return a ? <Glyph glyph={a.glyph} size={size} /> : <I.agents size={size} />;
@@ -55,43 +55,27 @@ export async function startCreator(o: { projectId?: string; text?: string; title
 }
 
 /**
-  The mode a new session starts in, at the right end of the strip under Home's composer:
-  Standard, Workshop, or one of yours, and the way to Settings › Modes. Workshop tints it.
+  The modes a new session can start in, as the rows Home's + menu opens from its Mode row:
+  Standard, Workshop, or one of yours, and the way to Settings › Modes. `done` closes the menu. A
+  mode of yours is not the same as picking that agent under Your agents in who works: the mode lays
+  its instructions over whichever model works, where the agent brings its own model. Its row says so.
 */
-export function ModePick({ value, onPick }: { value: SessionMode; onPick: (m: SessionMode) => void }) {
+export function ModeRows({ value, onPick, done }: { value: SessionMode; onPick: (m: SessionMode) => void; done: () => void }) {
   const agents = useEngine((s) => s.agents);
-  const name = modeName(value, agents);
-  // The name alone, as the menu says it: "Standard", "Workshop", or yours.
-  const label = name;
   return (
-    <Pop
-      label={`Mode: ${name}. Change it`}
-      width={300}
-      menu
-      triggerClass={`lc-pb lc-mode-pick${value === "creator" ? " lc-mode-creator" : ""}`}
-      trigger={
-        <>
-          <ModeIcon mode={value} agents={agents} size={14} />
-          <span className="lc-strip-cap">{label}</span>
-        </>
-      }
-    >
-      {(close) => (
-        <div className="lc-mode-menu">
-          {BUILTIN_MODES.map((m) => (
-            <Row key={m.id} keepIcon icon={<ModeIcon mode={m.id} agents={agents} size={16} />} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), close())} />
-          ))}
-          {customs(agents).map((a) => (
-            <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={16} />} title={a.name} note={a.role} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), close())} />
-          ))}
-          <Sep />
-          <button type="button" role="menuitem" className="lc-mode-more l-focus" onClick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
-            <I.sliders size={16} />
-            Modes in Settings…
-          </button>
-        </div>
-      )}
-    </Pop>
+    <div className="lc-mode-menu">
+      {BUILTIN_MODES.map((m) => (
+        <Row key={m.id} keepIcon icon={<ModeIcon mode={m.id} agents={agents} size={16} />} title={m.name} note={m.id === "creator" ? "Add connections, panels and apps to Liner Code" : "Everyday work on your code"} on={value === m.id} onPick={() => (onPick(m.id), done())} />
+      ))}
+      {customs(agents).map((a) => (
+        <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={16} />} title={a.name} note={`Its instructions, on the model you pick${a.role ? ` · ${a.role}` : ""}`} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), done())} />
+      ))}
+      <Sep />
+      <button type="button" className="lc-mode-more l-focus" onClick={() => (done(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
+        <I.sliders size={16} />
+        Modes in Settings…
+      </button>
+    </div>
   );
 }
 

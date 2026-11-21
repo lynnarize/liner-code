@@ -3,24 +3,21 @@
   named in the top row with a menu of them (TabTitle), and gone through with ⌃Tab (useTabKeys).
   Which are open is face.ts's, kept for the window.
 
-  Also here, the top row's "On its own" chip for a design on its own: where its files are, and
-  Build in a project (design.attach), after which the chip is gone and the tab carries on.
+  Also here, Build in a project (design.attach) for a design on its own, which the top row's ···
+  offers (DesignFace.tsx): the tab carries on in the project.
 */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Project, Thread } from "@contracts";
 import { DESIGNS_FOLDER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { bridge } from "../bridge";
 import { getState, rpc, useEngine } from "../engine";
 import { closeTab, getTabs, HOME_TAB, moveTab, showTab, subscribeTabs, tabKey, useTabs, type DesignTab } from "../face";
-import { I, N } from "../icons";
-import { clock, plural } from "../model";
+import { I, N, type MarkKind } from "../icons";
+import { ago, clock, markOf, modelLabel, plural, threadModel } from "../model";
 import { keys } from "../os";
-import { ProjectChooser } from "../Projects";
-import { SideFolder, SideHead, SideLabel, SideMark, SideRow, type SideState } from "../SideList";
-import { sideStateOf } from "../session-state";
+import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused, type SideState } from "../SideList";
+import { askWords, markStateOf, seenAsk, sideStateOf, type MarkState } from "../session-state";
 import { Pop, Row, Sep } from "../ui";
-import { D } from "./Rail";
 import { dropIfUntouched, newDesign, sessionOf } from "./session";
 import { design, getDesign, useDesign } from "./store";
 
@@ -43,8 +40,6 @@ export function close(key: string) {
 subscribeTabs(() => void (!getTabs().list.length && getDesign().file && design.close()));
 
 const nameOf = (t: DesignTab) => t.title ?? "Design";
-/** How many open designs the sidebar lists before the rest fold into one "N more" row. */
-const FOLD = 5;
 
 /**
   How many frames each design has, as the sidebar last heard it without opening a file for it:
@@ -93,101 +88,126 @@ const isIds = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => 
 /** Designs on their own share one folder in the list, whichever project each is. */
 const OWN = "own";
 const VIEW_KEY = "ld:sb-list";
-/** By status's groups, in order, and the marks each holds: Needs you is waiting on you, a problem or its plan's limit, as Code's is. */
-const STATUS: [string, SideState[]][] = [["Needs you", ["needs", "error", "limited"]], ["Drawing", ["working"]], ["At rest", ["done"]]];
+/** By status's groups, in order, with the sidebar's names, and the marks each holds: Needs you is waiting on you, a problem or its plan's limit, as Code's is. */
+const STATUS: [string, SideState[]][] = [["Needs you", ["needs", "error", "limited"]], ["Working", ["working"]], ["Finished", ["done"]]];
 const asks = (st: SideState) => st === "needs" || st === "error" || st === "limited";
-
-/** Whether "N more" is opened: one choice for the window, so ⌃Tab walks what the list shows. */
-let showAll = false;
-const allFns = new Set<() => void>();
-const setShowAll = (v: boolean) => ((showAll = v), allFns.forEach((f) => f()));
-const useShowAll = () => useSyncExternalStore((f) => (allFns.add(f), () => void allFns.delete(f)), () => showAll);
+/** A question you've opened and left, or are looking at (the open design in a focused window): still waiting, no longer news (session-state.ts, seenAsk), so grey, as in Code's list. */
+const seenQ = (x: { s?: Thread; state: SideState }, looking: boolean) => x.state === "needs" && Boolean(x.s && seenAsk(x.s, looking));
 
 /** How a design's session stands, as its row's mark shows it. */
 const standOf = (t: DesignTab, threads: Thread[]) => {
   const s = sessionOf(t, threads);
   // As Code's rows mark it (session-state.ts), but a design's row has no "not started" mark.
+  return { s, state: sideStateOfDesign(s) };
+};
+/** A design's state mark as Code's rows draw it (markStateOf): fresh until you open what finished while you were elsewhere; never "not started", which a design's row doesn't say. */
+export const markOfTab = (s: Thread | undefined, looking: boolean): MarkState => {
+  const m = s ? markStateOf(s, { looking }) : "done";
+  return m === "new" ? "done" : m;
+};
+/**
+  A design row's second line, the same here and in Design Home's list of every design, worded as Code's rows word it
+  (rowWords): what it draws now, a question in its own words, a problem, its plan's limit (and when it's back), else its
+  frames when they're known. With its colour: amber for a question you haven't opened or a limit, red for a problem.
+*/
+export function designWords(s: Thread | undefined, state: SideState, seen: boolean, n: number | undefined): { text?: string; tone?: "warn" | "danger" } {
+  const text = state === "working" ? s?.doing?.text || "Working" : state === "needs" && s ? askWords(s) : state === "error" ? "Ran into a problem" : state === "limited" ? `Hit its plan's limit${s?.limit?.until ? `, back at ${clock(s.limit.until)}` : ""}` : n === undefined ? undefined : n ? plural(n, "frame") : "No frames yet";
+  return { text, tone: (state === "needs" && !seen) || state === "limited" ? "warn" : state === "error" ? "danger" : undefined };
+}
+/** How a design's session stands, for a row that has the session (or none). */
+export const sideStateOfDesign = (s: Thread | undefined): SideState => {
   const mark = s ? sideStateOf(s) : "done";
-  const state: SideState = mark === "new" ? "done" : mark;
-  return { s, state };
+  return mark === "new" ? "done" : mark;
 };
 
 /**
-  The open designs as the list lays them out, from the tabs, the view, the sessions, the projects and
-  the fold alone: what shows and what folds under "N more" (past FOLD, the one you're in always
-  shown), the folders, and `order`, the designs in the order the list puts them (those under "N more"
-  after the shown ones, in their own listed order). The list draws from it, and ⌃Tab walks `order`.
+  The open designs as the list lays them out, from the tabs, the view, the sessions and the projects
+  alone: the folders, and `order`, the designs in the order the list puts them. Every open design is
+  listed, and the list scrolls (no "N more" fold, as Code's list has none). The list draws from it,
+  and ⌃Tab walks `order`.
 */
-function laidOut(list: DesignTab[], at: string, all: boolean, view: View, threads: Thread[], projects: Project[]) {
+function laidOut(list: DesignTab[], at: string, view: View, threads: Thread[], projects: Project[]) {
   const here = list.find((t) => tabKey(t) === at);
   const folderOf = (t: DesignTab) => (projects.find((p) => p.id === t.projectId)?.kind === "design" ? OWN : t.projectId);
-  const folds = list.length > FOLD + 1;
-  let shown = list;
-  if (folds && !all) {
-    shown = list.slice(0, FOLD);
-    if (here && !shown.includes(here)) shown = [...shown.slice(0, FOLD - 1), here];
-  }
-  const rest = list.filter((t) => !shown.includes(t));
-  // By folder: one folder per project, in the order their first design was opened; designs on their own share "On its own". `tabs` are those shown, `open` all of them.
-  const folders: { id: string; name: string; tabs: DesignTab[]; open: DesignTab[] }[] = [];
+  // By folder: one folder per project, in the order their first design was opened; designs on their own share "On its own".
+  const folders: { id: string; name: string; tabs: DesignTab[] }[] = [];
   for (const t of list) {
     const id = folderOf(t);
     let f = folders.find((x) => x.id === id);
-    if (!f) folders.push((f = { id, name: id === OWN ? "On its own" : (projects.find((p) => p.id === id)?.name ?? "A project"), tabs: [], open: [] }));
-    f.open.push(t);
-    if (shown.includes(t)) f.tabs.push(t);
+    if (!f) folders.push((f = { id, name: id === OWN ? "On its own" : (projects.find((p) => p.id === id)?.name ?? "A project"), tabs: [] }));
+    f.tabs.push(t);
   }
   const rank = (t: DesignTab) => (view === "folder" ? folders.findIndex((f) => f.id === folderOf(t)) : STATUS.findIndex(([, sts]) => sts.includes(standOf(t, threads).state)));
-  const listed = (ts: DesignTab[]) => ts.map((t, i) => [rank(t), i, t] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , t]) => tabKey(t));
-  return { here, folderOf, folds, shown, rest, folders, order: [...listed(shown), ...listed(rest)] };
+  const order = list.map((t, i) => [rank(t), i, t] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , t]) => tabKey(t));
+  return { here, folderOf, folders, order };
 }
 
 /**
   Liner Design's side of the sidebar, as Code's: your places on top (New design, Search, Home),
-  "Designs" with its one menu (By folder, By status), and the open designs as two-line rows. A row
-  says how its session stands (the spinner in the lead's colour while it draws, the amber dot when it
-  waits on you), what it is drawing now or what is known of it, and pointing at it brings its cross.
-  The rows are tabs: ⌃Tab goes through them (useTabKeys), a middle-click or the cross closes one, and
-  nothing is deleted and nothing stops. Past FOLD of them the rest fold into one "N more" row at the
-  list's end, which opens them all; the one you're in is always among those shown, and its folder
-  opens to show it.
+  "Designs" with its one menu (By folder, By status), and the open designs as Code's two-line rows
+  (SideRow, Rows.dc.html). A row says how its session stands in the state mark (working in its
+  model's colour, needs when it waits on you and you haven't opened it since, grey after, fresh when
+  it finished while you were elsewhere), its title with the time since its session last did
+  something, what it is drawing now, what it asks you in its own words or how many frames it has,
+  and its model's mark at the line's end; pointing at it brings its cross (a design has no pull
+  request or worktree to show). The rows are tabs: ⌃Tab goes through them (useTabKeys), a
+  middle-click or the cross closes one, and nothing is deleted and nothing stops. Every open design
+  is listed and the list scrolls; the one you're in has its folder opened to show it.
 */
 export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
   const { list, at } = useTabs();
   const threads = useEngine((s) => s.threads);
   const projects = useEngine((s) => s.projects);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
   // Only which file is open and how many frames it has: a frame dragged on the canvas draws nothing here.
   const fileId = useDesign((s) => s.file?.id);
   const fileFrames = useDesign((s) => s.file?.frames.length);
   useFramesRev();
-  const all = useShowAll();
   const [view, setView] = useKept<View>(VIEW_KEY, "folder", isView);
   const [shut, setShut] = useKept<string[]>("ld:sb-shut", [], isIds);
-  const { here, folderOf, folds, shown, rest, folders } = laidOut(list, at, all, view, threads, projects);
+  const { here, folderOf, folders } = laidOut(list, at, view, threads, projects);
+  // The times move on their own.
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  /** A session's model, for its working light's colour and its mark among the row's facts. */
+  const modelOf = (s?: Thread): { ref?: string; brand?: MarkKind } => {
+    const ref = s ? threadModel(s, agents, providers) : undefined;
+    return { ref, brand: ref ? markOf(ref) : undefined };
+  };
   // The open design's own file says how many frames it has now.
   useEffect(() => void (here && fileFrames !== undefined && fileId === here.file && knowFrames(tabKey(here), fileFrames)), [here, fileId, fileFrames]);
   // A design opened (or come to with ⌃Tab) in a folded folder: the folder opens to show it.
   const hereFolder = here ? folderOf(here) : undefined;
   useEffect(() => void (view === "folder" && hereFolder && shut.includes(hereFolder) && setShut(shut.filter((x) => x !== hereFolder))), [at, hereFolder]);
   const stand = (t: DesignTab) => standOf(t, threads);
+  // The open design in a focused window is being looked at: no amber for it, in its row or its folder.
+  const focused = useWindowFocused();
+  const looking = (t: DesignTab) => focused && tabKey(t) === at;
 
   const row = (t: DesignTab) => {
     const k = tabKey(t);
     const on = k === at;
     const name = nameOf(t);
     const { s, state } = stand(t);
-    const n = frames.get(k);
-    // How it ended, worded as Code's rows word it: a problem, its plan's limit (and when it's back).
-    const sub = state === "working" ? s?.doing?.text || "Drawing" : state === "needs" ? "Waits for your answer" : state === "error" ? "Ran into a problem" : state === "limited" ? `Hit its plan's limit${s?.limit?.until ? `, back at ${clock(s.limit.until)}` : ""}` : n === undefined ? undefined : n ? plural(n, "frame") : "No frames yet";
+    const seen = seenQ({ s, state }, looking(t));
+    const mark = markOfTab(s, looking(t));
+    const { ref, brand } = modelOf(s);
+    const words = designWords(s, state, seen, frames.get(k));
     return (
       <SideRow
         key={k}
         current={on}
         quiet={state === "done"}
-        mark={<SideMark state={state} tint={state === "working" ? "var(--ld-lead)" : undefined} label={state === "working" ? "An agent is drawing here" : state === "done" ? "At rest" : undefined} />}
+        mark={<SideMark state={mark} brand={brand} label={seen ? "Waits for your answer" : undefined} />}
         title={name}
-        sub={sub}
-        tone={state === "needs" || state === "limited" ? "warn" : state === "error" ? "danger" : undefined}
+        ago={s ? ago(s.updatedAt, now) : undefined}
+        sub={words.text}
+        tone={words.tone}
+        facts={brand && <SideFacts model={brand} modelName={ref && modelLabel(ref, providers)} />}
         // A middle-click closes it, as a browser's tab.
         onMouseDown={(e) => e.button === 1 && e.preventDefault()}
         onAuxClick={(e) => e.button === 1 && (e.preventDefault(), close(k))}
@@ -196,21 +216,21 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
           tabIndex: 0,
           "aria-selected": on,
           className: "l-focus",
-          title: state === "working" ? `${name}: an agent is drawing here` : name,
+          title: name,
           onClick: () => showTab(k),
           onKeyDown: (e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), showTab(k)),
         }}
         acts={
           <button type="button" className="lc-sb-a l-focus" aria-label={`Close ${name}`} title="Close: the design stays" onClick={() => close(k)}>
-            <I.close size={12} />
+            <I.close size={14} />
           </button>
         }
       />
     );
   };
 
-  // By status: those waiting on you, those being drawn, the rest; each in the order they were opened. A label counts all of its, "N more" too, as a folder does.
-  const by = (sts: SideState[]) => ({ ts: shown.filter((t) => sts.includes(stand(t).state)), n: list.filter((t) => sts.includes(stand(t).state)).length });
+  // By status: those waiting on you, those at work, the rest; each in the order they were opened.
+  const by = (sts: SideState[]) => list.filter((t) => sts.includes(stand(t).state));
   /** A run of rows is a tablist of its own (named for its folder or group): every child of it is a tab row. */
   const tabs = (name: string, ts: DesignTab[]) => (
     <div className="ld-open-tabs" role="tablist" aria-label={`Open designs ${name}`} aria-orientation="vertical">
@@ -237,10 +257,10 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
       <SideHead title="Designs" note={view === "status" ? "By status" : undefined} menuLabel="What the list shows">
         {(done) => (
           <>
-            <Row title="By folder" icon={<I.folder size={14} />} keepIcon on={view === "folder"} onPick={() => (done(), setView("folder"))} />
-            <Row title="By status" icon={<I.list size={14} />} keepIcon on={view === "status"} onPick={() => (done(), setView("status"))} />
+            <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (done(), setView("folder"))} />
+            <Row title="By status" icon={<I.list size={16} />} keepIcon on={view === "status"} onPick={() => (done(), setView("status"))} />
             <Sep />
-            <Row title="New design" icon={<I.plus size={14} />} end={keys("mod+n")} onPick={() => (done(), void newDesign().catch(fail))} />
+            <Row title="New design" icon={<I.plus size={16} />} end={keys("mod+n")} onPick={() => (done(), void newDesign().catch(fail))} />
           </>
         )}
       </SideHead>
@@ -248,52 +268,36 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
       {list.length > 0 && (
         <div className="lc-sl-list ld-open-list">
           {view === "folder" &&
-            folders.filter((f) => f.tabs.length).map((f) => (
-              <SideFolder
-                key={f.id}
-                name={f.name}
-                count={f.open.length}
-                open={!shut.includes(f.id)}
-                onToggle={() => setShut(shut.includes(f.id) ? shut.filter((x) => x !== f.id) : [...shut, f.id])}
-                needs={f.open.some((t) => asks(stand(t).state))}
-                working={f.open.some((t) => stand(t).state === "working")}
-                tint="var(--ld-lead)"
-                icon={f.id === OWN ? <I.edit size={16} /> : undefined}
-                what="designs"
-              >
-                {tabs(f.id === OWN ? "on their own" : `in ${f.name}`, f.tabs)}
-              </SideFolder>
-            ))}
+            folders.map((f) => {
+              const working = f.tabs.find((t) => stand(t).state === "working");
+              return (
+                <SideFolder
+                  key={f.id}
+                  name={f.name}
+                  count={f.tabs.length}
+                  open={!shut.includes(f.id)}
+                  onToggle={() => setShut(shut.includes(f.id) ? shut.filter((x) => x !== f.id) : [...shut, f.id])}
+                  needs={f.tabs.some((t) => asks(stand(t).state) && !seenQ(stand(t), looking(t)))}
+                  working={Boolean(working)}
+                  brand={working && modelOf(stand(working).s).brand}
+                  icon={f.id === OWN ? <I.edit size={16} /> : undefined}
+                  what="designs"
+                >
+                  {tabs(f.id === OWN ? "on their own" : `in ${f.name}`, f.tabs)}
+                </SideFolder>
+              );
+            })}
           {view === "status" &&
             STATUS.map(([name, sts]) => {
-              const { ts, n } = by(sts);
+              const ts = by(sts);
               if (!ts.length) return null;
               return (
                 <section key={name} className="ld-open-sec" aria-label={name}>
-                  <SideLabel name={name} count={n} />
+                  <SideLabel name={name} count={ts.length} />
                   {tabs(`that are ${name === "Needs you" ? "waiting on you" : name.toLowerCase()}`, ts)}
                 </section>
               );
             })}
-          {rest.length > 0 && (
-            <button type="button" className="ld-open-more l-focus" onClick={() => setShowAll(true)} title={rest.map(nameOf).join(", ")}>
-              <span className="ld-open-more-m" aria-hidden>
-                {rest.some((t) => asks(stand(t).state)) ? <SideMark state="needs" /> : rest.some((t) => stand(t).state === "working") ? <SideMark state="working" tint="var(--ld-lead)" label="An agent is drawing in one of them" /> : <I.more size={14} />}
-              </span>
-              <span className="ld-ell">
-                <span className="ld-open-n">{rest.length} more</span> {rest.slice(0, 2).map(nameOf).join(", ")}
-                {rest.length > 2 ? "…" : ""}
-              </span>
-            </button>
-          )}
-          {folds && all && (
-            <button type="button" className="ld-open-more l-focus" onClick={() => setShowAll(false)}>
-              <span className="ld-open-more-m" aria-hidden>
-                <I.chevU size={12} />
-              </span>
-              <span className="ld-ell">Show fewer</span>
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -307,20 +311,24 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
 export function TabTitle() {
   const { list, at } = useTabs();
   const threads = useEngine((s) => s.threads);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
   const here = list.find((t) => tabKey(t) === at);
   const name = here ? nameOf(here) : "Home";
   return (
     <Pop label={`${name}: the open designs`} width={300} triggerClass="ld-tt" trigger={<><span className="ld-ell">{name}</span><I.chevD size={12} /></>} menu>
       {(done) => (
         <>
-          <Row title="Home" icon={<I.home size={14} />} on={!here} keepIcon onPick={() => (done(), showTab(HOME_TAB))} />
+          <Row title="Home" icon={<I.home size={16} />} on={!here} keepIcon onPick={() => (done(), showTab(HOME_TAB))} />
           {list.map((t) => {
             const k = tabKey(t);
-            const busy = sessionOf(t, threads)?.status === "running";
-            return <Row key={k} title={nameOf(t)} icon={<D.frame size={14} />} on={k === at} keepIcon end={busy ? <span className="ld-pd" data-lead aria-label="An agent is drawing here" /> : undefined} onPick={() => (done(), showTab(k))} />;
+            // Each design's mark in the icon place, as its row in the sidebar has it.
+            const s = sessionOf(t, threads);
+            const ref = s ? threadModel(s, agents, providers) : undefined;
+            return <Row key={k} title={nameOf(t)} icon={<SideMark state={markOfTab(s, false)} brand={ref ? markOf(ref) : undefined} />} on={k === at} keepIcon onPick={() => (done(), showTab(k))} />;
           })}
           <Sep />
-          <Row title="New design" icon={<I.plus size={14} />} end={<span className="ld-k">{keys("mod+n")}</span>} onPick={() => (done(), void newDesign().catch(fail))} />
+          <Row title="New design" icon={<I.plus size={16} />} end={keys("mod+n")} onPick={() => (done(), void newDesign().catch(fail))} />
           {list.length > 1 && <p className="ld-note ld-tt-note">{keys("ctrl+tab")} goes to the next design</p>}
         </>
       )}
@@ -340,7 +348,7 @@ export function useTabKeys() {
       const { list, at } = getTabs();
       // As the list lays them out now, in its view, whether or not the sidebar shows.
       const { threads, projects } = getState();
-      const ring = [HOME_TAB, ...laidOut(list, at, showAll, readKept(VIEW_KEY, "folder", isView), threads, projects).order];
+      const ring = [HOME_TAB, ...laidOut(list, at, readKept(VIEW_KEY, "folder", isView), threads, projects).order];
       const i = Math.max(0, ring.indexOf(at));
       e.preventDefault();
       e.stopPropagation();
@@ -364,63 +372,4 @@ export async function buildIn(tab: DesignTab, to: { projectId: string } | { path
   moveTab(from, next);
   toast(`Moved ${r.file.title} into ${r.project.name}`, { description: r.left ?? "The canvas and the conversation carry on there.", duration: 5000 });
   return r;
-}
-
-/** The top row's chip for a design on its own: where it is, and Build in a project (choosing a project or a folder in the same panel). */
-export function OwnChip({ tab, project }: { tab: DesignTab; project: Project }) {
-  const [busy, setBusy] = useState(false);
-  const [choosing, setChoosing] = useState(false);
-  const go = async (to: { projectId: string } | { path: string }, close: () => void) => {
-    setBusy(true);
-    try {
-      await buildIn(tab, to);
-      close();
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Pop label="This design is on its own" align="end" width={420} triggerClass="lc-pb ld-own" trigger={<><I.folder size={14} /><span className="ld-own-t">On its own</span><I.chevD size={12} /></>}>
-      {(close) =>
-        choosing ? (
-          <div className="ld-own-pop">
-            <button type="button" className="ld-own-back l-focus" onClick={() => setChoosing(false)}>
-              <I.chevL size={14} />
-              Build in a project
-            </button>
-            {busy ? (
-              <p className="ld-note ld-own-note l-shimmer">Moving the design in</p>
-            ) : (
-              <ProjectChooser
-                onPick={(p) => void go({ projectId: p.id }, () => (setChoosing(false), close()))}
-                extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={14} />} onPick={() => void bridge.pickFolder().then((path) => (path ? go({ path }, () => (setChoosing(false), close())) : undefined))} />}
-              />
-            )}
-          </div>
-        ) : (
-          <div className="ld-own-pop">
-            <div className="ld-way-mh">This design is on its own</div>
-            <button type="button" className="ld-wl l-focus" onClick={() => (close(), bridge.reveal(project.path))}>
-              <I.folder size={16} />
-              <span>
-                <b>{ownPlace(project)}</b>
-                <small>Plain HTML files. Show in Finder</small>
-              </span>
-            </button>
-            <Sep />
-            <button type="button" className="ld-wl l-focus" onClick={() => setChoosing(true)}>
-              <I.link size={16} />
-              <span>
-                <b>Build in a project</b>
-                <small>Pick a folder. The design moves in with it</small>
-              </span>
-            </button>
-            <p className="ld-note ld-own-note">The conversation is the same in both tabs. Press Code and you are in this design's session, with nothing in Scratch.</p>
-          </div>
-        )
-      }
-    </Pop>
-  );
 }

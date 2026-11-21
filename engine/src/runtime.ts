@@ -14,7 +14,7 @@
   steer reaches the agent at its next step instead. A change whose check the queue went ahead of
   is read with the next check (Thread.reviewSince).
 */
-import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Precheck, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
+import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, FileChange, Finding, Item, ModelInfo, PlanEntry, PrTestResult, ProviderId, ProviderInfo, Precheck, Question, QueuedMessage, Risk, ShownChip, UserShown, Settings, GrantKind, Thread, TurnPart, Usage } from "../../contracts/src/index.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -24,7 +24,7 @@ import { closesOnExit, holders, killTree, markFile, run, shellOf, spawn, THREAD_
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt, TOO_LONG, tooLongToReview } from "./review.ts";
 import { antigravity, cursor, gitInside, grok, hermes, opencode } from "./providers/acp.ts";
-import { effortOf } from "./providers/models.ts";
+import { effortOf, ULTRACODE, ULTRATHINK } from "./providers/models.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
 import { codex } from "./providers/codex.ts";
@@ -540,7 +540,9 @@ export class Runtime {
     void this.hold(threadId, () => this.wakeNow(threadId, { agentId, session, w })).catch(() => {});
   }
   private async wakeNow(threadId: string, k: { agentId: string; session: ProviderSession; w: WakeTurn }) {
-    if (!k.w.pending() || this.halted.has(threadId)) return;
+    if (!k.w.pending()) return;
+    // Dropped after Stop: let go, as dropWake does, or the tool keeps collecting a turn nobody will run (acp.ts own).
+    if (this.halted.has(threadId)) return k.w.cancel();
     const name = this.resolve(this.store.thread(threadId), k.agentId).agent.name;
     await this.turnNow(threadId, "", k.agentId, { show: false, review: false, wake: { session: k.session, w: k.w }, note: `${name} carries on by itself${k.w.why ? `: ${k.w.why}` : ", with no message from you"}.` });
   }
@@ -549,13 +551,55 @@ export class Runtime {
     this.wakes.delete(threadId);
   }
 
-  /** Said when a turn runs at another effort than the one picked: the model doesn't take it, and this is the nearest it has. */
-  private effortNote(t: Thread, agentId = t.agent) {
+  /**
+    Said when a turn runs at another effort than the one picked: the model doesn't take it, and this is the nearest it has.
+    Only a level the person picked (the session's own, or their agent's) is spoken of, since one nobody picked is nothing to
+    explain; and only the first turn it applies, since the same words each turn would bury the conversation. A session's
+    timeline is what remembers it, so a restart doesn't say it again: another model, level or outcome is said once more.
+  */
+  effortNote(t: Thread, agentId = t.agent) {
     const r = this.resolve(t, agentId);
-    const asked = (agentId === t.agent ? t.effort : undefined) ?? this.store.agent(agentId).effort;
+    // "" is no level, as unset is: the agent's own, else none.
+    const asked = (agentId === t.agent ? t.effort : undefined) || this.store.agent(agentId).effort;
     if (!asked || r.effort === asked) return "";
-    const word = (id: string) => effortOf(id).label;
-    return `${this.labelOf(`${r.provider}:${r.model}`)} has no ${word(asked)} effort, so this turn runs at ${word(r.effort)}, the nearest it has.`;
+    // No level sent because its tool hasn't said yet which this model takes (the tool list not read yet after a start, a model
+    // its list doesn't hold): that isn't "has none", and a note written now would stay in the timeline, wrong, for good.
+    if (!r.effort && !this.modelOf(r.provider, r.model)) return "";
+    const word = (id: string) => [ULTRACODE, ULTRATHINK].find((e) => e.id === id)?.label ?? effortOf(id).label;
+    const name = this.labelOf(`${r.provider}:${r.model}`);
+    const note = r.effort ? `${name} has no ${word(asked)} effort, so this turn runs at ${word(r.effort)}, the nearest it has.` : `${name} has no ${word(asked)} effort, so this turn runs at the effort its tool picks.`;
+    return this.store.timeline(t.id).some((x) => x.kind === "notice" && x.text === note) ? "" : note;
+  }
+
+  /**
+    The effort a model runs at when `asked` is wanted: `asked` when its tool lists it for the model, else the nearest it lists
+    (a level picked for another model, or one its tool no longer lists). With none near (a word of another tool's, Ultracode on
+    a model without extra high) it is the model's default, else "": the tool is given no level and runs at its own, never at
+    one the model doesn't take. Nothing asked, or a model whose tool lists no levels for it (a model id you added, one its
+    catalog lists bare, an older Claude model, any model before the tools are known), is given none, since a word the tool
+    never offered for it is forwarded as it is and may be refused or misread. Claude Code's Ultracode and Ultrathink are
+    levels of the app's own, so they go only where claude.ts (claudeRow) lists them for the model: Ultracode where Claude
+    Code lists extra high, Ultrathink where it doesn't say the model lacks adaptive thinking. The tool's default model
+    ("default" or none) goes by the model its tool marks as its default.
+  */
+  effortFor(provider: string, model: string, asked: Effort | undefined): Effort {
+    if (!asked) return "";
+    const info = this.modelOf(provider, model);
+    if (!info?.efforts?.length) return "";
+    const near = nearestEffort(asked, info.efforts, info.defaultEffort);
+    return info.efforts.some((e) => e.id === near) ? near : (info.defaultEffort ?? "");
+  }
+
+  /** The level a model's tool marks as its default, when it lists it for the model; else "", the tool's own. */
+  defaultEffortOf(provider: string, model: string): Effort {
+    const info = this.modelOf(provider, model);
+    return info?.defaultEffort && info.efforts?.some((e) => e.id === info.defaultEffort) ? info.defaultEffort : "";
+  }
+
+  /** A model as its tool's list has it, the tool's default model for "default" or none; undefined while the list doesn't hold it (or isn't read yet). */
+  private modelOf(provider: string, model: string): ModelInfo | undefined {
+    const models = this.providerInfo.find((p) => p.id === provider)?.models ?? [];
+    return models.find((m) => m.id === model) ?? (!model || model === "default" ? models.find((m) => m.isDefault) : undefined);
   }
 
   /** What an agent runs on in a thread: the thread's own model if set, else the agent's. */
@@ -563,10 +607,10 @@ export class Runtime {
     const agent = this.store.agent(agentId);
     const own = agentId === t.agent ? t.model : undefined;
     const { provider, model } = splitModel(own ?? agent.model);
-    const asked: Effort = (agentId === t.agent ? t.effort : undefined) ?? agent.effort;
-    // A level this model doesn't take (picked for another model) becomes the nearest it has (the turn says so, effortNote).
-    const info = this.providerInfo.find((p) => p.id === provider)?.models.find((m) => m.id === model);
-    const effort = info?.efforts?.length ? nearestEffort(asked, info.efforts, info.defaultEffort) : asked;
+    // A session saved with "" has no level of its own, as one saved with none: the agent's, else none.
+    const asked: Effort = (agentId === t.agent ? t.effort : undefined) || agent.effort;
+    // A level this model doesn't take becomes the nearest it has (the turn says so, effortNote).
+    const effort = this.effortFor(provider, model, asked);
     // A bare model goes by its label ("Sonnet 5.5"), in what the timeline and notifications say.
     const named = agent.id.startsWith("@") || !this.store.agents.some((a) => a.id === agent.id) ? { ...agent, name: this.labelOf(`${provider}:${model}`) } : agent;
     return { agent: named, provider, model, effort, access: t.access };
@@ -2035,7 +2079,7 @@ export class Runtime {
     // A read for a Liner Security session (a scan's second look) is held as the scan is: off the web, no agents of its own.
     const held = this.store.threads.find((x) => x.id === threadId);
     const scan = held ? readsOnlyTag(held) : false;
-    const session = p.open({ cwd, model, effort: "medium", access: "read", soul: "", guard: true, ephemeral: true, env: this.envFor(provider), ...(scan ? { scan: true } : {}) });
+    const session = p.open({ cwd, model, effort: this.effortFor(provider, model, "medium"), access: "read", soul: "", guard: true, ephemeral: true, env: this.envFor(provider), ...(scan ? { scan: true } : {}) });
     let text = "";
     // Its own tokens and cost, apart from the thread's, so reads side by side don't count each other's.
     const own = emptyUsage();
@@ -2115,7 +2159,7 @@ export class Runtime {
     // An empty folder of its own: nothing to read even if a tool turned up.
     const cwd = join(this.store.home, "addons", ".ask");
     mkdirSync(cwd, { recursive: true });
-    const session = providers[provider].open({ cwd, model, effort: "low", access: "read", soul: system, guard: true, ephemeral: true, plain: true, env: this.envFor(provider) });
+    const session = providers[provider].open({ cwd, model, effort: this.effortFor(provider, model, "low"), access: "read", soul: system, guard: true, ephemeral: true, plain: true, env: this.envFor(provider) });
     let text = "";
     let failed = "";
     const sink: TurnSink = {

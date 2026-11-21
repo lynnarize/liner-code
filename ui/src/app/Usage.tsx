@@ -9,9 +9,9 @@ import { BarChart } from "@liner/components/bar-chart/bar-chart";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { ModelMark } from "./icons";
 import { agentOf, compact, dollars, markOf, modelLabel, money, plural } from "./model";
-import { LimitRow, ModelTag } from "./ui";
+import { LimitRow, LookAgain, ModelTag, ShowSidebar } from "./ui";
 
 export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () => void }) {
   const [days, setDays] = useState<"7" | "30" | "month">("month");
@@ -49,9 +49,7 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
     <div className="lc-usage">
       <header className="lc-top" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
         <h1 className="lc-title">Usage</h1>
         <Segmented
@@ -120,7 +118,11 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
                 return (
                   <div key={a.agent} className="lc-bar-row">
                     <span>
-                      <b>{ag.name}</b>
+                      {/* Who, by its model's mark and its name, as every list of models and agents shows it. */}
+                      <b>
+                        <ModelMark kind={markOf(ag.model)} size={14} />
+                        {ag.name}
+                      </b>
                       <small>{[ag.role, plural(a.turns, "turn")].filter(Boolean).join(" · ")}</small>
                     </span>
                     <span className="lc-bar">
@@ -289,9 +291,7 @@ function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
           <b>Limits</b>
           <span className="lc-quiet">What each plan has left, from the tool itself</span>
           <span className="lc-grow" />
-          <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" disabled={asking} onClick={onAgain}>
-            <I.refresh size={14} />
-          </button>
+          <LookAgain looking={asking} onLook={onAgain} />
         </div>
         {tools.length === 0 && asking ? (
           <p className="l-shimmer lc-limits-none">Asking each tool</p>
@@ -302,6 +302,7 @@ function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
             {tools.map((t) => (
               <div key={t.provider} className="lc-limits-tool">
                 <div className="lc-limits-h">
+                  <ModelMark kind={markOf(`${t.provider}:`)} size={16} />
                   <b>{t.label}</b>
                   {t.plan && <span className="lc-mp-def">{t.plan[0].toUpperCase() + t.plan.slice(1)}</span>}
                 </div>

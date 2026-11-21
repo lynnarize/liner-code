@@ -1,41 +1,43 @@
 /*
   Design Home: the Design face's first tab, laid out as Code's Home (Home.tsx). On top of the box,
   where the design lives (on its own, by default; a project; another folder), pressed to change it;
-  the composer in the middle, and on its strip the lean it follows (none is fine), the skills it
-  loads and what it's drawn for; under it the other ways to start; below, Pick up: the designs
-  changed last. Sending makes
+  the composer in the middle, whose + menu holds the start choices (the lean it follows, none being
+  fine; the design skills it loads; what it's drawn for; who makes AI pictures), each a chip after
+  the + once it differs from its default, and the other ways to start (an empty canvas, the running
+  app, the code's components, a brand). Nothing under the box, as on Code's Home. Sending makes
   the design (design.new), opens its tab, makes its session (begun from it) and sends the ask as a
   design turn. Nothing here ever makes or picks the Scratch project.
 
   The sidebar's body here is DesignFiles: every design, from design.all, on their own first, then
-  by project, each with the row menu a session row has.
+  by project, each as a row of the list (SideRow) with one ··· that opens its menu.
 */
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import type { DesignFile, DesignFileInfo, DesignSize, Project } from "@contracts";
 import { DESIGNS_FOLDER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
-import { Composer, type RunSettings } from "../Composer";
+import { ChoiceChip, Composer, type PlusChoice, type RunSettings } from "../Composer";
 import { getState, onStream, rpc, subscribe as subscribeEngine, useEngine } from "../engine";
 import { getTabs, lastDesignTab, moveTab, openTab, showTab, tabKey, useTabs } from "../face";
 import { I } from "../icons";
-import { ago, codeProjects, plural } from "../model";
+import { ago, codeProjects, markOf, modelLabel, threadModel } from "../model";
 import * as os from "../os";
 import { ProjectChooser } from "../Projects";
-import { SideLabel } from "../SideList";
-import { ContextMenu, Pop, Row, Sep } from "../ui";
+import { SideFacts, SideHead, SideLabel, SideMark, SideRow } from "../SideList";
+import { ConfirmRow, ContextMenu, Pop, Row, Sep } from "../ui";
+import type { Box } from "../menu-place";
 import { HomeLive } from "./Live";
-import { PicturesChip } from "./Pictures";
+import { PicturesPanel, usePicturesNow } from "./Pictures";
 import { D } from "./Rail";
-import { buildIn, close as closeTabHere, knowFrames, TabTitle } from "./Tabs";
+import { buildIn, close as closeTabHere, designWords, knowFrames, markOfTab, sideStateOfDesign, TabTitle } from "./Tabs";
 import { dropIfUntouched, knowProject, newDesign, runFor, sessionOf, sigOf, untouched } from "./session";
 import { design, getDesign } from "./store";
 import "./design-face.css";
 // E's skills chips, the row over the box, start with a brand (they fill homeSlots when it loads).
 import { OWN_SKILLS, pickedFor } from "./Skills";
 
-/** What other builders add here: E's suggestion row over the box and skills chips beside the lean. */
-export const homeSlots: { above?: ComponentType<{ cwd: string }>; skills?: ComponentType<{ cwd: string }>; or?: ComponentType<{ cwd: string; send: (text: string) => Promise<void> }>; onText?: (text: string) => void; made?: (cwd: string, at: { cwd: string; file: DesignFile }) => Promise<void> } = {};
+/** What other builders add here: E's suggestion row over the box, the design skills' row in the + menu (its rows, its value, its chip after the +), and Start with a brand among the other ways to start. */
+export const homeSlots: { above?: ComponentType<{ cwd: string }>; skills?: { Rows: ComponentType<{ cwd: string; done: () => void }>; Value: ComponentType<{ cwd: string }>; Chip: ComponentType<{ cwd: string }> }; or?: ComponentType<{ cwd: string; done: () => void }>; onText?: (text: string) => void; made?: (cwd: string, at: { cwd: string; file: DesignFile }) => Promise<void> } = {};
 
 type Size = "desktop+phone" | DesignSize;
 const SIZES: { id: Size; label: string }[] = [
@@ -141,8 +143,31 @@ function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) =>
   );
 }
 
-/** The lean the new design follows, as a chip: none is fine (the agent uses its own taste); a project's DESIGN.md when it has one. */
-function LeanChip({ cwd }: { cwd?: string }) {
+/**
+  The other ways to start, in the + menu's place once its "Start another way" row is pressed: an empty
+  canvas, and for a design in a project the running app on the canvas (its picker in the menu's place)
+  and the code's components as parts (an ask put in the box); then Start with a brand (Skills.tsx).
+*/
+function StartRows({ project, cwd, empty, seed, done }: { project?: Project; cwd: string; empty: () => void; seed: (text: string) => void; done: () => void }) {
+  const [live, setLive] = useState(false);
+  const Brand = homeSlots.or;
+  if (live && project) return <HomeLive project={project} onOpen={async (file) => (done(), openTab({ projectId: project.id, file }))} onClose={() => setLive(false)} />;
+  return (
+    <>
+      <Row title="An empty canvas" icon={<D.frame size={16} />} onPick={() => (done(), empty())} />
+      {project && (
+        <>
+          <Row title="The running app, live" note="A page of its dev server, on the canvas" icon={<I.globe size={16} />} onPick={() => setLive(true)} />
+          <Row title="Components in the code as parts" note="The ask goes in the box, to send with Send" icon={<I.file size={16} />} onPick={() => (done(), seed("Turn the components in the code into parts on the canvas: one frame per component, on the Parts page."))} />
+        </>
+      )}
+      {Brand && cwd && <Brand cwd={cwd} done={done} />}
+    </>
+  );
+}
+
+/** The lean the new design follows: none is fine (the agent uses its own taste); a project's DESIGN.md when it has one. Its name and first colours. */
+function useLean(cwd?: string) {
   const [name, setName] = useState<string | null>(null);
   const [sw, setSw] = useState<string[]>([]);
   useEffect(() => {
@@ -156,21 +181,25 @@ function LeanChip({ cwd }: { cwd?: string }) {
     );
     return () => void (live = false);
   }, [cwd]);
-  return (
-    <Pop label={name ? `Lean: ${name}` : "No lean"} width={320} triggerClass="lc-pb ld-lean-chip" trigger={<><span className="ld-q4" data-small data-none={!name || undefined} aria-hidden>{sw.map((c) => <i key={c} style={{ background: c }} />)}</span><span className="lc-strip-cap">{name ?? "No lean"}</span><I.chevD size={12} /></>}>
-      {() => (
-        <div className="ld-own-pop">
-          <div className="ld-way-mh">{name ? `The lean: ${name}` : "No lean"}</div>
-          <p className="ld-note ld-own-note">
-            {name
-              ? "The design follows it: its colours, type and steps, and the rules it never breaks. Change it from the design's sidebar."
-              : "Optional. The agent uses its own taste and any skills you load. Add a DESIGN.md from the design's sidebar when you want rules it keeps to; nothing asks for one."}
-          </p>
-        </div>
-      )}
-    </Pop>
-  );
+  return { name, sw };
 }
+/** What the lean means here, in the + menu's place or under its chip. It's changed from the design's sidebar, not here. */
+const LeanNote = ({ name }: { name: string | null }) => (
+  <div className="ld-own-pop">
+    <div className="ld-way-mh">{name ? `The lean: ${name}` : "No lean"}</div>
+    <p className="ld-note ld-own-note">
+      {name
+        ? "The design follows it: its colours, type and steps, and the rules it never breaks. Change it from the design's sidebar."
+        : "Optional. The agent uses its own taste and any skills you load. Add a DESIGN.md from the design's sidebar when you want rules it keeps to; nothing asks for one."}
+    </p>
+  </div>
+);
+/** The lean's swatches, as small as a mark. */
+const LeanMark = ({ name, sw }: { name: string | null; sw: string[] }) => (
+  <span className="ld-q4" data-small data-none={!name || undefined} aria-hidden>
+    {sw.map((c) => <i key={c} style={{ background: c }} />)}
+  </span>
+);
 
 export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolean; onSidebar: () => void; onNewAgent: () => void }) {
   const all = useEngine((s) => s.projects);
@@ -197,7 +226,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
   const initial = useMemo((): RunSettings => runFor(project), [project?.id, project?.agent, engineSettings.start, engineSettings.defaultAccess, engineSettings.pairEffort, providers.length]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   useEffect(() => setSettings(initial), [initial]);
-  const [size, setSize] = useState<Size>("desktop+phone");
+  const [size, setSize] = useState<Size>(SIZES[0].id);
   // The skills listed (and picked) here: a project's, or for a design on its own your own skills only (lean.skills with no folder).
   const skillsCwd = project?.path ?? OWN_SKILLS;
 
@@ -236,20 +265,35 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
   const [seed, setSeed] = useState<{ text: string; at: number } | undefined>();
   const Above = homeSlots.above;
   const Skills = homeSlots.skills;
-  const Or = homeSlots.or;
+  const lean = useLean(project?.path);
+  const pictures = usePicturesNow(true);
+  const sizeLabel = SIZES.find((x) => x.id === size)?.label ?? "";
+  /*
+    The start choices, in the box's + menu with their value at the row's end. What it's drawn for has a
+    default (desktop and phone) and shows as a chip only when it's another; the lean (none by default)
+    and loaded design skills show as chips while there are some, since they shape what gets drawn. Who
+    makes AI pictures can't be picked before there's a design file, so it's a row to read and no chip.
+  */
+  const choices: PlusChoice[] = [
+    { key: "lean", label: "Lean", icon: <LeanMark {...lean} />, value: lean.name ?? "None", say: lean.name ?? "none", body: () => <LeanNote name={lean.name} />, chip: lean.name ? <Pop label={`Lean: ${lean.name}`} width={320} triggerClass="lc-seg-b ld-lean-chip" trigger={<><LeanMark {...lean} /><span className="lc-chip-name">{lean.name}</span><I.chevD size={12} /></>}>{() => <LeanNote name={lean.name} />}</Pop> : undefined },
+    ...(Skills && skillsCwd ? [{ key: "skills", label: "Design skills", icon: <I.sparkle size={16} />, value: <Skills.Value cwd={skillsCwd} />, body: (done: () => void) => <Skills.Rows cwd={skillsCwd} done={done} />, chip: <Skills.Chip cwd={skillsCwd} /> }] : []),
+    { key: "size", label: "Drawn for", icon: <I.monitor size={16} />, value: sizeLabel, say: sizeLabel, body: (done) => SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (setSize(x.id), done())} />), chip: size !== SIZES[0].id ? <ChoiceChip icon={<I.monitor size={14} />} label={sizeLabel} clear={{ label: `Back to ${SIZES[0].label.toLowerCase()}`, onClear: () => setSize(SIZES[0].id) }} /> : undefined },
+    { key: "pictures", label: "AI pictures", icon: <D.picture size={16} />, value: pictures.name, say: pictures.name, body: () => <PicturesPanel home /> },
+    { key: "start", label: "Start another way", icon: <D.frame size={16} />, body: (done) => <StartRows project={project} cwd={skillsCwd} empty={() => void empty()} seed={(text) => setSeed({ text, at: Date.now() })} done={done} /> },
+  ];
 
   return (
     <div className="lc-home ld-home">
       <header className="ld-bar" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
+          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
             <I.sidebar size={16} />
           </button>
         )}
         <TabTitle />
         <span className="lc-grow" data-drag />
       </header>
-      {/* Laid out as Code's Home: where it lives on top of the box, the box in the middle, Pick up under it. */}
+      {/* Laid out as Code's Home: where it lives on top of the box, the box in the middle. */}
       <div className="lc-home-in ld-home-in" data-mid="">
         <div className="ld-home-head">
           <div className="lc-home-top">
@@ -271,69 +315,11 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
             placeholder="A screen, a page, a brand: say what to design"
             autoFocus
             seed={seed}
-            trayEnd={<PicturesChip lead={undefined} home />}
-            stripStart={
-              <>
-                <LeanChip cwd={project?.path} />
-                {Skills && skillsCwd && <Skills cwd={skillsCwd} />}
-              </>
-            }
-            stripEnd={
-              <Pop label={`What it's drawn for: ${SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} align="end" triggerClass="lc-pb" trigger={<><I.monitor size={14} /><span className="lc-strip-cap">{SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={12} /></>} menu>
-                {(close) => SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
-              </Pop>
-            }
-            stripUnder={
-              <>
-                <span>Or</span>
-                <button type="button" className="lc-under-b l-focus" onClick={() => void empty()}>
-                  <D.frame size={14} />
-                  open an empty canvas
-                </button>
-                {project && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <HomeLive project={project} onOpen={async (file) => openTab({ projectId: project.id, file })} />
-                    <span aria-hidden>·</span>
-                    <button type="button" className="lc-under-b l-focus" onClick={() => setSeed({ text: "Turn the components in the code into parts on the canvas: one frame per component, on the Parts page.", at: Date.now() })}>
-                      <I.file size={14} />
-                      turn components in the code into parts
-                    </button>
-                  </>
-                )}
-                {Or && skillsCwd && <Or cwd={skillsCwd} send={(text) => start({ text, files: [] })} />}
-              </>
-            }
+            choices={choices}
           />
         </div>
-        <PickUp />
       </div>
     </div>
-  );
-}
-
-/** Pick up, as on Code's Home: the designs changed last, plain rows, each opened as the sidebar opens it. */
-function PickUp() {
-  const list = useListed();
-  const threads = useEngine((s) => s.threads);
-  const recent = (list ?? [])
-    .flatMap((x) => x.files.map((f) => [x.project, f] as const))
-    .sort((a, b) => b[1].updated - a[1].updated)
-    .slice(0, 3);
-  if (!recent.length) return <div className="lc-home-pickup" />;
-  return (
-    <section className="lc-home-pickup" aria-label="Pick up">
-      <div className="lc-home-card-h">Pick up</div>
-      {recent.map(([p, f]) => (
-        <button key={tabKey({ projectId: p.id, file: f.id })} type="button" className="lc-home-pick l-focus" onClick={() => openDesign(p, f)}>
-          <span className="lc-home-pick-t">{f.title}</span>
-          <span className="lc-grow" />
-          <small>
-            {p.kind === "design" ? "On its own" : p.name} · {f.unreadable ? "can't be read" : sessionOf({ projectId: p.id, file: f.id }, threads)?.status === "running" ? "being drawn" : ago(f.updated)}
-          </small>
-        </button>
-      ))}
-    </section>
   );
 }
 
@@ -398,9 +384,9 @@ function useListed() {
   return listed;
 }
 
-type Menu = { project: Project; file: DesignFileInfo; x: number; y: number };
+type Menu = { project: Project; file: DesignFileInfo; x: number; y: number; under?: Box; row?: Box };
 
-/** Opens a design in its tab: the sidebar's rows and Home's Pick up. */
+/** Opens a design in its tab, from the sidebar's rows. */
 function openDesign(project: Project, f: DesignFileInfo) {
   knowProject(project);
   const next = { projectId: project.id, file: f.id, title: f.title };
@@ -419,22 +405,30 @@ function openDesign(project: Project, f: DesignFileInfo) {
   openTab(next);
 }
 
-/** The sidebar's body on Design Home, under the places (New design is one of them): what it shows, the filter, and every design, on their own first, then by project. */
+/** Its ··· opens the row's menu here, its right edge under the button's, as a session row's does (Sidebar.tsx). */
+const FILE_MENU_W = 260;
+
+/**
+  The sidebar's body on Design Home, under the places (New design is one of them): "All designs" with its one menu (which
+  designs it shows), the filter (the only way to find a design by its name: the search finds sessions, not designs), and
+  every design, on their own first, then by project. Each design is a row of the list (SideRow): its session's state mark,
+  its title with the time it last changed, what it draws or asks or how many frames it has, its model's mark, and one ···.
+*/
 export function DesignFiles() {
   const list = useListed();
   const threads = useEngine((s) => s.threads);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
   const { list: tabs } = useTabs();
   const [q, setQ] = useState("");
   const [show, setShow] = useState<string>("all");
   const [menu, setMenu] = useState<Menu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [sure, setSure] = useState(false);
   const [choose, setChoose] = useState(false);
   const match = (f: DesignFileInfo) => !q || f.title.toLowerCase().includes(q.toLowerCase());
   const own = (list ?? []).filter((x) => x.project.kind === "design");
   const inProjects = (list ?? []).filter((x) => x.project.kind !== "design" && x.files.length);
   const open = openDesign;
-  const busy = (project: Project, f: DesignFileInfo) => sessionOf({ projectId: project.id, file: f.id }, threads)?.status === "running";
   const rename = async (project: Project, f: DesignFileInfo, title: string) => {
     if (!title || title === f.title) return;
     try {
@@ -444,46 +438,78 @@ export function DesignFiles() {
       fail(e);
     }
   };
+  const menuAt = (project: Project, f: DesignFileInfo, x: number, y: number, under?: Box, row?: Box) => (setChoose(false), setMenu({ project, file: f, x, y, under, row }));
   const row = (project: Project, f: DesignFileInfo) => {
     const k = tabKey({ projectId: project.id, file: f.id });
+    const s = sessionOf({ projectId: project.id, file: f.id }, threads);
+    const state = sideStateOfDesign(s);
+    // Design Home shows: no design is being looked at, so a question it asks is news until its design is opened.
+    const words = f.unreadable ? { text: "Can't be read", tone: "danger" as const } : designWords(s, state, false, f.frames);
+    const ref = s ? threadModel(s, agents, providers) : undefined;
+    const brand = ref ? markOf(ref) : undefined;
+    const title =
+      renaming === k ? (
+        <input
+          className="lc-sb-rename"
+          aria-label={`Rename ${f.title}`}
+          defaultValue={f.title}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (e.key === "Escape") (e.currentTarget.value = f.title), e.currentTarget.blur();
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          onBlur={(e) => (setRenaming(null), void rename(project, f, e.target.value.trim()))}
+        />
+      ) : (
+        f.title
+      );
     return (
-      <div key={k} className="ld-file-w" onContextMenu={(e) => (e.preventDefault(), setSure(false), setChoose(false), setMenu({ project, file: f, x: e.clientX, y: e.clientY }))}>
-        {renaming === k ? (
-          <span className="ld-file">
-            <span className="ld-file-k" aria-hidden>
-              <D.frame size={14} />
-            </span>
-            <input
-              className="lc-sb-rename"
-              aria-label={`Rename ${f.title}`}
-              defaultValue={f.title}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                if (e.key === "Escape") (e.currentTarget.value = f.title), e.currentTarget.blur();
-                if (e.key === "Enter") e.currentTarget.blur();
-              }}
-              onBlur={(e) => (setRenaming(null), void rename(project, f, e.target.value.trim()))}
-            />
-          </span>
-        ) : (
-          <button type="button" className="ld-file l-focus" aria-current={tabs.some((t) => tabKey(t) === k) || undefined} onClick={() => open(project, f)} onDoubleClick={() => setRenaming(k)}>
-            <span className="ld-file-k" aria-hidden>
-              <D.frame size={14} />
-            </span>
-            <span className="ld-file-t">
-              <b>{f.title}</b>
-              <small>
-                {f.unreadable ? "can't be read" : plural(f.frames, "frame")}
-                {busy(project, f) && " · being drawn"}
-              </small>
-            </span>
-            <span className="ld-file-e">{ago(f.updated)}</span>
+      <SideRow
+        key={k}
+        quiet={state === "done"}
+        mark={<SideMark state={markOfTab(s, false)} brand={brand} />}
+        title={title}
+        ago={ago(f.updated)}
+        sub={words.text}
+        tone={words.tone}
+        facts={brand && <SideFacts model={brand} modelName={ref && modelLabel(ref, providers)} />}
+        onContextMenu={(e) => (e.preventDefault(), menuAt(project, f, e.clientX, e.clientY))}
+        pick={{
+          role: "button",
+          tabIndex: 0,
+          className: "l-focus",
+          title: f.title,
+          "aria-current": tabs.some((t) => tabKey(t) === k) || undefined,
+          onClick: () => renaming !== k && open(project, f),
+          onDoubleClick: () => setRenaming(k),
+          onKeyDown: (e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(project, f)),
+        }}
+        acts={
+          <button
+            type="button"
+            className="lc-sb-a l-focus"
+            aria-label={`Open, rename, show in ${os.fileManager} and more for ${f.title}`}
+            title={`Open, rename, show in ${os.fileManager} and more`}
+            aria-haspopup="menu"
+            aria-expanded={mk === k}
+            data-open={mk === k || undefined}
+            onClick={(e) => {
+              // Hung under the ···, right edges on one line (menu-place.ts).
+              const r = e.currentTarget.getBoundingClientRect();
+              menuAt(project, f, r.right, r.bottom, r, e.currentTarget.closest(".lc-sl-row")?.getBoundingClientRect());
+            }}
+          >
+            <I.more size={14} />
           </button>
-        )}
-      </div>
+        }
+      />
     );
   };
+  const m = menu;
+  const mk = m ? tabKey({ projectId: m.project.id, file: m.file.id }) : "";
   const rows: ReactNode[] = [];
   const ownFiles = own.flatMap((x) => x.files.filter(match).map((f) => [x.project, f] as const)).sort((a, b) => b[1].updated - a[1].updated);
   if ((show === "all" || show === "own") && ownFiles.length) {
@@ -495,24 +521,22 @@ export function DesignFiles() {
     if (!files.length) continue;
     rows.push(<SideLabel key={`h${x.project.id}`} name={x.project.name} count={files.length} />, ...files.map((f) => row(x.project, f)));
   }
-  const shownName = show === "all" ? "All designs" : show === "own" ? "On their own" : (inProjects.find((x) => x.project.id === show)?.project.name ?? "All designs");
-  const m = menu;
-  const mk = m ? tabKey({ projectId: m.project.id, file: m.file.id }) : "";
+  const shownName = show === "all" ? undefined : show === "own" ? "On their own" : inProjects.find((x) => x.project.id === show)?.project.name;
   const folderOf = (p: Project, f: DesignFileInfo) => (p.kind === "design" ? p.path : `${p.path.replace(/\/+$/, "")}/.liner/designs/${f.id}`);
   return (
     <div className="ld-side">
-      <Pop label={`Show: ${shownName}`} width={240} triggerClass="ld-show" trigger={<><span>{shownName}</span><I.chevD size={12} /></>} menu>
+      <SideHead title="All designs" note={shownName} menuLabel="Which designs the list shows">
         {(close) => (
           <>
-            <Row title="All designs" on={show === "all"} onPick={() => (close(), setShow("all"))} />
-            <Row title="On their own" on={show === "own"} onPick={() => (close(), setShow("own"))} />
+            <Row title="All designs" icon={<I.list size={16} />} keepIcon on={show === "all"} onPick={() => (close(), setShow("all"))} />
+            <Row title="On their own" icon={<I.edit size={16} />} keepIcon on={show === "own"} onPick={() => (close(), setShow("own"))} />
             {inProjects.length > 0 && <Sep />}
             {inProjects.map((x) => (
-              <Row key={x.project.id} title={x.project.name} on={show === x.project.id} onPick={() => (close(), setShow(x.project.id))} />
+              <Row key={x.project.id} title={x.project.name} icon={<I.folder size={16} />} keepIcon on={show === x.project.id} onPick={() => (close(), setShow(x.project.id))} />
             ))}
           </>
         )}
-      </Pop>
+      </SideHead>
       <label className="ld-filter">
         <I.search size={14} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter designs" aria-label="Filter designs" />
@@ -528,40 +552,43 @@ export function DesignFiles() {
           <div className="ld-none l-shimmer">Looking for designs</div>
         )
       ) : rows.length ? <div className="lc-sl-list ld-files">{rows}</div> : <div className="ld-none">{q ? "No design has that in its name." : "No designs yet. Say what to make on the right, or press New design."}</div>}
-      <ContextMenu at={m ? { x: m.x, y: m.y } : null} label={m ? `${m.file.title}: what to do with it` : "Design"} onClose={() => (setMenu(null), setSure(false), setChoose(false))} width={choose ? 400 : 260}>
+      <ContextMenu at={m ? { x: m.x, y: m.y, under: m.under, row: m.row } : null} label={m ? `${m.file.title}: what to do with it` : "Design"} onClose={() => (setMenu(null), setChoose(false))} width={choose ? 400 : FILE_MENU_W}>
         {(close) =>
           m && choose ? (
             <ProjectChooser
               onPick={(p) => (close(), void buildIn({ projectId: m.project.id, file: m.file.id, title: m.file.title }, { projectId: p.id }).then(relist, fail))}
-              extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={14} />} onPick={() => (close(), void bridge.pickFolder().then((path) => (path ? buildIn({ projectId: m.project.id, file: m.file.id, title: m.file.title }, { path }).then(relist) : undefined)).catch(fail))} />}
+              extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={16} />} onPick={() => (close(), void bridge.pickFolder().then((path) => (path ? buildIn({ projectId: m.project.id, file: m.file.id, title: m.file.title }, { path }).then(relist) : undefined)).catch(fail))} />}
             />
           ) : m && (
             <>
-              <Row title="Open" icon={<D.frame size={14} />} onPick={() => (close(), open(m.project, m.file))} />
-              <Row title="Rename" icon={<I.edit size={14} />} onPick={() => (close(), setRenaming(mk))} />
-              <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={14} />} onPick={() => (close(), bridge.reveal(folderOf(m.project, m.file)))} />
+              <Row title="Open" icon={<D.frame size={16} />} onPick={() => (close(), open(m.project, m.file))} />
+              <Row title="Rename" icon={<I.edit size={16} />} onPick={() => (close(), setRenaming(mk))} />
+              <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folderOf(m.project, m.file)))} />
               {m.project.kind === "design" && (
                 <>
                   <Sep />
                   <Row
                     title="Build in a project"
                     note="It moves into the project, conversation and all"
-                    icon={<I.link size={14} />}
+                    icon={<I.link size={16} />}
                     onPick={() => setChoose(true)}
                   />
                 </>
               )}
               <Sep />
               {m.project.kind === "design" ? (
-                // On its own: out of Liner Design for good, asked once more; its folder stays where it is.
-                <Row
-                  title={sure ? `Remove “${m.file.title}” from Liner Design` : "Delete"}
-                  note={sure ? `Its sessions go. Its files stay in its folder in ${DESIGNS_FOLDER}` : undefined}
-                  icon={<I.trash size={14} />}
-                  onPick={() => {
-                    if (!sure) return setSure(true);
+                // On its own: out of Liner Design, asked once more as every Remove is ("Remove", then "Remove it"); its folder stays where it is.
+                // Through the confirm row, so the second click of a double-click on Remove doesn't remove it; keyed by the design, so
+                // the ask never carries over to another design's menu.
+                <ConfirmRow
+                  key={mk}
+                  title="Remove"
+                  sure="Remove it"
+                  note="From Liner Design; its files stay"
+                  sureNote={`Its sessions go. Its files stay in its folder in ${DESIGNS_FOLDER}`}
+                  icon={<I.trash size={16} />}
+                  onConfirm={() => {
                     close();
-                    setSure(false);
                     void rpc("design.remove", { projectId: m.project.id, file: m.file.id })
                       .then(() => (closeTabHere(mk), relist(), toast(`Removed ${m.file.title}`, { description: `Its files are still in ${DESIGNS_FOLDER}.` })))
                       .catch(fail);
@@ -571,7 +598,7 @@ export function DesignFiles() {
                 // In a project: it goes to Liner Code's trash, and Undo puts it back as it was.
                 <Row
                   title="Delete"
-                  icon={<I.trash size={14} />}
+                  icon={<I.trash size={16} />}
                   onPick={() => {
                     close();
                     const { project, file } = m;

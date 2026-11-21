@@ -7,8 +7,10 @@
 
   This file is also the one place a step's words come from for the trail and Liner Design's chat (Timeline.tsx,
   design/Chat.tsx): what is a step and what is a card (isStepCall), which tools are Liner's own (BROWSER_TOOL and the
-  rest), and the words for a canvas step, a frame, a file, a command and a tool by its name. The trail adds what only it
+  rest), the words for a canvas step, a frame, a file, a command and a tool by its name, and each step's kind (stepKind),
+  which gives it its mark. The trail adds what only it
   shows (the whole command, a search's pattern, a call's own title, how a step ended); the line holds to the rule above.
+  What a session waits on you for (Thread.asking, askingOf) is said here too, by the same rules.
   Nothing here may use Node's or the browser's own objects: the engine and the interface both load it.
 */
 
@@ -386,6 +388,28 @@ export function canvasWords(c: DoingCall, kind: string, running: boolean, frame?
 }
 /** The Browser's steps, under way and done. */
 export const BROWSER_WORDS: [string, string] = ["Checking in the Browser", "Checked in the Browser"];
+
+/**
+  What kind of step a call is, for the mark a turn's line shows for it (Timeline.tsx: the live line's row of kinds, each
+  step's icon, the folded line): a file read or changed, a search, a command (a dev server started is one), the web (a
+  page fetched, the Browser), an agent (a brief to a sidekick or an agent sent off), Liner Design's canvas (its tools,
+  and a design's frame written as its file), or another tool.
+*/
+export type StepKind = "file" | "search" | "command" | "web" | "agent" | "canvas" | "other";
+/** The kinds in the order a line shows them, whatever order a turn used them in: "other" has no mark of its own there. */
+export const STEP_KINDS: StepKind[] = ["file", "search", "command", "web", "agent", "canvas"];
+export function stepKind(c: DoingCall): StepKind {
+  if (CANVAS_TOOL.test(c.tool)) return "canvas";
+  if (BROWSER_TOOL.test(c.tool)) return "web";
+  if (SERVER_TOOL.test(c.tool)) return "command";
+  if (SIDEKICK_TOOL.test(c.tool) || c.toolKind === "task") return "agent";
+  if (c.toolKind === "edit" || c.toolKind === "write") return FRAME_FILE.test(slashed(c.path ?? str(inputOf(c).file_path) ?? "")) ? "canvas" : "file";
+  if (c.toolKind === "read") return "file";
+  if (c.toolKind === "search") return "search";
+  if (c.toolKind === "exec") return "command";
+  if (c.toolKind === "fetch" || c.toolKind === "web") return "web";
+  return "other";
+}
 /** A dev server a server_start call starts, by its title ("Run web from launch.json" is web); undefined when it names none. */
 export const serverOf = (c: DoingCall) => c.title.replace(/^Run\b\s*|\s+from launch\.json$/g, "").trim() || undefined;
 
@@ -455,4 +479,49 @@ function stepWords(calls: DoingCall[], c: DoingCall, names?: StepFrameNamer): st
   // Another tool, by its name when that is a word: an MCP server's own name ("Using github"), never Liner's.
   const name = toolNameOf(c.tool);
   return name ? `Using ${name}` : "Using a tool";
+}
+
+/** The longest a question's own words run on a row (Thread.asking): a question says more than a step, and the row cuts it anyway. */
+export const ASKING_MAX = 72;
+/** What askingOf reads of an ask: the fields an approval, a question and a plan to approve carry. */
+export type AskingItem =
+  | { kind: "approval"; tool: string; title: string; fields: { label: string; value: string }[]; addon?: { name: string } }
+  | { kind: "question"; questions: { question: string }[] }
+  | { kind: "proposal"; title: string };
+
+/**
+  What a session waits on you for, in a few plain words (Thread.asking): a question in its own words, cut at a word past
+  ASKING_MAX; an approval as what it would let the agent do, by the doing line's rules ("Run npm test?", "Edit tides.js?",
+  "Start web?"), so never a whole command line or a path; a plan as "Approve its plan?". Undefined for an ask that says nothing.
+*/
+export function askingOf(it: AskingItem): string | undefined {
+  if (it.kind === "question") {
+    const q = oneLine(it.questions[0]?.question ?? "");
+    if (!q) return undefined;
+    if (q.length <= ASKING_MAX) return q;
+    const cut = q.slice(0, ASKING_MAX + 1);
+    const at = cut.lastIndexOf(" ");
+    return noDots((at > 0 ? cut.slice(0, at) : q.slice(0, ASKING_MAX)).replace(/[\s,;:·/–-]+$/, "")).trim();
+  }
+  if (it.kind === "proposal") return "Approve its plan?";
+  const asked = (words: string) => `${words}?`;
+  if (it.addon) return asked(said("Add", safe(it.addon.name), "Add an add-on"));
+  if (SERVER_TOOL.exec(it.tool)?.[1] === "start") return asked(said("Start", safe(serverOf({ tool: it.tool, toolKind: "exec", title: it.title })), "Start a server"));
+  if (BROWSER_TOOL.test(it.tool)) return "Use the Browser?";
+  const command = it.fields.find((f) => f.label === "Command")?.value;
+  if (command !== undefined) {
+    const ran = doingCommand(command);
+    return asked(said("Run", ran || undefined, "Run a command"));
+  }
+  // An edit: by its File fields (Codex's), else by a title that says Edit or Write and the file (Claude Code's, ACP's).
+  const files = [...new Set(it.fields.filter((f) => f.label === "File").map((f) => f.value))];
+  const titled = /^(?:Edit|Write)\b/.test(it.title);
+  const verb = /^Write\b/.test(it.title) ? "Write" : "Edit";
+  if (files.length > 1) return asked(`${verb} ${files.length} files`);
+  if (files.length || titled) {
+    const file = files[0] ? safe(baseName(files[0]), FILE_NAME) : fileOf({ tool: it.tool, toolKind: "edit", title: it.title }, /^(?:Edit|Write)\s+/);
+    return asked(said(verb, file, verb === "Write" ? "Write a file" : "Change a file"));
+  }
+  const name = toolNameOf(it.tool);
+  return asked(name ? `Use ${name}` : "Use a tool");
 }

@@ -1,6 +1,6 @@
 /*
   Liner Security's sidebar, beyond security.css: the list on the shared parts (app.css, lc-sl-), the empty list's line,
-  and Bring in close under it, its + at the label's end.
+  and Bring in close under it.
 */
 .ls-side-list {
   display: flex;
@@ -25,11 +25,4 @@
 .ls-side-bring > .lc-sl-label {
   margin-top: 4px;
   padding-top: 0;
-  padding-right: 2px;
-}
-.ls-side-bring .ls-side-add {
-  width: 28px;
-  height: 26px;
-  border-radius: 8px;
-  color: var(--l-ink-3);
 }

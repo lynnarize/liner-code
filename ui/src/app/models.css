@@ -1,77 +1,21 @@
 /*
-  Liner Code · The model picker: a rail of tools, a search, rows with the model's mark, its
-  default, a key and a star. White rows on a wash, one plate on the tool you're in.
+  Liner Code · The model panel, outside the composer as in it: a search, the who panel's rows
+  (app.css, .lc-who-row), and what a search finds, one line a model with where it comes from.
 */
-/* As tall as its rows or its rail, whichever is taller, up to --lc-mp-max; the list scrolls past that. */
+/* As tall as its rows, up to --lc-mp-max; the list under the search scrolls past that. */
 .lc-mp {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
   min-height: 0;
   max-height: var(--lc-mp-max, 320px);
 }
-/* Search results under a field that sits outside it: the list alone, no rail. */
-.lc-mp[data-bare] {
-  grid-template-columns: minmax(0, 1fr);
+.lc-mp > * {
+  flex: none;
 }
-.lc-mp-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-height: 0;
-  padding: 4px 0;
-  overflow: hidden auto;
-  scrollbar-width: none;
-  border-radius: var(--lc-r-card);
-  background: var(--l-wash);
-}
-.lc-mp-tool {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
-}
-.lc-mp-tool[aria-selected="true"] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-mp-tool:not([aria-selected="true"]):hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.lc-mp-ini {
-  font-family: var(--l-font-display);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.lc-mp-sep {
-  width: 16px;
-  height: 1px;
-  margin: 2px 0;
-  background: var(--l-line-2);
-}
-.lc-mp-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.lc-mp > :is(.lc-who-scroll, .lc-mp-list, .lc-mp) {
+  flex: 0 1 auto;
   min-height: 0;
 }
 .lc-mp-find {
@@ -84,17 +28,6 @@
   margin-bottom: 4px;
   border-radius: 10px;
   background: var(--l-wash-2);
-  color: var(--l-ink-3);
-}
-/* An extra tab's name, in the search's place and at its height. */
-.lc-mp-xhead {
-  display: flex;
-  flex: none;
-  align-items: center;
-  height: 32px;
-  padding: 0 10px;
-  margin-bottom: 4px;
-  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-mp-find:focus-within {
@@ -113,14 +46,6 @@
   font-size: 13px;
   color: var(--l-ink);
 }
-.lc-mp-src {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--l-wash-2);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 .lc-mp-list {
   flex: 1;
   min-height: 0;
@@ -132,16 +57,6 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-.lc-mp-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 8px 4px;
-  background: linear-gradient(var(--l-float, var(--l-surface)) 70%, transparent);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
 .lc-mp-row + .lc-mp-row {
   margin-top: 2px;
 }
@@ -149,7 +64,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 10px;
+  border-radius: var(--lc-r-row);
   transition: background 120ms ease;
 }
 .lc-mp-row[data-hl] {
@@ -168,16 +83,17 @@
   border-radius: 2px;
   background: var(--l-accent);
 }
+/* Found from every tool: one line a row, where it comes from at its end, as the who panel's rows read. */
 .lc-mp-pick {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 42px;
-  padding: 4px 4px 4px 10px;
+  min-height: 32px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--lc-r-row);
   background: none;
   text-align: left;
   cursor: pointer;
@@ -192,7 +108,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 400;
 }
 .lc-mp-t b .lc-model {
   overflow: hidden;
@@ -203,18 +119,30 @@
 .lc-mp-row[data-on] .lc-mp-t b .lc-model {
   color: var(--l-accent-text);
 }
-.lc-mp-t small {
-  overflow: hidden;
-  padding-left: 16px;
+/* A model's row in All models, with its star at its end. */
+.lc-who-mrow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-width: 0;
+}
+.lc-who-mrow > .lc-who-row {
+  flex: 1;
+  min-width: 0;
+}
+.lc-mp-from {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+/* A word on a model or a command (Default, Liner Code): a pill, as a count is. */
 .lc-mp-def {
   flex: none;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--l-line-2);
   font-size: 11px;
   font-weight: 500;
@@ -241,6 +169,8 @@
 }
 .lc-mp-row:hover .lc-mp-star,
 .lc-mp-row[data-hl] .lc-mp-star,
+.lc-who-mrow:hover .lc-mp-star,
+.lc-who-mrow:focus-within .lc-mp-star,
 .lc-mp-star[data-on],
 .lc-mp-star:focus-visible {
   opacity: 1;
@@ -250,112 +180,6 @@
 }
 .lc-mp-star[data-on] svg path {
   fill: currentColor;
-}
-/* A tool's sources (Nous Portal, OpenCode Go): a row each, with whose models it runs, into its list. */
-.lc-mp-source {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--l-ink-2);
-  text-align: left;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-.lc-mp-source .lc-mp-t {
-  flex: 1;
-}
-.lc-mp-source .lc-mp-t small {
-  padding-left: 0;
-}
-.lc-mp-source[data-on] {
-  background: var(--l-accent-soft);
-}
-@media (hover: hover) {
-  .lc-mp-source:hover {
-    background: var(--l-wash-2);
-  }
-}
-.lc-mp-srcmark {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-.lc-mp-marks {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
-  color: var(--l-ink-3);
-}
-/* Back to the tool's sources, from one of them: the tool quiet, the source plain. */
-.lc-mp-back {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  background: linear-gradient(var(--l-float, var(--l-surface)) 75%, transparent);
-  color: var(--l-ink-3);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-mp-back b {
-  font-weight: 500;
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-mp-back:hover {
-    color: var(--l-ink);
-  }
-}
-.lc-mp-fold {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 40px;
-  margin-top: 4px;
-  padding: 4px 12px 4px 10px;
-  border: 0;
-  border-top: 1px solid var(--l-line);
-  border-radius: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-mp-fold > span {
-  display: grid;
-  flex: 1;
-}
-.lc-mp-fold b {
-  font-size: 13px;
-  font-weight: 500;
-}
-.lc-mp-fold small {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-mp-fold > svg {
-  color: var(--l-ink-4);
-  transition: rotate 260ms var(--l-spring-smooth);
-}
-.lc-mp-fold[aria-expanded="true"] > svg {
-  rotate: 90deg;
 }
 .lc-mp-none {
   margin: 10px;
@@ -369,9 +193,7 @@
   color: var(--l-ink-3);
 }
 @media (prefers-reduced-motion: reduce) {
-  .lc-mp-fold > svg,
-  .lc-mp-row,
-  .lc-mp-tool {
+  .lc-mp-row {
     transition: none;
   }
 }
@@ -466,7 +288,7 @@
   align-items: center;
   gap: 2px;
   width: min(360px, calc(100% - 28px));
-  height: 38px;
+  height: 36px;
   box-sizing: border-box;
   padding: 0 4px 0 12px;
   border-radius: var(--lc-r-field);
@@ -545,7 +367,7 @@
   }
 }
 
-/* A model as a chip that opens the picker (Settings › Agentic features). */
+/* A model, a start or an effort as a chip that opens the panel (Settings, a new agent, a scan). */
 .lc-mpop {
   gap: 6px;
   height: 30px;
@@ -580,9 +402,657 @@
 }
 
 /* ---------- 0.2.7, second pass: a menu's rows at 13 regular, the picked one at 500 (app.css says why) ---------- */
-.lc-mp-t b {
-  font-weight: 400;
-}
 .lc-mp-row[data-on] .lc-mp-t b {
   font-weight: 500;
+}
+
+/*
+  The model picker (Models.tsx ModelPicker; sizes in picker.ts): a 40px rail of tools, a middle card 312 by 476 that never
+  changes size, and a 268px card at its side whose top is the middle card's top. In the middle card only the models
+  scroll: Find, the pinned rows (Fusion), the tool's own row with its source switch, and the foot rows stay put. Narrow,
+  the side card's words are one line at the middle card's very foot. Inside a menu or a dialog (no `data-side`) the parts
+  are drawn flat, the list as wide as the place.
+*/
+/* The cards' one height: 476, or less where the bare Pop holding them was given less room on either side of its chip (--lc-pop-room, ui.tsx). */
+.lc-pk {
+  --lc-pk-tall: min(var(--lc-pk-h, 476px), calc(100vh - 96px), var(--lc-pop-room, 100vh));
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+.lc-pk[data-side="line"] {
+  grid-template-columns: 40px 312px;
+}
+.lc-pk[data-side="card"] {
+  grid-template-columns: 40px 312px 268px;
+}
+.lc-pk[data-side] .lc-pk-card {
+  border-radius: 14px;
+  background: var(--l-float);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+}
+.lc-pk-under {
+  grid-column: 1 / -1;
+}
+/* The rail: one 28px button a tool, its mark bare; the tool whose models show has the app's one pressed look. */
+.lc-pk-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 40px;
+  max-height: var(--lc-pk-tall);
+  padding: 6px;
+  overflow: hidden auto;
+  scrollbar-width: none;
+}
+.lc-pk[data-side] .lc-pk-rail {
+  border-radius: 12px;
+}
+.lc-pk:not([data-side]) .lc-pk-rail {
+  padding: 0;
+}
+.lc-pk-tool {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.lc-pk-tool[aria-pressed="true"] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+.lc-pk-tool[data-off] {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-pk-tool:hover:not([aria-pressed="true"]) {
+    background: var(--l-wash-2);
+  }
+}
+/* The middle card: one height, its parts in a column, only its middle scrolling. */
+.lc-pk-mid {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: var(--lc-pk-tall);
+  min-width: 0;
+  overflow: hidden;
+}
+.lc-pk:not([data-side]) .lc-pk-mid {
+  border-left: 1px solid var(--l-line);
+}
+.lc-pk-mid > * {
+  flex: none;
+}
+.lc-pk-top {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--l-line);
+}
+.lc-pk-top .lc-mp-find {
+  flex: 1;
+  margin: 0;
+  background: none;
+}
+.lc-pk-top .lc-mp-find:focus-within {
+  background: none;
+  box-shadow: none;
+}
+/*
+  A pinned row's word (Fusion, Automatic) never shrinks; what it means now (the pair, "Opus 5.5 + Sonnet 5.5") follows at
+  the row's end, cut with an ellipsis: a plain block, since an ellipsis can't cut text in a flex box (it was clipped mid-letter).
+*/
+.lc-who-row-t.lc-pk-word {
+  flex: none;
+}
+.lc-pk-pair {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+.lc-pk-pin {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--l-line);
+}
+/* The tool's own row, pinned over its models: its mark, name and count at the left, its sources' switch at the right. */
+.lc-pk-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 6px 0 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-pk-head > .lc-mark {
+  flex: none;
+  color: var(--l-ink-2);
+}
+/* The tool's name gives way to the switch, but never below its mark and about six letters. */
+.lc-pk-head-t {
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pk-count {
+  flex: none;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lc-pk-src {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  margin-left: auto;
+}
+.lc-pk-src > button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+/* More than two sources: one chip naming the choice, at the row's end, that opens them as a list in place. */
+.lc-pk-chip.lc-pk-srcchip {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.lc-pk-srcchip > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pk-src > button[aria-pressed="true"] {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-pk-src > button:hover:not([aria-pressed="true"]) {
+    background: var(--l-wash-2);
+  }
+}
+.lc-pk-scroll {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 2px 6px 6px;
+  overflow: hidden auto;
+  scroll-padding: var(--lc-ring);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-pk-scroll > *,
+.lc-pk-models > * {
+  flex: none;
+}
+.lc-pk-scroll > .lc-mp {
+  max-height: none;
+}
+.lc-pk-models {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* A maker's name with its mark, "Starred", or in a tool of one maker what the models under it are for: 12px grey, one line. */
+.lc-pk-lab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-pk-lab[data-what] {
+  height: 24px;
+  margin-top: 4px;
+}
+.lc-pk-lab > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pk-rule {
+  flex: none;
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--l-line);
+}
+/* A model's row: 32 high, 8 in, its maker's mark, the name, its sources in grey, its price in mono, the tick last. */
+.lc-who-row.lc-pk-row {
+  gap: 9px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+.lc-pk-row[data-on] {
+  background: var(--lc-plate);
+}
+/*
+  The name has first call on the room: it never shrinks while the sources or the price can, and is cut only when alone it
+  doesn't fit beside the mark and the tick (100% less the 14px mark, the 14px tick and their two 9px gaps). The sources give
+  way first (their huge shrink takes nearly all of it), then the price; what follows the name is pushed to the row's end.
+*/
+.lc-pk-row > .lc-who-row-t {
+  flex: 0 0 auto;
+  max-width: calc(100% - 46px);
+}
+.lc-pk-row > .lc-who-row-t + * {
+  margin-left: auto;
+}
+.lc-pk-from {
+  flex: 0 100000 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+/* The source that runs a model reads in ink, the others offering it after it in grey ("Go · Zen"). */
+.lc-pk-runs {
+  color: var(--l-ink);
+}
+.lc-pk-price {
+  flex: none;
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-pk-row > .lc-pk-price {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-pk-tick {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  color: var(--l-ink);
+}
+.lc-pk-row[data-also] .lc-pk-tick {
+  color: var(--l-ink-4);
+}
+.lc-pk-note {
+  border-top: 1px solid var(--l-line);
+}
+.lc-pk-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-top: 1px solid var(--l-line);
+}
+/* Narrow: the side card's words as one line at the very foot: the mark and name, the price, the Effort chip, a star. */
+.lc-pk-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  border-top: 1px solid var(--l-line);
+  color: var(--l-ink-2);
+}
+.lc-pk-line-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+.lc-pk-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-pk-chip > b {
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-pk-chip > svg {
+  color: var(--l-ink-3);
+}
+.lc-pk-ib {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-pk-chip:hover,
+  .lc-pk-ib:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-pk-ib[aria-pressed="true"],
+.lc-pk-star[aria-pressed="true"] svg {
+  color: var(--l-warn);
+}
+.lc-pk-ib[aria-pressed="true"] svg path,
+.lc-pk-star[aria-pressed="true"] svg path {
+  fill: currentColor;
+}
+/* The side card: what the pointed model is, where it runs, its price, its effort and its star. */
+.lc-pk-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  max-height: var(--lc-pk-tall);
+  padding: 6px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lc-pk-side > *,
+.lc-pk-own > * {
+  flex: none;
+}
+.lc-pk-own {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lc-pk-sh {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 0 8px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-pk-sh > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-pk-sd {
+  margin: 0 8px 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-pk-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-pk-f > b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 450;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+.lc-pk-num {
+  font-variant-numeric: tabular-nums;
+}
+.lc-pk-pnote {
+  margin: 0 8px 2px;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--l-ink-3);
+}
+/* The Effort head: the label at the left and the level it runs at at the right, as the card's other lines read; whose list it is on its own line under them, wrapping as plain text, never squeezed beside the label. */
+.lc-pk-eh {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  padding: 5px 8px 6px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-pk-eh-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+.lc-pk-eh-top > b {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-pk-eh-now {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink);
+}
+.lc-pk-eh-now[data-own] {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-pk-eh > span {
+  font-size: 11.5px;
+  line-height: 16px;
+  text-align: left;
+  color: var(--l-ink-3);
+}
+/*
+  Effort's slider: one pill 28 high, a stop a level of the model's own. It fills in ink from the left through the level it
+  runs at, the knob at that stop's end; each stop past it keeps a 1px tick where the knob would sit. The knob is white in
+  both looks, as the owner's reference and the app's own switch thumb (switch.css) are, and takes the switch thumb's shadow,
+  whose ring keeps it apart from the light ink fill of the dark look. The fill and the knob move in 180ms,
+  the length Quick motion keeps for what you press; Reduce motion stops them (below, and foundation.css).
+*/
+.lc-pk-slide {
+  position: relative;
+  display: flex;
+  flex: none;
+  height: 28px;
+  margin: 0 8px 6px;
+  border-radius: 8px;
+  background: var(--l-wash-2);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.lc-pk-slide-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--lc-pk-fill, 0) * 100%);
+  background: var(--l-ink);
+  pointer-events: none;
+  transition: width 180ms var(--l-ease-out);
+}
+.lc-pk-slide-stop {
+  position: relative;
+  flex: 1 1 0;
+}
+.lc-pk-slide-stop[data-tick]::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  width: 1px;
+  height: 10px;
+  background: var(--l-line-strong);
+}
+.lc-pk-slide-knob {
+  position: absolute;
+  top: 3px;
+  left: calc(var(--lc-pk-fill, 0) * 100% - 15px);
+  width: 12px;
+  height: 22px;
+  border-radius: 5px;
+  background: oklch(0.995 0 0);
+  box-shadow: var(--l-thumb-shadow);
+  pointer-events: none;
+  transition: left 180ms var(--l-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pk-slide-fill,
+  .lc-pk-slide-knob {
+    transition: none;
+  }
+}
+/* Claude Code's Ultracode and Ultrathink under the slider: the name and what it does at the left, the app's switch at the right. */
+.lc-pk-xr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px;
+}
+.lc-pk-xr-t {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.lc-pk-xr-t > b {
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--l-ink);
+}
+.lc-pk-xr-t > span {
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--l-ink-3);
+}
+.lc-pk-ef {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+}
+/* Where a model runs from, its sources: a short list of 28px rows, a tick on the one in use. */
+.lc-pk-lv {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.lc-pk-lvr {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lc-pk-lvr[data-on] {
+  background: var(--lc-plate);
+  font-weight: 500;
+}
+.lc-pk-lvr > .lc-mark {
+  flex: none;
+  color: var(--l-ink-2);
+}
+@media (hover: hover) {
+  .lc-pk-lvr:hover:not([data-on]) {
+    background: var(--l-wash-2);
+  }
+}
+.lc-pk-none {
+  margin: 4px 8px 8px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+.lc-pk-star {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash-2);
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+/* A Fusion row's name (Lead, Sidekick) before its pick. */
+.lc-pk-k {
+  flex: none;
+  width: 58px;
+  color: var(--l-ink-3);
 }

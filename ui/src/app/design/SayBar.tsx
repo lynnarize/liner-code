@@ -77,7 +77,7 @@ export function SayBar({ x, y, above }: { x: number; y: number; above?: number }
       </button>
       <span className="ld-say-v" aria-hidden />
       <button type="button" className="ld-say-b l-focus" data-strong onClick={more}>
-        <I.copy size={14} />3 more like this
+        <I.layers size={14} />3 more like this
       </button>
     </div>
   );

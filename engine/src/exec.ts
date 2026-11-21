@@ -786,6 +786,69 @@ export function killTree(child: { pid?: number; kill: (s?: NodeJS.Signals) => bo
     }, KILL_AFTER_MS).unref();
 }
 
+/**
+  Runs a short command to its end in a process group of its own and collects its output, for a call that may hang or leave
+  something behind (a tool's model listing). Past `timeout`, or on `signal`, the whole group is ended (killTree) and it answers
+  at once, `cut`, without waiting for pipes a leftover may hold; once it exits by itself, what it left in its group goes too.
+  run() can't do this: execFile's timeout signals the direct child alone and then waits for the pipes to close.
+*/
+export function runBounded(cmd: string, args: string[], o: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; timeout: number; signal?: AbortSignal; maxBuffer?: number }): Promise<RunResult & { cut: boolean }> {
+  const cap = o.maxBuffer ?? 32 * 1024 * 1024;
+  return new Promise((resolve) => {
+    if (o.signal?.aborted) return resolve({ code: 1, stdout: "", stderr: "", cut: true });
+    let child: ChildProcess;
+    try {
+      child = spawn(cmd, args, { cwd: o.cwd, env: o.env ?? process.env, stdio: ["pipe", "pipe", "pipe"], detached: true });
+    } catch (e) {
+      return resolve({ code: 1, stdout: "", stderr: String((e as Error)?.message ?? e), cut: false });
+    }
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const end = (r: RunResult & { cut: boolean }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      o.signal?.removeEventListener("abort", stop);
+      resolve(r);
+    };
+    const stop = () => {
+      killTree(child);
+      end({ code: 1, stdout, stderr, cut: true });
+    };
+    const timer = setTimeout(stop, o.timeout);
+    timer.unref?.();
+    o.signal?.addEventListener("abort", stop, { once: true });
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (d: string) => void (stdout.length < cap && (stdout += d)));
+    child.stderr?.on("data", (d: string) => void (stderr.length < cap && (stderr += d)));
+    child.on("error", (e) => end({ code: 1, stdout, stderr: stderr || e.message, cut: false }));
+    // What it left in its group goes with it, as a session's leftovers do (acp.ts), and its pipes are let go (closesOnExit).
+    if (!win)
+      child.on("exit", () => {
+        const group = child.pid;
+        if (!group) return;
+        try {
+          process.kill(-group, "SIGTERM");
+        } catch {
+          return;
+        }
+        setTimeout(() => {
+          try {
+            process.kill(-group, "SIGKILL");
+          } catch {
+            // it went when it was asked
+          }
+        }, KILL_AFTER_MS).unref();
+      });
+    closesOnExit(child);
+    child.on("close", (code) => end({ code: typeof code === "number" ? code : 1, stdout, stderr, cut: false }));
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(o.input ?? "");
+  });
+}
+
 /** First line of `cmd --version`, or undefined. */
 export async function versionOf(path: string, env: NodeJS.ProcessEnv, args = ["--version"]) {
   const r = await run(path, args, { env, timeout: 8000 });

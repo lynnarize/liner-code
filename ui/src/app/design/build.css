@@ -25,23 +25,6 @@
 .ld-bmark-i {
   margin-left: auto;
 }
-.ld-ly .ld-bmark-i + .ld-pd,
-.ld-ly .ld-bdot + .ld-pd {
-  margin-left: 6px;
-}
-.ld-ly .ld-bdot {
-  margin-left: auto;
-}
-.ld-bdot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-ok);
-}
-.ld-bdot[data-off] {
-  background: var(--l-ink-4);
-}
 .ld-lmark {
   display: inline-flex;
   flex: none;
@@ -244,10 +227,10 @@ button.ld-bt-n {
 }
 .ld-live-lk {
   flex: none;
-  height: 24px;
+  height: 28px;
   padding: 0 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 13px;
@@ -328,7 +311,7 @@ button.ld-bt-n {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  height: 36px;
   padding: 0 8px;
   border-radius: 8px;
   font-size: 13px;
@@ -422,8 +405,7 @@ button.ld-bt-n {
   color: var(--l-ink);
 }
 
-/* The server chip and the turns, in the canvas's top row. */
-.ld-srv,
+/* The kept copies, in the canvas's top row: one menu. */
 .ld-ver-t {
   display: inline-flex;
   align-items: center;
@@ -436,16 +418,12 @@ button.ld-bt-n {
   white-space: nowrap;
   color: var(--l-ink-2);
 }
-.ld-srv > svg,
 .ld-ver-t > svg {
   color: var(--l-ink-3);
 }
 .ld-ver {
   display: inline-flex;
   align-items: center;
-}
-.ld-ver .lc-ib:disabled {
-  opacity: 0.35;
 }
 .ld-scrub {
   position: absolute;
@@ -609,7 +587,7 @@ button.ld-bt-n {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 26px;
+  min-height: 28px;
 }
 .ld-bt-rows li:only-child {
   justify-content: flex-start;

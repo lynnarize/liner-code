@@ -224,7 +224,7 @@ export function FrameMark({ frame }: { frame: DesignFrame }) {
 /** In Layers, on a frame's row: the same mark, as its icon alone. */
 export function LayerMark({ frame }: { frame: DesignFrame }) {
   const b = useBuilds()[frame.id];
-  if (frame.kind === "live") return <span className="ld-bdot" aria-label="The running app" title="The running app, live" />;
+  if (frame.kind === "live") return <span className="ld-bmark ld-bmark-i" role="img" aria-label="The running app, live" title="The running app, live"><I.globe size={14} /></span>;
   if (!b || b.state === "none") return null;
   return (
     <span className="ld-bmark ld-bmark-i" data-state={b.state} aria-label={STATE[b.state]} title={b.file ? `${STATE[b.state]}: ${b.file}` : STATE[b.state]}>
@@ -451,7 +451,7 @@ export function WaitRow({ thread }: { thread: Thread }) {
   if (waiting) {
     return (
       <div className="lc-trow ld-wait" role="status">
-        <span className="ld-bdot" aria-hidden />
+        <I.globe size={14} />
         <span className="lc-trow-t">
           <b>Live</b> from the Browser panel's server
         </span>

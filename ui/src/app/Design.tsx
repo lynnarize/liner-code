@@ -11,10 +11,10 @@
   The timeline's card for each version (DesignCard) draws a small picture of it and opens it here.
   Ideas from Kun's Design mode (github.com/KunAgent/Kun) and T3 Code's previews; no code from either.
 */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DesignInfo, DesignSize, Item, Thread } from "@contracts";
-import { DESIGN_FRAME_STYLE } from "@contracts";
+import { DESIGN_FRAME_STYLE, DESIGNS_FOLDER } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
@@ -26,7 +26,9 @@ import { setFace } from "./face";
 import { agentOf } from "./model";
 import { updateLook, useLook } from "./look";
 import { SurfaceNote, useCwd } from "./Surfaces";
-import { PanelHead, Pop, Row } from "./ui";
+import { PanelHead, Pop, Row, Sep } from "./ui";
+import * as os from "./os";
+import { SendBox } from "./Composer";
 import "./design.css";
 
 type DesignItem = Extract<Item, { kind: "design" }>;
@@ -90,10 +92,10 @@ export function versionHtml(threadId: string, design: string, version: number) {
 }
 
 /** The sizes a design is drawn at, with their icons. */
-const SIZES: { id: DesignSize; label: string; icon: (p: { size?: number }) => ReactNode }[] = [
-  { id: "desktop", label: "Desktop", icon: I.monitor },
-  { id: "tablet", label: "Tablet", icon: I.tablet },
-  { id: "phone", label: "Phone", icon: I.device },
+const SIZES: { id: DesignSize; label: string }[] = [
+  { id: "desktop", label: "Desktop" },
+  { id: "tablet", label: "Tablet" },
+  { id: "phone", label: "Phone" },
 ];
 /** Zoom steps on the canvas; Fit leaves them for the panel's width. */
 const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2];
@@ -219,15 +221,16 @@ function DesignStart({ thread }: { thread: Thread }) {
       title="No designs yet"
       action={
         <div className="lc-dz-start">
+          {/* Where it lives, picked as Design Home picks it: one chip with a menu, beside what it's drawn for. */}
           {inProject && (
-            <div className="lc-home-where" role="radiogroup" aria-label="Where the design lives">
-              <button type="button" role="radio" aria-checked={here} className="l-focus" onClick={() => setHere(true)}>
-                In {inProject.name}
-              </button>
-              <button type="button" role="radio" aria-checked={!here} className="l-focus" onClick={() => setHere(false)}>
-                On its own
-              </button>
-            </div>
+            <Pop label={`Where the design lives: ${here ? inProject.name : "on its own"}. Change it`} width={260} triggerClass="lc-pb" trigger={<><I.folder size={14} /><span className="lc-strip-cap">{here ? inProject.name : "On its own"}</span><I.chevD size={12} /></>} menu>
+              {(close) => (
+                <>
+                  <Row title={inProject.name} note="Beside its code, ready to build" on={here} onPick={() => (close(), setHere(true))} />
+                  <Row title="On its own" note={`In ${DESIGNS_FOLDER}. No project needed`} on={!here} onPick={() => (close(), setHere(false))} />
+                </>
+              )}
+            </Pop>
           )}
           <Pop label={`What it's drawn for: ${START_SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} triggerClass="lc-pb" trigger={<><I.monitor size={14} /><span className="lc-strip-cap">{START_SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={12} /></>} menu>
             {(close) => START_SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
@@ -530,7 +533,9 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
                 <Row
                   key={x.item.design}
                   title={x.item.title}
+                  which={x.item.size}
                   note={`${x.versions.length === 1 ? "1 version" : `${x.versions.length} versions`} · ${x.item.size} · ${ago(x.item.at)}`}
+                  end={ago(x.item.at)}
                   on={x.item.design === latest.design}
                   onPick={() => (setSel(x.item.design), setVersion("live"), close())}
                 />
@@ -544,7 +549,6 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
           triggerClass="lc-dz-ver"
           trigger={
             <>
-              <i data-live={!shownVersion || undefined} aria-hidden />
               <span>
                 {shownVersion ? `v${shownVersion.version}` : `v${latest.version}`}
                 {!shownVersion && <span className="lc-dz-wide"> · Live</span>}
@@ -562,6 +566,7 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
                   key={v.id}
                   title={`Version ${v.version}${built?.version === v.version ? " · built" : ""}`}
                   note={`${v.note ?? (v.version === 1 ? "The first draft" : "Changed")} · ${ago(v.at)}`}
+                  end={ago(v.at)}
                   on={version === v.version}
                   onPick={() => (setVersion(v.version), close())}
                 />
@@ -570,15 +575,6 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
           )}
         </Pop>
         <span className="lc-grow" />
-        {view === "design" && (
-          <span className="lc-dz-sizes" role="group" aria-label="The size it's drawn at">
-            {SIZES.map((x) => (
-              <button key={x.id} type="button" className="l-focus" aria-label={x.label} title={x.label} aria-pressed={size === x.id} onClick={() => (setSizes((s) => ({ ...s, [latest.design]: x.id })), setZoom(null))}>
-                <x.icon size={14} />
-              </button>
-            ))}
-          </span>
-        )}
         {view === "design" && version === "live" && (
           <button
             type="button"
@@ -599,26 +595,26 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
         <button type="button" className="lc-ib l-focus" aria-label={view === "code" ? "Show the design" : "Show its code"} title={view === "code" ? "Show the design" : "Show its code"} aria-pressed={view === "code"} onClick={() => setView((v) => (v === "code" ? "design" : "code"))}>
           <I.code size={14} />
         </button>
-        <Pop label="More for the design" align="end" width={260} triggerClass="lc-ib" trigger={<I.more size={14} />}>
+        {/* The rest under one ···, as a surface's top row keeps it (Changes, the Browser): what to do with it as rows, then how it's drawn. */}
+        <Pop label="More for the design" align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
           {(close) => (
             <div className="lc-br-more">
-              <div className="lc-dz-acts">
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (void openInLinerDesign(thread, latest), close())}>
-                  <I.edit size={14} /> Open in Liner Design
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!base} onClick={() => (base && bridge.openExternal(served(base, latest.path)), close())}>
-                  <I.external size={14} /> Open in your browser
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (void copy(), close())}>
-                  <I.copy size={14} /> Copy its HTML
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!cwd} onClick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())}>
-                  <I.folder size={14} /> Show its file
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())}>
-                  {where === "chat" ? <I.panel size={14} /> : <I.comment size={14} />} {where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"}
-                </button>
+              <div className="lc-dz-menu">
+                <Row title="Open in Liner Design" icon={<I.edit size={16} />} onPick={() => (void openInLinerDesign(thread, latest), close())} />
+                <Row title="Open in your browser" icon={<I.external size={16} />} disabled={!base} onPick={() => (base && bridge.openExternal(served(base, latest.path)), close())} />
+                <Row title="Copy its HTML" icon={<I.copy size={16} />} onPick={() => (void copy(), close())} />
+                <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={16} />} disabled={!cwd} onPick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())} />
+                <Sep />
+                <Row title={where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"} icon={where === "chat" ? <I.panel size={14} /> : <I.notes size={14} />} onPick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())} />
               </div>
+              {view === "design" && (
+                <>
+                  <PanelHead>Drawn at</PanelHead>
+                  <div className="lc-br-zoomrow">
+                    <Segmented size="sm" value={size} onValueChange={(v) => (setSizes((s) => ({ ...s, [latest.design]: v as DesignSize })), setZoom(null))} options={SIZES.map((x) => ({ value: x.id, label: x.label }))} aria-label="The size it's drawn at" />
+                  </div>
+                </>
+              )}
               <PanelHead>Theme</PanelHead>
               <div className="lc-br-zoomrow">
                 <Segmented
@@ -638,13 +634,13 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
           )}
         </Pop>
         {shownVersion ? (
-          <button type="button" className="lc-btn lc-dz-build" data-kind="plain" data-size="sm" onClick={() => void restore()} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
+          <button type="button" className="lc-btn lc-dz-build" data-kind="plain" data-size="sm" onClick={() => void restore()} aria-label={`Bring version ${shownVersion.version} back`} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
             <I.undo size={14} />
-            <span className="lc-dz-wide">Bring back</span> v{shownVersion.version}
+            <span className="lc-dz-wide">Bring it back</span>
           </button>
         ) : (
           <button type="button" className="lc-btn lc-dz-build" data-kind={built?.version === latest.version ? "plain" : "primary"} data-size="sm" onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
-            <I.play size={12} />
+            <I.tool size={14} />
             <span>{built ? "Build again" : "Build it"}</span>
           </button>
         )}
@@ -720,26 +716,11 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
                   <span className="lc-code">{picked.selector}</span>
                   <span className="lc-quiet lc-br-ask-p">{picked.text ? `“${picked.text.slice(0, 48)}${picked.text.length > 48 ? "…" : ""}”` : picked.path}</span>
                   <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => setPicked(null)}>
-                    <I.close size={12} />
+                    <I.close size={14} />
                   </button>
                 </div>
-                <input
-                  className="lc-input"
-                  autoFocus
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="What should change here?"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing) void ask();
-                    if (e.key === "Escape") setPicked(null);
-                  }}
-                />
-                <div className="lc-br-ask-f">
-                  <span className="lc-quiet">Sends the part with your comment</span>
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!comment.trim()} onClick={() => void ask()}>
-                    Send to {agentName}
-                  </button>
-                </div>
+                {/* The message box's field and Send: the part goes with your words. */}
+                <SendBox autoFocus value={comment} onChange={setComment} label={`What should change here? Sends the part with your comment to ${agentName}`} placeholder="What should change here?" onSend={() => void ask()} onEscape={() => setPicked(null)} />
               </div>
             )}
           </div>
@@ -853,12 +834,12 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
           )}
           {thread && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void openInLinerDesign(thread, it)} title="Put it on the canvas, as a frame of this folder's design file">
-              Open in Liner Design
+              <I.edit size={14} /> Open in Liner Design
             </button>
           )}
           {thread && (
             <button type="button" className="lc-btn lc-dz-buildsm" data-kind="plain" data-size="sm" onClick={() => void buildDesign(thread, it, agentName)} title={`Ask ${agentName} to build version ${it.version} into the app`}>
-              <I.play size={12} /> Build it
+              <I.tool size={14} /> Build it
             </button>
           )}
         </figcaption>
@@ -891,15 +872,14 @@ export function DesignCard({ threadId, it }: { threadId: string; it: DesignItem 
         <span className="lc-grow" />
         {thread && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void openInLinerDesign(thread, it)} title="Put it on the canvas, as a frame of this folder's design file">
-            Open in Liner Design
+            <I.edit size={14} /> Open in Liner Design
           </button>
         )}
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setHere(true)}>
           Show it here
         </button>
         <button type="button" className="lc-btn lc-dz-open" data-kind="ghost" data-size="sm" onClick={open}>
-          <i aria-hidden />
-          Open in the panel
+          <I.panel size={14} /> Open in the panel
         </button>
       </figcaption>
     </figure>

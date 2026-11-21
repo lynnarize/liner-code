@@ -1,23 +1,25 @@
 /*
   Home: start a session, laid out as Devin's (docs/research/home-like-home.md, board B). The
   composer sits in the middle of the paper. On top of it, where a headline was, the project's
-  name (press it for a small picker of your projects, the last used first) and, at the right,
-  This checkout or Worktree. Under the box one row says the rest of how it runs: the branch, the
-  tool, and at the right edge the mode. In the corner, what's new. What there is to carry on
-  (sessions from Claude Code or Codex, work not committed) is Recent, in the sidebar.
+  name (press it for a small picker of your projects, the last used first) and, at the right, one
+  chip for where it works: the branch, in this checkout or a new worktree from a branch. The tool
+  is in the box's who panel and the mode in its + menu (a chip after the + while it isn't
+  Standard), so nothing sits under the box but the quiet line of other ways to start. In the
+  corner, what's new. What there is to carry on (sessions from Claude Code or Codex, work not
+  committed) is Recent, in the sidebar.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Project, SessionMode } from "@contracts";
-import { startOf } from "@contracts";
+import type { Project, RpcResult, SessionMode } from "@contracts";
+import { modeName, startOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
-import { Composer, type RunSettings } from "./Composer";
+import { ChoiceChip, Composer, type PlusChoice, type RunSettings } from "./Composer";
 import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
-import { listedProjects, pairEffortFor } from "./model";
-import { Pop } from "./ui";
+import { listedProjects, pairEffortFor, since, startEffort } from "./model";
+import { PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 import { ProjectQuickPick } from "./Projects";
-import { ModePick } from "./Modes";
+import { ModeIcon, ModeRows } from "./Modes";
 import { HomeUpdates } from "./Updates";
 import * as os from "./os";
 
@@ -39,15 +41,17 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   // Who a new session starts with: the project's own agent, else a pair, the best model or the fast one, as Settings say.
   const initial = useMemo((): RunSettings => {
     // The sample project's Demo starts as a pair, so its scripted lead and sidekick can be seen.
-    if (project?.agent === "demo") return { agent: "demo", sidekick: "demo:demo", effort: "low", access };
+    if (project?.agent === "demo") return { agent: "demo", sidekick: "demo:demo", effort: startEffort("demo:demo", providers), access };
     // A project set to start with one of your agents (Settings › Projects): that agent, on its own.
     const own = agents.find((a) => a.id === project?.agent);
     if (own) return { agent: own.id, effort: own.effort, access };
     const firstModel = providers.find((p) => p.available && p.adapter && p.id !== "demo");
     const start = startOf(engineSettings, providers);
-    // Starting as a pair, at a pair's effort (Settings, Medium unless set).
-    if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, engineSettings.pairEffort) : "medium", access };
-    return { agent: firstModel ? `@${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
+    // Starting as a pair, at a pair's effort (Settings' word when set, as near as the lead's model lists).
+    // Alone, a model starts at its own default level as its tool reports it, else at the tool's own: never a word of the app's.
+    if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, engineSettings.pairEffort) : startEffort(start.agent, providers), access };
+    const first = firstModel ? `${firstModel.id}:${firstModel.models[0]?.id ?? "default"}` : undefined;
+    return { agent: first ? `@${first}` : "demo", effort: startEffort(first ?? "demo:demo", providers), access };
   }, [project?.id, project?.agent, engineSettings.start, JSON.stringify(engineSettings.picks ?? {}), engineSettings.pairEffort, access, agents.length, readyKey]);
   const [settings, setSettings] = useState<RunSettings>(initial);
   // The session's mode, fixed once it starts: your default, unless you pick another here.
@@ -61,6 +65,16 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   */
   useEffect(() => setSessionMode(startMode ?? defaultMode), [startMode, defaultMode]);
   const pick = (m: SessionMode) => setSessionMode(m);
+  // The mode in the + menu, its name at the row's end; anything but Standard is a chip after the +, its cross putting Standard back.
+  const modeChoice: PlusChoice = {
+    key: "mode",
+    label: "Mode",
+    icon: <I.code size={16} />,
+    value: modeName(mode_, agents),
+    say: modeName(mode_, agents),
+    body: (done) => <ModeRows value={mode_} onPick={pick} done={done} />,
+    chip: mode_ !== "standard" ? <ChoiceChip icon={<ModeIcon mode={mode_} agents={agents} size={14} />} label={modeName(mode_, agents)} className={mode_ === "creator" ? "lc-mode-creator" : undefined} clear={{ label: "Back to Standard", onClear: () => pick("standard") }} /> : undefined,
+  };
   const [worktree, setWorktree] = useState(worktrees);
   const [compare, setCompare] = useState<string[]>([]);
   // A comparison gives each model the ask alone: a sidekick set (Pair picked) drops the models picked to compare.
@@ -195,16 +209,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
           <div className="lc-home-top">
             <ProjectName project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} onScratch={() => void scratch()} />
             <span className="lc-grow" />
-            {project.git && !inWorktree && (
-              <div className="lc-home-where" role="radiogroup" aria-label="Where it runs">
-                <button type="button" role="radio" aria-checked={!worktree} className="l-focus" onClick={() => setWorktree(false)}>
-                  This checkout
-                </button>
-                <button type="button" role="radio" aria-checked={worktree} className="l-focus" onClick={() => setWorktree(true)}>
-                  Worktree
-                </button>
-              </div>
-            )}
+            <WhereChip project={project} worktree={worktree} onWorktree={setWorktree} base={base} onBase={setBase} inWorktree={inWorktree} comparing={compare.length > 0 && mode_ === "standard"} />
           </div>
           <div
             className="lc-home-compose"
@@ -226,18 +231,12 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               }}
               onNewAgent={onNewAgent}
               placeholder={mode_ === "creator" ? "Say what to add to Liner Code: a connection, a panel or an app" : "Ask for a change, paste an error, or drop in a screenshot"}
-              worktree={worktree}
-              onWorktree={setWorktree}
-              base={base}
-              onBase={setBase}
-              inWorktree={inWorktree}
-              onInWorktree={setInWorktree}
               // Comparing models starts Standard sessions, so it's offered only in Standard.
               compare={project.git && mode_ === "standard" ? compare : undefined}
               onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
               seed={startPrompt}
-              stripEnd={<ModePick value={mode_} onPick={pick} />}
+              choices={[modeChoice]}
               // The prompt check splits a draft of several tasks into sessions in this mode; Workshop isn't checked.
               mode={mode_}
               checkOff={mode_ === "creator"}
@@ -273,9 +272,7 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     <div className="lc-home">
       <header className="lc-top lc-top-home" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
         {/* No breadcrumb: the headline names the project. The row stays, as the window's drag region. */}
         <span className="lc-grow" data-drag />
@@ -292,7 +289,7 @@ function ProjectName({ project, projects, onPick, onSample, onScratch }: { proje
   return (
     <Pop
       label={`Project: ${project.name}. Change it`}
-      width={400}
+      width={260}
       triggerClass="lc-home-name"
       trigger={
         <>
@@ -304,6 +301,7 @@ function ProjectName({ project, projects, onPick, onSample, onScratch }: { proje
       {(close) => (
         <ProjectQuickPick
           value={project.id}
+          close={close}
           onPick={(p) => (onPick(p.id), close())}
           more={[
             ...(project.name !== "Scratch" ? [{ title: "A scratch folder", icon: <I.notes size={16} />, onPick: () => (close(), onScratch()) }] : []),
@@ -312,5 +310,104 @@ function ProjectName({ project, projects, onPick, onSample, onScratch }: { proje
         />
       )}
     </Pop>
+  );
+}
+
+const gitCache = new Map<string, Promise<RpcResult<"git.branches">>>();
+const branchesFor = (projectId: string) => {
+  if (!gitCache.has(projectId)) gitCache.set(projectId, rpc("git.branches", { projectId }).finally(() => setTimeout(() => gitCache.delete(projectId), 30000)));
+  return gitCache.get(projectId)!;
+};
+
+/** The branches a new worktree can start from, the one picked ticked; this checkout's is the default (undefined). */
+function BaseRows({ projectId, current, onPick }: { projectId: string; current?: string; onPick: (b: string | undefined) => void }) {
+  // Kept with the project it was read for: another project's branches never show (or get picked) for this one.
+  const [gitOf, setGitOf] = useState<{ projectId: string; git: RpcResult<"git.branches"> } | null>(null);
+  useEffect(() => void branchesFor(projectId).then((git) => setGitOf({ projectId, git }), () => {}), [projectId]);
+  const git = gitOf?.projectId === projectId ? gitOf.git : null;
+  if (!git) return <p className="l-shimmer lc-pop-note">Reading the branches</p>;
+  return (
+    <>
+      <PanelHead>Start the worktree from</PanelHead>
+      {git.branches.slice(0, 14).map((b) => (
+        <Row key={b.name} title={<span className="lc-mono">{b.name}</span>} note={[b.name === git.current ? "this checkout" : "", b.name === git.base ? "the default branch" : "", b.lastCommitAt ? since(b.lastCommitAt) : ""].filter(Boolean).join(" · ")} end={b.lastCommitAt ? since(b.lastCommitAt) : undefined} on={b.name === current} onPick={() => onPick(b.name === git.current ? undefined : b.name)} />
+      ))}
+    </>
+  );
+}
+
+/**
+  Where the session works, at the right end of the line over the box: the branch's name, in this
+  checkout, or "New worktree from main". Its menu picks between the two, and with a new worktree,
+  the branch it starts from (in the menu's own place; Escape comes back first). A project without
+  git has no chip. Carrying on in a worktree, or comparing models (each gets a worktree of its own
+  from this branch), it shows the branch with nothing to change.
+*/
+function WhereChip({ project, worktree, onWorktree, base, onBase, inWorktree, comparing }: { project: Project; worktree: boolean; onWorktree: (on: boolean) => void; base?: string; onBase: (b: string | undefined) => void; inWorktree?: { path: string; branch?: string }; comparing: boolean }) {
+  const branch = inWorktree?.branch ?? project.branch;
+  if (!project.git) return null;
+  if (inWorktree || comparing)
+    return branch ? (
+      <span className="lc-home-branch" title={inWorktree ? "Carrying on in this worktree" : "Each model works in a worktree of its own from this branch"}>
+        <I.branch size={14} />
+        <span className="lc-mono">{branch}</span>
+      </span>
+    ) : null;
+  const from = base ?? project.branch ?? "HEAD";
+  return (
+    <Pop
+      label={worktree ? `Where it works: a new worktree from ${from}. Change it` : `Where it works: this checkout${branch ? `, on ${branch}` : ""}. Change it`}
+      align="end"
+      width={260}
+      menu
+      triggerClass="lc-pb lc-home-branch"
+      trigger={
+        <>
+          <I.branch size={14} />
+          {worktree ? (
+            <span className="lc-strip-cap">
+              New worktree from <span className="lc-mono">{from}</span>
+            </span>
+          ) : (
+            <span className="lc-mono lc-strip-cap">{branch ?? "HEAD"}</span>
+          )}
+          <I.chevD size={12} />
+        </>
+      }
+    >
+      {(close) => <WhereMenu project={project} worktree={worktree} onWorktree={onWorktree} from={from} base={base} onBase={onBase} close={close} />}
+    </Pop>
+  );
+}
+
+function WhereMenu({ project, worktree, onWorktree, from, base, onBase, close }: { project: Project; worktree: boolean; onWorktree: (on: boolean) => void; from: string; base?: string; onBase: (b: string | undefined) => void; close: () => void }) {
+  const [branches, setBranches] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  // Back on the row that opened the branches: the menu's last.
+  const out = () => (setBranches(false), requestAnimationFrame(() => [...(box.current?.querySelectorAll<HTMLElement>("[role^='menuitem']") ?? [])].at(-1)?.focus({ preventScroll: true })));
+  return (
+    <div ref={box} onKeyDown={(e) => branches && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), out())}>
+      {branches ? (
+        <>
+          <button type="button" role="menuitem" className="lc-who-back l-focus" aria-label="Back from the branches" onClick={out}>
+            <I.chevL size={12} />
+            From a branch
+          </button>
+          <BaseRows projectId={project.id} current={base ?? project.branch} onPick={(b) => (onBase(b), close())} />
+        </>
+      ) : (
+        <>
+          <Row title="This checkout" on={!worktree} onPick={() => (onWorktree(false), close())} />
+          {/* Kept open: a new worktree has one more choice, the branch it starts from. */}
+          <Row title="A new worktree" on={worktree} onPick={() => onWorktree(true)} />
+          {worktree && (
+            <>
+              <Sep />
+              <Row title="From a branch" end={<span className="lc-mono">{from}</span>} opens="branches" onPick={() => (setBranches(true), requestAnimationFrame(() => box.current?.querySelector<HTMLElement>("[role^='menuitem'][data-on], [role^='menuitem']:not(.lc-who-back)")?.focus({ preventScroll: true })))} />
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }

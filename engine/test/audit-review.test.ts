@@ -91,8 +91,10 @@ async function answers(made: Stand[], n: number) {
 
 /* The turn loop, as in audit-runtime.test.ts: a session, with a fake tool or Claude Code's own driver on the stand-in. */
 
-const info = (id: ProviderInfo["id"], models: string[]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: models.map((m) => ({ id: m, label: m, description: "" })), supports: { approvals: true, resume: true, effort: true, plan: true } });
-const ready = [info("claude", ["claude-opus-5-5"])];
+// Each model lists the levels the tests pick, since one a model doesn't list is never sent (runtime.ts effortFor).
+const info = (id: ProviderInfo["id"], models: string[]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: models.map((m) => ({ id: m, label: m, description: "", efforts: ["low", "medium", "high"].map((e) => ({ id: e, label: e })) })), supports: { approvals: true, resume: true, effort: true, plan: true } });
+// The stand-in model a session on a gone agent ("forge") runs on is listed too.
+const ready = [info("claude", ["claude-opus-5-5", "claude-sonnet-5-5"])];
 
 function session(extra: Partial<Thread> = {}) {
   const store = new Store(mkdtempSync(join(tmpdir(), "lc-audit-")));
@@ -353,6 +355,23 @@ test("codex: a subagent's wake waiting when the session closes is gone with it, 
   await wakes[0].run(recorder().sink, live());
   assert.equal(fake.read().filter((m) => m.method === "initialize").length, 1, "no new app server for it");
   assert.equal(fake.read().filter((m) => m.method === "turn/start").length, 1);
+});
+
+test("runtime: a turn the tool began by itself, dropped because the session was stopped, is let go so the tool stops collecting it", async () => {
+  const store = new Store(mkdtempSync(join(tmpdir(), "lc-wake-halted-")));
+  store.putProject({ id: "p", name: "p", path: mkdtempSync(join(tmpdir(), "lc-wake-halted-dir-")), git: false, createdAt: Date.now() });
+  store.putThread({ id: "t", projectId: "p", title: "Work", agent: "@hermes:default", status: "done", access: "ask", turns: 1, usage: emptyUsage(), createdAt: Date.now(), updatedAt: Date.now() });
+  const runtime = new Runtime(store, process.env);
+  let cancelled = 0;
+  let ran = 0;
+  const w: WakeTurn = { why: "what it sent off came back", pending: () => cancelled === 0, run: async () => void ran++, cancel: () => void cancelled++ };
+  // As Stop leaves it: the thread halted when the wake comes to run (the guard in wakeNow, reached only from inside a hold).
+  const inside = runtime as unknown as { halted: Set<string>; wakeNow: (id: string, k: { agentId: string; session: ProviderSession; w: WakeTurn }) => Promise<void> };
+  inside.halted.add("t");
+  await inside.wakeNow("t", { agentId: "@hermes:default", session: {} as ProviderSession, w });
+  assert.equal(ran, 0, "it doesn't run");
+  assert.equal(cancelled, 1, "it is let go, not left pending");
+  runtime.shutdown();
 });
 
 /* ----------------------------------------- The Reviewer's word ----------------------------------------- */

@@ -1033,16 +1033,18 @@ export class CodexServerSession implements ProviderSession {
         }
         return;
       }
-      const step = this.stepOf(it, done);
+      // Its reasoning, once it's written: a thought between its steps (AgentStep "think"), not a tool.
+      const thought = it.type === "reasoning" && done ? short(((it.summary as unknown[] | undefined) ?? []).filter((x): x is string => typeof x === "string").join(" ").replace(/\s+/g, " ").trim(), 300) : "";
+      const step = thought ? { title: thought, toolKind: "think" as const, status: "done" as const } : this.stepOf(it, done);
       if (!step) return;
       const id = String(it.id);
       const steps = [...(a.agent.steps ?? [])];
       const i = a.calls.indexOf(id);
       if (i >= 0) steps[i] = { ...steps[i], status: step.status };
       else {
-        steps.push(step);
+        steps.push({ ...step, at: Date.now() });
         a.calls.push(id);
-        a.agent.tools = (a.agent.tools ?? 0) + 1;
+        if (!thought) a.agent.tools = (a.agent.tools ?? 0) + 1;
         if (steps.length > 40) {
           steps.splice(0, steps.length - 40);
           a.calls.splice(0, a.calls.length - 40);

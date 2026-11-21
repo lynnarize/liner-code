@@ -1,53 +1,86 @@
 /*
-  Review, with the whole window: the files on the left with what you've looked at, what the
-  subagents checked, and the diff beside them. Press a line number (shift for a range) to ask
-  the agent about those lines; its answer stays on those lines. The Reviewer's findings sit on
-  the lines they name. Step through the changes with the arrows, or J and K. Long lines wrap, and
-  test files step aside, if you ask; both are remembered, and so is what you've viewed, until the
-  file changes again. It sits under the panel's tab row, which is the paper's header in the full
-  canvas: the row's shrink button is the way back to the session, so it has no header of its own.
+  Changes: one turn's diff, in the side panel and in the full canvas alike. Its top row is the turn,
+  its totals, and the tools an engineer reaches for (step through the changes with the arrows or J
+  and K, unified or split, wrap long lines, show spaces and tabs, the files as a menu, and ··· for
+  find, fold every file, hide tests, copy as a patch and the full canvas). Each file's row says what
+  happened to it, takes a Viewed tick, and opens the file in your editor in the desktop app. Press a
+  line number (shift for a range) to ask the agent about those lines; its answer stays on those lines.
+  The Reviewer's findings sit on the lines they name. Wrap starts on; it, spaces, hiding tests and the
+  view are remembered, and so is what you've viewed, until the file changes again. In the full canvas
+  (`wide`) the files keep a column of their own on the left with what the subagents checked, and the
+  panel's tab row above is the paper's header; ··· and the right edge's menu lead back to the session.
 */
-import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FileDiff, Finding, Item, Thread } from "@contracts";
+import type { Token } from "@liner/components/code-block/tokenize";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { diffRows, segment, type Row } from "@liner/pro/code-diff/diff";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
+import { bridge } from "./bridge";
 import { CommitButton } from "./Commit";
-import { is } from "./keymap";
+import { is, shortcutOf } from "./keymap";
 import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { I, ModelMark } from "./icons";
 import { agentTask, isSidekick, whoIs } from "./Crew";
 import { agentOf, ago, markOf, modelLabel, plural } from "./model";
 import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
-import { Lines, ModelTag } from "./ui";
+import { keptRead, keptWrite, wordRead, wordWrite } from "./kept.ts";
+import { fileLetter, fileStatus, patchOf } from "./patch.ts";
+import { ship } from "./Ship";
+import { Lines, ModelTag, PanelHead, Pop, Row as MenuRow, Sep } from "./ui";
+import { SendBox } from "./Composer";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
 import { MoreFiles, SurfaceNote, TurnPicker, Viewed } from "./Surfaces";
-import { SideKeys } from "./TopBar";
+import { fullCanvas, SideKeys } from "./TopBar";
 import { undoTurn } from "./undo";
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 
-/** A switch in Review that's remembered: wrap and hide tests (T3 Code: diffs/useHideTestFiles.ts). */
-function usePref(key: string) {
-  const [on, set] = useState(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
+/**
+  A switch in Changes that's remembered: wrap, spaces and hide tests (T3 Code: diffs/useHideTestFiles.ts). `start` is
+  what someone who never chose gets. Through kept.ts: with storage shut it starts at `start` and lasts until the window closes.
+*/
+function usePref(key: string, start = false) {
+  const [on, set] = useState(() => wordRead(localStorage, key, ["1", "0"], start ? "1" : "0") === "1");
   const flip = (v: boolean) => {
     set(v);
-    try {
-      localStorage.setItem(key, v ? "1" : "0");
-    } catch {
-      // Shut storage: it lasts until the window closes.
-    }
+    wordWrite(localStorage, key, v ? "1" : "0");
   };
   return [on, flip] as const;
+}
+
+/** The same function every render, calling the newest `f`: a memoised file's row doesn't redraw for a new one. */
+function useStable<A extends unknown[]>(f: (...a: A) => void) {
+  const now = useRef(f);
+  now.current = f;
+  return useState(() => (...a: A) => now.current(...a))[0];
+}
+
+/** What happened to a file, as a letter in a tinted square (patch.ts fileLetter, by git's word for it) and in words. */
+const STATUS = { M: "modified", A: "added", D: "deleted", R: "renamed" } as const;
+const statusOf = (p: Prepared): keyof typeof STATUS => fileLetter(p.file);
+
+/** The width of a line's own indent, in characters (a tab to the next stop of 8, as the code draws it), for a wrapped line to hang under. */
+function indentOf(line: Token[] | undefined) {
+  let n = 0;
+  for (const t of line ?? [])
+    for (const ch of t.text) {
+      if (ch === " ") n++;
+      else if (ch === "\t") n += 8 - (n % 8);
+      else return n;
+    }
+  return 0;
+}
+
+/**
+  A line with its spaces and tabs shown: each stays the character it is, with a dot or an arrow drawn
+  over it (surfaces.css, .lc-ws), so copying the line gives the text as it is.
+*/
+function Spaced({ line }: { line?: Token[] }) {
+  const marked = (text: string) => text.split(/([ \t])/).map((s, j) => (s === " " || s === "\t" ? <span key={j} className="lc-ws" data-tab={s === "\t" || undefined}>{s}</span> : s));
+  return <>{(line ?? []).map((t, k) => (t.kind ? <span key={k} className={`l-tok-${t.kind}`}>{marked(t.text)}</span> : <Fragment key={k}>{marked(t.text)}</Fragment>))}</>;
 }
 
 /** Tests and their support (mocks, fixtures, snapshots), by path alone (T3 Code: shared/changedFileKind.ts). */
@@ -77,23 +110,14 @@ function hashOf(s: string | undefined) {
   }
   return (h >>> 0).toString(36);
 }
-function readViewed(): Record<string, number> {
-  try {
-    const v = JSON.parse(localStorage.getItem(VIEWED) || "{}") as unknown;
-    return v && typeof v === "object" ? (v as Record<string, number>) : {};
-  } catch {
-    return {};
-  }
-}
+const isMarks = (v: unknown): v is Record<string, number> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+/** Through kept.ts: with storage shut, viewed lasts as long as Changes is open. */
+const readViewed = (): Record<string, number> => keptRead(localStorage, VIEWED, {}, isMarks);
 function writeViewed(all: Record<string, number>) {
-  try {
-    const newest = Object.entries(all)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, MAX_VIEWED);
-    localStorage.setItem(VIEWED, JSON.stringify(Object.fromEntries(newest)));
-  } catch {
-    // Shut storage: viewed lasts as long as Review is open.
-  }
+  const newest = Object.entries(all)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MAX_VIEWED);
+  keptWrite(localStorage, VIEWED, Object.fromEntries(newest));
 }
 
 type Anchor = { file: string; line: number; endLine?: number };
@@ -124,7 +148,22 @@ function byLine<T>(list: T[], at: (x: T) => { file: string; line?: number }) {
 }
 
 
-export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
+/** With nothing to commit, the foot still pushes the branch or opens a pull request. */
+function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
+  return (
+    <Pop label="Push or open a pull request" side="top" align="end" width={280} triggerClass="lc-btn" disabled={thread.status === "running"} trigger={<><I.push size={14} />Push</>}>
+      {(close) => (
+        <div className="lc-ship-menu">
+          <PanelHead>Nothing to commit</PanelHead>
+          <MenuRow title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={16} />} onPick={() => (close(), void ship(thread, null))} />
+          <MenuRow title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={16} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(e instanceof Error ? e.message : String(e))))} />
+        </div>
+      )}
+    </Pop>
+  );
+}
+
+export function Review({ thread, focus, onFocus, wide = false, visible = true }: { thread: Thread; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void; /** In the full canvas: the files keep a column of their own, and the branch and "Change N of M" have room. */ wide?: boolean; /** Showing: a Changes tab out of sight takes no keys. */ visible?: boolean }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
@@ -135,13 +174,19 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [total, setTotal] = useState(0);
   const [diffErr, setDiffErr] = useState<string | null>(null);
-  const [view, setView] = useState<"unified" | "split">("unified");
+  // Its own key: lc:view is the window's place (App.tsx, in sessionStorage). Released apps kept this choice under lc:view, so that is read when the new key is not there yet.
+  const [view, setView] = useState<"unified" | "split">(() => wordRead(localStorage, "lc:changes-view", ["unified", "split"], wordRead(localStorage, "lc:view", ["unified", "split"], "unified")) as "unified" | "split");
+  useEffect(() => wordWrite(localStorage, "lc:changes-view", view), [view]);
   const [marks, setMarks] = useState<Record<string, number>>(readViewed);
-  const [wrap, setWrap] = usePref("lc:review:wrap");
+  // Wrapping starts on for someone who never chose; a saved choice stands.
+  const [wrap, setWrap] = usePref("lc:review:wrap", true);
+  const [spaces, setSpaces] = usePref("lc:review:spaces");
   const [hideTests, setHideTests] = usePref("lc:review:hide-tests");
   const [sel, setSel] = useState<Anchor | null>(null);
   const [ask, setAsk] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Files folded down to their row, by path.
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   const [at, setAt] = useState(0);
   const [busy, setBusy] = useState<"undo" | null>(null);
   const [finding, setFinding] = useState(false);
@@ -153,13 +198,17 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   if (!sel) shownNewest.current = newest;
   const pick = chosen ?? shownNewest.current;
   const cp = cps.find((c) => c.id === pick);
+  const root = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const coder = agentOf(thread.agent, agents, providers);
+  const branch = thread.worktree?.branch ?? project?.branch;
 
   // All turns and This branch have no one checkpoint to watch: any turn added or undone changes what they show. One turn's own diff doesn't.
   const whole = pick === "all" || pick === "branch";
   const key = `${pick}:${cp?.reverted}:${cp?.committed}:${whole ? `${cps.length}:${cps.filter((c) => c.reverted).length}` : ""}`;
   useEffect(() => {
+    // No turn has changed a file yet: there's no diff to ask for.
+    if (!cps.length) return setDiff([]);
     let live = true;
     setDiff(null);
     setDiffErr(null);
@@ -178,11 +227,12 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
     return () => {
       live = false;
     };
-  }, [thread.id, key]);
-  // Another turn's diff: where you stepped to, what you unfolded and the lines you picked were the old one's.
+  }, [thread.id, key, cps.length > 0]);
+  // Another turn's diff: where you stepped to, what you unfolded and folded and the lines you picked were the old one's.
   useEffect(() => {
     setAt(0);
     setOpen(new Set());
+    setFolded(new Set());
     setSel(null);
   }, [pick]);
 
@@ -214,7 +264,7 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
         // git show hands a binary file over as it is: it says so rather than drawing its bytes as lines.
         const binary = f.before?.includes("\u0000") || f.after?.includes("\u0000") || false;
         const rows = binary ? [] : diffRows(before, after);
-        return { file: f, binary, rows, at: new Map(rows.map((r, i) => [r, i])), segs: segment(rows, 3), tb: binary ? [] : tokensOf(before, lang), ta: binary ? [] : tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: f.before === undefined, gone: f.after === undefined, moved: f.from && f.from !== f.path ? f.from : undefined, seenKey: `${thread.id}|${f.path}|${hashOf(f.after)}` };
+        return { file: f, binary, rows, at: new Map(rows.map((r, i) => [r, i])), segs: segment(rows, 3), tb: binary ? [] : tokensOf(before, lang), ta: binary ? [] : tokensOf(after, lang), added: rows.filter((r) => r.kind === "add").length, removed: rows.filter((r) => r.kind === "del").length, isNew: fileStatus(f) === "added", gone: fileStatus(f) === "deleted", moved: f.from && f.from !== f.path ? f.from : undefined, seenKey: `${thread.id}|${f.path}|${hashOf(f.after)}` };
       }),
     [diff],
   );
@@ -223,7 +273,7 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   const shown = hideTests ? prepared.filter((p) => !isTestFile(p.file.path) || p.file.path === focus?.path) : prepared;
   const changes = shown.flatMap((p) => [...new Set(p.rows.flatMap((r) => (r.change === undefined ? [] : [r.change])))].map((c) => ({ path: p.file.path, change: c })));
   const viewed = useMemo(() => new Set(prepared.filter((p) => marks[p.seenKey]).map((p) => p.file.path)), [prepared, marks]);
-  const setViewed = (path: string, on: boolean) => {
+  const setViewed = useStable((path: string, on: boolean) => {
     const p = prepared.find((x) => x.file.path === path);
     if (!p || Boolean(marks[p.seenKey]) === on) return;
     // Read afresh, so another Review's marks aren't written over.
@@ -232,12 +282,22 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
     else delete all[p.seenKey];
     setMarks(all);
     writeViewed(all);
-  };
+  });
+  const unfold = (path: string) => setFolded((f) => (f.has(path) ? new Set([...f].filter((x) => x !== path)) : f));
+  const fold = useStable((path: string) => setFolded((f) => (f.has(path) ? new Set([...f].filter((x) => x !== path)) : new Set(f).add(path))));
+  const allFolded = shown.length > 0 && shown.every((p) => folded.has(p.file.path));
+  // In the desktop app a file of the turn opens in your editor; the shell checks it's inside the session's folder.
+  const canOpen = bridge.opensFiles();
+  const openFile = useStable((path: string) => void bridge.openFile({ threadId: thread.id }, path).catch((e) => toast.error(e instanceof Error ? e.message : String(e))));
 
-  // The file pressed elsewhere scrolls into view; pressed again after scrolling away, it does again.
+  // The file pressed elsewhere scrolls into view, unfolded; pressed again after scrolling away, it does again.
   useEffect(() => {
     if (!diff || !focus?.path) return;
-    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(focus.path)}"]`)?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    unfold(focus.path);
+    const path = focus.path;
+    // Split is CodeDiff's, whose files carry no path: there it's found by its place among the files shown.
+    const i = shown.findIndex((p) => p.file.path === path);
+    requestAnimationFrame(() => (box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(path)}"]`) ?? (i >= 0 ? box.current?.querySelectorAll<HTMLElement>(".l-cdiff__file")[i] : null))?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" }));
     setViewed(focus.path, true);
   }, [diff, focus]);
 
@@ -246,16 +306,21 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
     const n = (i + changes.length) % changes.length;
     setAt(n);
     const c = changes[n];
-    box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    // A change in a folded file opens it first, then comes into view once it's drawn.
+    unfold(c.path);
+    requestAnimationFrame(() => box.current?.querySelector<HTMLElement>(`[data-file="${CSS.escape(c.path)}"] [data-change="${c.change}"]`)?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" }));
   };
   const stepTo = useRef(goChange);
   stepTo.current = goChange;
-  // Beside another session, J, K and ⌘F are the side you're in.
+  // Beside another session, J, K and ⌘F are the side you're in. In the side panel they're Changes' only while you're in it
+  // (a press anywhere on it puts you there), so the chat beside it keeps its own; the full canvas is all Changes.
   const keys = useContext(SideKeys);
   useEffect(() => {
+    if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
       if (!keys) return;
       const t = e.target as HTMLElement;
+      if (!wide && !root.current?.contains(t)) return;
       if (is(e, "find")) {
         e.preventDefault();
         setFinding(true);
@@ -269,7 +334,7 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [at, sel, keys, view]);
+  }, [at, sel, keys, view, visible, wide]);
 
   // Two quick Enters are one question.
   const sending = useRef(false);
@@ -298,6 +363,17 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
       setBusy(null);
     }
   };
+  /** The shown turn as one patch on the clipboard (patch.ts), or why it can't be. */
+  const copyPatch = async () => {
+    const r = patchOf(diff ?? [], total);
+    if ("why" in r) return void toast.error("The diff can't be copied as a patch", { description: r.why });
+    try {
+      await navigator.clipboard.writeText(r.patch);
+      toast.success("Copied the diff as a patch", { description: "git apply takes it in the session's folder." });
+    } catch {
+      toast.error("The clipboard didn't take the patch");
+    }
+  };
 
   const openCps = cps.filter((c) => !c.reverted && !c.committed);
   const openFiles = new Set(openCps.flatMap((c) => c.files.map((f) => f.path))).size;
@@ -307,68 +383,85 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
   // What the subagents checked: the turn's Task calls and the Reviewer.
   const turnNo = cp?.turn;
   const subs = tasks.filter((x) => turnNo === undefined || x.turn === turnNo);
+  const hiddenNote = prepared.length > shown.length && (
+    <button type="button" className="lc-rv-hidden lc-quiet l-focus" onClick={() => setHideTests(false)}>
+      {plural(prepared.length - shown.length, "test file")} hidden · Show
+    </button>
+  );
+  const more = diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />;
+  const find = shortcutOf("find");
+
+  if (!cps.length)
+    return (
+      <div className="lc-panel-empty">
+        <I.changes size={20} />
+        <b>No changes yet</b>
+        <p>When a turn edits files, its changes land here, kept by turn, so you can review, undo or commit them.</p>
+      </div>
+    );
 
   return (
-    <div className="lc-rv">
+    <div ref={root} className="lc-rv" data-wide={wide || undefined} tabIndex={-1}>
       <div className="lc-rv-body">
-        <nav className="lc-rv-nav" aria-label="Files in this turn">
-          <div className="lc-rv-navh">
-            Files
-            <span>
-              {seen} of {files.length} viewed
-            </span>
-          </div>
-          {shown.map((p) => (
-            <label key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
-              <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
-              <button type="button" className="lc-rv-fb lc-mono l-focus" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
-                {baseOf(p.file.path)}
-              </button>
-              <Lines added={p.added} removed={p.removed} />
-            </label>
-          ))}
-          {prepared.length > shown.length && (
-            <button type="button" className="lc-rv-hidden lc-quiet l-focus" onClick={() => setHideTests(false)}>
-              {plural(prepared.length - shown.length, "test file")} hidden · Show
-            </button>
-          )}
-          {diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />}
-          {(subs.length > 0 || findings.reviewer) && (
-            <div className="lc-rv-checked">
-              <span className="lc-rv-navh">{subs.some(isSidekick) ? "Who else worked on it" : `${coder.name}'s subagents checked`}</span>
-              {subs.map((s) => (
-                <div key={s.id} className="lc-rv-sub-a">
-                  <span className="lc-tile">{isSidekick(s) && s.agent?.model ? <ModelMark kind={markOf(s.agent.model)} size={12} /> : <I.agents size={12} />}</span>
-                  <span>
-                    {/* A pair's sidekick by its model, with its brief. */}
-                    <b>{isSidekick(s) ? whoIs(s, providers) : s.title.split(":")[0]}</b> <small className="lc-quiet">{s.status === "running" ? "working" : isSidekick(s) ? `Sidekick · ${agentTask(s) || s.status}` : (s.title.split(":").slice(1).join(":").trim() || s.status)}</small>
-                  </span>
-                </div>
-              ))}
-              {findings.reviewer && (
-                <div className="lc-rv-sub-a">
-                  <span className="lc-tile">
-                    <I.shield size={12} />
-                  </span>
-                  <span>
-                    <b>Reviewer</b> <small className="lc-quiet">{findings.status === "running" ? "reading" : findings.list.length ? plural(findings.list.length, "note") : "nothing to note"}</small>
-                    <ModelTag kind={markOf(findings.reviewer)} label={modelLabel(findings.reviewer, providers)} />
-                  </span>
-                </div>
-              )}
+        {wide && (
+          <nav className="lc-rv-nav" aria-label="Files in this turn">
+            <div className="lc-rv-navh">
+              Files
+              <span>
+                {seen} of {files.length} viewed
+              </span>
             </div>
-          )}
-        </nav>
+            {shown.map((p) => (
+              <label key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
+                <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
+                <button type="button" className="lc-rv-fb lc-mono l-focus" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
+                  {baseOf(p.file.path)}
+                </button>
+                <Lines added={p.added} removed={p.removed} />
+              </label>
+            ))}
+            {hiddenNote}
+            {more}
+            {(subs.length > 0 || findings.reviewer) && (
+              <div className="lc-rv-checked">
+                <span className="lc-rv-navh">{subs.some(isSidekick) ? "Who else worked on it" : `${coder.name}'s subagents checked`}</span>
+                {subs.map((s) => (
+                  <div key={s.id} className="lc-rv-sub-a">
+                    <span className="lc-tile">{isSidekick(s) && s.agent?.model ? <ModelMark kind={markOf(s.agent.model)} size={12} /> : <I.agents size={12} />}</span>
+                    <span>
+                      {/* A pair's sidekick by its model, with its brief. */}
+                      <b>{isSidekick(s) ? whoIs(s, providers) : s.title.split(":")[0]}</b> <small className="lc-quiet">{s.status === "running" ? "working" : isSidekick(s) ? `Sidekick · ${agentTask(s) || s.status}` : (s.title.split(":").slice(1).join(":").trim() || s.status)}</small>
+                    </span>
+                  </div>
+                ))}
+                {findings.reviewer && (
+                  <div className="lc-rv-sub-a">
+                    <span className="lc-tile">
+                      <I.shield size={12} />
+                    </span>
+                    <span>
+                      <b>Reviewer</b> <small className="lc-quiet">{findings.status === "running" ? "reading" : findings.list.length ? plural(findings.list.length, "note") : "nothing to note"}</small>
+                      <ModelTag kind={markOf(findings.reviewer)} label={modelLabel(findings.reviewer, providers)} />
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </nav>
+        )}
         <section className="lc-rv-main" aria-label="Changes">
+          {/* The turn and its totals, then the tools. "Change N of M" and the branch give way first as it narrows (surfaces.css). */}
           <div className="lc-rv-strip">
             <TurnPicker cps={cps} pick={pick} turns={thread.turns} onPick={(id) => onFocus({ id })} />
             <Lines {...lines} />
             <span className="lc-grow" />
             {changes.length > 0 && view === "unified" && (
               <>
-                <span className="lc-quiet lc-rv-count">
-                  Change {Math.min(at + 1, changes.length)} of {changes.length}
-                </span>
+                {wide && (
+                  <span className="lc-quiet lc-rv-count">
+                    Change {Math.min(at + 1, changes.length)} of {changes.length}
+                  </span>
+                )}
                 <button type="button" className="lc-ib l-focus" aria-label="Previous change (K)" title="Previous change (K)" onClick={() => goChange(at - 1)}>
                   <I.chevU size={14} />
                 </button>
@@ -377,40 +470,81 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
                 </button>
               </>
             )}
-            {/* Wrap long lines, and tests out of the way: both remembered (T3 Code: DiffPanel.tsx). */}
-            {tests > 0 && (
-              <button type="button" className="lc-ib l-focus" aria-pressed={hideTests} aria-label={hideTests ? "Show test files" : "Hide test files"} title={hideTests ? `Show test files (${tests})` : `Hide test files (${tests})`} onClick={() => setHideTests(!hideTests)}>
-                <I.eye size={14} />
-              </button>
-            )}
-            <button type="button" className="lc-ib l-focus" aria-pressed={wrap} aria-label={wrap ? "Scroll long lines" : "Wrap long lines"} title={wrap ? "Scroll long lines" : "Wrap long lines"} onClick={() => setWrap(!wrap)}>
-              <I.wrap size={14} />
-            </button>
-            <Segmented
-              size="sm"
-              value={view}
-              onValueChange={setView}
-              options={[
-                { value: "unified", label: "Unified" },
-                { value: "split", label: "Split" },
-              ]}
-              aria-label="Diff view"
-            />
-            {/* The branch, which the Review's own header carried: the panel's tab row is the header now. */}
-            {(thread.worktree?.branch ?? project?.branch) && (
-              <span className="lc-branch lc-mono" title={thread.worktree?.branch ?? project?.branch}>
+            {/* The files as a menu, where they have no column of their own (surfaces.css shows it in a narrow full canvas too). */}
+            <Pop label="Files in this turn" align="end" width={320} className="lc-rv-filesb" triggerClass="lc-ib" triggerAttrs={{ title: "Files in this turn" }} trigger={<I.list size={14} />}>
+              {(close) => (
+                <div className="lc-rv-fmenu">
+                  <PanelHead>
+                    Files in this turn · {seen} of {files.length} viewed
+                  </PanelHead>
+                  {shown.map((p) => {
+                    const st = statusOf(p);
+                    return (
+                      <div key={p.file.path} className="lc-rv-fm" data-on={viewed.has(p.file.path) || undefined}>
+                        <input type="checkbox" className="l-focus" aria-label={`${p.file.path}: viewed`} checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
+                        <button type="button" className="lc-rv-fmb l-focus" title={p.file.path} onClick={() => (close(), onFocus({ id: pick, path: p.file.path }))}>
+                          <span className="lc-rv-st" data-st={st} aria-hidden>
+                            {st}
+                          </span>
+                          <span className="lc-mono lc-path">
+                            <span className="lc-quiet">{dirOf(p.file.path)}</span>
+                            <span>{baseOf(p.file.path)}</span>
+                          </span>
+                        </button>
+                        <Lines added={p.added} removed={p.removed} />
+                      </div>
+                    );
+                  })}
+                  {hiddenNote}
+                  {more}
+                </div>
+              )}
+            </Pop>
+            {/* The top row keeps going from change to change and the files; how the diff is drawn is under the one ···, with the rest. */}
+            <Pop label="More: view, wrap, spaces, find, fold, hide tests, copy, full canvas" menu align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+              {(close) => {
+                const canvas = fullCanvas(thread.id);
+                return (
+                  <>
+                    <MenuRow title="Unified" icon={<I.unified size={16} />} keepIcon on={view === "unified"} onPick={() => (close(), setView("unified"))} />
+                    <MenuRow title="Split" icon={<I.split size={16} />} keepIcon on={view === "split"} onPick={() => (close(), setView("split"))} />
+                    {/* Both remembered (T3 Code: DiffPanel.tsx). Split is drawn by CodeDiff, which doesn't mark spaces: there that row stands dimmed and says where it works. */}
+                    <MenuRow title="Wrap long lines" icon={<I.wrap size={16} />} keepIcon on={wrap} onPick={() => (close(), setWrap(!wrap))} />
+                    <MenuRow title="Show spaces and tabs" note={view === "split" ? "In the unified view" : undefined} keepNote icon={<I.pilcrow size={16} />} keepIcon on={spaces && view === "unified"} disabled={view === "split"} onPick={() => (close(), setSpaces(!spaces))} />
+                    <Sep />
+                    <MenuRow title="Find in the changes" icon={<I.search size={16} />} end={find && <kbd className="lc-kbd">{find.join("")}</kbd>} onPick={() => (close(), setFinding(true))} />
+                    <MenuRow title={allFolded ? "Unfold every file" : "Fold every file"} icon={<I.fold size={16} />} disabled={!shown.length} onPick={() => (close(), setFolded(allFolded ? new Set() : new Set(shown.map((p) => p.file.path))))} />
+                    {tests > 0 && <MenuRow title={hideTests ? `Show test files (${tests})` : `Hide test files (${tests})`} icon={<I.eye size={16} />} onPick={() => (close(), setHideTests(!hideTests))} />}
+                    <MenuRow title="Copy the diff as a patch" icon={<I.copy size={16} />} disabled={!diff?.length} onPick={() => (close(), void copyPatch())} />
+                    {canvas && (
+                      <>
+                        <Sep />
+                        <MenuRow title={canvas.full ? "Leave the full canvas" : "Open in the full canvas"} icon={canvas.full ? <I.shrink size={14} /> : <I.expand size={14} />} onPick={() => (close(), canvas.toggle())} />
+                      </>
+                    )}
+                  </>
+                );
+              }}
+            </Pop>
+            {/* The branch, in the full canvas only: in the side panel the title's menu has it. */}
+            {wide && branch && (
+              <span className="lc-branch lc-mono" title={branch}>
                 <I.branch size={12} />
-                <span>{thread.worktree?.branch ?? project?.branch}</span>
+                <span>{branch}</span>
               </span>
             )}
           </div>
           {finding && (
             <FindBar
               root={box}
-              label="Find in the diff"
+              label="Find in the changes"
               onClose={() => setFinding(false)}
-              // Folded lines are searched too: finding opens every fold.
-              onQuery={(q) => q.trim() && setOpen(new Set(prepared.flatMap((p) => p.segs.flatMap((sg) => (sg.kind === "fold" ? [`${p.file.path}:${sg.id}`] : [])))))}
+              // Folded lines and folded files are searched too: finding opens every fold.
+              onQuery={(q) => {
+                if (!q.trim()) return;
+                setOpen(new Set(prepared.flatMap((p) => p.segs.flatMap((sg) => (sg.kind === "fold" ? [`${p.file.path}:${sg.id}`] : [])))));
+                setFolded(new Set());
+              }}
             />
           )}
           <div ref={box} className="lc-rv-files" data-wrap={wrap || undefined}>
@@ -434,11 +568,14 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
                 </button>
               </div>
             ) : view === "split" ? (
-              <CodeDiff key={wrap ? "wrap" : "scroll"} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} />
+              // Its own row of tools is hidden (app.css, .lc-diff): this row has them. Wrap and folding are where it starts, so a change remakes it.
+              <div className="lc-diff">
+                <CodeDiff key={`${wrap}:${[...folded].join("\n")}`} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} defaultCollapsed={[...folded]} />
+              </div>
             ) : (
               shown.map((p) => {
                 const mine = sel?.file === p.file.path;
-                return <FileBody key={p.file.path} p={p} threadId={thread.id} open={open} setOpen={setOpen} sel={mine ? sel : null} setSel={setSel} ask={mine ? ask : ""} setAsk={setAsk} send={send} asks={askedAt.get(p.file.path)} notes={notesAt.get(p.file.path)} reviewer={reviewer} coder={coder.name} />;
+                return <FileBody key={p.file.path} p={p} threadId={thread.id} open={open} setOpen={setOpen} sel={mine ? sel : null} setSel={setSel} ask={mine ? ask : ""} setAsk={setAsk} send={send} asks={askedAt.get(p.file.path)} notes={notesAt.get(p.file.path)} reviewer={reviewer} coder={coder.name} folded={folded.has(p.file.path)} onFold={fold} viewed={viewed.has(p.file.path)} onViewed={setViewed} onOpen={canOpen ? openFile : undefined} wrap={wrap} spaces={spaces} />;
               })
             )}
           </div>
@@ -452,7 +589,7 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
                 Undo turn {cp.turn}
               </button>
             )}
-            {openFiles > 0 && <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} />}
+            {openFiles > 0 ? <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
           </div>
         </section>
       </div>
@@ -462,8 +599,9 @@ export function Review({ thread, focus, onFocus }: { thread: Thread; focus: { id
 
 /*
   One file of the diff, drawn again only when what it shows changes: its rows, what's unfolded, the
-  lines picked on it, its questions and notes. A 2,000-line diff was 2,000 rows remade each frame
-  of a reply.
+  lines picked on it, its questions and notes, whether it's folded or viewed. A 2,000-line diff was
+  2,000 rows remade each frame of a reply. Its row: the fold, what happened to it, its path, its
+  lines, Viewed, and your editor.
 */
 type FileProps = {
   p: Prepared;
@@ -480,10 +618,20 @@ type FileProps = {
   notes?: Map<number, Finding[]>;
   reviewer: string;
   coder: string;
+  /** Down to its row. */
+  folded: boolean;
+  onFold: (path: string) => void;
+  viewed: boolean;
+  onViewed: (path: string, on: boolean) => void;
+  /** Opens it in your editor; none outside the desktop app. */
+  onOpen?: (path: string) => void;
+  wrap: boolean;
+  spaces: boolean;
 };
-const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSel, ask, setAsk, send, asks, notes, reviewer, coder }: FileProps) {
+const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSel, ask, setAsk, send, asks, notes, reviewer, coder, folded, onFold, viewed, onViewed, onOpen, wrap, spaces }: FileProps) {
   const providers = useEngine((s) => s.providers);
   // A folded run doesn't hide what's on its lines: a finding, a question, the line you picked.
+  const st = statusOf(p);
   const carries = (r: Row) => r.new !== undefined && (Boolean(asks?.has(r.new)) || Boolean(notes?.has(r.new)) || (sel !== null && (sel.endLine ?? sel.line) === r.new));
 
   const lineRow = (r: Row, k: number) => {
@@ -492,6 +640,8 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
     const here = r.new !== undefined ? (asks?.get(r.new) ?? []) : [];
     const said = r.new !== undefined ? (notes?.get(r.new) ?? []) : [];
     const endsSel = sel && (sel.endLine ?? sel.line) === r.new;
+    // A wrapped line hangs under its own indent (surfaces.css), up to a point.
+    const hang = wrap ? Math.min(32, indentOf(tok)) : 0;
     return (
       <Fragment key={k}>
         <div className="lc-rv-l" data-kind={r.kind} data-sel={inSel || undefined} data-change={r.kind !== "same" && (k === 0 || p.rows[k - 1]?.change !== r.change) ? r.change : undefined}>
@@ -515,8 +665,8 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
           <span className="lc-rv-s" aria-hidden>
             {r.kind === "add" ? "+" : r.kind === "del" ? "−" : ""}
           </span>
-          <span className="lc-rv-t">
-            <Toks line={tok} />
+          <span className="lc-rv-t" style={hang ? ({ "--hang": `${hang}ch` } as CSSProperties) : undefined}>
+            {spaces ? <Spaced line={tok} /> : <Toks line={tok} />}
           </span>
         </div>
         {said.map((f, j) => (
@@ -540,21 +690,8 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
         {endsSel && (
           <div className="lc-rv-ask">
             <span className="lc-rv-lines">{sel!.endLine && sel!.endLine !== sel!.line ? `Lines ${sel!.line}–${sel!.endLine}` : `Line ${sel!.line}`}</span>
-            <input
-              className="lc-input"
-              autoFocus
-              value={ask}
-              onChange={(e) => setAsk(e.target.value)}
-              placeholder={`Ask ${coder} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`}
-              onKeyDown={(e) => {
-                // Enter that picks an input method's word isn't a send (T3 Code: BranchPicker.tsx).
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
-                if (e.key === "Escape") setSel(() => null);
-              }}
-            />
-            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!ask.trim()} onClick={() => void send()}>
-              Ask
-            </button>
+            {/* The message box's field and Send, as every place that writes to an agent has them. */}
+            <SendBox autoFocus value={ask} onChange={setAsk} label={`Ask ${coder} about it`} placeholder={`Ask ${coder} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`} onSend={() => void send()} onEscape={() => setSel(() => null)} />
           </div>
         )}
       </Fragment>
@@ -564,29 +701,43 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
   return (
     <article className="lc-rv-file" data-file={p.file.path}>
       <header className="lc-rv-fh">
-        <span className="lc-mono lc-path" title={p.moved ? `Moved from ${p.moved}` : p.file.path}>
-          <span className="lc-quiet">{dirOf(p.file.path)}</span>
-          <span>{baseOf(p.file.path)}</span>
-        </span>
-        {p.isNew && <span className="lc-pill" data-tone="ok">New</span>}
-        {p.gone && <span className="lc-pill" data-tone="danger">Deleted</span>}
-        {p.moved && <span className="lc-pill">Moved</span>}
+        <button type="button" className="lc-rv-ff l-focus" aria-expanded={!folded} aria-label={`${p.file.path}, ${STATUS[st]}${p.moved ? ` from ${p.moved}` : ""}. ${folded ? "Unfold it" : "Fold it"}`} title={p.moved ? `Moved from ${p.moved}` : p.file.path} onClick={() => onFold(p.file.path)}>
+          <I.chevD size={12} className="lc-rv-chev" />
+          <span className="lc-rv-st" data-st={st} aria-hidden>
+            {st}
+          </span>
+          <span className="lc-mono lc-path">
+            <span className="lc-quiet">{dirOf(p.file.path)}</span>
+            <span>{baseOf(p.file.path)}</span>
+          </span>
+        </button>
         <span className="lc-grow" />
         <Lines added={p.added} removed={p.removed} />
-      </header>
-      <div className="lc-rv-code lc-mono">
-        {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}
-        {p.segs.map((s, si) =>
-          s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some(carries) ? (
-            <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
-              <I.chevD size={12} />
-              {plural(s.rows.length, "unchanged line")}
-            </button>
-          ) : (
-            <Fragment key={si}>{s.rows.map((r) => lineRow(r, p.at.get(r) ?? 0))}</Fragment>
-          ),
+        <label className="lc-rv-seen">
+          <input type="checkbox" className="l-focus" checked={viewed} onChange={(e) => onViewed(p.file.path, e.target.checked)} />
+          Viewed
+        </label>
+        {onOpen && !p.gone && (
+          <button type="button" className="lc-ib l-focus" aria-label={`Open ${p.file.path} in your editor`} title="Open in your editor" onClick={() => onOpen(p.file.path)}>
+            <I.external size={14} />
+          </button>
         )}
-      </div>
+      </header>
+      {!folded && (
+        <div className="lc-rv-code lc-mono">
+          {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}
+          {p.segs.map((s, si) =>
+            s.kind === "fold" && !open.has(`${p.file.path}:${s.id}`) && !s.rows.some(carries) ? (
+              <button key={si} type="button" className="lc-rv-fold l-focus" onClick={() => setOpen((o) => new Set(o).add(`${p.file.path}:${s.id}`))}>
+                <I.chevD size={12} />
+                {plural(s.rows.length, "unchanged line")}
+              </button>
+            ) : (
+              <Fragment key={si}>{s.rows.map((r) => lineRow(r, p.at.get(r) ?? 0))}</Fragment>
+            ),
+          )}
+        </div>
+      )}
     </article>
   );
 });

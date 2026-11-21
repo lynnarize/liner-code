@@ -163,17 +163,25 @@ export function reviewerOf(writers: string[], providers: ProviderInfo[], picks: 
   return pool[0] ?? null;
 }
 
+/** A start Settings can hold (Settings.start): a pair, the lead alone, the sidekick alone, or "@<provider>:<model>"; anything else is none. */
+export const startIn = (x: unknown): Settings["start"] | undefined => (typeof x === "string" && (x === "pair" || x === "best" || x === "fast" || /^@[^\s:]+:\S+$/.test(x)) ? (x as Settings["start"]) : undefined);
+
 /**
-  Who a new session starts with, from what Settings say it starts with (`start`): a pair, the lead
-  alone (best) or the sidekick alone (fast). Unset is a pair when two different models are ready,
-  else one model; a pair asked for with one model ready is that model. Null with no model ready.
-  The app's picker and the engine (a session started without an agent) both start from here.
+  Who a new session starts with, from what Settings say it starts with (`start`): a pair, one model
+  ("@<provider>:<model>", while its tool is ready), the lead alone (best) or the sidekick alone
+  (fast). Unset is a pair when two different models are ready, else one model; a pair asked for with
+  one model ready is that model, and a model whose tool has gone starts as unset would. Null with no
+  model ready. The app's picker and the engine (a session started without an agent) both start from here.
 */
 export function startOf(settings: Pick<Settings, "start" | "picks">, providers: ProviderInfo[]): { agent: string; sidekick?: string } | null {
+  // A settings file edited by hand can hold anything here: what isn't one of the forms reads as unset.
+  const said = startIn(settings.start);
+  const one = said?.startsWith("@") ? readyRef(providers, said.slice(1)) : undefined;
+  if (one) return { agent: `@${one}` };
   const cast = castOf(providers, { picks: settings.picks });
   if (!cast) return null;
   const two = cast.lead !== cast.sidekick;
-  const start = settings.start ?? (two ? "pair" : "best");
+  const start = said && !said.startsWith("@") ? said : two ? "pair" : "best";
   if (start === "pair" && two) return { agent: `@${cast.lead}`, sidekick: cast.sidekick };
   if (start === "fast") return { agent: `@${cast.sidekick}` };
   return { agent: `@${cast.lead}` };

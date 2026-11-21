@@ -1,8 +1,9 @@
 /*
   Design skills kept in sight: the SKILL.md files the agent reads first with the lean, switched on
   per design file (its lean.skills, saved with canvas.save). They show as rows under the lean in
-  the sidebar with a count of the rest, as the dock's "/ 2 skills" chip (and rows while you type a
-  slash), as chips beside the lean chip on Design Home, and as the row over the box that offers a
+  the sidebar with a count of the rest, as a row of the box's + menu with a "/ 2 skills" chip after
+  the + while any is loaded (on Design Home and in the dock), as rows while you type a slash in the
+  dock, and as the row over the box that offers a
   skill you have but didn't load when what you typed fits it. On Home there is no design file yet,
   so what you pick is held here and written to the file Home makes before its first turn.
 
@@ -10,11 +11,11 @@
   and "Add to the lean" in the inspector's off-lean note. Everything plugs into B's and C's slots
   (sideSlots, homeSlots, offLeanMore) when this module loads; DesignFace, DesignHome and Dock import it.
 */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { DesignSkill, Lean } from "@contracts";
 import { FRAME_CHANGED } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import type { SlashRow } from "../Composer";
+import { seedComposer, type SlashRow } from "../Composer";
 import { getState, rpc, subscribe as subscribeEngine } from "../engine";
 import { I } from "../icons";
 import { plural } from "../model";
@@ -182,13 +183,26 @@ function SideSkills({ cwd }: { cwd: string }) {
   const rest = mine.filter((s) => !loaded.includes(s.name)).length;
   return (
     <>
+      {/* A loaded skill's row opens the lean; its ··· (while you point at it) unloads it, as a frame's row has its own. */}
       {loaded.map((n) => (
-        <button key={n} type="button" className="ld-tr l-focus" title={`The ${n} skill is loaded for this design. Open the lean`} onClick={openLean}>
-          <span className="ld-sl" aria-hidden>
-            /
+        <div key={n} className="ld-tr ld-tr-w">
+          <button type="button" className="ld-tr-b l-focus" title={`The ${n} skill is loaded for this design. Open the lean`} onClick={openLean}>
+            <span className="ld-sl" aria-hidden>
+              /
+            </span>
+            <span className="ld-ell">{n}</span>
+          </button>
+          <span className="ld-ly-acts">
+            <Pop label={`/${n}: what to do with it`} menu align="end" width={220} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: "Unload or open the lean" }} trigger={<I.more size={14} />}>
+              {(close) => (
+                <>
+                  <Row title="Unload it" icon={<I.close size={16} />} onPick={() => (close(), setSkill(n, false, cwd))} />
+                  <Row title="Open the lean" icon={<I.forward size={16} />} onPick={() => (close(), openLean())} />
+                </>
+              )}
+            </Pop>
           </span>
-          <span className="ld-ell">{n}</span>
-        </button>
+        </div>
       ))}
       {/* Skills load with or without a DESIGN.md: the list, with how many more there are. */}
       {skills && mine.length > 0 && (
@@ -199,7 +213,7 @@ function SideSkills({ cwd }: { cwd: string }) {
                 <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd)} />
               ))}
               <Sep />
-              <Row title="Open the lean" icon={<I.forward size={14} />} onPick={openLean} />
+              <Row title="Open the lean" icon={<I.forward size={16} />} onPick={openLean} />
             </>
           )}
         </Pop>
@@ -208,110 +222,76 @@ function SideSkills({ cwd }: { cwd: string }) {
   );
 }
 
-// ---------- Design Home: chips beside the lean, and the row over the box
+// ---------- Design skills in the box: a row of its + menu, and a chip after the + while any is loaded
 
-function HomeSkills({ cwd }: { cwd: string }) {
+/**
+  The design skills to switch on, as the rows the + menu's "Design skills" opens (the box's own
+  "Skills $" is the tool's skills, another thing): for the open design file, or on Home (`home`)
+  for the one it's about to make, and the way to the lean. `done` closes the menu.
+*/
+export function SkillRows({ cwd, home, done }: { cwd: string; home?: boolean; done: () => void }) {
   const skills = useSkills(cwd);
-  const loaded = useLoaded(cwd, true);
+  const loaded = useLoaded(cwd, home);
   const mine = (skills ?? []).filter(isDesign);
-  if (!mine.length) return null;
-  const shown = [...mine].sort((a, b) => Number(loaded.includes(b.name)) - Number(loaded.includes(a.name))).slice(0, 2);
-  const more = mine.length - shown.length;
   return (
     <>
-      {shown.map((s) => {
-        const on = loaded.includes(s.name);
-        return (
-          <button key={s.name} type="button" className="lc-pb ld-skill-chip l-focus" aria-pressed={on} title={on ? `${s.description}. Loaded for the new design: press to leave it out` : `${s.description}. Press to load it for the new design`} onClick={() => setSkill(s.name, !on, cwd, true)}>
-            /{s.name}
-          </button>
-        );
-      })}
-      {more > 0 && (
-        <Pop label="Design skills to load" width={340} triggerClass="lc-pb ld-skill-chip" trigger={<>+{more}</>} menu>
-          {() => (
-            <>
-              {mine.map((s) => (
-                <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd, true)} />
-              ))}
-            </>
-          )}
-        </Pop>
+      {mine.map((s) => (
+        <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd, home)} />
+      ))}
+      {skills && !mine.length && <Row title="No design skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" keepNote disabled />}
+      {!skills && <p className="l-shimmer lc-pop-note">Reading the skills</p>}
+      {/* Home has no design yet, so no lean page to open. */}
+      {!home && (
+        <>
+          <Sep />
+          <Row title="Open the lean" icon={<I.forward size={16} />} onPick={() => (done(), openLean())} />
+        </>
       )}
     </>
   );
 }
 
-/** Start with a brand: three words and a reference, then an ask for a brand board and a DESIGN.md. */
-function BrandStart({ cwd, send }: { cwd: string; send: (text: string) => Promise<void> }) {
+/** The + menu row's value: how many design skills are loaded, or None. */
+export function SkillsValue({ cwd, home }: { cwd: string; home?: boolean }) {
+  const loaded = useLoaded(cwd, home);
+  return <>{loaded.length === 1 ? `/${loaded[0]}` : loaded.length ? `${loaded.length} loaded` : "None"}</>;
+}
+
+/** After the +, while any design skill is loaded: "/ 2 skills", opening the same rows. None loaded, the + menu holds them out of sight. */
+export function SkillsChip({ cwd, home }: { cwd: string; home?: boolean }) {
+  const loaded = useLoaded(cwd, home);
+  if (!loaded.length) return null;
+  return (
+    <Pop label={`Design skills: ${loaded.join(", ")}. Change them`} side={home ? "bottom" : "top"} width={340} triggerClass="lc-seg-b ld-skills-b" trigger={<><span className="ld-sl" aria-hidden>/</span>{loaded.length === 1 ? loaded[0] : plural(loaded.length, "skill")}<I.chevD size={12} /></>}>
+      {(close) => <SkillRows cwd={cwd} home={home} done={close} />}
+    </Pop>
+  );
+}
+
+/**
+  Start with a brand, a row of Design Home's "Start another way" in the box's + menu: the ask for a
+  brand board and a DESIGN.md goes into the box, the caret where its three words go, to send with
+  the box's Send (not a second form with its own button). The brand skill, when this Mac has one, is
+  loaded for it.
+*/
+function BrandStart({ cwd, done }: { cwd: string; done: () => void }) {
   const skills = useSkills(cwd);
-  const [words, setWords] = useState("");
-  const [ref, setRef] = useState("");
   const brand = skills?.find((s) => /brand/i.test(s.name)) ?? skills?.find((s) => /\bbrand/i.test(s.description));
-  const three = words.split(/[,\s]+/).map((w) => w.trim()).filter(Boolean).slice(0, 3);
-  const go = async (close: () => void) => {
-    if (!three.length) return;
+  const go = () => {
     if (brand) setSkill(brand.name, true, cwd, true);
-    const said = three.join(", ");
     const text = [
-      `Brand: ${said}`,
-      "",
-      `Start this design with a brand. Its three words: ${said}.${ref.trim() ? ` A reference to go by: ${ref.trim()}.` : ""}`,
+      "Start this design with a brand.",
       "Make a frame named “Brand / Board” (1280 × 800) that shows the mark, the colours, two voices of type and a few uses of them.",
       "Then write the project's DESIGN.md from it: the colours with their hex values, the type styles with sizes, the spacing steps, the corners, and the rules it never breaks.",
       brand ? `Read the ${brand.name} skill first (${brand.path}).` : "",
-    ].filter((l, i) => l || i === 1).join("\n");
-    close();
-    await send(text).catch(() => {});
+      "",
+      "Three words for how it should feel, and a reference if you have one: ",
+    ].filter((l, i, all) => l || i === all.length - 2).join("\n");
+    seedComposer("design-home", text);
   };
-  return (
-    <>
-      <span aria-hidden>·</span>
-      <Pop label="Start with a brand" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.sparkle size={14} />start with a brand</>}>
-        {(close) => (
-          <form className="ld-brand" onSubmit={(e) => (e.preventDefault(), void go(close))}>
-            <b>Start with a brand</b>
-            <span className="lc-quiet">Three words for how it should feel. The agent draws a brand board frame and writes DESIGN.md from it.</span>
-            <input className="ld-field" value={words} onChange={(e) => setWords(e.target.value)} placeholder="Calm, exact, tidal" aria-label="Three words" autoFocus />
-            <input className="ld-field" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="A reference, if you have one: a site, a name, a feeling" aria-label="A reference (optional)" />
-            <span className="ld-brand-f">
-              <span className="lc-quiet">{brand ? `Loads /${brand.name}` : "No brand skill on this Mac"}</span>
-              <button type="submit" className="lc-btn" data-kind="ink" disabled={!three.length}>
-                Ask for the brand
-              </button>
-            </span>
-          </form>
-        )}
-      </Pop>
-    </>
-  );
+  return <Row title="Start with a brand" note={brand ? `The ask goes in the box, with /${brand.name}: add three words, then Send` : "The ask goes in the box: add three words, then Send"} icon={<I.sparkle size={16} />} onPick={() => (done(), go())} />;
 }
 
-// ---------- The dock: "/ 2 skills", and rows while you type a slash
-
-export function DockSkills({ cwd }: { cwd: string }) {
-  const skills = useSkills(cwd);
-  const loaded = useLoaded(cwd);
-  const mine = (skills ?? []).filter(isDesign);
-  return (
-    <span className="lc-seg">
-      <Pop label={`Design skills: ${loaded.length ? loaded.join(", ") : "none loaded"}. Change them`} side="top" width={340} triggerClass="lc-seg-b ld-skills-b" trigger={<><span className="ld-sl" aria-hidden>/</span>{loaded.length ? plural(loaded.length, "skill") : "Skills"}<I.chevD size={12} /></>} menu>
-        {(close) => (
-          <>
-            {mine.map((s) => (
-              <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd)} />
-            ))}
-            {skills && !mine.length && <Row title="No design skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" disabled />}
-            <Sep />
-            <Row title="Open the lean" icon={<I.forward size={14} />} onPick={() => (close(), openLean())} />
-          </>
-        )}
-      </Pop>
-    </span>
-  );
-}
-
-/** Over the dock: a skill that fits what you typed. */
 export function DockRows({ cwd }: { cwd: string }) {
   return <FitRow cwd={cwd} place="dock" />;
 }
@@ -415,7 +395,7 @@ function install() {
   installed = true;
   sideSlots.skills = SideSkills;
   sideSlots.openLean = openLean;
-  homeSlots.skills = HomeSkills;
+  homeSlots.skills = { Rows: (p) => <SkillRows {...p} home />, Value: (p) => <SkillsValue {...p} home />, Chip: (p) => <SkillsChip {...p} home /> };
   homeSlots.above = ({ cwd }) => <FitRow cwd={cwd} place="home" />;
   homeSlots.or = BrandStart;
   homeSlots.onText = (text) => typed("home", text);

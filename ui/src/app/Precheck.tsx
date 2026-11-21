@@ -202,7 +202,7 @@ export function usePrecheck(env: Env) {
           </button>
         )}
         <button type="button" className="lc-ib l-focus" aria-label="Dismiss" title="Dismiss" onClick={close}>
-          <I.close size={12} />
+          <I.close size={14} />
         </button>
       </div>
       {found.kind === "split" && found.tasks && (

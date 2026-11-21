@@ -22,10 +22,10 @@ export type FoundData = { scan: ScanRecord; findings: SecurityFinding[]; model: 
 const LOOK_WORDS: Record<SecondLookState, string> = { none: "", confirmed: "Confirmed", unconfirmed: "Couldn't confirm" };
 /** Where a finding is: "alerts.js:27", the file's name alone. */
 export const placeOf = (f: Pick<SecurityFinding, "file" | "line">) => (f.file ? `${f.file.split("/").pop()}${f.line ? `:${f.line}` : ""}` : "");
-/** What its row says under its title: how bad, where, and the second look or where it came from. */
+/** What its row says under its title: where, and the second look or where it came from (how bad is its mark's word, as on Findings). */
 function noteOf(f: SecurityFinding, scan: ScanRecord | null, waiting: boolean) {
   const look = f.look.state !== "none" ? LOOK_WORDS[f.look.state] : f.scan === scan?.id && scan?.secondLook && waiting ? "waiting for the second look" : f.source === "checks" ? (f.rule?.startsWith("GHSA") || f.file === "package.json" ? "from npm audit" : "from the free checks") : f.source === "github" ? "from GitHub" : f.source === "sarif" ? "from a report" : "";
-  return [SEVERITY_LABEL[f.severity], placeOf(f), look].filter(Boolean).join(" · ");
+  return [placeOf(f), look].filter(Boolean).join(" · ");
 }
 
 export function FoundPanel({ scanId, threadId, projectId, finding, paused, left, data, onClose }: {
@@ -42,6 +42,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
   left?: string;
   /** The scan's data, given rather than asked for (the dev mock). */
   data?: FoundData;
+  /** Only while the panel lies over the chat (a narrow window), where it covers the top row's lit panel icon that otherwise hides it. */
   onClose?: () => void;
 }) {
   void threadId;
@@ -85,9 +86,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
           : [n ? `${plural(n, "finding")} so far` : "Nothing yet", paused || scan.state === "asking" ? "paused until you answer or skip" : scan.looking ? "taking the second look" : left ? `scanning, ${left}` : "scanning"];
   const row = (f: SecurityFinding) => (
     <button key={f.id} type="button" className="lsc-rw l-focus" onClick={() => goSecurity({ kind: "findings", finding: f.id, state: f.state })}>
-      <SevMark severity={f.severity} dot>
-        <span className="l-sr-only">{SEVERITY_LABEL[f.severity]}</span>
-      </SevMark>
+      <SevMark severity={f.severity} />
       <TwoLines title={f.title} note={noteOf(f, scan, waiting)} />
     </button>
   );
@@ -102,7 +101,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
           <span className="lc-grow" />
           {onClose && (
             <button type="button" className="lc-tb l-focus" aria-label="Close" title="Close" onClick={onClose}>
-              <I.close size={14} />
+              <I.close size={16} />
             </button>
           )}
         </header>
@@ -142,7 +141,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
         </button>
         {onClose && (
           <button type="button" className="lc-tb l-focus" aria-label="Close" title="Close" onClick={onClose}>
-            <I.close size={14} />
+            <I.close size={16} />
           </button>
         )}
       </header>

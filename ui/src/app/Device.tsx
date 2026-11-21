@@ -184,7 +184,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
                   {list.devices
                     .filter((d) => d.runtime === rt)
                     .map((d) => (
-                      <Row key={d.udid} title={d.name} note={d.state === "Booted" ? "Booted" : undefined} on={d.udid === udid} onPick={() => (setUdid(d.udid), setShot(null), close())} />
+                      <Row key={d.udid} title={d.name} end={d.state === "Booted" ? "Booted" : undefined} on={d.udid === udid} onPick={() => (setUdid(d.udid), setShot(null), close())} />
                     ))}
                 </div>
               ))}

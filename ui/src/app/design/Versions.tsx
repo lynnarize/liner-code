@@ -3,7 +3,7 @@
   design file (canvas.versions, by key): one at the end of each turn that changed it, and one
   "before" copy each time something is brought back. While a kept copy is shown the canvas only
   looks: every change refuses (store.scrub), and a bar over the canvas says which copy it is,
-  with Bring this back (canvas.restore, which first keeps what's there now, so
+  with Bring it back (canvas.restore, which first keeps what's there now, so
   that can come back too: the toast's Undo brings that copy back) and Back to now.
 
   A kept turn's frames come from the engine's copy (canvas.version.read: its index and its drawn
@@ -73,7 +73,7 @@ async function bringBack(threadId: string, file: string, v: CanvasVersion) {
   });
 }
 
-/** The top row's control: back and forward a kept copy, and the list of them, by key. */
+/** The top row's control: one menu of the kept copies, by key, with a copy back and a copy forward at its top. */
 export function Versions() {
   const threadId = useDesign((s) => s.threadId);
   const file = useDesign((s) => s.file?.id);
@@ -133,24 +133,21 @@ export function Versions() {
   };
   const busy = status === "running";
   return (
-    <span className="ld-ver" role="group" aria-label="Kept copies of this design">
-      <button type="button" className="lc-ib l-focus" aria-label="A copy back" title="A copy back" disabled={at <= 0 || busy} onClick={() => void look(at - 1)}>
-        <I.chevL size={14} />
-      </button>
-      <Pop label={now ? `${nameOf(now)}: the kept copies` : "The design now: its kept copies"} width={280} align="end" triggerClass="ld-ver-t" trigger={<><I.clock size={14} /><span className="ld-num ld-ell">{now ? nameOf(now) : "Now"}</span></>} menu>
+    <span className="ld-ver">
+      <Pop label={now ? `${nameOf(now)}: the kept copies` : "The design now: its kept copies"} width={280} align="end" triggerClass="ld-ver-t" trigger={<><I.clock size={14} /><span className="ld-num ld-ell">{now ? nameOf(now) : "Now"}</span><I.chevD size={12} /></>} menu>
         {(close) => (
           <>
+            <Row title="A copy back" icon={<I.chevL size={16} />} disabled={at <= 0 || busy} onPick={() => (close(), void look(at - 1))} />
+            <Row title="A copy forward" icon={<I.chevR size={16} />} disabled={!now} onPick={() => (close(), void look(at + 1))} />
+            <Sep />
             <Row title="Now" note="As it is" on={!now} onPick={() => (close(), design.scrub(undefined))} />
             <Sep />
             {[...list].reverse().map((v) => (
-              <Row key={v.key} title={nameOf(v)} note={`${when(v.at)} · ${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} on={now?.key === v.key} disabled={busy} onPick={() => (close(), void look(list.indexOf(v)))} />
+              <Row key={v.key} title={nameOf(v)} which={`${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} note={`${when(v.at)} · ${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} end={when(v.at)} on={now?.key === v.key} disabled={busy} onPick={() => (close(), void look(list.indexOf(v)))} />
             ))}
           </>
         )}
       </Pop>
-      <button type="button" className="lc-ib l-focus" aria-label="A copy forward" title="A copy forward" disabled={!now} onClick={() => void look(at + 1)}>
-        <I.chevR size={14} />
-      </button>
       {now && <ScrubBar v={now} shown={shown} threadId={threadId} file={file} />}
     </span>
   );
@@ -183,7 +180,7 @@ function ScrubBar({ v, shown, threadId, file }: { v: CanvasVersion; shown: boole
         Back to now
       </button>
       <button type="button" className="lc-btn" data-size="sm" data-kind="ink" disabled={busy} onClick={() => void back()}>
-        Bring this back
+        Bring it back
       </button>
     </div>,
     host,

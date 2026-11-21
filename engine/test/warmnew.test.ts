@@ -17,7 +17,9 @@ import type { OpenOptions, Provider, ProviderSession, TurnSink } from "../src/pr
 import { providers, Runtime } from "../src/runtime.ts";
 import { Store } from "../src/store.ts";
 
-const info = (id: ProviderInfo["id"]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: [{ id: "claude-opus-5-5", label: "Opus", description: "" }, { id: "claude-sonnet-5-5", label: "Sonnet", description: "" }], supports: { approvals: true, resume: true, effort: true, plan: true } });
+// Each model lists the levels the tests pick, since a level a model doesn't list is never sent (runtime.ts effortFor).
+const levels = ["low", "medium", "high"].map((id) => ({ id, label: id }));
+const info = (id: ProviderInfo["id"]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: [{ id: "claude-opus-5-5", label: "Opus", description: "", efforts: levels }, { id: "claude-sonnet-5-5", label: "Sonnet", description: "", efforts: levels }], supports: { approvals: true, resume: true, effort: true, plan: true } });
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 async function until(ok: () => boolean, what: string, ms = 3000) {
   for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await tick();

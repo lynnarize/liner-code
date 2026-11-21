@@ -479,6 +479,76 @@ test("scan, round 3: once a scan has ended its session is an ordinary Read only 
   assert.deepEqual(stopped, [t!.id]);
 });
 
+test("scan: a message after it was stopped at its time carries the scan on: running again with its clock, taking findings, and ended again with its turn", async () => {
+  Object.assign(clock, { tickMs: 20, minuteMs: 60_000, settleMs: 10 });
+  try {
+    const { sec, store, items } = rig();
+    const { scan, thread: t } = await startScan(sec, { projectId: "p", depth: "project", reader: own, stopsAfter: 30 });
+    const at = { threadId: t!.id, sidekick: false };
+    const turn = (n: number, status: "running" | "done") => store.putItem(t!.id, { kind: "turn", id: `turn${n}`, turn: n, at: n === 1 ? 1 : Date.now(), agent: "claude", model: "claude-opus-5-5", status });
+    // Its first turn ran, and the clock ran out.
+    turn(1, "running");
+    store.patchThread(t!.id, { status: "running" });
+    sec.patchScan(scan.id, { endsAt: Date.now() - 1 });
+    await until(() => sec.scan(scan.id).state === "stopped");
+    store.patchThread(t!.id, { status: "idle" });
+    assert.equal(sec.scan(scan.id).error, "Stopped after 30 minutes, as you set.");
+    // The old turn still saying it runs is not a new message: the scan stays ended.
+    store.patchThread(t!.id, { status: "running" });
+    store.patchThread(t!.id, { status: "idle" });
+    assert.equal(sec.scan(scan.id).state, "stopped");
+    // You say "resume": a new turn starts in its session.
+    await tick(5);
+    turn(2, "running");
+    store.patchThread(t!.id, { status: "running", turns: 2 });
+    const on = sec.scan(scan.id);
+    assert.equal(on.state, "running");
+    assert.equal(on.error, undefined);
+    assert.equal(on.finishedAt, undefined);
+    assert.ok(on.endsAt! > Date.now() + 29 * 60_000, "its clock starts again with the same Stops after");
+    assert.ok(store.timeline(t!.id).some((x) => x.kind === "notice" && /carries on, and stops again after 30 minutes/.test(x.text)));
+    const r = await call(sec, "security_report_finding", { title: "The token is in the URL", severity: "medium", lead: "a", wrong: "b" }, at);
+    assert.equal(r.isError, undefined, textOf(r));
+    assert.equal(sec.scan(scan.id).counts.fresh, 1);
+    // Its turn ends: the scan ends with it, this time as done.
+    turn(2, "done");
+    store.patchThread(t!.id, { status: "done" });
+    await until(() => sec.scan(scan.id).state === "done");
+    assert.equal(sec.scan(scan.id).error, undefined);
+    const end = items(t!.id).at(-1)!.event;
+    assert.ok(end.type === "done" && end.state === "done" && end.counts.fresh === 1);
+  } finally {
+    Object.assign(clock, { tickMs: 5_000, minuteMs: 60_000, settleMs: 1_500 });
+  }
+});
+
+test("scan: a scan that finished well is not reopened by a question in its chat, but carries on for a turn its tool began by itself", async () => {
+  const { sec, store } = rig();
+  const { scan, thread: t } = await startScan(sec, { projectId: "p", depth: "project", reader: own, stopsAfter: 30 });
+  const at = { threadId: t!.id, sidekick: false };
+  store.patchThread(t!.id, { status: "running" });
+  store.patchThread(t!.id, { status: "done" });
+  await until(() => sec.scan(scan.id).state === "done");
+  await tick(5);
+  // Your question: a turn with your message in it.
+  store.putItem(t!.id, { kind: "user", id: "u2", turn: 2, at: Date.now(), text: "Which one first?" });
+  store.putItem(t!.id, { kind: "turn", id: "turn2", turn: 2, at: Date.now(), agent: "claude", model: "claude-opus-5-5", status: "running" });
+  store.patchThread(t!.id, { status: "running", turns: 2 });
+  assert.equal(sec.scan(scan.id).state, "done");
+  assert.match(textOf(await call(sec, "security_report_finding", { title: "x", severity: "low", lead: "a", wrong: "b" }, at)), /This scan has ended/);
+  store.patchThread(t!.id, { status: "done" });
+  // Then its tool carries on by itself (the agents it sent off came back): no message of yours, and the scan takes what they found.
+  await tick(5);
+  store.putItem(t!.id, { kind: "turn", id: "turn3", turn: 3, at: Date.now(), agent: "claude", model: "claude-opus-5-5", status: "running" });
+  store.patchThread(t!.id, { status: "running", turns: 3 });
+  assert.equal(sec.scan(scan.id).state, "running");
+  const r = await call(sec, "security_report_finding", { title: "The update isn't signed", severity: "high", lead: "a", wrong: "b" }, at);
+  assert.equal(r.isError, undefined, textOf(r));
+  store.patchThread(t!.id, { status: "done" });
+  await until(() => sec.scan(scan.id).state === "done");
+  assert.equal(sec.scan(scan.id).counts.fresh, 1);
+});
+
 test("scan, round 3: a question the tool lets go of is never passed: the scan stops, the card ends, nothing is written", async () => {
   for (const how of ["gone", "cap"] as const) {
     const { sec, answers, stopped, ended, path, items } = rig();

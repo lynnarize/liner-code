@@ -6,10 +6,14 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
-import type { AgentProfile, LimitWindow, Thread } from "@contracts";
-import { Glyph, I, ModelMark, Spinner, wt, type MarkKind } from "./icons";
+import type { AgentProfile, LimitWindow } from "@contracts";
+import { Glyph, I, ModelMark, StateMark, type MarkKind, type MarkState } from "./icons";
 import { clock } from "./model";
 import { stopIgnored } from "./stop-guard";
+import { confirmPress } from "./confirm";
+import { shortcutOf } from "./keymap";
+import { panelLeft, panelSide, placeMenu, TOP_ROW, type Box } from "./menu-place";
+import * as os from "./os";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -40,7 +44,7 @@ const KEEP_MIN = 260;
   opens beside the sidebar, never over your sessions), its top a little above the trigger's so
   its title sits level with it; with no room there it opens under the trigger as any other.
 */
-function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger" | "within", keep: boolean, beside: "left" | "right" | false = false, within?: () => HTMLElement | null) {
+function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger" | "within", keep: boolean, beside: "left" | "right" | false = false, within?: () => HTMLElement | null, whole = false) {
   const [at, setAt] = useState<Place>({ side: prefer, top: -9999, left: -9999, ready: false });
   useLayoutEffect(() => {
     if (!open) return setAt((a) => ({ ...a, ready: false }));
@@ -52,7 +56,8 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       const vw = document.documentElement.clientWidth;
       const vh = window.innerHeight;
       const below = vh - r.bottom - GAP - EDGE;
-      const above = r.top - GAP - EDGE;
+      // Above it stops at the window's top row, where the Mac's window buttons are (menu-place.ts).
+      const above = r.top - GAP - TOP_ROW;
       // The box it keeps inside sideways: the window, or the element it's kept within, its padding apart.
       const box = within?.();
       const pad = box ? getComputedStyle(box) : null;
@@ -69,31 +74,31 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       p.style.width = `${right ? wide : w}px`;
       // Its own height, not the one a room it was fitted to gave it: a panel that shrinks into its
       // room would otherwise read as fitting, open up again, and never settle.
+      // The room a whole panel's cards were fitted to goes too, or they would measure as fitting where they don't.
       const fitted = p.style.maxHeight;
+      const fittedRoom = p.style.getPropertyValue("--lc-pop-room");
       p.style.maxHeight = "none";
+      p.style.removeProperty("--lc-pop-room");
       const h = p.scrollHeight;
       p.style.maxHeight = fitted;
-      const flip: Side = prefer === "bottom" ? "top" : "bottom";
-      const room = (s: Side) => (s === "bottom" ? below : above);
-      const side: Side = (keep && room(prefer) >= Math.min(h, KEEP_MIN)) || h <= room(prefer) ? prefer : h <= room(flip) ? flip : below >= above ? "bottom" : "top";
-      const max = h > room(side) ? Math.max(120, Math.floor(room(side))) : undefined;
+      if (fittedRoom) p.style.setProperty("--lc-pop-room", fittedRoom);
+      const { side, max } = panelSide({ h, below, above, prefer, keep, keepMin: KEEP_MIN, whole });
       const tall = Math.min(h, max ?? h);
       if (right) {
-        const fit = Math.min(h, vh - EDGE * 2);
-        const top = Math.max(EDGE, Math.min(r.top - 8, vh - EDGE - fit));
+        const fit = Math.min(h, vh - EDGE - TOP_ROW);
+        const top = Math.max(TOP_ROW, Math.min(r.top - 8, vh - EDGE - fit));
         setAt({ side: "right", top: Math.round(top), left: from, max: h > fit ? fit : undefined, w: wide, ready: true });
         return;
       }
       // Beside, to the left (the session tray's menus): level with the trigger's top, kept on screen.
       if (beside === "left" && r.left - GAP - w >= EDGE) {
-        const fit = Math.min(h, vh - EDGE * 2);
-        const top = Math.max(EDGE, Math.min(r.top, vh - EDGE - fit));
+        const fit = Math.min(h, vh - EDGE - TOP_ROW);
+        const top = Math.max(TOP_ROW, Math.min(r.top, vh - EDGE - fit));
         setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, w, ready: true });
         return;
       }
-      let left = align === "end" ? r.right - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left;
-      left = Math.max(lo, Math.min(left, hi - w));
-      const top = side === "bottom" ? r.bottom + GAP : r.top - GAP - tall;
+      const left = panelLeft(align, r, w, lo, hi);
+      const top = side === "bottom" ? r.bottom + GAP : Math.max(TOP_ROW, r.top - GAP - tall);
       setAt({ side, top: Math.round(top), left: Math.round(left), max, w, ready: true });
     };
     place();
@@ -112,7 +117,8 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", moved, true);
     };
-  }, [open]);
+    // A width that changes while open (the model picker gains or loses its side card as the window is resized) is placed again.
+  }, [open, width]);
   return at;
 }
 
@@ -135,6 +141,7 @@ export function Pop({
   triggerAttrs,
   within,
   describedBy,
+  bare = false,
 }: {
   trigger: ReactNode;
   label: string;
@@ -157,12 +164,14 @@ export function Pop({
   within?: () => HTMLElement | null;
   /** The id of a line inside the panel that says what it is (Carry on's), read after its label. */
   describedBy?: string;
+  /** No glass of its own: what it holds draws its own cards (the model picker's rail, list and side card). */
+  bare?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within);
+  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within, bare);
   useDismiss(open, () => setOpen(false), [wrap, panel], btn);
   const close = () => {
     setOpen(false);
@@ -171,7 +180,8 @@ export function Pop({
   // Focus moves into the panel once it is placed, so the keyboard carries on inside it.
   useEffect(() => {
     if (!open || !at.ready) return;
-    const first = panel.current?.querySelector<HTMLElement>("input, textarea, [data-on], button, [tabindex]:not([tabindex='-1'])");
+    // A part may say where the keyboard starts (the model picker's Find, past its rail); else the first that takes it.
+    const first = panel.current?.querySelector<HTMLElement>("[data-autofocus]") ?? panel.current?.querySelector<HTMLElement>("input, textarea, [data-on], button, [tabindex]:not([tabindex='-1'])");
     first?.focus({ preventScroll: true });
   }, [open, at.ready]);
   return (
@@ -183,7 +193,7 @@ export function Pop({
         createPortal(
           <div
             ref={panel}
-            className="l-pop lc-pop-panel lc-layer"
+            className={cx("l-pop lc-pop-panel lc-layer", bare && "lc-pop-bare")}
             data-side={at.side}
             data-align={align}
             data-ready={at.ready || undefined}
@@ -191,7 +201,7 @@ export function Pop({
             aria-label={label}
             aria-describedby={describedBy}
             // Placed here, not by Liner's anchored rules: those (bottom, translate) would fight the fixed layer.
-            style={{ width: typeof width === "number" && !within ? Math.min(width, document.documentElement.clientWidth - EDGE * 2) : at.w, maxHeight: at.max, top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
+            style={{ width: typeof width === "number" && !within ? Math.min(width, document.documentElement.clientWidth - EDGE * 2) : at.w, maxHeight: at.max, ...(at.max !== undefined ? { "--lc-pop-room": `${at.max}px` } : {}), top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
             onKeyDown={(e) => {
               // Something inside that took the Escape first (a list open in the panel) has closed itself; the panel stays.
               if (e.key === "Escape" && !e.defaultPrevented) {
@@ -217,8 +227,11 @@ export function Pop({
   );
 }
 
-/** A menu at the pointer, for right-clicks: the same glass panel, kept inside the window. */
-export function ContextMenu({ at, label, onClose, children, width = 240 }: { at: { x: number; y: number } | null; label: string; onClose: () => void; children: (close: () => void) => ReactNode; width?: number }) {
+/**
+  A menu at the pointer, for right-clicks, or hung under a row's ··· (`under`, the button's box, and `row`, the row's):
+  the same glass panel, kept inside the window and under its top row (menu-place.ts).
+*/
+export function ContextMenu({ at, label, onClose, children, width = 240 }: { at: { x: number; y: number; under?: Box; row?: Box } | null; label: string; onClose: () => void; children: (close: () => void) => ReactNode; width?: number }) {
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
   useDismiss(Boolean(at), onClose, [panel]);
@@ -230,16 +243,32 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
     return () => back?.focus({ preventScroll: true });
   }, [shown]);
   useLayoutEffect(() => {
-    if (!at || !panel.current) return setPos(null);
-    const h = panel.current.scrollHeight;
-    const vw = document.documentElement.clientWidth;
-    const vh = window.innerHeight;
-    const top = at.y + h + EDGE > vh ? Math.max(EDGE, at.y - h) : at.y;
-    setPos({ top, left: Math.max(EDGE, Math.min(at.x, vw - width - EDGE)), max: vh - EDGE * 2 });
-  }, [at?.x, at?.y]);
+    const p = panel.current;
+    if (!at || !p) return setPos(null);
+    const place = () => {
+      // Its own height, not the room it was fitted to last time.
+      const fitted = p.style.maxHeight;
+      p.style.maxHeight = "none";
+      const h = p.scrollHeight;
+      p.style.maxHeight = fitted;
+      const to = placeMenu({ at, under: at.under, row: at.row, w: Math.min(width, document.documentElement.clientWidth - EDGE * 2), h, vw: document.documentElement.clientWidth, vh: window.innerHeight });
+      setPos((was) => (was && was.top === to.top && was.left === to.left && was.max === to.max ? was : { top: to.top, left: to.left, max: to.max }));
+    };
+    place();
+    // A list that opens in the menu's place (Snooze until, Move to a group) is another height: the menu keeps to its button, above or below.
+    // The panel itself is watched, since its rows may sit in a part that draws no box of its own (display: contents).
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    ro?.observe(p);
+    window.addEventListener("resize", place);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, [at?.x, at?.y, width]);
+  // The first row has the keyboard once it is placed; placed again (a list opened in it), the focus stays where the list put it.
   useEffect(() => {
     if (pos) panel.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });
-  }, [pos]);
+  }, [Boolean(pos)]);
   if (!at) return null;
   return createPortal(
     <div
@@ -265,20 +294,83 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
   );
 }
 
-/** A row in a panel: a title, a note under it, and a check when it is the current one. */
-/** A row to pick. Picked, its tick takes the icon's place, unless `keepIcon`: then the icon stays and the tick goes at the end. */
-export function Row({ title, note, on, icon, end, disabled, keepIcon, onPick }: { title: ReactNode; note?: ReactNode; on?: boolean; icon?: ReactNode; end?: ReactNode; disabled?: boolean; keepIcon?: boolean; onPick?: () => void }) {
+/**
+  The app's one menu row, in every menu and picker of Code, Liner Design and Liner Security: one line 30px
+  high, a 16px icon in the second ink (never the accent), the title, and at the far right its key or
+  value (`end`, in the third ink) or, for a row that opens a list in the menu's place (`opens`, the list's
+  name, which the row carries as data-opens so focus can come back to it), a ›.
+  A `note` is the row's tooltip, not a second line: only a row that can't be read without it shows it
+  under the title (`keepNote`: a confirm about to act, a row that can't be pressed and says why).
+  A note that says WHICH thing the row is (`which`: a project's path or remote beside another of the same name, a skill's
+  path, a version's frame count) stays in sight on the title's line, at its end in the third ink, cut with an ellipsis
+  (from the left for a path, `whichPath`, so its end shows) and whole in its tooltip. A note that isn't words (code, two
+  lines) can't be a tooltip, so without `keepNote` it shows there too rather than being dropped.
+  `rove`: one of the rows the arrow keys walk in a place that walks them (the model picker's pinned rows, Models.tsx rove).
+  Picked, its tick takes the icon's place, unless `keepIcon`: then the icon stays and the tick goes at the end.
+  `danger`: the confirm's look, a row about to do what can't be undone (ConfirmRow). `forGood`: a row
+  that deletes for good is red from the start; one that can be undone (Archive) never is.
+*/
+export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, end, opens, disabled, keepIcon, danger, forGood, onPick }: { title: ReactNode; note?: ReactNode; keepNote?: boolean; which?: string; whichPath?: boolean; rove?: boolean; on?: boolean; icon?: ReactNode; end?: ReactNode; opens?: string; disabled?: boolean; keepIcon?: boolean; danger?: boolean; forGood?: boolean; onPick?: () => void }) {
   const tickEnd = keepIcon && on;
   const inMenu = useContext(InMenu);
+  const shown = keepNote && note;
+  const words = typeof note === "string" || typeof note === "number";
+  const tip = !shown && words ? String(note) : undefined;
+  const loose = !shown && !words && note !== undefined && note !== null && note !== false ? note : undefined;
+  const aside = which ? (
+    <span className="lc-row-which" data-path={whichPath || undefined} title={which}>
+      {whichPath ? <bdi>{which}</bdi> : which}
+    </span>
+  ) : loose !== undefined ? (
+    <span className="lc-row-which">{loose}</span>
+  ) : undefined;
   return (
-    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} data-on={on || undefined} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
-      <span className="lc-row-tick">{on && !keepIcon ? <I.check size={14} /> : icon}</span>
+    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} aria-haspopup={opens ? "menu" : undefined} data-opens={opens} data-rove={rove || undefined} title={tip} data-on={on || undefined} data-danger={danger || undefined} data-for-good={forGood || undefined} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
+      <span className="lc-row-tick">{on && !keepIcon ? <I.check size={16} /> : icon}</span>
       <span className="lc-row-t">
-        <b>{title}</b>
-        {note && <small>{note}</small>}
+        {aside ? (
+          <span className="lc-row-line">
+            <b>{title}</b>
+            {aside}
+          </span>
+        ) : (
+          <b>{title}</b>
+        )}
+        {shown && <small>{note}</small>}
       </span>
-      {(end || tickEnd) && <span className="lc-row-end">{tickEnd ? <I.check size={14} /> : end}</span>}
+      {(end || tickEnd || opens) && (
+        <span className="lc-row-end">
+          {tickEnd ? <I.check size={16} /> : end}
+          {opens && <I.chevR size={14} />}
+        </span>
+      )}
     </button>
+  );
+}
+/**
+  A row that asks before it acts: the first press turns it into its confirm (`sure`, in the danger look) and only a later
+  press acts. The ask lives in the row, so it goes with the menu: shut, or another row's menu opened, it asks from the
+  start. A press that comes too soon after the ask (confirm.ts) is the second click of a double-click and does nothing.
+  The confirm's `sureNote` shows under it, since it says what the press will do; the first state's `note` is its tooltip.
+*/
+export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, onConfirm }: { title: ReactNode; sure: ReactNode; note?: ReactNode; sureNote?: ReactNode; icon?: ReactNode; forGood?: boolean; onConfirm: () => void }) {
+  const [askedAt, setAskedAt] = useState<number | null>(null);
+  const asked = askedAt !== null;
+  return (
+    <Row
+      title={asked ? sure : title}
+      note={asked ? sureNote : note}
+      keepNote={asked}
+      icon={icon}
+      danger={asked}
+      forGood={forGood}
+      onPick={() => {
+        const now = performance.now();
+        const step = confirmPress(askedAt, now);
+        if (step === "ask") setAskedAt(now);
+        else if (step === "do") onConfirm();
+      }}
+    />
   );
 }
 export const PanelHead = ({ children, end }: { children: ReactNode; end?: ReactNode }) => (
@@ -307,9 +399,38 @@ export const ModelTag = ({ kind, label, size = 12 }: { kind: MarkKind; label: st
   </span>
 );
 
-export function Badge({ tone = "neutral", children, dot = true }: { tone?: "ok" | "warn" | "danger" | "neutral" | "accent"; children: ReactNode; dot?: boolean }) {
+/**
+  Show the sidebar, in a page's top row while the sidebar is hidden: one part for every page in every face, a header's
+  30px button with the sidebar's 16px icon, its key in its tooltip (your binding, keymap.ts).
+*/
+export function ShowSidebar({ onShow }: { onShow: () => void }) {
+  const key = os.keys(shortcutOf("sidebar") ?? []);
   return (
-    <span className="lc-badge" data-tone={tone} data-dot={dot || undefined}>
+    <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={key ? `Show the sidebar (${key})` : "Show the sidebar"} onClick={onShow}>
+      <I.sidebar size={16} />
+    </button>
+  );
+}
+
+/**
+  "Look again": asks again for what a list or a page shows (your tools, add-ons, limits, releases,
+  what agents remember), one control everywhere: a quiet small button with its refresh mark and the
+  words, "Looking" while it asks. Busy is the words, not a state mark: nothing runs that you'd watch.
+*/
+export function LookAgain({ looking = false, onLook, title }: { looking?: boolean; onLook: () => void; title?: string }) {
+  return (
+    <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={looking} title={title} onClick={onLook}>
+      <I.refresh size={14} />
+      {looking ? "Looking" : "Look again"}
+    </button>
+  );
+}
+
+/** A word on a tinted pill. A fact is the word alone; `mark` puts the state mark before it where the word says how a thing that runs stands (a session, a check, a pull request), so no Badge has a dot of its own. */
+export function Badge({ tone = "neutral", children, mark }: { tone?: "ok" | "warn" | "danger" | "neutral" | "accent"; children: ReactNode; mark?: MarkState }) {
+  return (
+    <span className="lc-badge" data-tone={tone}>
+      {mark && <StateMark state={mark} size={12} />}
       {children}
     </span>
   );
@@ -349,29 +470,6 @@ export function SendButton({ ready, stop, label, title, disabled, submit, classN
       <I.stop size={Math.round((size * 11) / 16)} className="lc-send-sq" />
     </button>
   );
-}
-
-/**
-  How a session stands: the spinner while it works (in the tint of whose model it runs on, when `brand`
-  says), amber when it needs you, an alert when it stopped on a problem, a ring before it starts,
-  a quiet check when done. Each is an image to a screen reader, so its label is read out.
-*/
-export function StatusMark({ t, bucket, brand }: { t: Thread; bucket: string; brand?: MarkKind }) {
-  if (t.status === "running") return <span className="lc-mk" role="img" data-s="run" data-brand={brand} aria-label="Working"><Spinner size={14} /></span>;
-  if (t.status === "error")
-    return (
-      <span className="lc-mk" role="img" data-s="error" aria-label="Ran into a problem">
-        <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(14, 16, 1.6)} strokeLinecap="round" aria-hidden>
-          <circle cx="8" cy="8" r="5.75" />
-          <path d="M8 5.1v3.4M8 10.9v.01" />
-        </svg>
-      </span>
-    );
-  if (bucket === "needs" && t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
-  if (t.status === "limited") return <span className="lc-mk" role="img" data-s="needs" aria-label="Limited"><I.clock size={14} /></span>;
-  if (bucket === "needs") return <span className="lc-mk" role="img" data-s="needs" aria-label="Needs you"><i /></span>;
-  if (t.turns === 0) return <span className="lc-mk" role="img" data-s="new" aria-label="Not started"><i /></span>;
-  return <span className="lc-mk" role="img" data-s="done" aria-label="Done"><I.check size={14} /></span>;
 }
 
 /**
@@ -491,11 +589,15 @@ export function Num({ value, as = "count" }: { value: number; as?: "count" | "co
   Liner's Switch with a name for screen readers, when its words sit beside it (a settings row's
   title) rather than in its own label. The wrapper takes no room, so the row lays out as before.
 */
-export function NamedSwitch({ name, ...props }: SwitchProps & { name: string }) {
+export function NamedSwitch({ name, rove, ...props }: SwitchProps & { name: string; rove?: boolean }) {
   const wrap = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    wrap.current?.querySelector('[role="switch"]')?.setAttribute("aria-label", name);
-  }, [name]);
+    const sw = wrap.current?.querySelector('[role="switch"]');
+    sw?.setAttribute("aria-label", name);
+    // In a list the arrows walk (rove, data-rove), as the Effort part's extras are, the switch is one of its stops.
+    if (rove) sw?.setAttribute("data-rove", "");
+    else sw?.removeAttribute("data-rove");
+  }, [name, rove]);
   return (
     <span ref={wrap} style={{ display: "contents" }}>
       <Switch {...props} />

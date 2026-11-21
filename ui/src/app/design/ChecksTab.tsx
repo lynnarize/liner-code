@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import type { DesignFrame } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
-import { I } from "../icons";
+import { I, StateMark } from "../icons";
 import { plural } from "../model";
 import { srcDocOf } from "./Frame";
 import { fixAll, fixerName, fixOne, KIND_NAME, notAScreen, show, toFix, useChecks, watchChecks, type Finding } from "./checks";
@@ -110,7 +110,14 @@ export function ChecksTab() {
         <I.shield size={16} />
         <b>{running && !checked ? "Checking the screens" : `${plural(checked, "screen")} checked`}</b>
         <span className="lc-grow" />
-        {running ? <span className="ld-ck-q l-shimmer">Checking</span> : ms !== undefined && <span className="ld-ck-q">{(ms / 1000).toFixed(1)} s</span>}
+        {running ? (
+          <span className="ld-ck-q">
+            <StateMark state="working" size={12} />
+            Checking
+          </span>
+        ) : (
+          ms !== undefined && <span className="ld-ck-q">{(ms / 1000).toFixed(1)} s</span>
+        )}
       </div>
       <p className="ld-ck-lede">Run on this Mac, on the frames as real pages. No agent and no tokens, so they run again each time a frame changes.</p>
       <div className="ld-ck-seg">
@@ -153,7 +160,7 @@ export function ChecksTab() {
         <div className="ld-ck-foot">
           <span className="ld-ck-q">A fix goes to {fixerName()}</span>
           <span className="lc-grow" />
-          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy[0]} onClick={() => (busy[1](true), void fixAll().finally(() => busy[1](false)))} title={`${all.length} things to fix in ${plural(frames, "frame")}`}>
+          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy[0]} onClick={() => (busy[1](true), void fixAll().finally(() => busy[1](false)))} title={`${all.length} to fix in ${plural(frames, "frame")}`}>
             Fix all {all.length}
           </button>
         </div>
@@ -287,7 +294,8 @@ export function ChecksRow() {
         {all.length}
       </span>
       <span className="lc-trow-t">
-        {plural(all.length, "thing")} to fix in {plural(frames, "frame")}
+        {/* "N to fix", as each frame's chip and the tab say it. */}
+        {all.length} to fix in {plural(frames, "frame")}
       </span>
       <span className="lc-grow" />
       <button type="button" className="lc-trow-lk l-focus" disabled={busy} onClick={() => (setBusy(true), void fixAll().finally(() => setBusy(false)))}>

@@ -1,28 +1,30 @@
 /*
   The Wall: every session at once, as tiles. A tile is a session that works, waits on you, or has
-  finished and isn't settled yet: its title, where it runs and on what, how it stands, and the last
-  steps of its turn drawn as the session's own trail draws them. What one press settles is done on
+  finished and isn't settled yet. Its head is the sidebar's row (SideList.tsx): the state mark, the
+  title and the time since it last did something; under it the project, what it does or wants in
+  the row's words, and the row's facts (its own worktree, its model, its pull request's number);
+  then, while it works, the session's own live line (its mark, steps, newest step and clock). What one press settles is done on
   the tile (allow it or say no, pick an answer, try again, settle it); anything longer opens the
   session. Tiles draw text only, no live pictures, so a wall of them costs about what one session does.
-  The order is the sidebar's buckets: what needs you, then what works, then what's done, each
+  The order and the filter are By status's (statusKind): what needs you, then what works, then what's finished, each
   newest first and steady while it works; while the pointer is over the tiles they don't move at
   all, so a tile that changes doesn't slide out from under a click.
   While it's up: 1 to 9 open the tile with that number, the arrows pick a tile, Enter opens the one
   picked, typing writes to it, and Esc goes back to where you were. The pick is a session, not a
   place: it stays with its tile as the tiles reorder, so words you're writing never change session.
 */
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as PressEvent } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as PressEvent } from "react";
 import { PR_TEST_TOOL, type FileChange, type Item, type Thread } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
-import { addToDraft } from "./Composer";
+import { addToDraft, SendBox } from "./Composer";
 import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
-import { I } from "./icons";
-import { agentOf, ago, bucketOf, clock, duration, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
-import { reviewHeld, wallKind, type WallKind } from "./session-state";
-import { isStep, liveOf, ROW_IN, StepIcon, Tick, ticked, trailSteps, type TrailStep } from "./Timeline";
+import { I, MARK_WORD } from "./icons";
+import { agentOf, ago, clock, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
+import { markLabelOf, markStateOf, prSaid, seenAsk, statusKind, wallKind, type WallKind } from "./session-state";
+import { isStep, LiveLine, trailSteps } from "./Timeline";
 import { pairOf } from "./Crew";
-import { Kbd, Lines, SendButton, StatusMark } from "./ui";
+import { rowWords, SideFacts, SideMark } from "./SideList";
+import { Lines, ShowSidebar } from "./ui";
 import * as os from "./os";
 import { wordRead, wordWrite } from "./kept";
 import "./wall.css";
@@ -41,16 +43,17 @@ type Filter = "all" | WallKind;
 export { wallKind };
 const RANK: Record<WallKind, number> = { needs: 0, working: 1, done: 2 };
 
-/** The sessions on the Wall, in its order. Within a kind, newest first, unread answers ahead of read ones. */
+/** The sessions on the Wall, in its order: By status's three (statusKind), each newest first, unread answers ahead of read ones. */
 export function wallOrder(threads: Thread[], now = Date.now()) {
-  return threads.filter((t) => onTheWall(t, now)).sort((a, b) => RANK[wallKind(a)] - RANK[wallKind(b)] || Number(Boolean(b.unread)) - Number(Boolean(a.unread)) || b.createdAt - a.createdAt);
+  return threads.filter((t) => onTheWall(t, now)).sort((a, b) => RANK[statusKind(a, now)] - RANK[statusKind(b, now)] || Number(Boolean(b.unread)) - Number(Boolean(a.unread)) || b.createdAt - a.createdAt);
 }
+
+/** The Wall's filter and its counts: By status's own test (statusKind), so a finished session you haven't read is under Needs you here as in the sidebar. */
+export const wallFilter = (all: Thread[], filter: Filter, now = Date.now()) => (filter === "all" ? all : all.filter((t) => statusKind(t, now) === filter));
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** What Retry says to a session that stopped with a problem. */
 const RETRY = "Try again from where you stopped.";
-/** How many of the turn's steps a tile shows: the latest, the one at work last, as the session's own trail does. */
-const STEPS = 3;
 /** A tile's least height, and the most it grows to when the window has room to spare. */
 const ROW_MIN = 264;
 const ROW_MAX = 420;
@@ -196,10 +199,10 @@ const Words = ({ s }: { s: string }) => (
 
 /** A session's last turn as a tile shows it: its steps, what it waits on, and how it ended. */
 type Info = {
-  steps: TrailStep[];
-  /** While it works, the session's status line: its one word and its clock (Timeline's liveOf). */
-  live?: { word: string; waiting: boolean; clock: () => string };
+  /** How many steps its last turn took. */
   count: number;
+  /** Its last turn is at work, so the tile shows its live line (LiveLine), which counts the steps itself. */
+  live: boolean;
   ask?: Ask;
   question?: Asked;
   plan?: Plan;
@@ -249,11 +252,9 @@ function infoOf(t: Thread, items: Item[], brief: boolean): Info {
   const text = last.findLast((x): x is Extract<Item, { kind: "text" }> => x.kind === "text" && Boolean(x.text.trim()));
   const files = cp?.files ?? [];
   const waiting = [ask, question, plan].filter((x) => x !== undefined).map((x) => x.at);
-  const running = t.status === "running" && marks.length > 0;
   return {
-    steps: steps.slice(-STEPS),
-    live: running ? liveOf(marks, last) : undefined,
     count: steps.length,
+    live: marks.some((m) => m.status === "running"),
     ask,
     question,
     plan,
@@ -297,11 +298,11 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     held.current = on ? all.map((t) => t.id) : null;
     setHolding(on);
   };
-  const shown = useMemo(() => (filter === "all" ? all : all.filter((t) => wallKind(t) === filter)), [all, filter]);
+  const shown = useMemo(() => wallFilter(all, filter, now), [all, filter, now]);
   const ids = shown.map((t) => t.id);
   const key = ids.join(",");
   useEffect(() => void (wallShown.ids = key ? key.split(",") : []), [key]);
-  const count = (k: WallKind) => all.filter((t) => wallKind(t) === k).length;
+  const count = (k: WallKind) => wallFilter(all, k, now).length;
   const working = count("working");
 
   // Each tile reads its session's timeline: fetched once, then kept up by the event stream as an open session's is.
@@ -372,8 +373,8 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
   const rowH = fit >= ROW_MIN ? Math.min(fit, ROW_MAX) : ROW_MIN;
 
   // Each picked tile's field, for typing into it from anywhere on the Wall.
-  const fields = useRef(new Map<string, HTMLInputElement>());
-  const field = useCallback((id: string, el: HTMLInputElement | null) => void (el ? fields.current.set(id, el) : fields.current.delete(id)), []);
+  const fields = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>());
+  const field = useCallback((id: string, el: HTMLInputElement | HTMLTextAreaElement | null) => void (el ? fields.current.set(id, el) : fields.current.delete(id)), []);
 
   const live = useRef({ ids, pick, cols: shape.cols, open, onBack });
   live.current = { ids, pick, cols: shape.cols, open, onBack };
@@ -432,39 +433,31 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     <div className="lc-wall">
       <header className="lc-top" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
-        <h1 className="lc-title">The Wall</h1>
-        <span className="lc-wall-count lc-quiet l-num">
-          {plural(all.length, "session")}
-          {working > 0 && ` · ${working} working`}
-        </span>
+        {/* How many there are, and how many work, is the filter's to say: no count beside it to say it twice. Its keys are in its tooltip, and Esc is the way back, as on every page with no Back of its own. */}
+        <h1 className="lc-title" title="1 to 9 opens a tile. Esc goes back to where you were">
+          The Wall
+        </h1>
         {!empty && (
-          <Segmented
-            size="sm"
-            aria-label="Show"
-            value={filter}
-            onValueChange={setFilter}
-            options={[
-              { value: "all", label: "All", count: all.length },
-              { value: "needs", label: "Needs you", count: count("needs") },
-              { value: "working", label: "Working", count: working },
-              { value: "done", label: "Done", count: count("done") },
-            ]}
-          />
+          // Tabs with their counts, drawn as Liner Security's are (security.css .ls-sg): 28 high, the picked one on a wash, its count grey after its name.
+          <div className="lc-wall-tabs" role="tablist" aria-label="Show">
+            {(
+              [
+                { value: "all", label: "All", count: all.length },
+                { value: "needs", label: "Needs you", count: count("needs") },
+                { value: "working", label: "Working", count: working },
+                { value: "done", label: "Finished", count: count("done") },
+              ] as const
+            ).map((o) => (
+              <button key={o.value} type="button" role="tab" aria-selected={filter === o.value} className="lc-wall-tab l-focus" onClick={() => setFilter(o.value)}>
+                {o.label}
+                <span className="l-num">{o.count}</span>
+              </button>
+            ))}
+          </div>
         )}
         <span className="lc-grow" data-drag />
-        {!empty && (
-          <span className="lc-wall-hint">
-            <Kbd>1</Kbd> to <Kbd>9</Kbd> opens one
-          </span>
-        )}
-        <span className="lc-sbar-sep" aria-hidden />
-        <button type="button" className="lc-btn lc-wall-back" data-kind="ghost" data-size="sm" title="Back to where you were" onClick={onBack}>
-          Back <Kbd>Esc</Kbd>
-        </button>
       </header>
       <div ref={grid} className="lc-wall-grid" style={{ "--lc-wall-row": `${rowH}px` } as CSSProperties} onPointerEnter={(e) => e.pointerType === "mouse" && hold(true)} onPointerLeave={() => hold(false)}>
         {empty ? (
@@ -492,7 +485,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
   );
 }
 
-type TileProps = { t: Thread; n: number; picked: boolean; now: number; project: string; roomy: boolean; onPick: (id: string) => void; onOpen: (id: string) => void; field: (id: string, el: HTMLInputElement | null) => void };
+type TileProps = { t: Thread; n: number; picked: boolean; now: number; project: string; roomy: boolean; onPick: (id: string) => void; onOpen: (id: string) => void; field: (id: string, el: HTMLInputElement | HTMLTextAreaElement | null) => void };
 
 const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onOpen, field }: TileProps) {
   const items = useItems(t.id);
@@ -503,6 +496,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   const info = useMemo(() => infoOf(t, items, kind === "done"), [t, items, kind]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraftState] = useState(() => drafts.get(t.id) ?? "");
+  // Its reply field, handed to the Wall while it shows, so typing anywhere on the Wall lands in the picked tile's field.
+  const box = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const setDraft = (v: string) => {
     setDraftState(v);
     if (v) drafts.set(t.id, v);
@@ -517,24 +512,18 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
 
   const ref = info.model || threadModel(t, agents, providers);
   const model = ref ? modelLabel(ref, providers) : "";
-  // A pair as one ("Opus 5.5 + Sol"); a model on its own by its tool and name; your agent by its name and model.
+  // A pair as one ("Opus 5.5 + Sol"); a model on its own by its tool and name; your agent by its name and model. Said by the model's mark among the facts.
   const pair = pairOf(t, agents, providers);
-  const who = pair ? [pair.name] : isModelAgent(info.agent) ? [ref && providerLabel(ref, providers), model] : [agentOf(info.agent, agents, providers).name, model];
-  // A named agent on a model of the same name (Demo on Demo) says it once.
-  const sub = [project, ...who].filter((x, i, all) => x && x !== all[i - 1]).join(" · ");
-  const when = ago(info.since, now) === "now" ? "just now" : ago(info.since, now);
-  const state =
-    t.status === "running"
-      ? { word: `Working · ${when}` }
-      : t.status === "waiting" && !reviewHeld(t)
-        ? { word: `Needs you · ${when}`, tone: "warn" }
-        : t.status === "error"
-          ? { word: `Failed · ${when}`, tone: "danger" }
-          : t.status === "limited"
-            ? { word: t.limit?.until && t.limit.until > now ? `Limited until ${clock(t.limit.until, now)}` : "Limited", tone: "warn" }
-            : kind === "working"
-              ? { word: `${plural(t.agentsAtWork ?? 0, "agent")} at work · ${when}` }
-              : { word: `Done · ${when}`, tone: t.unread ? "ok" : undefined };
+  const who = (pair ? [pair.name] : isModelAgent(info.agent) ? [ref && providerLabel(ref, providers), model] : [agentOf(info.agent, agents, providers).name, model])
+    // A named agent on a model of the same name (Demo on Demo) says it once.
+    .filter((x, i, all) => x && x !== all[i - 1])
+    .join(" · ");
+  // The head and the line under it are a sidebar row's (SideList.tsx): the mark, the title and the time since it last did something; then
+  // the project, what it does or wants in the row's words (a question in its own words, amber until you open it), and the row's facts.
+  const works = kind === "working";
+  const mark = markStateOf(t, { busy: works });
+  const said = rowWords(t, { busy: works, agents: t.status === "running" ? 0 : t.agentsAtWork, seenQ: seenAsk(t), now });
+  const words = said.asks ? said.text : said.text === "Finished" ? project : [project, said.text].filter(Boolean).join(" · ");
 
   // What it waits on, said on the tile with what one press can do about it.
   const ask = t.status === "waiting" ? info.ask : undefined;
@@ -561,8 +550,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
 
   // Writing to it: an answer to what it asks (a no with your reason, your own words for its question), else a message.
   const placeholder = askHere ? "Or tell it what to do instead" : q ? "Or answer in your own words" : t.status === "running" ? "Steer it, or ask something" : "Write to it";
-  const send = (e: FormEvent) => {
-    e.preventDefault();
+  const send = () => {
     const text = draft.trim();
     if (!text || busy) return;
     const go = askHere
@@ -575,6 +563,11 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
 
   const live = t.status === "running";
   const write = picked && (t.status === "running" || t.status === "waiting" || kind === "working");
+  useEffect(() => {
+    if (!write) return;
+    field(t.id, box.current);
+    return () => field(t.id, null);
+  }, [write]);
   // Anywhere on the tile does what its head does, except on its own controls and when you were selecting its words.
   const own = (e: PressEvent) => e.target instanceof Element && e.target.closest("button, a, input, textarea, select, label, [role='button']") !== null;
   const tileClick = (e: PressEvent) => {
@@ -582,7 +575,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
     picked ? onOpen(t.id) : onPick(t.id);
   };
   return (
-    <article className="lc-wt" data-tile={t.id} data-kind={kind} data-picked={picked || undefined} aria-label={`${t.title}, ${state.word}`} onClick={tileClick} onDoubleClick={(e) => !own(e) && onOpen(t.id)}>
+    <article className="lc-wt" data-tile={t.id} data-kind={kind} data-picked={picked || undefined} aria-label={`${t.title}, ${seenAsk(t) ? "waits for your answer" : (markLabelOf(t, mark) ?? MARK_WORD[mark]).toLowerCase()}`} onClick={tileClick} onDoubleClick={(e) => !own(e) && onOpen(t.id)}>
       <button
         type="button"
         className="lc-wt-head l-focus"
@@ -591,24 +584,34 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
         onClick={() => (picked ? onOpen(t.id) : onPick(t.id))}
         onDoubleClick={() => onOpen(t.id)}
       >
+        {/* The sidebar's mark, in the mark's place: an answer you haven't read is fresh here as there, under Finished. */}
+        <span className="lc-wt-mark">
+          <SideMark state={mark} brand={ref ? markOf(ref) : undefined} label={seenAsk(t) ? "Waits for your answer" : markLabelOf(t, mark)} />
+        </span>
+        <span className="lc-wt-title">{t.title}</span>
+        <span className="lc-wt-ago">{ago(t.updatedAt, now)}</span>
+        {/* The key that opens it, after the time: the Wall's own, which no sidebar row has. */}
         <span className="lc-wt-n l-num" aria-hidden>
           {n <= 9 ? n : "·"}
         </span>
-        <span className="lc-wt-title">{t.title}</span>
-        <span className="lc-wt-state" data-tone={state.tone}>
-          {/* An answer you haven't read is Done here, with the check, not the sidebar's Needs you dot. */}
-          {kind === "done" ? <I.check size={14} className="lc-wt-check" /> : <StatusMark t={t} bucket={bucketOf({ ...t, pinned: false }, now)} brand={ref ? markOf(ref) : undefined} />}
-          <span className="l-num">{state.word}</span>
-        </span>
       </button>
-      <div className="lc-wt-sub">{sub}</div>
+      <div className="lc-wt-sub">
+        <span className="lc-wt-said" data-tone={said.tone}>
+          {!said.asks && project && <I.folder size={12} />}
+          <span>{words}</span>
+        </span>
+        <span className="lc-sl-facts">
+          <SideFacts branch={t.worktree?.branch} model={ref ? markOf(ref) : undefined} modelName={who} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />
+        </span>
+      </div>
 
       <div className="lc-wt-body">
         {!loaded ? (
           <span className="lc-wt-wait l-shimmer">Reading its timeline</span>
         ) : (
           <>
-            {kind !== "done" && info.steps.length > 0 && <Trail info={info} live={live} />}
+            {/* The session's own live line (Timeline.tsx LiveLine): the same mark, step count, newest step and clock, and "Waiting for you" where its clock stopped. */}
+            {kind !== "done" && <LiveLine threadId={t.id} items={items} className="lc-wt-ll" />}
             {t.status === "error" && <p className="lc-wt-error">{firstLine(info.error ?? "") || "It ran into a problem and stopped."}</p>}
             {t.status === "limited" && <p className="lc-wt-error" data-tone="warn">{firstLine(t.limit?.message ?? info.limit?.message ?? "") || "It reached its usage limit."}</p>}
             {ask && (
@@ -632,7 +635,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                     </>
                   ) : (
                     <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
-                      Open to decide
+                      Open it
                     </button>
                   )}
                 </div>
@@ -657,7 +660,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                   !q && (
                     <div className="lc-wt-acts">
                       <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
-                        Answer in the session
+                        Open it
                       </button>
                     </div>
                   )
@@ -673,7 +676,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                 <b className="lc-wt-what">{plan.title}</b>
                 <div className="lc-wt-acts">
                   <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
-                    Read the plan
+                    Open it
                   </button>
                 </div>
               </div>
@@ -682,7 +685,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
               <div className="lc-wt-card">
                 <span className="lc-wt-lead">
                   <I.ask size={14} />
-                  Waits for you
+                  Needs you
                 </span>
                 <div className="lc-wt-acts">
                   <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
@@ -705,13 +708,19 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                 <span>{plural(info.files, "file")}</span>
               </>
             )}
+            {/* The Reviewer's verdict in the words its switch in the session's bar and a turn's last line use. */}
             {t.verdict?.state === "verified" && (
               <span className="lc-wt-vf">
-                <I.verified size={14} />
-                Verified
+                <I.shield size={14} />
+                Reviewer passed
               </span>
             )}
-            {t.verdict?.state === "blocked" && <span className="lc-wt-vf" data-tone="danger">The Reviewer has notes</span>}
+            {t.verdict?.state === "blocked" && (
+              <span className="lc-wt-vf" data-tone="danger">
+                <I.shield size={14} />
+                Reviewer blocked it
+              </span>
+            )}
             <span className="lc-grow" />
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={busy} title="Out of the way, under Settled, until it's busy again" onClick={settle}>
               <I.settle size={14} />
@@ -720,7 +729,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
           </>
         ) : t.status === "error" ? (
           <>
-            <span className="lc-wt-note">Stopped with a problem</span>
+            <span className="lc-wt-note">Ran into a problem</span>
             <span className="lc-grow" />
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={busy} title={`Sends “${RETRY}”`} onClick={retry}>
               <I.refresh size={14} />
@@ -738,80 +747,25 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
             )}
           </>
         ) : write ? (
-          <form className="lc-wt-field" onSubmit={send}>
-            <input ref={(el) => field(t.id, el)} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder} aria-label={`Write to ${t.title}`} disabled={busy} />
-            <SendButton ready={Boolean(draft.trim())} stop={live ? { onStop: () => act(() => rpc("thread.stop", { id: t.id })) } : undefined} label="Send" title="Send (Enter)" disabled={busy || !draft.trim()} submit size={14} className="lc-wt-send" />
-          </form>
+          // The reply is the box every place to write to an agent has (Composer.tsx SendBox): the field with the round Send in it, Stop while it works.
+          <SendBox
+            className="lc-wt-field"
+            field={box}
+            value={draft}
+            onChange={setDraft}
+            onSend={send}
+            placeholder={placeholder}
+            label={`Write to ${t.title}`}
+            disabled={busy}
+            stop={live ? { onStop: () => act(() => rpc("thread.stop", { id: t.id })) } : undefined}
+            // Esc lets go of the field first; a second goes back (the Wall's keys).
+            onEscape={() => box.current?.blur()}
+          />
         ) : (
-          <span className="lc-wt-note l-num">{t.status === "running" ? `${plural(info.count, "step")} this turn` : kind === "working" ? `${plural(t.agentsAtWork ?? 0, "agent")} still at work in the background` : `Waiting since ${clock(info.since, now)}`}</span>
+          // While the live line shows, it says the step count: the foot doesn't say it again.
+          <span className="lc-wt-note l-num">{t.status === "running" ? (info.live ? "" : `${plural(info.count, "step")} this turn`) : kind === "working" ? `${plural(t.agentsAtWork ?? 0, "agent")} still at work in the background` : `Waiting since ${clock(info.since, now)}`}</span>
         )}
       </div>
     </article>
   );
 });
-
-/**
-  The turn's last steps as the session's work log draws them (Timeline.tsx, after T3 Code's): a line
-  each with its mark, the one at work in the passing light, and the status line in grey under them.
-  No presses here: the tile opens the session.
-*/
-function Trail({ info, live }: { info: Info; live: boolean }) {
-  // When each step came, so one that arrives while you watch fades in; those there when the tile first drew don't.
-  const came = useRef(new Map<string, number>());
-  const drawn = useRef(false);
-  useEffect(() => {
-    drawn.current = true;
-  }, []);
-  const now = Date.now();
-  for (const s of info.steps) if (!came.current.has(s.key)) came.current.set(s.key, drawn.current && live ? now : 0);
-  const status = live ? info.live : undefined;
-  return (
-    <div className="lc-trail lc-wt-trail" data-live={live || undefined}>
-      <ol className="lc-wk">
-        {info.steps.map((s) => (
-          <Step key={s.key} s={s} fresh={live && now - (came.current.get(s.key) ?? 0) < ROW_IN} />
-        ))}
-      </ol>
-      {status && (
-        <div className="lc-status" data-wait={status.waiting || undefined}>
-          <span className="lc-status-t l-num" aria-hidden>
-            {status.waiting ? <b>Waiting for you</b> : status.word === "Thinking" ? "Working" : status.word} for <Tick text={status.clock} />
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A step as the session's work log draws it, without the press that opens it there. */
-function Step({ s, fresh }: { s: TrailStep; fresh: boolean }) {
-  const moving = s.state === "running";
-  return (
-    <li className="lc-wk-row" data-state={s.state} data-new={fresh || undefined}>
-      <div className="lc-wk-ln">
-        <span className="lc-wk-ic" aria-hidden>
-          <StepIcon s={s} />
-        </span>
-        {moving ? (
-          <span className="lc-live-t l-shimmer">
-            {s.verb}
-            {s.target && (
-              <>
-                {" "}
-                {s.plainTarget ? s.target : <code>{s.target}</code>}
-              </>
-            )}
-          </span>
-        ) : (
-          <>
-            <b className="lc-wk-verb">{s.verb}</b>
-            {s.target && (s.plainTarget ? <span className="lc-wk-target" data-plain>{s.target}</span> : <code className="lc-wk-target">{s.target}</code>)}
-            {s.result && <span className="lc-wk-r">{s.result}</span>}
-          </>
-        )}
-        <span className="lc-grow" />
-        {moving ? <Tick className="lc-wk-time l-num" text={() => ((Date.now() - s.at) / 1000 >= 2 ? ticked((Date.now() - s.at) / 1000) : "")} /> : <span className="lc-wk-time l-num">{s.seconds >= 1 ? duration(s.seconds) : ""}</span>}
-      </div>
-    </li>
-  );
-}

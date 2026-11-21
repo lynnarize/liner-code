@@ -9,7 +9,7 @@ import type { DesignFile, DesignSize, Project, Thread } from "@contracts";
 import { startOf } from "@contracts";
 import type { RunSettings } from "../Composer";
 import { getState, rpc } from "../engine";
-import { pairEffortFor } from "../model";
+import { pairEffortFor, startEffort } from "../model";
 import { currentTab, getTabs, openTab, patchTab, showTab, tabKey, type DesignTab } from "../face";
 import { blankHtml } from "./store";
 
@@ -23,12 +23,15 @@ export function sessionOf(tab: DesignTab, threads: Thread[]): Thread | undefined
 export function runFor(project?: Project): RunSettings {
   const { settings, providers } = getState();
   const access = settings.defaultAccess;
-  if (project?.agent === "demo") return { agent: "demo", sidekick: "demo:demo", effort: "low", access };
-  if (project?.agent) return { agent: project.agent, effort: "medium", access };
+  if (project?.agent === "demo") return { agent: "demo", sidekick: "demo:demo", effort: startEffort("demo:demo", providers), access };
+  // One of your agents runs at the effort it was made with.
+  if (project?.agent) return { agent: project.agent, effort: getState().agents.find((a) => a.id === project.agent)?.effort ?? startEffort(project.agent, providers), access };
   const start = startOf(settings, providers);
-  if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, settings.pairEffort) : "medium", access };
+  // Alone, a model starts at its own default level as its tool reports it, else at the tool's own: never a word of the app's.
+  if (start) return { ...start, effort: start.sidekick ? pairEffortFor(start.agent, providers, settings.pairEffort) : startEffort(start.agent, providers), access };
   const first = providers.find((p) => p.available && p.adapter && p.id !== "demo");
-  return { agent: first ? `@${first.id}:${first.models[0]?.id ?? "default"}` : "demo", effort: "medium", access };
+  const ref = first ? `${first.id}:${first.models[0]?.id ?? "default"}` : undefined;
+  return { agent: ref ? `@${ref}` : "demo", effort: startEffort(ref ?? "demo:demo", providers), access };
 }
 
 const making = new Map<string, Promise<Thread>>();

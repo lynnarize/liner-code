@@ -2,16 +2,17 @@
   Liner Security: Projects (board G), Devin's Repositories page in Liner's shape. One bordered card per folder Liner Code
   knows, so a project's facts read as one thing, each named above its value: open findings as a thin bar, the last scan,
   the threat model, the free checks, and Scan (Start a scan for that folder). The open card holds two tiles: the areas
-  its SECURITY.md names with a square per open finding in each ("Read or edit" opens the file), and its scans with who
-  runs them. Tabs narrow the list (All, With open findings, Never scanned); Add a folder is the app's own folder picker,
-  added through security.project.add. Builder U1.
+  its SECURITY.md names with a square per open finding in each ("Open in your editor" opens the file), and its scans with who
+  runs them. Tabs narrow the list (All, With open findings, Never scanned); Add a project is the app's own folder picker,
+  added through security.project.add (the same words as the Code sidebar's). Start a scan is the sidebar's, and each
+  row's Scan, so the top row doesn't repeat it. Builder U1.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanRecord, SecurityFinding, SecurityProject } from "@contracts";
 import { SEVERITIES } from "@contracts";
 import { bridge } from "../bridge";
 import { useEngine } from "../engine";
-import { I, ModelMark } from "../icons";
+import { I, MARK_WORD, ModelMark, StateMark, type MarkState } from "../icons";
 import { modelLabel, plural, providerLabel, shortName, toolMarkOf } from "../model";
 import { useSec } from "./data";
 import { CountTabs, PageTop, SevBar } from "./parts";
@@ -57,21 +58,18 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
   return (
     <div className="ls-page">
       <PageTop title="Projects" sidebar={sidebar} onSidebar={onSidebar}>
-        {query !== null ? (
+        {/* Search is one toggle, pressed while its field shows, as on Findings and in a scan's Found panel. The field doesn't
+            close on blur: that ran before the toggle's click, which then opened an empty search again. */}
+        {query !== null && (
           <span className="lo-find">
-            <I.search size={14} />
-            <input ref={find} value={query} placeholder="Find a project" aria-label="Find a project" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery(null)} onBlur={() => !query && setQuery(null)} />
+            <input ref={find} value={query} placeholder="Search the projects" aria-label="Search the projects" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery(null)} />
           </span>
-        ) : (
-          <button type="button" className="lc-tb l-focus" aria-label="Search the projects" onClick={() => setQuery("")}>
-            <I.search size={16} />
-          </button>
         )}
-        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void add()}>
-          Add a folder
+        <button type="button" className="lc-tb l-focus" aria-pressed={query !== null} aria-label={query === null ? "Search the projects" : "Stop searching"} title={query === null ? "Search the projects" : "Stop searching"} onClick={() => setQuery(query === null ? "" : null)}>
+          <I.search size={16} />
         </button>
-        <button type="button" className="lc-btn lo-go l-focus" data-kind="ink" data-size="sm" onClick={() => goSecurity({ kind: "start" })}>
-          Start a scan
+        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void add()}>
+          Add a project
         </button>
       </PageTop>
       <div className="ls-scroll">
@@ -101,7 +99,7 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
               <b>No folders yet</b>
               <span>Add a folder you work on, then scan it.</span>
               <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void add()}>
-                Add a folder
+                Add a project
               </button>
             </div>
           ) : data && !rows.length ? (
@@ -213,7 +211,7 @@ function Inside({ p }: { p: SecurityProject }) {
           Areas in the threat model
           {p.threatModel.exists && (
             <button type="button" className="lo-lk l-focus" onClick={readFile} title={`Open ${p.threatModel.file} in your editor`}>
-              Read or edit
+              Open in your editor
             </button>
           )}
         </div>
@@ -278,14 +276,19 @@ function AreaRow({ name, line, found, count }: { name: string; line?: string; fo
   );
 }
 
-/** One of its scans: what it read, when, and what came of it ("4 found", "1 found, dismissed"). Opens its session. */
+/** A scan's state mark, as the sidebar's scan rows draw it: working, needs you, a problem when it stopped or failed, else finished. */
+const scanMark = (s: ScanRecord): MarkState => (s.state === "running" ? "working" : s.state === "asking" ? "needs" : s.state === "stopped" || s.state === "failed" ? "problem" : "done");
+
+/** One of its scans: its state mark, what it read, when, and what came of it ("4 found", "1 found, dismissed"). Opens its session. */
 function ScanRow({ s, found }: { s: ScanRecord; found: SecurityFinding[] }) {
   const at = s.finishedAt ?? s.startedAt;
   const ago = when(at);
   const fate = found.length && found.length === s.counts.found ? (found.every((f) => f.state === "dismissed") ? ", dismissed" : found.every((f) => f.state === "fixed") ? ", fixed" : "") : "";
-  const res = s.state === "running" ? "Reading" : s.state === "asking" ? "Asking you" : s.state === "stopped" ? "Stopped" : s.state === "failed" ? "Didn't finish" : s.counts.found ? `${s.counts.found} found${fate}` : "Nothing found";
+  // Worded as the sidebar's rows word a scan: Working, Needs you, Stopped, Ran into a problem, else what it found.
+  const res = s.state === "running" ? MARK_WORD.working : s.state === "asking" ? MARK_WORD.needs : s.state === "stopped" ? "Stopped" : s.state === "failed" ? MARK_WORD.problem : s.counts.found ? `${s.counts.found} found${fate}` : "Nothing found";
   const body = (
     <>
+      <StateMark state={scanMark(s)} label={s.state === "stopped" ? "Stopped" : MARK_WORD[scanMark(s)]} />
       <span className="lo-grow lo-ell">{DEPTH_SHORT[s.depth]}</span>
       <span className="lo-q lo-when">{ago}</span>
       <span className="lo-res">{res}</span>

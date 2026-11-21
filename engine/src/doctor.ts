@@ -800,7 +800,8 @@ export class Doctor {
       limited: (m) => void (said.error ||= words(m)),
     };
     const started = Date.now();
-    const session = p.open({ cwd: dir, model, effort: "low", access: "read", soul: "", guard: true, ephemeral: true, env: this.deps.runtime.envFor(id) });
+    // No level: the tool's own default is one every model takes, where a fixed "low" fails a model that doesn't list it.
+    const session = p.open({ cwd: dir, model, effort: "", access: "read", soul: "", guard: true, ephemeral: true, env: this.deps.runtime.envFor(id) });
     try {
       await turnOf(session, prompt, sink);
     } catch (e) {

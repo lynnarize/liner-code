@@ -3,28 +3,24 @@
   over the surface that's up (dock.ts has the rules; DeepSeek Harness's ui-dockkit and
   ui-sidebar-right were the model). The strip is the panel's header, on the session header's line
   (one top row, as Devin Desktop draws it: docs/research/devin-desktop.md). A chip drags to another
-  place in the strip. The + is a menu of what isn't open; the strip ends with the full-canvas switch
-  and the button that hides the panel, where the session's header shows it when it's shut. The full
-  canvas on Changes is the full-width Review, under the same strip (its shrink button is the way back). (0.2.1 had a second pane; dock.ts's readDock folds a
+  place in the strip. The + is a menu of what isn't open; the right edge's lit icon hides the panel
+  and its menu has the full canvas (Session.tsx), so the strip carries neither. In the full
+  canvas Changes takes the whole width, under the same strip (the right edge is the way back). (0.2.1 had a second pane; dock.ts's readDock folds a
   layout it kept into the one.)
   Every surface you open is mounted once and kept while it's open, so moving its tab never
   reloads a page or restarts a shell.
-  Changes is the diff, kept by turn: the turn picker sits in the diff's strip, the file you
-  pressed in the thread scrolls into view, and the foot says how many files you've looked at,
-  with Undo for the turn and Commit for everything that's left.
+  Changes is the diff, kept by turn (Review.tsx, the same in the panel and the full canvas): the
+  turn picker sits in the diff's strip, the file you pressed in the thread scrolls into view, and
+  the foot says how many files you've looked at, with Undo for the turn and Commit for everything
+  that's left.
   Agents says who worked in this session, on what, and how much of the budget they used.
 */
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { ROUTINES_ON, type FileDiff, type Item, type Thread } from "@contracts";
-import { CodeDiff } from "@liner/pro/code-diff/code-diff";
-import { prefersReducedMotion } from "@liner/lib/spring";
-import { toast } from "@liner/components/toast/toast";
+import { ROUTINES_ON, type Item, type Thread } from "@contracts";
 import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { Boundary } from "./Boundary";
-import { CommitButton } from "./Commit";
-import { closeOthers, closeTab, GUIDE, hideDock, moveTab, openTab, paneOf, pickTab, type DockState } from "./dock";
-import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
-import { wordRead, wordWrite } from "./kept.ts";
+import { closeOthers, closeTab, GUIDE, moveTab, openTab, paneOf, pickTab, type DockState } from "./dock";
+import { useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
 import { plural } from "./model";
 import { ContextMenu, PanelHead, Pop, Row, Sep } from "./ui";
@@ -37,10 +33,8 @@ import { BrowserSurface } from "./Browser";
 import { DesignSurface } from "./Design";
 import { toComposer } from "./Find";
 import { LinkedSurface, PrSurface } from "./Pr";
-import { ship } from "./Ship";
 import { SideChat } from "./SideChat";
-import { Guide, MoreFiles, SURFACES, surfaceOf, SurfaceNote, TurnPicker, Viewed, type SurfaceId, type Tab } from "./Surfaces";
-import { undoTurn } from "./undo";
+import { Guide, SURFACES, surfaceOf, type SurfaceId, type Tab } from "./Surfaces";
 import { entering } from "./look";
 import { early, lazyAgain } from "./early";
 import "./dock.css";
@@ -49,8 +43,8 @@ const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.Termi
 const SessionSurface = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionSurface));
 /*
   Surfaces opened now and then, kept out of the start: they load once the dock is up and the app is
-  idle, so the first open has nothing to wait for (early.ts, as App's screens do). The full-width
-  Review, the Device (it needs Xcode) and Files (a link hands its file over through reveal.ts) are
+  idle, so the first open has nothing to wait for (early.ts, as App's screens do). Changes (Review,
+  with its diff and line questions), the Device (it needs Xcode) and Files (a link hands its file over through reveal.ts) are
   the ones only this panel reads; the others (Browser, the PR, add-on views) are read by the
   timeline or App too, so they're in the start anyway. Routines are switched off (contracts, ROUTINES_ON): a run's tab kept from before still opens.
 */
@@ -105,7 +99,6 @@ const DesignTab = memo(function DesignTab({ thread, agentName, visible }: { thre
 
 /** A chip on its way between panes. */
 const DRAG = "application/x-liner-tab";
-const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
 export function Panel({
   thread,
@@ -193,12 +186,10 @@ export function Panel({
 
   const body = (t: Tab, visible: boolean) => {
     if (t === "changes")
-      return wideReview ? (
+      return (
         <Suspense fallback={waitFor("Reading the changes")}>
-          <Review thread={thread} focus={focus} onFocus={onFocus} />
+          <Review thread={thread} focus={focus} onFocus={onFocus} wide={wideReview} visible={visible} />
         </Suspense>
-      ) : (
-        <Changes thread={thread} focus={focus} onFocus={onFocus} />
       );
     if (t === "agents") return <AgentsSurface thread={thread} />;
     if (t === "session") return <SessionTab thread={thread} visible={visible} onShowChange={showChange} />;
@@ -272,7 +263,7 @@ export function Panel({
       data-dragging={dragging ? true : undefined}
       inert={leaving || undefined}
     >
-      {/* The strip stays the header over the full-width Review too, its shrink button the way back. */}
+      {/* The strip stays the header over the full-width Changes too; the way back is the right edge's, or Changes' own menu. */}
       {dock.panes.map((_, i) => (
         <Strip
           key={i}
@@ -280,7 +271,6 @@ export function Panel({
           dock={dock}
           onDock={onDock}
           meta={meta}
-          last={i === dock.panes.length - 1}
           dropping={drop?.pane === i}
           onDragTab={(t) => setDragging(t)}
           onDragEnd={() => (setDragging(null), setDrop(null))}
@@ -339,15 +329,14 @@ export function Panel({
 /**
   One pane's strip, which is the panel's header (TasteCode v0.5), on the session header's line: the
   apps you pinned first, as icons, then every tab with its name (Changes with its count of files to
-  commit, quiet), the + menu of what isn't open, and in the last pane the
-  button that hides the panel, last, where the session's header has the one that shows it.
+  commit, quiet), and the + menu of what isn't open. Hiding the panel and the full canvas are the
+  right edge's (Session.tsx), so the strip has no button of its own for either.
 */
-function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label, projectId, files, lead, add }: {
+function Strip({ i, dock, onDock, meta, dropping, onDragTab, onDragEnd, onDragOver, onDrop, style, label, projectId, files, lead, add }: {
   i: number;
   dock: DockState;
   onDock: (d: DockState) => void;
   meta: (t: Tab) => { label: string; short?: string; icon: (p: { size?: number }) => React.ReactNode; preview?: boolean };
-  last: boolean;
   dropping: boolean;
   onDragTab: (t: Tab) => void;
   onDragEnd: () => void;
@@ -539,16 +528,7 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
       </div>
       {add}
       <span className="lc-grow" data-drag />
-      {last && (
-        <>
-          {/* The full canvas is the rail's, right under its own Show/Hide the panel (Session.tsx). */}
-          <Tooltip content="Hide the panel">
-            <button type="button" className="lc-tb lc-sbar-b l-focus" data-panel-toggle aria-label="Hide the panel" aria-pressed onClick={() => onDock(hideDock(dock))}>
-              <I.panel size={16} />
-            </button>
-          </Tooltip>
-        </>
-      )}
+      {/* No button of its own hides the panel or takes the full canvas: the right edge's lit icon hides it, and its full-canvas switch is the way back (Session.tsx). */}
       <ContextMenu at={menu} label={menu ? `${meta(menu.t).label}, its tab` : "A tab"} onClose={() => setMenu(null)}>
         {(close) =>
           menu && (
@@ -557,13 +537,13 @@ function Strip({ i, dock, onDock, meta, last, dropping, onDragTab, onDragEnd, on
                 <Row
                   title={pins.includes(menu.t.slice(4)) ? "Unpin from the panel" : "Pin to the panel"}
                   note={pins.includes(menu.t.slice(4)) ? undefined : "Its tab stays at the strip's start"}
-                  icon={<I.pin size={14} />}
+                  icon={<I.pin size={16} />}
                   onPick={() => (close(), pin(menu.t.slice(4), !pins.includes(menu.t.slice(4))))}
                 />
               )}
               {menu.t.startsWith("app:") && <Sep />}
-              <Row title="Close" icon={<I.close size={14} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
-              <Row title="Close the others" icon={<I.close size={14} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
+              <Row title="Close" icon={<I.close size={16} />} onPick={() => (close(), onDock(closeTab(dock, menu.t)))} />
+              <Row title="Close the others" icon={<I.close size={16} />} disabled={p.tabs.length < 2} onPick={() => (close(), onDock(closeOthers(dock, menu.t)))} />
             </>
           )
         }
@@ -597,14 +577,14 @@ function AddMenu({ dock, onDock, pane, projectId, agentName, onMake }: { dock: D
       {(close) => (
         <>
           {surfaces.map((s) => (
-            <Row key={s.id} title={s.label} note={s.id === "terminal" ? "In the bottom panel" : undefined} icon={<s.icon size={14} />} end={keys(`surface.${s.id}`)} onPick={() => (close(), open(s.id))} />
+            <Row key={s.id} title={s.label} note={s.id === "terminal" ? "In the bottom panel" : undefined} icon={<s.icon size={16} />} end={keys(`surface.${s.id}`)} onPick={() => (close(), open(s.id))} />
           ))}
           {waiting.length > 0 && (
             <>
               <Sep />
               <PanelHead>Routine runs that wait for you</PanelHead>
               {waiting.map((r) => (
-                <Row key={r.id} title={r.subject ? `Run on #${r.subject.number}` : "A run"} note={r.subject?.title ?? r.cause} icon={<I.routines size={14} />} onPick={() => (close(), open(`run:${r.id}`))} />
+                <Row key={r.id} title={r.subject ? `Run on #${r.subject.number}` : "A run"} note={r.subject?.title ?? r.cause} icon={<I.routines size={16} />} onPick={() => (close(), open(`run:${r.id}`))} />
               ))}
             </>
           )}
@@ -612,13 +592,13 @@ function AddMenu({ dock, onDock, pane, projectId, agentName, onMake }: { dock: D
           <PanelHead>Your apps</PanelHead>
           {apps.map((a) => {
             const Icon = appIcon(a.panel?.icon);
-            return <Row key={a.id} title={a.name} icon={<Icon size={14} />} onPick={() => (close(), open(`app:${a.id}`))} />;
+            return <Row key={a.id} title={a.name} icon={<Icon size={16} />} onPick={() => (close(), open(`app:${a.id}`))} />;
           })}
-          <Row title="New add-on" note={`Say what you'd like, and ${agentName} makes it`} icon={<I.plus size={14} />} onPick={() => (close(), onMake())} />
+          <Row title="New add-on" note={`Say what you'd like, and ${agentName} makes it`} icon={<I.plus size={16} />} onPick={() => (close(), onMake())} />
           {shut(GUIDE) && (
             <>
               <Sep />
-              <Row title="Every surface" note="What each holds right now, and its key" icon={<I.guide size={14} />} onPick={() => (close(), open(GUIDE))} />
+              <Row title="Every surface" note="What each holds right now, and its key" icon={<I.guide size={16} />} onPick={() => (close(), open(GUIDE))} />
             </>
           )}
         </>
@@ -627,126 +607,4 @@ function AddMenu({ dock, onDock, pane, projectId, agentName, onMake }: { dock: D
   );
 }
 
-/** With nothing to commit, the diff's foot still pushes the branch or opens a pull request. */
-function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
-  return (
-    <Pop label="Push or open a pull request" side="top" align="end" width={280} triggerClass="lc-btn" disabled={thread.status === "running"} trigger={<><I.push size={14} />Push</>}>
-      {(close) => (
-        <div className="lc-ship-menu">
-          <PanelHead>Nothing to commit</PanelHead>
-          <Row title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={14} />} onPick={() => (close(), void ship(thread, null))} />
-          <Row title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={14} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail))} />
-        </div>
-      )}
-    </Pop>
-  );
-}
-function Changes({ thread, focus, onFocus }: { thread: Thread; focus: { id: string; path?: string } | null; onFocus: (f: { id: string; path?: string } | null) => void }) {
-  const branch = useEngine((s) => thread.worktree?.branch ?? s.projects.find((p) => p.id === thread.projectId)?.branch);
-  // The checkpoints alone: a reply's words don't redraw the diff.
-  const cps = useItemsWhere(thread.id, isCheckpoint) as Extract<Item, { kind: "checkpoint" }>[];
-  const pick = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : (cps[cps.length - 1]?.id ?? null);
-  const cp = cps.find((c) => c.id === pick);
-  const [diff, setDiff] = useState<FileDiff[] | null>(null);
-  const [diffErr, setDiffErr] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
-  const [view, setView] = useState<"unified" | "split">(() => wordRead(localStorage, "lc:view", ["unified", "split"], "unified") as "unified" | "split");
-  const [viewed, setViewed] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<"undo" | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => wordWrite(localStorage, "lc:view", view), [view]);
-
-  // The diff for the turn in the picker, fetched when it changes.
-  const key = `${pick}:${cp?.reverted}:${cp?.committed}:${cps.length}`;
-  useEffect(() => {
-    if (!pick) return setDiff([]);
-    let live = true;
-    setDiff(null);
-    setDiffErr(null);
-    void rpc("checkpoint.diff", { threadId: thread.id, itemId: pick })
-      .then((d) => {
-        if (!live) return;
-        setDiff(d.files);
-        setTotal(d.total);
-      })
-      .catch((e) => {
-        if (!live) return;
-        setDiff([]);
-        setTotal(0);
-        // An empty diff alone would read as a turn that changed nothing.
-        setDiffErr(e instanceof Error ? e.message : String(e));
-        fail(e);
-      });
-    return () => {
-      live = false;
-    };
-  }, [thread.id, key]);
-
-  // The file pressed in the thread scrolls into view and counts as looked at.
-  useEffect(() => {
-    if (!diff || !focus?.path) return;
-    const i = diff.findIndex((f) => f.path === focus.path);
-    const el = box.current?.querySelectorAll<HTMLElement>(".l-cdiff__file")[i];
-    el?.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-    setViewed((v) => new Set(v).add(focus.path!));
-  }, [diff, focus?.path]);
-
-  const files = pick === "all" || pick === "branch" ? (diff ?? []).map((d) => ({ path: d.path, added: 0, removed: 0 })) : (cp?.files ?? []);
-  // Looked at: this turn's files you've opened, not ones from another turn.
-  const seen = files.filter((f) => viewed.has(f.path)).length;
-  const open = cps.filter((c) => !c.reverted && !c.committed);
-  const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
-
-  const undo = async () => {
-    if (!cp) return;
-    setBusy("undo");
-    try {
-      await undoTurn(thread.id, cp);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (!cps.length)
-    return (
-      <div className="lc-panel-empty">
-        <I.changes size={20} />
-        <b>No changes yet</b>
-        <p>When a turn edits files, its changes land here, kept by turn, so you can review, undo or commit them.</p>
-      </div>
-    );
-
-  const picker = <TurnPicker cps={cps} pick={pick ?? "all"} turns={thread.turns} onPick={(id) => onFocus({ id })} />;
-
-  return (
-    <div className="lc-changes-panel">
-      <div ref={box} className="lc-diff">
-        {diff === null ? (
-          <div className="lc-diff-wait">
-            <span className="l-shimmer">Reading the changes</span>
-          </div>
-        ) : diffErr ? (
-          // The picker rides in CodeDiff's strip, which isn't drawn here: the note carries it, so another turn is one press away.
-          <SurfaceNote icon={<I.alert size={20} />} title="The changes didn't open" action={picker}>
-            {diffErr}
-          </SurfaceNote>
-        ) : (
-          <CodeDiff files={diff} title={picker} view={view} onViewChange={setView} maxHeight={4000} />
-        )}
-      </div>
-      {diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />}
-      <div className="lc-panel-foot">
-        <Viewed seen={seen} total={files.length} />
-        <span className="lc-grow" />
-        {cp && !cp.reverted && !cp.committed && (
-          <button type="button" className="lc-btn" data-kind="ghost" disabled={busy !== null || thread.status === "running"} onClick={() => void undo()}>
-            <I.undo size={14} />
-            Undo turn {cp.turn}
-          </button>
-        )}
-        {openFiles > 0 ? <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
-      </div>
-    </div>
-  );
-}
 

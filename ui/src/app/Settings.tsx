@@ -8,12 +8,10 @@
   returns to the sessions.
 */
 import { cloneElement, isValidElement, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
+import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Thread, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
-import { RadioCards } from "@liner/components/radio-cards/radio-cards";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
-import { Progress } from "@liner/components/progress/progress";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Select } from "@liner/components/select/select";
 import { Slider } from "@liner/components/slider/slider";
@@ -25,12 +23,17 @@ import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark, StepMark } from "./icons";
-import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, listedProjects, markOf, modelLabel, plural, providerLabel, since } from "./model";
+import { ACCESS_LEVELS, accessOf, agentOf, ago, dollars, effortIn, effortsFor, levelName, listedProjects, markOf, modelLabel, plural, providerLabel, shortName, since } from "./model";
 import { appIcon, dayOf } from "./Addon";
+import { rowWords, SideFacts, SideMark, SideRow } from "./SideList";
+import { markLabelOf, markStateOf, prSaid } from "./session-state";
 // Liner Design's picture model settings load when that page of Settings is shown.
 const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ default: m.PicturesSettings })));
 import { ModesPlace } from "./Modes";
-import { Badge, Disc, Kbd, ModelTag, NamedSwitch, Pop, Row } from "./ui";
+import { StartPick } from "./Models";
+import { startSaid } from "./start-words";
+import { Badge, ConfirmRow, Disc, Kbd, LookAgain, ModelTag, NamedSwitch, Pop, Row, Sep } from "./ui";
+import { confirmPress } from "./confirm";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
@@ -69,7 +72,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
   { id: "modes", label: "Modes", icon: <I.toggle />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
-  { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "What a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
+  { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "Permissions: what a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
   { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections, panels and apps your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections panel panels app apps mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
   { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder explorer setup install worktree" },
   { id: "git", label: "Git and worktrees", icon: <I.branch />, group: "Work", blurb: "Branches, worktrees, and the snapshot Liner Code keeps of every turn.", words: "git branch prefix worktree snapshot checkpoint undo refs" },
@@ -245,7 +248,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
           <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && (query ? (e.preventDefault(), setQuery("")) : e.currentTarget.blur())} />
           {query ? (
             <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
-              <I.close size={12} />
+              <I.close size={14} />
             </button>
           ) : (
             <span className="lc-sb-key">{isMac ? "⌘F" : "Ctrl F"}</span>
@@ -300,11 +303,6 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
             {query && !groups.length && <p className="lc-sb-empty">No setting matches that.</p>}
           </div>
         </nav>
-        <button type="button" className="lc-st-back l-focus" onClick={onClose}>
-          <I.back size={16} />
-          <span className="lc-grow">Back to sessions</span>
-          <span className="lc-sb-key">esc</span>
-        </button>
       </div>
       <main ref={paper} className="lc-paper lc-st-paper">
         <Backdrop />
@@ -555,8 +553,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
   // Who'd do what, from your picks (Agentic.tsx writes them).
   const cast = castOf(providers, { picks: s.picks });
   const label = (ref?: string) => (ref ? modelLabel(ref, providers) : "");
-  const two = Boolean(cast && cast.lead !== cast.sidekick);
-  const start = s.start ?? (two ? "pair" : "best");
+  const start = s.start ?? (cast && cast.lead !== cast.sidekick ? "pair" : "best");
   return (
     <>
       <Group title="When Liner starts">
@@ -575,25 +572,16 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         </Field>
       </Group>
       <Group title="New sessions" note="What Home starts with. Each session can still change it.">
-        <Field title="What they start with" below>
-          <RadioCards
-            label="What they start with"
-            className="lc-st-start"
-            columns={3}
-            value={start === "pair" && !two ? "best" : start}
-            onValueChange={(v) => save({ start: v as EngineSettings["start"] })}
-            options={[
-              { value: "pair", title: "Fusion", description: two ? `${label(cast!.lead)} leads, ${label(cast!.sidekick)} does the work it hands over.` : "Fusion needs two models ready: a lead and a quicker sidekick.", icon: <I.fusion size={16} />, disabled: !two },
-              { value: "best", title: "Best", description: cast ? `${label(cast.lead)} alone, for the hardest work.` : "Your lead model alone.", icon: <I.gem size={16} /> },
-              { value: "fast", title: "Fast", description: cast ? `${label(cast.sidekick)} alone: the quickest, and the least it costs.` : "Your sidekick model alone.", icon: <I.speed size={16} />, disabled: !two },
-            ]}
-          />
-          <span className="lc-st-more">
-            <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
-              Fusion and the Reviewer
-              <I.chevR size={12} />
-            </button>
-          </span>
+        {/* The message box's own choice: Fusion, or a model picked through the same panel. */}
+        {/* The note says what Home will really start with (startOf, as Home reads it), and when your pick's tool isn't ready, that it waits. */}
+        <Field title="What they start with" note={startSaid(s, providers, label, shortName)}>
+          <StartPick value={start} onPick={(v) => save({ start: v })} />
+        </Field>
+        <Field title="Fusion and the Reviewer" note="Who leads, who is its sidekick, and who reads each change.">
+          <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
+            Open
+            <I.chevR size={12} />
+          </button>
         </Field>
         <Field title="Where they run" note="A worktree is a branch and folder of its own, so sessions never edit the same files.">
           <Segmented
@@ -607,7 +595,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             aria-label="Where new sessions run"
           />
         </Field>
-        <Field title="What they may do" note={accessOf(s.defaultAccess).note}>
+        <Field title="Permissions" note={accessOf(s.defaultAccess).note}>
           <button type="button" className="lc-st-link l-focus" onClick={() => go("safety")}>
             {accessOf(s.defaultAccess).label}
             <I.chevR size={12} />
@@ -1411,10 +1399,7 @@ function Models() {
         title={`Agent tools on ${os.here}`}
         note="Liner Code drives the tools you already have, with your own sign-ins."
         end={
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={looking} onClick={lookAgain}>
-            <I.refresh size={14} />
-            {looking ? "Looking" : "Look again"}
-          </button>
+          <LookAgain looking={looking} onLook={lookAgain} />
         }
       >
         {providers
@@ -1622,7 +1607,7 @@ function ToolCheckRowView({ p, row, busy, onMessage }: { p: ProviderInfo; row?: 
         }
         title={
           <>
-            {p.label} {busy ? <Badge tone="neutral">Checking</Badge> : !p.available && p.endpoint === undefined && p.id !== "demo" ? <Badge tone="warn">Not installed</Badge> : bad ? <Badge tone="danger">{bad === 1 ? "1 check failed" : `${bad} checks failed`}</Badge> : checks.length ? <Badge tone="ok">Passed</Badge> : null}
+            {p.label} {busy ? <Badge tone="neutral" mark="working">Checking</Badge> : !p.available && p.endpoint === undefined && p.id !== "demo" ? <Badge tone="warn">Not installed</Badge> : bad ? <Badge tone="danger">{bad === 1 ? "1 check failed" : `${bad} checks failed`}</Badge> : checks.length ? <Badge tone="ok">Passed</Badge> : null}
           </>
         }
         note={busy ? `Running: ${TIER_NAME[busy].toLowerCase()}` : at ? `Checked ${since(at)}` : "Not checked yet"}
@@ -1727,7 +1712,11 @@ function envOf(text: string) {
   return out;
 }
 
-function ProviderRow({ p, fallback, onRemove, children }: { p?: ProviderInfo; fallback: string; onRemove: () => void; children?: ReactNode }) {
+/*
+  A row's actions: one is its own button; two or more go under one ··· (the sidebar's rule), so a
+  row never shows a line of buttons. `login` is the command a Sign in runs in the Terminal.
+*/
+function ProviderRow({ p, fallback, onRemove, login, children }: { p?: ProviderInfo; fallback: string; onRemove: () => void; login?: string; children?: ReactNode }) {
   const state = !p ? "Looking" : !p.available ? "Not found" : "Ready";
   return (
     <Field
@@ -1744,9 +1733,20 @@ function ProviderRow({ p, fallback, onRemove, children }: { p?: ProviderInfo; fa
       note={p ? [p.version, p.detail].filter(Boolean).join(" · ") : "Looking for it"}
     >
       {children}
-      <button type="button" className="lc-ib l-focus" aria-label={`Remove ${p?.label ?? fallback}`} title="Remove" onClick={onRemove}>
-        <I.trash size={14} />
-      </button>
+      {login ? (
+        <Pop label={`More for ${p?.label ?? fallback}`} menu align="end" width={220} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+          {(close) => (
+            <>
+              <Row title="Sign in" note="In the Terminal" icon={<I.terminal size={16} />} onPick={() => (close(), bridge.runInTerminal(login))} />
+              <Row title="Remove" icon={<I.trash size={16} />} onPick={() => (close(), onRemove())} />
+            </>
+          )}
+        </Pop>
+      ) : (
+        <button type="button" className="lc-ib l-focus" aria-label={`Remove ${p?.label ?? fallback}`} title="Remove" onClick={onRemove}>
+          <I.trash size={14} />
+        </button>
+      )}
     </Field>
   );
 }
@@ -1774,13 +1774,7 @@ function Accounts() {
       {accounts.map((a) => {
         const p = providers.find((x) => x.id === `${a.provider}.${a.id}`);
         return (
-          <ProviderRow key={`${a.provider}.${a.id}`} p={p} fallback={a.label} onRemove={() => save({ accounts: accounts.filter((x) => x !== a), favoriteModels: favs.filter((r) => !r.startsWith(`${a.provider}.${a.id}:`)) })}>
-            {p?.available && (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" title={p.login} onClick={() => bridge.runInTerminal(p.login)}>
-                Sign in
-              </button>
-            )}
-          </ProviderRow>
+          <ProviderRow key={`${a.provider}.${a.id}`} p={p} fallback={a.label} login={p?.available ? p.login : undefined} onRemove={() => save({ accounts: accounts.filter((x) => x !== a), favoriteModels: favs.filter((r) => !r.startsWith(`${a.provider}.${a.id}:`)) })} />
         );
       })}
       {!adding && !accounts.length && <p className="lc-st-none lc-quiet">One sign-in per tool so far.</p>}
@@ -2286,13 +2280,20 @@ function CustomModels() {
 function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
   const agents = useEngine((x) => x.agents);
   const providers = useEngine((x) => x.providers);
+  // An agent's effort by its model's own name for it; a level its model doesn't take reads as the model's default, and a model of no levels shows none.
+  const effortNameOf = (model: string, asked: string) => {
+    const { list, fallback } = effortsFor(model, providers);
+    const at = effortIn(list, asked, fallback);
+    const level = list.find((e) => e.id === at);
+    return level ? levelName(level.label) : "";
+  };
   const threads = useEngine((x) => x.threads);
   // The Demo stays out of sight until you turn it on, here as in the pickers.
   const showDemo = useEngine((x) => x.settings.showDemo === true);
   return (
     <Group
       title="Agents"
-      note="A name, a model, how hard it thinks, and a soul.md that says how it works."
+      note="A name, a model, its effort, and a soul.md that says how it works."
       end={
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onAgent()}>
           <I.plus size={14} />
@@ -2303,8 +2304,9 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
       {agents.filter((a) => a.id !== "demo" || showDemo).map((a) => {
         const used = threads.filter((t) => t.agent === a.id).length;
         return (
-          <Field key={a.id} lead={<Disc agent={a} size={28} />} title={a.name} note={[a.role, a.id === "demo" ? "scripted, no account" : `${a.effort} effort`, plural(used, "session")].filter(Boolean).join(" · ")}>
-            <ModelTag kind={markOf(a.model)} label={modelLabel(a.model, providers)} />
+          <Field key={a.id} lead={<span className="lc-st-mark"><Disc agent={a} size={20} /></span>} title={a.name} note={[a.role, a.id === "demo" ? "scripted, no account" : "", plural(used, "session")].filter(Boolean).join(" · ")}>
+            {/* Its effort after its model's name, as the message box's who reads: "Sonnet 5.5 · High". */}
+            <ModelTag kind={markOf(a.model)} label={a.id === "demo" ? modelLabel(a.model, providers) : [modelLabel(a.model, providers), effortNameOf(a.model, a.effort)].filter(Boolean).join(" · ")} />
             {a.id !== "demo" && (
               <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onAgent(a)}>
                 Edit
@@ -2353,9 +2355,9 @@ function Safety() {
   const s = useEngine((x) => x.settings);
   return (
     <>
-      <Group title="What a new session may do" note="Four levels, from asking first to acting on its own. A session can change it any time from its composer.">
+      <Group title="Permissions" note="What a new session may do without asking: four levels, from asking first to acting on its own. A session can change them any time from its message box.">
         <div className="lc-st-radios">
-          <RadioGroup label="Default access" showLabel={false} value={s.defaultAccess} onValueChange={(v) => save({ defaultAccess: v as Access })} options={ACCESS_LEVELS.map((l) => ({ value: l.id, label: l.label, description: l.note }))} />
+          <RadioGroup label="Permissions" showLabel={false} value={s.defaultAccess} onValueChange={(v) => save({ defaultAccess: v as Access })} options={ACCESS_LEVELS.map((l) => ({ value: l.id, label: l.label, description: l.note }))} />
         </div>
       </Group>
       <Group title="Always asks">
@@ -2394,7 +2396,7 @@ function AddonsPlace() {
   const gone = addons.filter((a) => a.removed && a.panel);
   const versions = (a: AddonInfo) => (
     <Pop label={`Versions of ${a.name}`} align="end" width={220} triggerClass="lc-st-ver lc-mono" disabled={a.versions.length < 2} trigger={<>v{a.version}{a.versions.length > 1 && <I.chevD size={12} />}</>}>
-      {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ") || undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
+      {(close) => [...a.versions].reverse().map((v) => <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ") || undefined} end={a.dates?.[v] ? dayOf(a.dates[v]) : undefined} on={v === a.version} onPick={() => (update(a.id, { version: v }), close())} />)}
     </Pop>
   );
   const where = (a: AddonInfo) => (a.project ? `${projects.find((p) => p.id === a.project)?.name ?? "One project"} only` : "Every project");
@@ -2446,7 +2448,7 @@ function AddonsPlace() {
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
             <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
-              Restore
+              Bring it back
             </button>
           </div>
         ))}
@@ -2478,7 +2480,7 @@ function AddonsPlace() {
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
             <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
-              Restore
+              Bring it back
             </button>
           </div>
         ))}
@@ -2641,7 +2643,8 @@ function Projects() {
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
   const showDemo = useEngine((x) => x.settings.showDemo === true);
-  const [sure, setSure] = useState<string | null>(null);
+  // The project whose Remove was pressed once, and when: a press inside the settle is the same double-click (confirm.ts).
+  const [sure, setSure] = useState<{ id: string; at: number } | null>(null);
   const add = () =>
     void bridge.pickFolder().then((p) => {
       if (p)
@@ -2696,18 +2699,22 @@ function Projects() {
               <button
                 type="button"
                 className="lc-btn"
-                data-kind={sure === p.id ? "danger" : "ghost"}
+                data-kind={sure?.id === p.id ? "danger" : "ghost"}
                 data-size="sm"
                 onBlur={() => setSure(null)}
                 onClick={() => {
-                  if (sure !== p.id) return setSure(p.id);
+                  // Every session in it goes too, so the second click of a double-click on Remove is held back, not taken as the confirm.
+                  const now = performance.now();
+                  const step = confirmPress(sure?.id === p.id ? sure.at : null, now);
+                  if (step === "ask") return setSure({ id: p.id, at: now });
+                  if (step === "wait") return;
                   setSure(null);
                   void rpc("project.remove", { id: p.id })
                     .then(() => toast(`Forgot ${p.name}`))
                     .catch(fail);
                 }}
               >
-                {sure === p.id ? "Remove it" : "Remove"}
+                {sure?.id === p.id ? "Remove it" : "Remove"}
               </button>
             </Field>
             <ScriptsEditor project={p} />
@@ -2756,10 +2763,7 @@ function MemoryEditor({ project }: { project: Project }) {
     return (
       <Field title="What agents remember" below>
         <p className="lc-sinfo-note" role="alert">{failed}</p>
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setFailed(null), setFacts(null), setAgain((n) => n + 1))}>
-          <I.refresh size={14} />
-          Look again
-        </button>
+        <LookAgain onLook={() => (setFailed(null), setFacts(null), setAgain((n) => n + 1))} />
       </Field>
     );
   if (!facts) return <Field title="What agents remember" note={<span className="l-shimmer">Reading what agents saved</span>} below />;
@@ -2776,7 +2780,7 @@ function MemoryEditor({ project }: { project: Project }) {
           <div key={`${i}:${f}`} className="lc-mem-row">
             <span>{f}</span>
             <button type="button" className="lc-ib l-focus" aria-label={`Forget: ${f}`} title="Forget it" onClick={() => void rpc("memory.forget", { projectId: project.id, fact: f }).then(setFacts).catch(fail)}>
-              <I.close size={12} />
+              <I.close size={14} />
             </button>
           </div>
         ))}
@@ -2813,10 +2817,7 @@ function RulesEditor({ project }: { project: Project }) {
     return (
       <Field title="Rules for every agent" below>
         <p className="lc-sinfo-note" role="alert">{failed}</p>
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (setFailed(null), setRules(null), setAgain((n) => n + 1))}>
-          <I.refresh size={14} />
-          Look again
-        </button>
+        <LookAgain onLook={() => (setFailed(null), setRules(null), setAgain((n) => n + 1))} />
       </Field>
     );
   if (!rules) return <Field title="Rules for every agent" note={<span className="l-shimmer">Reading the rules</span>} />;
@@ -2886,7 +2887,7 @@ function ScriptsEditor({ project }: { project: Project }) {
               New worktrees
             </label>
             <button type="button" className="lc-ib l-focus" aria-label={`Remove ${x.name || "the script"}`} onClick={() => commit(list.filter((_, k) => k !== i))}>
-              <I.close size={12} />
+              <I.close size={14} />
             </button>
           </span>
         ))}
@@ -2944,7 +2945,7 @@ function ScriptKey({ value, name, others, onChange }: { value?: string; name: st
       </button>
       {value && !recording && (
         <button type="button" className="lc-ib l-focus" aria-label={`Take the keys off ${name}`} title="No keys" onClick={() => onChange(undefined)}>
-          <I.close size={12} />
+          <I.close size={14} />
         </button>
       )}
     </span>
@@ -3059,52 +3060,66 @@ function Archive() {
   const projects = useEngine((x) => x.projects);
   const agents = useEngine((x) => x.agents);
   const providers = useEngine((x) => x.providers);
-  // Deleting can't be undone, so it asks first, the way Projects › Remove does.
-  const [sure, setSure] = useState<string | null>(null);
   const list = threads.filter((t) => t.archived).sort((a, b) => b.updatedAt - a.updatedAt);
   if (!list.length)
     return (
       <div className="lc-st-empty">
         <I.box size={20} />
         <b>Nothing archived</b>
-        <span>Archive a session from the command menu ({os.mod}K) to put it away without deleting it.</span>
+        <span>Archive a session from its row's ··· or the command menu ({os.mod}K) to put it away without deleting it.</span>
       </div>
     );
+  const back = (t: Thread) =>
+    void rpc("thread.update", { id: t.id, archived: false })
+      .then(() => toast(`Brought ${t.title} back`, { description: "Out of Archive, back in the list." }))
+      .catch(fail);
+  // The sidebar's row (SideList.tsx): the mark, the title and its time, the project and how it ended, its facts; its two actions under one ···.
   return (
     <Group title={plural(list.length, "session")}>
-      {list.map((t) => (
-        <Field key={t.id} title={t.title} note={`${projects.find((p) => p.id === t.projectId)?.name ?? "No project"} · ${agentOf(t.agent, agents, providers).name} · ${ago(t.updatedAt)}`}>
-          <button
-            type="button"
-            className="lc-btn"
-            data-kind="plain"
-            data-size="sm"
-            onClick={() =>
-              void rpc("thread.update", { id: t.id, archived: false })
-                .then(() => toast(`${t.title} is back in the sidebar`))
-                .catch(fail)
-            }
-          >
-            Restore
-          </button>
-          <button
-            type="button"
-            className="lc-btn"
-            data-kind={sure === t.id ? "danger" : "ghost"}
-            data-size="sm"
-            onBlur={() => setSure(null)}
-            onClick={() => {
-              if (sure !== t.id) return setSure(t.id);
-              setSure(null);
-              void rpc("thread.remove", { id: t.id })
-                .then((r) => toast(`Deleted ${t.title}`, r?.kept ? { description: `Its worktree is kept: ${r.kept}` } : undefined))
-                .catch(fail);
-            }}
-          >
-            {sure === t.id ? "Delete for good" : "Delete"}
-          </button>
-        </Field>
-      ))}
+      <div className="lc-sl-list lc-st-arch">
+        {list.map((t) => {
+          const mark = markStateOf(t);
+          const said = rowWords(t, { busy: false });
+          const ref = t.model ?? agentOf(t.agent, agents, providers).model;
+          return (
+            <SideRow
+              key={t.id}
+              quiet
+              mark={<SideMark state={mark} label={markLabelOf(t, mark)} />}
+              title={t.title || "New session"}
+              ago={ago(t.updatedAt)}
+              where={projects.find((p) => p.id === t.projectId)?.name ?? "No project"}
+              sub={said.text === "Finished" ? undefined : said.text}
+              tone={said.tone}
+              facts={<SideFacts branch={t.worktree?.branch} model={ref ? markOf(ref) : undefined} modelName={ref ? modelLabel(ref, providers) : undefined} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />}
+              acts={
+                <Pop label={`Bring back or delete ${t.title || "this session"}`} menu align="end" width={220} triggerClass="lc-sb-a" triggerAttrs={{ title: "Bring it back, delete" }} trigger={<I.more size={14} />}>
+                  {(close) => (
+                    <>
+                      <Row title="Bring it back" note="Out of Archive, back in the list" icon={<I.undo size={16} />} onPick={() => (close(), back(t))} />
+                      <Sep />
+                      {/* Deleting can't be undone, so the first press only asks: the row says "Delete for good" and the menu stays open for the second. The ask goes with the menu (ConfirmRow). It is red from the start. */}
+                      <ConfirmRow
+                        title="Delete"
+                        sure="Delete for good"
+                        sureNote="It can't be brought back"
+                        forGood
+                        icon={<I.trash size={16} />}
+                        onConfirm={() => {
+                          close();
+                          void rpc("thread.remove", { id: t.id })
+                            .then((r) => toast(`Deleted ${t.title}`, r?.kept ? { description: `Its worktree is kept: ${r.kept}` } : undefined))
+                            .catch(fail);
+                        }}
+                      />
+                    </>
+                  )}
+                </Pop>
+              }
+            />
+          );
+        })}
+      </div>
     </Group>
   );
 }
@@ -3136,10 +3151,7 @@ function UpdatesPlace() {
         title="Liner Code"
         note={u.checkedAt ? `Looked ${since(u.checkedAt)}, and again every six hours.` : "Looks a few seconds after it opens, then every six hours."}
         end={
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy} onClick={() => void look()}>
-            <I.refresh size={14} />
-            {busy ? <span className="l-shimmer">Looking</span> : "Look now"}
-          </button>
+          <LookAgain looking={busy} onLook={() => void look()} />
         }
       >
         <AppRow a={a} />
@@ -3150,7 +3162,7 @@ function UpdatesPlace() {
             </div>
           </Field>
         )}
-        <Field title="Updates" note={appMode === "auto" ? "Downloads a release in the background and checks it; it goes in when you restart or quit." : appMode === "notify" ? "Tells you on Home when a release is out, and you download it." : "Doesn't look for releases. Look now still does."}>
+        <Field title="Updates" note={appMode === "auto" ? "Downloads a release in the background and checks it; it goes in when you restart or quit." : appMode === "notify" ? "Tells you on Home when a release is out, and you download it." : "Doesn't look for releases. Look again still does."}>
           <Segmented size="sm" value={appMode} onValueChange={(v) => save({ updateApp: v as UpdateMode })} options={UPDATE_MODES} aria-label="Liner Code's updates" />
         </Field>
         <Field title="Releases from" note={a.repo ? <span className="lc-mono">github.com/{a.repo}</span> : "No GitHub repository: this copy was built without one, so it has nowhere to look."}>
@@ -3173,7 +3185,7 @@ function UpdatesPlace() {
           )
         }
       >
-        <Field title="Updates" note={toolMode === "auto" ? "Runs a tool's updater as soon as a new version is out and nothing is working on it." : toolMode === "notify" ? "Tells you on Home when a tool has a new version, and you update it." : "Doesn't look for new versions. Look now still does."}>
+        <Field title="Updates" note={toolMode === "auto" ? "Runs a tool's updater as soon as a new version is out and nothing is working on it." : toolMode === "notify" ? "Tells you on Home when a tool has a new version, and you update it." : "Doesn't look for new versions. Look again still does."}>
           <Segmented size="sm" value={toolMode} onValueChange={(v) => save({ updateTools: v as UpdateMode })} options={UPDATE_MODES} aria-label="The agent tools' updates" />
         </Field>
         {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes, Grok Build or Antigravity CLI is on ${os.here}. Install one in Models.` : "They show here after the first look."} />}
@@ -3277,14 +3289,14 @@ function ToolRow({ t }: { t: ToolUpdate }) {
       <>Up to date{cmd && <>, updates with {cmd}</>}</>
     );
   return (
-    <Field lead={<ModelMark kind={markOf(`${t.id}:`)} size={16} />} title={<>{t.label} <Ver from={t.current} to={fresh ? t.latest : undefined} /></>} note={note}>
+    <Field lead={<span className="lc-st-mark"><ModelMark kind={markOf(`${t.id}:`)} size={16} /></span>} title={<>{t.label} <Ver from={t.current} to={fresh ? t.latest : undefined} /></>} note={note}>
       {(t.state === "available" || t.state === "failed") && (
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => updates.tool(t.id)}>
           {t.state === "failed" ? "Try again" : "Update"}
         </button>
       )}
-      {/* How far the updater has got when it says; a calm sweep while it doesn't. */}
-      {t.state === "updating" && <Progress className="lc-up-bar" size="sm" value={t.progress} label={t.progress === undefined ? "Updating" : undefined} />}
+      {/* An update is a thing at work: the state mark, with how far the updater has got when it says. */}
+      {t.state === "updating" && <Badge tone="neutral" mark="working">{t.progress === undefined ? "Updating" : `Updating, ${Math.round(t.progress * 100)}%`}</Badge>}
       {t.state === "waiting" && <Badge tone="warn">Waiting</Badge>}
       {t.state === "updated" && <Badge tone="ok">Updated</Badge>}
     </Field>

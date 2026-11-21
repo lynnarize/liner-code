@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DesignFrame, FrameBy, LeanTokens, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, loadItems, rpc, useEngine, useHoldItems } from "../engine";
-import { I, ModelMark } from "../icons";
+import { I, MARK_WORD, ModelMark, StateMark } from "../icons";
 import { duration, markOf, modelLabel, money, plural } from "../model";
 import { ContextMenu, Row } from "../ui";
 import { countFor, fixerName, leanSeen } from "./checks";
@@ -329,11 +329,11 @@ function MoreMenu() {
         m && (
           <>
             <div className="ld-way-mh">3 more like this, each in its own frame beside it</div>
-            <Row title={`Three takes by ${who}`} note="One message, three new frames" icon={<I.copy size={14} />} onPick={() => go(() => threeHere(m.frame, m.node))} />
+            <Row title={`Three takes by ${who}`} note="One message, three new frames" icon={<I.layers size={16} />} onPick={() => go(() => threeHere(m.frame, m.node))} />
             <Row
               title={tools.length ? `One each by ${tools.map((t) => t.name).join(", ")}` : "One each by your other tools"}
               note={mock ? "Not on the sample canvas" : tools.length ? "One after another, each in a session here that asks before edits" : tools.unready.length ? `Sign in to ${tools.unready.slice(0, 3).join(" or ")} in Settings › Models` : "Set up another tool in Settings › Models"}
-              icon={<I.fanout size={14} />}
+              icon={<I.fanout size={16} />}
               disabled={mock || !tools.length}
               onPick={() => go(() => onePerTool(m.frame, tools))}
             />
@@ -370,7 +370,8 @@ export function WayLabel({ frame }: { frame: DesignFrame }) {
         {ref && <ModelMark kind={markOf(ref)} size={12} />}
         {by.name}
       </span>
-      {thread?.status === "running" && <span className="l-shimmer">drawing</span>}
+      {/* A take at work says so with the one mark for state, in its model's colour (a shimmer stops under Reduce motion). */}
+      {thread?.status === "running" && <StateMark state="working" size={12} brand={ref ? markOf(ref) : undefined} label={MARK_WORD.working} />}
       {(cost !== undefined || secs !== undefined) && <span className="ld-num">{[cost !== undefined ? costText(cost) : "", secs !== undefined ? duration(secs) : ""].filter(Boolean).join(" · ")}</span>}
     </>
   );
@@ -446,7 +447,7 @@ function KeepBar({ way, picked, box }: { way: Way; picked: DesignFrame; box: { l
           <>
             <div className="ld-way-mh">Mix this one with</div>
             {others.map((o) => (
-              <Row key={o.id} title={o.id === way.orig?.id ? "The original" : `${byOf(o)?.name ?? "A take"}'s`} note={o.name} onPick={() => (close(), mix(way, picked, o))} />
+              <Row key={o.id} title={o.id === way.orig?.id ? "The original" : `${byOf(o)?.name ?? "A take"}'s`} which={o.name} onPick={() => (close(), mix(way, picked, o))} />
             ))}
           </>
         )}
@@ -542,7 +543,7 @@ export function WaysRow() {
   const names = new Set(w.takes.map((f) => byOf(f)?.name));
   return (
     <div className="lc-trow ld-way-row" role="status">
-      <I.copy size={14} />
+      <I.layers size={14} />
       <span className="lc-trow-t">
         One ask, drawn {w.takes.length} {w.takes.length === 1 ? "way" : "ways"}
         {names.size === 1 ? ` by ${[...names][0]}` : ""}

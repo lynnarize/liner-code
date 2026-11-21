@@ -1,6 +1,7 @@
 /*
   The tool rail at the canvas's left edge: Move and Hand, then what you add (a frame of a size, a
-  box, a text, a picture; parts come later), then Say. A box, a text or a picture goes into what's
+  box, a text, a picture). What to say goes in the dock, always in view, and the say bar under a
+  pick puts the caret there, so the rail has no Say of its own. A box, a text or a picture goes into what's
   picked: inside it when it's a stack, after it when it isn't, at the end of the page when a frame
   is picked. A text added is edited at once.
 */
@@ -27,7 +28,6 @@ export const D = {
   box: (p: P) => <G {...p}><rect x="2.75" y="2.75" width="10.5" height="10.5" rx="1.5" /></G>,
   text: (p: P) => <G {...p}><path d="M3.25 3.75h9.5M8 3.75v9" /></G>,
   picture: (p: P) => <G {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.75" /><path d="m2.75 11 3.25-3.25 2.5 2.5 1.75-1.75 3 3" /><circle cx="10.5" cy="5.75" r="1" /></G>,
-  part: (p: P) => <G {...p}><path d="M8 1.75 10 3.75 8 5.75 6 3.75ZM8 10.25l2 2-2 2-2-2ZM3.75 6l2 2-2 2-2-2ZM12.25 6l2 2-2 2-2-2Z" /></G>,
   stack: (p: P) => <G {...p}><rect x="2.75" y="2.75" width="10.5" height="4" rx="1" /><rect x="2.75" y="9.25" width="10.5" height="4" rx="1" /></G>,
 };
 
@@ -93,8 +93,8 @@ export function Rail() {
             {SIZES.map((x) => (
               <Row key={x.id} title={x.title} note={x.note} icon={x.icon} onPick={() => (close(), void design.addFrame(x.id))} />
             ))}
-            <Row title="Custom" note="Draw it on the canvas" icon={<D.frame size={14} />} onPick={() => (close(), design.setTool("frame"))} />
-            <Row title="The running app, live" note="A page of its dev server" icon={<I.globe size={14} />} onPick={() => (close(), openLivePicker())} />
+            <Row title="Custom" note="Draw it on the canvas" icon={<D.frame size={16} />} onPick={() => (close(), design.setTool("frame"))} />
+            <Row title="The running app, live" note="A page of its dev server" icon={<I.globe size={16} />} onPick={() => (close(), openLivePicker())} />
           </>
         )}
       </Pop>
@@ -105,13 +105,6 @@ export function Rail() {
         <D.text />
       </button>
       <PictureTool />
-      <button type="button" className="lc-tb l-focus" aria-label="Part: something you reuse" title="Parts come later" disabled>
-        <D.part />
-      </button>
-      <hr />
-      <button type="button" className="lc-tb l-focus" aria-label="Say: point at a thing and say what should change" title="Say: point at a thing and say what should change" onClick={() => document.querySelector<HTMLTextAreaElement>(".ld-dock textarea")?.focus()}>
-        <I.comment size={16} />
-      </button>
     </div>
   );
 }

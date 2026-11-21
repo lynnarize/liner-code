@@ -1,5 +1,5 @@
 /*
-  Liner Code · Modes: the picker under Home's composer, the chip beside a session's title,
+  Liner Code · Modes: the rows and chip of Home's + menu, the chip beside a session's title,
   and Settings › Modes' cards (DeepSeek Harness's agent presets).
 */
 :root,
@@ -11,24 +11,16 @@
   --lc-creator-ink: oklch(0.86 0.07 292);
   --lc-creator-fill: oklch(0.32 0.04 292 / 0.6);
 }
-/* With Workshop picked, the strip's mode button takes a soft purple fill and ink. */
-.lc-strip .lc-pb.lc-mode-creator,
-.lc-strip .lc-pb.lc-mode-creator > svg:last-child {
+/* Workshop picked on Home: its chip after the + takes a soft purple fill and ink. */
+.lc-plus-chip.lc-mode-creator,
+.lc-plus-chip.lc-mode-creator > svg,
+.lc-plus-chip.lc-mode-creator > button {
   color: var(--lc-creator-ink);
 }
-.lc-strip .lc-pb.lc-mode-creator {
-  height: 28px;
+.lc-plus-chip.lc-mode-creator {
   background: var(--lc-creator-fill);
 }
-@media (hover: hover) {
-  .lc-strip .lc-pb.lc-mode-creator:hover {
-    background: color-mix(in oklab, var(--lc-creator-fill), var(--lc-creator-ink) 8%);
-  }
-}
-/* Each mode leads with its icon in quiet ink; the picked one's ink is full, with the tick at the end. */
-.lc-mode-menu .lc-row-tick {
-  color: var(--l-ink-3);
-}
+/* Each mode leads with its icon in the second ink, as every menu row's; the picked one's ink is full, with the tick at the end. */
 .lc-mode-menu .lc-row[data-on] .lc-row-tick {
   color: var(--l-ink);
 }
@@ -36,7 +28,7 @@
   display: grid;
   place-items: center;
   height: 18px;
-  color: var(--l-accent-text);
+  color: var(--l-ink);
 }
 /* Under the modes, the way to Settings › Modes: a plain line, its icon in line with the modes'. */
 .lc-mode-more {
@@ -65,17 +57,17 @@
     background: var(--lc-well);
   }
 }
+/* As tall as the message box's chips after the +, with their corner, fill and type. */
 .lc-mode-chip {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 5px;
-  height: 24px;
+  gap: 6px;
+  height: 28px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--lc-r-row);
   background: var(--l-wash);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
   color: var(--l-ink-2);
 }
 .lc-mode-chip > svg {
@@ -214,7 +206,7 @@
   background: var(--l-wash);
 }
 .lc-mode-tabs > button {
-  height: 34px;
+  height: 30px;
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
@@ -278,7 +270,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
+  height: 28px;
   padding: 0 10px;
   border: 0;
   border-radius: 999px;

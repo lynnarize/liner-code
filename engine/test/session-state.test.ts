@@ -5,7 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Thread } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { asksYou, bucketOf, needsYou, reviewHeld, sideStateOf, wallKind } from "../../ui/src/app/session-state.ts";
+import { readFileSync } from "node:fs";
+import { asksYou, bucketOf, markStateOf, needsYou, newsForYou, reviewHeld, seenAsk, sideStateOf, statusKind, wallKind } from "../../ui/src/app/session-state.ts";
 
 const t = (more: Partial<Thread> = {}): Thread => ({ id: "t", projectId: "p", title: "Work", agent: "forge", status: "done", access: "edits", turns: 1, usage: emptyUsage(), createdAt: 1, updatedAt: 1, ...more });
 
@@ -52,6 +53,33 @@ test("sideStateOf: the mark a session's row shows", () => {
   assert.equal(sideStateOf(t(), true), "working");
 });
 
+test("markStateOf: the state mark a session shows, from working to its pull request", () => {
+  assert.equal(markStateOf(t({ status: "running" })), "working");
+  assert.equal(markStateOf(t(), { busy: true }), "working");
+  assert.equal(markStateOf(t({ status: "waiting", unread: true })), "needs");
+  assert.equal(markStateOf(t({ status: "error" })), "problem");
+  assert.equal(markStateOf(t({ status: "limited" })), "limit");
+  assert.equal(markStateOf(t({ turns: 0 })), "new");
+  assert.equal(markStateOf(t()), "done");
+  // A question you have seen is done in grey; the same question looked at now is seen too.
+  assert.equal(markStateOf(t({ status: "waiting" })), "done");
+  assert.equal(markStateOf(t({ status: "waiting", unread: true }), { looking: true }), "done");
+  // Finished while you were elsewhere is fresh until you open it, and a Reviewer block reads as finished.
+  assert.equal(markStateOf(t({ unread: true })), "fresh");
+  assert.equal(markStateOf(t({ unread: true }), { looking: true }), "done");
+  assert.equal(markStateOf(t({ status: "waiting", held: "review", unread: true })), "fresh");
+  // Its pull request, once nothing else is news: open, its checks running, passed or failed, then merged; a closed one says nothing.
+  const pr = (state: string) => ({ pr: { number: 4, url: "u", state } });
+  assert.equal(markStateOf(t(pr("OPEN"))), "pr");
+  assert.equal(markStateOf(t(pr("OPEN")), { checks: "running" }), "checks");
+  assert.equal(markStateOf(t(pr("OPEN")), { checks: "passed" }), "ready");
+  assert.equal(markStateOf(t(pr("OPEN")), { checks: "failed" }), "problem");
+  assert.equal(markStateOf(t(pr("MERGED"))), "merged");
+  assert.equal(markStateOf(t(pr("CLOSED"))), "done");
+  assert.equal(markStateOf(t({ ...pr("OPEN"), unread: true })), "fresh");
+  assert.equal(markStateOf(t({ ...pr("OPEN"), status: "running" })), "working");
+});
+
 test("wallKind: working, needs you, or done on the Wall", () => {
   assert.equal(wallKind(t({ status: "running" })), "working");
   assert.equal(wallKind(t({ status: "waiting" })), "needs");
@@ -59,4 +87,49 @@ test("wallKind: working, needs you, or done on the Wall", () => {
   assert.equal(wallKind(t({ status: "limited" })), "needs");
   assert.equal(wallKind(t({ status: "done", agentsAtWork: 2 })), "working");
   assert.equal(wallKind(t({ status: "done" })), "done");
+});
+
+test("a question is news until you open the session, and still needs you after", () => {
+  const fresh = t({ status: "waiting", unread: true });
+  const seen = t({ status: "waiting" });
+  assert.deepEqual([seenAsk(fresh), newsForYou(fresh)], [false, true]);
+  assert.deepEqual([seenAsk(seen), newsForYou(seen), needsYou(seen), bucketOf(seen)], [true, false, true, "needs"]);
+  // A problem and a plan's limit aren't questions: they stay news whether or not you've looked.
+  assert.equal(newsForYou(t({ status: "error" })), true);
+  assert.equal(newsForYou(t({ status: "limited" })), true);
+  // A Reviewer block isn't a question either: read, it doesn't need you at all.
+  assert.equal(seenAsk(t({ status: "waiting", held: "review" })), false);
+});
+
+test("the session you are looking at is never news, but its problem or its plan's limit still is", () => {
+  // A question that just came in on the open session: the engine's unread mark is still on its way to being cleared.
+  const asking = t({ status: "waiting", unread: true });
+  assert.deepEqual([seenAsk(asking, true), newsForYou(asking, Date.now(), true)], [true, false]);
+  assert.equal(newsForYou(t({ status: "done", unread: true }), Date.now(), true), false);
+  assert.equal(newsForYou(t({ status: "error" }), Date.now(), true), true);
+  assert.equal(newsForYou(t({ status: "limited" }), Date.now(), true), true);
+  // Not looking, the same question is news.
+  assert.equal(newsForYou(asking, Date.now(), false), true);
+});
+
+test("Needs you means one thing: The Wall's filter counts a finished session you haven't read under Needs you, as the sidebar's By status does", () => {
+  const unread = t({ status: "done", unread: true });
+  const read = t({ status: "done" });
+  // The sidebar said "Needs you 1 · Finished 1" for these two; The Wall must say the same.
+  assert.deepEqual([statusKind(unread), statusKind(read)], ["needs", "done"]);
+  assert.equal(statusKind(t({ status: "running" })), "working");
+  assert.equal(statusKind(t({ status: "waiting" })), "needs");
+  assert.equal(statusKind(t({ status: "done", agentsAtWork: 2 })), "working");
+  // Answered while you were away, its agents still at work: working until they are done, in both.
+  assert.equal(statusKind(t({ status: "done", unread: true, agentsAtWork: 1 })), "working");
+  // A tile's own buttons still go by wallKind: a finished unread tile keeps its finished foot.
+  assert.equal(wallKind(unread), "done");
+  // Both lists take the one test: The Wall's filter and counts read statusKind, the sidebar's Working reads worksNow and Needs you needsYou.
+  const wall = readFileSync(new URL("../../ui/src/app/Wall.tsx", import.meta.url), "utf8");
+  assert.match(wall, /wallFilter = \(all: Thread\[\], filter: Filter, now = Date\.now\(\)\) => \(filter === "all" \? all : all\.filter\(\(t\) => statusKind\(t, now\) === filter\)\)/);
+  assert.match(wall, /const count = \(k: WallKind\) => wallFilter\(all, k, now\)\.length;/);
+  assert.doesNotMatch(wall, /wallKind\(t\) === filter|wallKind\(t\) === k/);
+  const side = readFileSync(new URL("../../ui/src/app/Sidebar.tsx", import.meta.url), "utf8");
+  assert.match(side, /const needs = \(t: Thread\) => needsYou\(t, now\);/);
+  assert.match(side, /const works = worksNow;/);
 });

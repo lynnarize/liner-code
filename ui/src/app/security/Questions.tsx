@@ -1,9 +1,9 @@
 /*
-  A scan's questions, docked at its composer as one card (board D, after Devin's question card): "Question 2 of 3 ·
-  answering is optional", the one before and after, Skip, and close (skip the rest); the answers lettered A, B, C,
-  the first the scan's own guess, marked "My guess" with its reason at the row's end. A, B or C (or a click) takes an
-  answer and goes on; the composer under the card takes your own words, and Enter in it alone takes the guess
-  (ScanSession does those two). Nothing goes on by itself: the scan waits until every question is answered or skipped.
+  A scan's questions, docked at its composer as the ask docked there is drawn (Ask.tsx): the needs-you mark and who
+  asks on top with "2 of 3", the question as its headline, the answers lettered A, B, C, the first the scan's own guess,
+  marked "My guess" with its reason at the row's end, and Skip (or Esc) at its foot, with Skip the rest while two or more are left. A, B or C (or a
+  click) takes an answer and goes on; the composer under the card takes your own words, and Enter in it alone takes the
+  guess (ScanSession does those two). Nothing goes on by itself: the scan waits until every question is answered or skipped.
 
   Built on the app's own question item (Item kind "question", answered with question.answer): one item can hold several
   questions, paged here, and they go back together when the last is answered or skipped. ScanSession keeps where the card
@@ -11,7 +11,7 @@
 */
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Item } from "@contracts";
-import { I } from "../icons";
+import { I, StateMark } from "../icons";
 
 export type QuestionItem = Extract<Item, { kind: "question" }>;
 /** Where the card is: the question in view, and the answers given so far (question → answer). */
@@ -53,7 +53,10 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
     if (e.metaKey || e.ctrlKey || e.altKey || e.nativeEvent.isComposing) return;
     if (e.target instanceof HTMLElement && e.target.closest("textarea, input")) return;
     const i = LETTERS.indexOf(e.key.toUpperCase());
-    if (e.key.length === 1 && i >= 0 && i < q.options.length) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      skip();
+    } else if (e.key.length === 1 && i >= 0 && i < q.options.length) {
       e.preventDefault();
       pick(q.options[i].label);
     } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && q.options.length) {
@@ -65,30 +68,26 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
     }
   };
   return (
-    <section ref={card} className="lsc-ask" tabIndex={-1} aria-label={`The scan asks: ${q.question}`} onKeyDown={onKey}>
-      <div className="lc-trow lsc-ask-top">
-        <I.ask size={16} />
-        <span className="lc-trow-t lc-grow">
-          {total > 1 ? `Question ${at + 1} of ${total} · answering is optional` : "A question · answering is optional"}
-        </span>
+    <section ref={card} className="lc-dask lsc-ask" tabIndex={-1} aria-label={`The scan asks: ${q.question}`} onKeyDown={onKey}>
+      <div className="lc-dask-top">
+        <StateMark state="needs" size={14} />
+        <span className="lc-dask-who">The scan asks · answering is optional</span>
         {total > 1 && (
           <>
+            <span className="lc-grow" />
             <button type="button" className="lc-ib l-focus" aria-label="The question before" title="The question before" disabled={at === 0} onClick={() => onState({ ...state, at: at - 1 })}>
               <I.chevL size={14} />
             </button>
+            <span className="lc-wk-tag l-num">
+              {at + 1} of {total}
+            </span>
             <button type="button" className="lc-ib l-focus" aria-label="The next question" title="The next question" disabled={at === total - 1} onClick={() => onState({ ...state, at: at + 1 })}>
               <I.chevR size={14} />
             </button>
           </>
         )}
-        <button type="button" className="lc-trow-lk l-focus" title="Skip this question: the scan goes by its guess and says so" onClick={skip}>
-          Skip
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label={total > 1 ? "Skip all the questions" : "Skip the question"} title={total > 1 ? "Skip the rest: the scan goes by its guesses" : "Skip it: the scan goes by its guess"} onClick={() => onDone(state.answers)}>
-          <I.close size={14} />
-        </button>
       </div>
-      <div className="lsc-ask-h">{q.question}</div>
+      <h3 className="lc-dask-h">{q.question}</h3>
       {q.options.length > 0 ? (
         <div className="lsc-ask-opts" role="radiogroup" aria-label={q.question}>
           {q.options.map((o, i) => (
@@ -104,6 +103,18 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
         <p className="lsc-ask-free">Type your answer in the box below, or skip it.</p>
       )}
       {note && <p className="lsc-ask-free">{note}</p>}
+      {/* Skip, where the docked ask has Not this: the scan goes by its guess and says so. While two or more are left, Skip the
+          rest beside it lets them all go at once, keeping the answers already given. */}
+      <div className="lc-dask-acts">
+        <button type="button" className="lc-dask-ghost l-focus" title="Skip this question: the scan goes by its guess and says so" onClick={skip}>
+          Skip <kbd>esc</kbd>
+        </button>
+        {total - at >= 2 && (
+          <button type="button" className="lc-dask-ghost l-focus" title="Skip the rest: the scan goes by its guesses" onClick={() => onDone(state.answers)}>
+            Skip the rest
+          </button>
+        )}
+      </div>
     </section>
   );
 }

@@ -10,6 +10,7 @@ import { WRITER_CANCELLED, type Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { checkpointsOf, modelLabel, plural } from "./model";
+import { StateMark } from "./icons";
 import { ship } from "./Ship";
 import { Lines, Pop } from "./ui";
 
@@ -182,7 +183,11 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
           <i />
           <i />
           <i />
-          <span>Writing the message from the changes</span>
+          {/* The lines are only the field's placeholder; the mark says an agent is at work on it, and keeps moving under Reduce motion. */}
+          <span>
+            <StateMark state="working" size={12} />
+            Writing the message from the changes
+          </span>
         </div>
       ) : (
         <textarea

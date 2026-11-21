@@ -499,7 +499,7 @@ test("claude: an agent's row says who it is, what it was asked, its own steps an
     q.emit({ type: "assistant", parent_tool_use_id: null, uuid: "a", session_id: "s", message: { id: "m1", model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "call-1", name: "Agent", input: { subagent_type: "Explore", description: "Find the parser", prompt: "Find where tide heights are parsed." } }] } });
     q.emit({ type: "system", subtype: "task_started", task_id: "t1", tool_use_id: "call-1", description: "Find the parser", task_type: "local_agent", uuid: "x", session_id: "s" });
     // Its own messages: a step, then the step's result.
-    q.emit({ type: "assistant", parent_tool_use_id: "call-1", uuid: "c1", session_id: "s", message: { id: "k1", model: "claude-haiku-5-5", content: [{ type: "tool_use", id: "r1", name: "Read", input: { file_path: "/tmp/src/noaa.ts" } }] } });
+    q.emit({ type: "assistant", parent_tool_use_id: "call-1", uuid: "c1", session_id: "s", message: { id: "k1", model: "claude-haiku-5-5", content: [{ type: "thinking", thinking: "The parser is likely\n in noaa.ts.", signature: "" }, { type: "tool_use", id: "r1", name: "Read", input: { file_path: "/tmp/src/noaa.ts" } }] } });
     q.emit({ type: "user", parent_tool_use_id: "call-1", session_id: "s", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "r1", content: "export function parse() {}" }] } });
     q.emit({ type: "system", subtype: "task_progress", task_id: "t1", tool_use_id: "call-1", description: "Find the parser", usage: { total_tokens: 1800, tool_uses: 1, duration_ms: 900 }, summary: "Reading the NOAA parser", uuid: "p", session_id: "s" });
     await until(() => tools.some((u) => u.agent?.now === "Reading the NOAA parser"), "its progress");
@@ -511,7 +511,9 @@ test("claude: an agent's row says who it is, what it was asked, its own steps an
     assert.equal(live.brief, "Find where tide heights are parsed.");
     assert.equal(live.taskId, "t1");
     assert.equal(live.model, "claude:claude-haiku-5-5");
-    assert.deepEqual(live.steps, [{ title: "Read src/noaa.ts", toolKind: "read", status: "done", path: "src/noaa.ts" }]);
+    // Its thinking is a thought between its steps, not a tool; its call's result still lands on its call.
+    assert.deepEqual(live.steps?.map(({ at, ...x }) => (assert.equal(typeof at, "number", "each step says when it began"), x)), [{ title: "The parser is likely in noaa.ts.", toolKind: "think", status: "done" }, { title: "Read src/noaa.ts", toolKind: "read", status: "done", path: "src/noaa.ts" }]);
+    assert.equal(live.tools, 1);
     assert.equal(live.tokens, 1800);
     assert.equal(tools.at(-1)!.status, "running");
     // Stop reaches it alone.

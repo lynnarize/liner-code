@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Item, PairShare, PairWays, ProviderId, ProviderInfo, Thread, UsageRecord } from "../../contracts/src/index.ts";
 import { emptyUsage, waysOf } from "../../contracts/src/index.ts";
-import { createApi } from "../src/api.ts";
+import { createApi, SOURCES_MAX } from "../src/api.ts";
 import { providers, Runtime } from "../src/runtime.ts";
 import type { Provider } from "../src/providers/types.ts";
 import { leadRules, pairShare, sidekickRules, tookBackOf } from "../src/sidekick.ts";
@@ -140,7 +140,7 @@ test("pairShare: an estimate from list prices when a tool reported no cost, and 
   assert.deepEqual(pairShare([], []), { models: [], estimated: false, briefs: { sent: 0, kept: 0, tookBack: 0 } });
 });
 
-const ready = (id: ProviderInfo["id"], models: { id: string; efforts?: string[] }[]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: models.map((m) => ({ id: m.id, label: m.id, description: "", ...(m.efforts ? { efforts: m.efforts.map((e) => ({ id: e, label: e })) } : {}) })), supports: { approvals: true, resume: true, effort: true, plan: true } });
+const ready = (id: ProviderInfo["id"], models: { id: string; efforts?: string[]; defaultEffort?: string }[]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: models.map((m) => ({ id: m.id, label: m.id, description: "", ...(m.efforts ? { efforts: m.efforts.map((e) => ({ id: e, label: e })) } : {}), ...(m.defaultEffort ? { defaultEffort: m.defaultEffort } : {}) })), supports: { approvals: true, resume: true, effort: true, plan: true } });
 
 function setup() {
   const home = mkdtempSync(join(tmpdir(), "lc-ways-"));
@@ -156,10 +156,10 @@ function setup() {
 /** Fake tools in every tool's place, so the API's look finds these models and nothing of this Mac's. */
 async function withTools(run: () => Promise<void>) {
   const saved = { ...providers };
-  const tool = (id: ProviderId, models: { id: string; efforts?: string[] }[]): Provider => ({ id, detect: async () => ({ ...ready(id, models), available: models.length > 0 }), open: () => assert.fail("no turn runs here") });
+  const tool = (id: ProviderId, models: { id: string; efforts?: string[]; defaultEffort?: string }[]): Provider => ({ id, detect: async () => ({ ...ready(id, models), available: models.length > 0 }), open: () => assert.fail("no turn runs here") });
   for (const id of Object.keys(providers) as ProviderId[]) providers[id] = tool(id, []);
-  // Opus here has no medium, so a pair's medium lands on the nearest it has.
-  providers.claude = tool("claude", [{ id: "claude-opus-5-5", efforts: ["high", "xhigh", "max"] }, { id: "claude-sonnet-5-5", efforts: ["low", "medium", "high"] }]);
+  // Opus here has no medium, so a pair's medium lands on the nearest it has; its tool marks xhigh its default, Sonnet's none.
+  providers.claude = tool("claude", [{ id: "claude-opus-5-5", efforts: ["high", "xhigh", "max"], defaultEffort: "xhigh" }, { id: "claude-sonnet-5-5", efforts: ["low", "medium", "high"] }]);
   providers.codex = tool("codex", [{ id: "gpt-6-luna" }]);
   try {
     await run();
@@ -186,23 +186,27 @@ test("thread.create and thread.update store a session's own ways: null or none c
   await assert.rejects(api.call("thread.create", { projectId: "p", tuning: { colour: "red" } }), /no way/);
 });
 
-test("thread.create: a new pair with no effort works at the pair's effort, as near as its lead's model has one", async () => {
+test("thread.create: a new pair with no effort works at the pair's effort when set, else at its lead model's default, else none, never a bare medium", async () => {
   await withTools(async () => {
     const { api, store } = setup();
     await api.ready;
     const opus = (await api.call("thread.create", { projectId: "p", agent: `@${OPUS}`, sidekick: LUNA })) as Thread;
-    assert.equal(opus.effort, "high", "medium, which Opus here hasn't, lands on the nearest it has");
+    assert.equal(opus.effort, "xhigh", "no pair's effort set: the default Opus's tool marks");
     const sonnet = (await api.call("thread.create", { projectId: "p", agent: `@${SONNET}`, sidekick: LUNA })) as Thread;
-    assert.equal(sonnet.effort, "medium");
+    assert.equal(sonnet.effort, "", "no default marked: none, not medium");
+    assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${SONNET}`, sidekick: LUNA, effort: "" })) as Thread).effort, "", "\"\" is no level, as unset is");
+    assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${OPUS}`, sidekick: LUNA, effort: "" })) as Thread).effort, "xhigh", "\"\" is treated as unset");
     assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${SONNET}`, sidekick: LUNA, effort: "high" })) as Thread).effort, "high", "an effort given stays");
     assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${SONNET}` })) as Thread).effort, undefined, "one model alone keeps its own");
+    store.setSettings({ pairEffort: "medium" });
+    assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${OPUS}`, sidekick: LUNA })) as Thread).effort, "high", "the pair's effort you set, as near as Opus lists");
     store.setSettings({ pairEffort: "low" });
     assert.equal(((await api.call("thread.create", { projectId: "p", agent: `@${SONNET}`, sidekick: LUNA })) as Thread).effort, "low");
     // Started as Settings say, a pair: the same.
     store.setSettings({ start: "pair", pairEffort: undefined });
     const started = (await api.call("thread.create", { projectId: "p" })) as Thread;
     assert.ok(started.sidekick, "started as a pair");
-    assert.ok(started.effort, "with the pair's effort");
+    assert.notEqual(started.effort, "medium", "never a bare medium");
     // A fork keeps its parent's, even none.
     const parent = (await api.call("thread.create", { projectId: "p", agent: `@${SONNET}` })) as Thread;
     store.patchThread(parent.id, { sidekick: LUNA });
@@ -289,6 +293,20 @@ test("settings.save: classes, hand-over and the pair's effort are checked, and n
   assert.equal("handOver" in (new Store(store.home).settings as object), false, "unset, not null");
   await api.call("settings.save", { classes: {} } as never);
   assert.equal(store.settings.classes, undefined, "no models moved: unset");
+});
+
+test("settings.save keeps a model's chosen sources only as an object of strings, capped in size, and drops anything else", async () => {
+  const { api, store } = setup();
+  await api.call("settings.save", { modelSources: { "opencode/GPT 6": "zen", "last:opencode": "go", "switch:opencode": "zen", bad: 3, nested: { a: "b" }, long: "x".repeat(400) } } as never);
+  assert.deepEqual(store.settings.modelSources, { "opencode/GPT 6": "zen", "last:opencode": "go", "switch:opencode": "zen" }, "only strings of a sane length are kept");
+  for (const wrong of ["zen", ["a", "b"], 7, null, {}]) {
+    await api.call("settings.save", { modelSources: { a: "b" } } as never);
+    await api.call("settings.save", { modelSources: wrong } as never);
+    assert.equal(store.settings.modelSources, undefined, `${JSON.stringify(wrong)} is not kept`);
+  }
+  const many = Object.fromEntries(Array.from({ length: SOURCES_MAX + 50 }, (_, i) => [`t/${i}`, "s"]));
+  await api.call("settings.save", { modelSources: many } as never);
+  assert.equal(Object.keys(store.settings.modelSources ?? {}).length, SOURCES_MAX, "no more than the cap");
 });
 
 test("a hand-edited class or way the engine doesn't know falls back to the automatic one, never undefined in the lead's rules", () => {

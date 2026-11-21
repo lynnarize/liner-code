@@ -18,11 +18,11 @@ import { toast } from "@liner/components/toast/toast";
 import { appIcon, dayOf, openApp, openSession } from "./Addon";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { plural, since } from "./model";
 import { startCreator } from "./Modes";
 import { STOPPED_REASON, useStoppedPanels } from "./panelLife";
-import { HoverNote, NamedSwitch, Pop } from "./ui";
+import { HoverNote, LookAgain, NamedSwitch, Pop, Row, ShowSidebar } from "./ui";
 import * as os from "./os";
 import "./addons-page.css";
 
@@ -122,9 +122,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
     <div className="lc-apppage lc-ao-page">
       <header className="lc-top" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
         <span className="lc-grow" data-drag />
       </header>
@@ -142,9 +140,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 </HoverNote>
               </p>
             </div>
-            <button type="button" className="lc-ao-ghost l-focus" aria-label="Look again" title="Look again" data-busy={looking || undefined} onClick={refresh}>
-              <I.refresh size={16} />
-            </button>
+            <LookAgain looking={looking} onLook={refresh} />
             <span className="lc-ao-split">
               <button type="button" className="l-focus" onClick={() => setAdding("source")}>
                 <I.plus size={14} />
@@ -183,7 +179,8 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                   <span>
                     <b>
                       {a.name}
-                      {a.enabled && stopped.has(a.id) && <i className="lc-ao-tag">Problem</i>}
+                      {/* It stopped: the problem mark, and why in red under its name. */}
+                      {a.enabled && stopped.has(a.id) && <StateMark state="problem" size={12} label="Ran into a problem" className="lc-ao-mk" />}
                     </b>
                     <small>{a.enabled && stopped.has(a.id) ? STOPPED_REASON : summaryOf(a)}</small>
                   </span>
@@ -225,7 +222,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                     </span>
                   </span>
                   <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => update(a.id, { removed: false })}>
-                    Restore
+                    Bring it back
                   </button>
                 </div>
               ))}
@@ -326,8 +323,8 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
             <b>{a.name}</b>
             <span>{a.panel ? KIND[a.panel.place] : "Connection"}</span>
           </div>
-          <button type="button" className="lc-ao-ghost l-focus" aria-label="Close" autoFocus onClick={onClose}>
-            <I.close size={16} />
+          <button type="button" className="lc-ib l-focus" aria-label="Close" title="Close" autoFocus onClick={onClose}>
+            <I.close size={14} />
           </button>
         </header>
         <div className="lc-ao-sheet-body">
@@ -340,31 +337,24 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
               </div>
             ))}
           </dl>
+          {/* Its main action, then the rest under one ···: its versions, changing it, and its files (a row that stays ticked while the list shows). */}
           <div className="lc-ao-acts">
-            {prev > 0 && (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void update({ version: prev }).then(() => toast(`${a.name} is back to v${prev}`), fail)}>
-                Back to v{prev}
-              </button>
-            )}
-            {a.version < latest && (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void update({ version: latest }).then(() => toast(`${a.name} is on v${latest}`), fail)}>
-                Up to v{latest}
-              </button>
-            )}
-            {/* Someone else's package: it changes with its next version from npm, not by an agent's edit. */}
-            {!a.panel?.dsh && (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={change}>
-                Ask an agent to change it
-              </button>
-            )}
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-expanded={Boolean(files)} onClick={() => void showFiles()}>
-              {files ? "Hide its files" : "Show its files"}
-            </button>
             {a.panel?.place === "page" && a.enabled && (
               <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (onClose(), openApp({ id: a.id, place: "page" }))}>
                 Open it
               </button>
             )}
+            <Pop label={`More for ${a.name}`} menu align="start" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+              {(close) => (
+                <>
+                  {prev > 0 && <Row title={`Back to v${prev}`} icon={<I.undo size={16} />} onPick={() => (close(), void update({ version: prev }).then(() => toast(`${a.name} is back to v${prev}`), fail))} />}
+                  {a.version < latest && <Row title={`Up to v${latest}`} icon={<I.download size={16} />} onPick={() => (close(), void update({ version: latest }).then(() => toast(`${a.name} is on v${latest}`), fail))} />}
+                  {/* Someone else's package: it changes with its next version from npm, not by an agent's edit. */}
+                  {!a.panel?.dsh && <Row title="Ask an agent to change it" icon={<I.turn size={16} />} onPick={() => (close(), change())} />}
+                  <Row title="Its files" note="The list, here in the sheet" icon={<I.file size={16} />} keepIcon on={Boolean(files)} onPick={() => (close(), void showFiles())} />
+                </>
+              )}
+            </Pop>
           </div>
           {files && (
             <div className="lc-ao-files">
@@ -392,13 +382,14 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
               <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setSure(false)}>
                 Keep it
               </button>
-              <button type="button" className="lc-btn lc-ao-remove" data-kind="plain" data-size="sm" autoFocus onClick={() => void update({ removed: true }).then(() => (toast(`Removed ${a.name}`, { description: "Its files are kept: Restore brings it back." }), onClose()), fail)}>
-                Remove
+              {/* A confirm is Remove, then Remove it, as everywhere. */}
+              <button type="button" className="lc-btn lc-ao-remove" data-kind="plain" data-size="sm" autoFocus onClick={() => void update({ removed: true }).then(() => (toast(`Removed ${a.name}`, { description: "Its files are kept: Bring it back, under Removed, returns it." }), onClose()), fail)}>
+                Remove it
               </button>
             </>
           ) : (
             <button type="button" className="lc-ao-remove l-focus" onClick={() => setSure(true)}>
-              Remove {a.name}…
+              Remove
             </button>
           )}
         </footer>

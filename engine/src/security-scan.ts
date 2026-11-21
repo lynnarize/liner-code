@@ -373,7 +373,7 @@ export function wake(sec: Security) {
     const tag = t.security!;
     if (tag.kind === "scan" && tag.scan) {
       const live = liveOf(sec, tag.scan);
-      if (!live) return;
+      if (!live) return void (t.status === "running" && carryOn(sec, tag.scan, t));
       if (t.status === "running" || t.status === "waiting") return void (live.ran = true);
       if (live.ran) setTimeout(() => void finish(sec, tag.scan!), 0);
     } else if (tag.kind === "fix" && tag.finding) fixMoved(sec, t);
@@ -388,6 +388,41 @@ export function wake(sec: Security) {
   } catch (e) {
     console.error("[security]", e);
   }
+}
+
+/**
+  A new turn in the session of a scan that was stopped (by you or by its time) or failed carries the scan on: you said
+  "resume", or pressed Carry on. Its record is running again, so its row, its tray and the found panel say it works and Stop
+  stops it as a scan; its tools take findings again; its clock starts again with the same "Stops after"; and when the turn
+  ends it is finished as any scan is, its second look reading only what it found since. A scan that finished well stays a
+  plain chat for your questions, but carries on for a turn its tool began by itself (Hermes answering with what the agents it
+  sent off found, after the scan's turn had ended): that turn has no message of yours. A tool call in an ended scan never
+  reopens it (call says "This scan has ended").
+*/
+function carryOn(sec: Security, scanId: string, t: Thread) {
+  let rec: ScanRecord;
+  try {
+    rec = sec.scan(scanId);
+  } catch {
+    return;
+  }
+  if ((rec.state !== "stopped" && rec.state !== "failed" && rec.state !== "done") || rec.depth === "checks" || rec.threadId !== t.id || t.archived) return;
+  // Only a turn begun after the scan ended: the old turn still winding down from its Stop isn't a new message.
+  const tl = sec.store.timeline(t.id);
+  const turn = tl.findLast((x) => x.kind === "turn");
+  if (!turn || turn.at <= (rec.finishedAt ?? Infinity)) return;
+  if (rec.state === "done" && tl.some((x) => x.kind === "user" && x.turn === turn.turn)) return;
+  // Whether you let it write SECURITY.md isn't kept on the record, so a scan carried on doesn't write one.
+  const live = keepLive(sec, scanId, { ran: true, asked: 0, write: false, pending: [], tries: 0 });
+  // What the engine said for it when the time ran out no longer holds: it may get there now.
+  const missed = (rec.missed ?? []).filter((m) => !/the time ran out/.test(m));
+  sec.patchScan(scanId, { state: "running", finishedAt: undefined, error: undefined, looking: undefined, missed: missed.length ? missed : undefined, ...(rec.stopsAfter ? { endsAt: Date.now() + rec.stopsAfter * clock.minuteMs } : {}) });
+  if (rec.stopsAfter) {
+    live.timer = setInterval(() => tick(sec, scanId), clock.tickMs);
+    live.timer.unref?.();
+  }
+  sec.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: turn.turn, at: Date.now(), text: rec.stopsAfter ? `The scan carries on, and stops again after ${plural(rec.stopsAfter, "minute")}.` : "The scan carries on." });
+  sec.changed(["scans"], rec.projectId);
 }
 
 /** A fix session moved on: working while it runs, ready when its turn ended, fixed when its pull request is merged. */
@@ -543,7 +578,8 @@ export function parseLook(out: string, ids: string[]): { words?: string; results
 /** Another maker's model reads each new finding's code, Read only, in one go: its verdicts go on the findings and its voice in the chat. */
 async function secondLook(sec: Security, scanId: string, threadId: string, live: Live) {
   const rec = sec.scan(scanId);
-  const fresh = sec.findings(rec.projectId).filter((f) => f.scan === scanId && f.source === "agent" && f.state === "open");
+  // Not one it read already: a scan carried on after a stop has its earlier findings looked at once.
+  const fresh = sec.findings(rec.projectId).filter((f) => f.scan === scanId && f.source === "agent" && f.state === "open" && f.look.state === "none");
   if (!fresh.length || !rec.secondLook) return;
   const ref = rec.secondLook;
   // Named for the model that reads, the one Start a scan showed (on the Demo, the Demo).

@@ -1,27 +1,23 @@
 /*
   The Design face's chat: the session's real conversation (Timeline.tsx, the one Liner Code shows), at one of three sizes
-  kept for the window (store.ts useChat). Minimised it is one row at the top of the composer's own tray: what the agent is
-  doing now and the turn's clock, or the first line of its last reply. Open, the conversation sits in the same tray above
-  the composer box, and scrolls inside it. Pinned, it is a column between the sidebar and the canvas with the composer at
-  its foot, and the dock leaves the canvas. The composer is always Dock.tsx's.
+  kept for the window (store.ts useChat). Minimised it is one row at the top of the composer's own tray: while a turn
+  works, the app's live line (Timeline.tsx LiveLine, the one Liner Code shows over its message box), else the first line
+  of its last reply. Open, the conversation sits in the same tray above the composer box, and scrolls inside it, with the
+  live line at its foot. Pinned, it is a column between the sidebar and the canvas with the composer at its foot, and the
+  dock leaves the canvas. The composer is always Dock.tsx's.
 
-  What the old head row said (who draws which frame, the sidekick's part) is said here: on the row, and in the open
-  chat's header. A step's words are the engine's doing line (Thread.doing, the sidebar row's second line) while it says
-  one, else the trail's own (trailSteps): both come from contracts/doing.ts, so a frame is called by its name on all three.
+  A step's words are the trail's own (trailSteps, from contracts/doing.ts), so a frame is called by its name on the live
+  line, in the chat and on the sidebar's row; its canvas steps have the canvas kind's mark. The sidekick's part (which
+  frame it draws) is said after the live line's clock.
 */
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { isStepCall, readableFrame, type DesignFile, type Item, type Thread } from "@contracts";
-import { threadOf, useEngine, useItems, useItemsWhere } from "../engine";
+import { readableFrame, type DesignFile, type Item, type Thread } from "@contracts";
+import { useItems, useItemsWhere } from "../engine";
 import { isDockable } from "../Ask";
-import { I } from "../icons";
-import { agentOf } from "../model";
-import { reviewHeld } from "../session-state";
-import { pairOf } from "../Crew";
-import { FrameNames, liveOf, Tick, Timeline, trailSteps, type FrameNamer, type Mark } from "../Timeline";
+import { I, StateMark } from "../icons";
+import { FrameNames, LiveLine, Timeline, type FrameNamer, type Mark } from "../Timeline";
 import { design, getDesign, setChat, useChat, useDesign, type ChatSize } from "./store";
 import "./chat.css";
-
-type Tool = Extract<Item, { kind: "tool" }>;
 
 /** A frame's name from its id (or its name), as the design file has it now. */
 /**
@@ -105,45 +101,22 @@ function lastTurnOf(items: Item[]) {
 }
 
 /**
-  What the session is doing now, in words. Waiting on you, the status line's word. Else the engine's doing line, as the
-  sidebar row says it at the same moment (runtime.ts: the lead's latest step, kept until thinking or the answer is said;
-  the Reviewer reading). Before the line says anything (a turn that began with a plan or a page): the step under way as the
-  trail groups and names it ("Reading 3 files"), else "Drawing <frame>" while its outline is on one, else the status line's
-  word. Who draws and the sidekick's part, from the canvas's presence.
+  What the small row needs of the session: whether its newest turn is at work (its marks, as the live line reads them), its
+  last reply, and the sidekick's part from the canvas's presence ("Sidekick Haiku: drawing Phone / Week").
 */
-function useNow(thread: Thread, items: Item[]) {
+function useNow(items: Item[]) {
   const presence = useDesign((s) => s.presence);
-  // Read so the row draws again when a frame joins the file; its names and what drew a frame.
-  const namer = useFrameNamer(thread.id);
-  const agents = useEngine((s) => s.agents);
-  const providers = useEngine((s) => s.providers);
-  const running = thread.status === "running" || (thread.status === "waiting" && !reviewHeld(thread));
-  const { list, marks, reply } = useMemo(() => lastTurnOf(items), [items]);
-  const ps = Object.entries(presence);
-  const lead = ps.find(([, p]) => p.lead);
-  const side = ps.find(([, p]) => !p.lead);
-  const who = pairOf(thread, agents, providers)?.lead ?? agentOf(thread.agent, agents, providers).name;
-  const live = running && marks.length ? liveOf(marks, list) : undefined;
-  const line = useEngine((s) => threadOf(s, thread.id)?.doing?.text);
-  // The step under way among the turn's steps, grouped as the trail and the engine group them (reads in a row are one).
-  const named = useMemo(() => {
-    const steps = running ? list.filter((x): x is Tool => x.kind === "tool" && isStepCall(x)) : [];
-    return steps.some((x) => x.status === "running") ? trailSteps(steps, undefined, namer).findLast((x) => x.state === "running") : undefined;
-  }, [running, list, namer]);
-  const leadFrame = lead ? (frameName(lead[0]) ?? readableFrame(lead[0])) : undefined;
-  const stepped = line ?? (named ? [named.verb, named.target].filter(Boolean).join(" ") : undefined);
-  const words = live?.waiting ? live.word : stepped ? stepped : leadFrame ? `Drawing ${leadFrame}` : (live?.word ?? "Working");
+  const { marks, reply } = useMemo(() => lastTurnOf(items), [items]);
+  const running = marks.some((m) => m.status === "running");
+  const side = Object.entries(presence).find(([, p]) => !p.lead);
   const lower = (w: string) => `${w.charAt(0).toLowerCase()}${w.slice(1)}`;
   // Named as the sidekick: a pair of one model (the Demo's, Opus with Opus) has the same name twice. Its label is what it does ("Drawing").
   const sideWords = side ? `Sidekick ${side[1].name}: ${lower(side[1].label || "Drawing")} ${frameName(side[0]) ?? readableFrame(side[0])}` : undefined;
-  // The header's longer line: who is drawing which frame, as the old head row said it.
-  // The step's own verb when one is under way ("is changing Phone / Today" in a fix), so the header and the row agree.
-  const doing = stepped && /^\S+ing\b/.test(stepped) ? lower(stepped) : undefined;
-  // Words that say who works themselves ("The Reviewer is reading the changes") stand as they are.
-  const header = !running ? undefined : doing && !live?.waiting ? `${lead?.[1].name || who} is ${doing}` : leadFrame && !live?.waiting ? `${lead![1].name || who} is drawing ${leadFrame}` : !live?.waiting && /^The\b/.test(words) ? words : `${who}: ${lower(words)}`;
-  // Only the sidekick is on a frame (the lead waits on it): the row's dot is in the sidekick's colour.
-  return { running, live, words, sideWords, header, reply, sideOnly: Boolean(side) && !lead };
+  return { running, sideWords, reply };
 }
+
+/** The sidekick's part, after the live line's clock. */
+const SideWords = ({ words }: { words?: string }) => (words ? <span className="ldc-side">· {words}</span> : null);
 
 /**
   The buttons every size shares: pin (pressed while the chat is pinned, even when a narrow window shows it open for now) and
@@ -159,28 +132,30 @@ function Pin() {
         setChat(pinned ? "open" : "pinned");
         if (keys) requestAnimationFrame(() => document.querySelector<HTMLElement>("[aria-label='Unpin the chat'], [aria-label='Pin the chat beside the canvas']")?.focus({ preventScroll: true }));
       }}>
-      <I.sidebar size={16} />
+      <I.pin size={16} />
     </button>
   );
 }
+/** The way back to Liner Code: one icon button, the same in the open chat and the column. */
 function OpenInCode() {
   return (
-    <button type="button" className="ld-lk l-focus" onClick={() => design.setFace("code")}>
-      Open in Liner Code
-      <I.external size={14} />
+    <button type="button" className="lc-tb l-focus" aria-label="Open in Liner Code" title="Open in Liner Code" onClick={() => design.setFace("code")}>
+      <I.external size={16} />
     </button>
   );
 }
 
 /**
-  Minimised: one row at the top of the composer's tray. Working: the lead's dot, what it does now, the sidekick's part and
-  the clock. Done: the first line of its last reply, with a dot until the chat has shown it. No row before there is any.
+  Minimised: one row at the top of the composer's tray. Working: the app's live line, with the way to open the chat and the
+  pin at its right. Done: the first line of its last reply, with the fresh mark until the chat has shown it; the row
+  itself opens the chat. No row before there is any.
 */
 export function ChatMin({ thread }: { thread: Thread }) {
   const items = useItems(thread.id);
-  const now = useNow(thread, items);
+  const now = useNow(items);
+  const names = useFrameNamer(thread.id);
   const reply = now.reply;
-  // Met for the first time (its timeline in), a session is read up to where it is: a dot only for a reply that comes while
+  // Met for the first time (its timeline in), a session is read up to where it is: a mark only for a reply that comes while
   // you're here. One met mid-turn has read nothing of the reply under way.
   useEffect(() => {
     if (items.length && !(thread.id in seenReplies)) markSeen(thread.id, now.running ? "" : (reply?.id ?? ""));
@@ -191,25 +166,34 @@ export function ChatMin({ thread }: { thread: Thread }) {
   if (!now.running && !line) return null;
   const open = () => {
     // From the keyboard on the row, the focus goes on to the open chat (the row goes away): ChatOpen picks it up.
-    fromRow = Boolean(document.activeElement?.closest(".ldc-min"));
+    fromRow = Boolean(document.activeElement?.closest(".ldc-min, .ldc-live"));
     setChat("open");
   };
+  if (now.running)
+    return (
+      <FrameNames.Provider value={names}>
+        <LiveLine
+          threadId={thread.id}
+          className="ldc-live"
+          extra={<SideWords words={now.sideWords} />}
+          end={
+            <>
+              <button type="button" className="lc-tb l-focus" aria-label="Open the chat" title="Open the chat" onClick={open}>
+                <I.chevU size={16} />
+              </button>
+              <Pin />
+            </>
+          }
+        />
+      </FrameNames.Provider>
+    );
   return (
-    <div className="ldc-min" data-running={now.running || undefined} data-unread={unread || undefined}>
+    <div className="ldc-min" data-unread={unread || undefined}>
       <button type="button" className="ldc-min-t l-focus" onClick={open} title="Open the chat">
-        {now.running ? <span className="ld-pd" data-lead={now.sideOnly ? undefined : true} aria-hidden /> : unread ? <span className="ldc-dot" aria-hidden /> : null}
-        <span className="ldc-min-w">{now.running ? now.words : line}</span>
-        {now.running && now.sideWords && <span className="ldc-q ldc-side">{now.sideWords}</span>}
+        {unread && <StateMark state="fresh" label="A reply you haven't read" />}
+        <span className="ldc-min-w">{line}</span>
       </button>
-      {now.running && now.live && (
-        <span className="ldc-q l-num" data-wait={now.live.waiting || undefined}>
-          <Tick text={now.live.clock} />
-        </span>
-      )}
       <span className="ldc-v" aria-hidden />
-      <button type="button" className="lc-tb l-focus" aria-label="Open the chat" title="Open the chat" onClick={open}>
-        <I.chevU size={16} />
-      </button>
       <Pin />
     </div>
   );
@@ -251,7 +235,9 @@ export function ChatBody({ thread, visible = true }: { thread: Thread; visible?:
   useEffect(() => {
     if (reply && visible) markSeen(thread.id, reply.id);
   }, [reply?.id, thread.id, visible]);
+  const { sideWords } = useNow(items);
   return (
+    <>
     <div
       ref={box}
       className="ldc-body"
@@ -266,13 +252,18 @@ export function ChatBody({ thread, visible = true }: { thread: Thread; visible?:
       <div ref={inner} className="ldc-in">
         {items.length ? (
           <FrameNames.Provider value={names}>
-            <Timeline threadId={thread.id} items={items} docked seen={seen.current ?? NONE} onReview={() => design.setFace("code")} onGrow={toEnd} />
+            <Timeline threadId={thread.id} items={items} docked seen={seen.current ?? NONE} onReview={() => design.setFace("code")} reviewIn="in Liner Code" onGrow={toEnd} />
           </FrameNames.Provider>
         ) : (
           <p className="ldc-empty">Nothing said yet. Say what to draw below.</p>
         )}
       </div>
     </div>
+    {/* A working turn's live line, at the conversation's foot right over the composer, as in Liner Code. */}
+    <FrameNames.Provider value={names}>
+      <LiveLine threadId={thread.id} className="ldc-live" extra={<SideWords words={sideWords} />} />
+    </FrameNames.Provider>
+    </>
   );
 }
 
@@ -356,6 +347,8 @@ const isUndocked = (it: Item) => ((it.kind === "question" || it.kind === "propos
   row's width doesn't depend on the column (it is inside it), so the two lines can't chase each other.
 */
 const COLUMN = 312;
+/** The small row's way to open the chat again: the done row's own button, or the open button on the live line (ChatMin). */
+export const OPEN_AGAIN = ".ldc-min > .ldc-min-t, .ldc-live [aria-label='Open the chat']";
 export function useShownSize(row: RefObject<HTMLElement | null>, threadId?: string): { size: ChatSize; minimise: () => void } {
   const kept = useChat();
   const [narrow, setNarrow] = useState(false);
@@ -363,11 +356,12 @@ export function useShownSize(row: RefObject<HTMLElement | null>, threadId?: stri
   const [letGo, setLetGo] = useState<string[]>([]);
   const forced = kept === "min" && waiting.some((id) => !letGo.includes(id));
   const key = waiting.join();
-  // One press always makes it small: what waits now is let go and the size kept is min. The focus goes to the row's open button.
+  // One press always makes it small: what waits now is let go and the size kept is min. The focus goes to the row's way to open
+  // it again: the row itself when the turn is done (named by its line), the live line's open button while it works.
   const minimise = useCallback(() => {
     if (key) setLetGo((l) => [...l, ...key.split(",")]);
     setChat("min");
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(".ldc-min [aria-label='Open the chat']")?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(OPEN_AGAIN)?.focus({ preventScroll: true }));
   }, [key]);
   useLayoutEffect(() => {
     const el = row.current;
@@ -387,10 +381,8 @@ export function useShownSize(row: RefObject<HTMLElement | null>, threadId?: stri
 /** Set by the small row as it opens the chat with the focus on it. */
 let fromRow = false;
 
-/** Open: in the composer's tray above its box, as wide as it, at most about half the canvas tall. */
-export function ChatOpen({ thread }: { thread: Thread }) {
-  const items = useItems(thread.id);
-  const now = useNow(thread, items);
+/** Open: in the composer's tray above its box, as wide as it, at most about half the canvas tall (the live line at the conversation's foot says how the turn goes). */
+export function ChatOpen() {
   const hosts = useContext(DockHosts);
   // Focus comes here when the chat opens from the small row by the keyboard (its button goes with the row).
   const mini = useRef<HTMLButtonElement>(null);
@@ -402,12 +394,6 @@ export function ChatOpen({ thread }: { thread: Thread }) {
     <div className="ldc-open" role="region" aria-label="Chat">
       <div className="ldc-h">
         <b>Chat</b>
-        {now.header && (
-          <span className="ldc-q ldc-status">
-            {now.header}
-            {now.sideWords ? `; ${now.sideWords}` : ""}
-          </span>
-        )}
         <span className="lc-grow" />
         <button ref={mini} type="button" className="lc-tb l-focus" aria-label="Make the chat small" title="Make the chat small" onClick={() => (hosts ? hosts.minimise() : setChat("min"))}>
           <I.chevD size={16} />
@@ -429,9 +415,7 @@ export function ChatColumn({ thread }: { thread?: Thread }) {
         <b>Chat</b>
         <span className="lc-grow" />
         <Pin />
-        <button type="button" className="lc-tb l-focus" aria-label="Open in Liner Code" title="Open in Liner Code" onClick={() => design.setFace("code")}>
-          <I.external size={16} />
-        </button>
+        <OpenInCode />
       </div>
       {thread && hosts ? <Slot host={hosts.body} className="ldc-slot ldc-grow" /> : <p className="ldc-empty ldc-grow">Nothing said yet. Say what to draw below.</p>}
       <div className="ldc-foot">
@@ -464,13 +448,15 @@ function useDockFit(dock: RefObject<HTMLDivElement | null>) {
       const limit = cv.clientHeight - 16;
       const slot = el.querySelector<HTMLElement>(".ldc-open .ldc-slot");
       const body = slot?.querySelector<HTMLElement>(".ldc-body");
+      // The live line sits in the slot under the conversation, inside the slot's cap.
+      const liveH = slot?.querySelector<HTMLElement>(".ldc-live")?.getBoundingClientRect().height ?? 0;
       const queue = el.querySelector<HTMLElement>(".lc-tray > .lc-queued");
       const slotH = slot?.getBoundingClientRect().height ?? 0;
       const queueH = queue?.getBoundingClientRect().height ?? 0;
       const other = inner.getBoundingClientRect().height - slotH - queueH;
       const queueWant = queue ? Math.min(queue.scrollHeight, QUEUE_MAX) : 0;
       const bodyMax = Math.round(Math.max(BODY_MIN, Math.min(cv.clientHeight * 0.46, limit - other - queueWant)));
-      const bodyUsed = slot ? Math.min(body?.scrollHeight ?? slotH, bodyMax) : 0;
+      const bodyUsed = slot ? Math.min(body ? body.scrollHeight + liveH : slotH, bodyMax) : 0;
       const queueMax = Math.round(Math.max(QUEUE_MIN, Math.min(QUEUE_MAX, limit - other - bodyUsed)));
       const next = `${bodyMax}|${queueMax}`;
       if (next === last) return;

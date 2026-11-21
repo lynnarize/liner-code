@@ -6,12 +6,14 @@
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Access, AgentGlyph, AgentProfile, Effort, RunMode, SkillInfo, Specialty } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { Glyph, I, ModelMark } from "./icons";
-import { allModels, effortsFor, markOf, modelLabel, onClaude, plural } from "./model";
-import { EffortPick, ModelPicker } from "./Models";
+import { keptLevel } from "./picker";
+import { accessOf, AGENT_LEVELS, allModels, effortsFor, markOf, modelLabel, onClaude, plural } from "./model";
+import { ACCESS_ICONS, PermissionRows } from "./Composer";
+import { EffortPick, ModelPicker, usePickerWide } from "./Models";
+import { PICKER_NARROW, PICKER_WIDE } from "./picker";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
@@ -26,15 +28,10 @@ const PRESETS: Preset[] = [
   { id: "custom", label: "Custom", note: "A blank soul", glyph: "spark", name: "", role: "Agent", effort: "medium", access: "ask", prefer: [], soul: (n) => `# ${n || "New agent"}\n\n` },
 ];
 
-const MAY: { id: Access; label: string }[] = [
-  { id: "read", label: "Only reads" },
-  { id: "ask", label: "Edits, asks first" },
-  { id: "edits", label: "Edits freely" },
-];
-
 export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: AgentProfile; onClose: () => void }) {
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
+  const pickerWide = usePickerWide();
   const models = useMemo(() => allModels(providers), [providers]);
   const ref = useRef<HTMLDialogElement>(null);
   // A press that started inside: a selection dragged out past the frame ends on the dialog, and isn't a click outside.
@@ -42,7 +39,10 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
   const [spec, setSpec] = useState<Specialty>("coder");
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
-  const [effort, setEffort] = useState<Effort>("medium");
+  // The level asked for, and whether it was the person's (picked here, or the agent's saved one) rather than the preset's:
+  // a preset's level the model doesn't list is never saved (picker.ts keptLevel).
+  const [effort, setEffort] = useState<Effort>("");
+  const [effortMine, setEffortMine] = useState(false);
   const [model, setModel] = useState("");
   const [access, setAccess] = useState<Access>("ask");
   const [soul, setSoul] = useState("");
@@ -63,6 +63,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     setName(agent?.name ?? p.name);
     setRole(agent?.role ?? p.role);
     setEffort(agent?.effort ?? p.effort);
+    setEffortMine(Boolean(agent));
     setModel(agent?.model ?? pickModel(p));
     setAccess(agent?.access ?? p.access);
     setSoul(agent?.soul ?? p.soul(p.name));
@@ -96,11 +97,18 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     }
     setRole(p.role);
     setEffort(p.effort);
+    setEffortMine(false);
     setAccess(p.access);
     setModel(pickModel(p));
   };
 
   const preset = PRESETS.find((x) => x.id === spec)!;
+  const levelOf = (ref: string) => keptLevel(effortsFor(ref, providers).list, effort, effortsFor(ref, providers).fallback, effortMine);
+  const pickLevel = (id: string) => (setEffort(id), setEffortMine(true));
+  // What the Effort part shows for a model: the person's own word on the model picked ("" the tool's own default, which a
+  // level pressed again goes back to), else the level it would be saved at, shown but not chosen, so a press picks it.
+  const holds = (ref: string) => ref === model && effortMine;
+  const effortHere = (ref: string) => (holds(ref) ? effort : levelOf(ref));
   const claude = onClaude(model);
   const small = models.filter((m) => m.ref.startsWith("claude:"));
   const haiku = small.find((m) => m.ref.includes("haiku"))?.ref;
@@ -135,7 +143,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     const id = agent?.id ?? (n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `agent-${Date.now().toString(36)}`);
     if (!agent && agents.some((a) => a.id === id)) return setError(`There's already an agent called ${n}.`);
     const knows = { prompt: prompt.trim() || undefined, skills: skills.length ? skills : undefined, contextFiles: contextFiles.length ? contextFiles : undefined };
-    const next: AgentProfile = { id, name: n, role: role.trim() || preset.role, glyph, specialty: spec, model, effort, access, soul, ...knows, ...(claude ? { runMode, subagents: subs } : {}) };
+    const next: AgentProfile = { id, name: n, role: role.trim() || preset.role, glyph, specialty: spec, model, effort: levelOf(model), access, soul, ...knows, ...(claude ? { runMode, subagents: subs } : {}) };
     try {
       await rpc("agents.save", { agents: agent ? agents.map((a) => (a.id === agent.id ? next : a)) : [...agents, next] });
       toast.success(agent ? `${n} is updated` : `${n} joined the team`);
@@ -155,13 +163,12 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     onClose();
   };
 
-  // A level the model doesn't take shows as its default, which is what will run (as EffortPick shows it).
-  const { list: efforts, fallback: modelDefault } = effortsFor(model, providers);
   const RUNS = [
     { id: "helpers", t: "With cheap helpers", n: "Explorers and the test runner do the reading, so its context stays on the work" },
     { id: "single", t: `${modelLabel(model, providers)} alone`, n: "No subagents" },
   ] as const;
-  const summary = [modelLabel(model, providers), MAY.find((m) => m.id === access)?.label, skills.length ? plural(skills.length, "skill") : "", contextFiles.length ? plural(contextFiles.length, "file") : ""].filter(Boolean).join(" · ");
+  const AccessIcon = ACCESS_ICONS[access];
+  const summary = [modelLabel(model, providers), accessOf(access).label, skills.length ? plural(skills.length, "skill") : "", contextFiles.length ? plural(contextFiles.length, "file") : ""].filter(Boolean).join(" · ");
 
   return (
     <dialog ref={ref} className="lc-sheet lc-ad" aria-labelledby="lc-agent-t" onCancel={(e) => (e.preventDefault(), onClose())} onPointerDown={(e) => (pressedOutside.current = e.target === ref.current)} onClick={(e) => e.target === ref.current && pressedOutside.current && onClose()}>
@@ -206,11 +213,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
               </label>
               <div className="lc-ad-f">
                 <span className="lc-ad-l">Effort</span>
-                {efforts.length > 0 && efforts.length <= 3 ? (
-                  <Segmented full size="sm" value={efforts.some((e) => e.id === effort) ? effort : (efforts.find((e) => e.id === modelDefault) ?? efforts[0]).id} onValueChange={(v) => setEffort(v as Effort)} options={efforts.map((e) => ({ value: e.id, label: e.label }))} aria-label="Effort" />
-                ) : (
-                  <EffortPick modelRef={model} value={effort} onChange={(v) => setEffort(v as Effort)} triggerClass="lc-ad-dd" icon={false} />
-                )}
+                {/* A chip that opens the levels this model takes, as its tool lists them; disabled for a model with none. */}
+                <EffortPick modelRef={model} value={effortHere(model)} held={holds(model)} onChange={pickLevel} triggerClass="lc-ad-dd" align="start" />
               </div>
             </div>
             <div className="lc-two">
@@ -218,20 +222,19 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                 <span className="lc-ad-l">Model</span>
                 <Pop
                   label="Its model"
-                  width={420}
+                  width={pickerWide ? PICKER_WIDE : PICKER_NARROW}
+                  bare
                   triggerClass="lc-ad-dd"
                   trigger={
                     <>
-                      <span className="lc-ad-mk">
-                        <ModelMark kind={markOf(model)} size={12} />
-                      </span>
+                      <ModelMark kind={markOf(model)} size={14} />
                       <span className="lc-ad-dd-t">{modelLabel(model, providers)}</span>
                       <small>{providers.find((x) => model.startsWith(`${x.id}:`))?.label}</small>
                       <I.chevD size={12} />
                     </>
                   }
                 >
-                  {(close) => <ModelPicker value={model} height={300} onPick={(r) => (setModel(r), close())} />}
+                  {(close) => <ModelPicker value={model} autoFocus side={pickerWide ? "card" : "line"} effort={{ of: effortHere, held: holds, pick: (ref, id) => (setModel(ref), pickLevel(id), close()) }} onPick={(r) => (setModel(r), close())} />}
                 </Pop>
               </div>
               <div className="lc-ad-f">
@@ -275,8 +278,22 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
               </div>
             )}
             <div className="lc-ad-f">
-              <span className="lc-ad-l">May change things</span>
-              <Segmented full size="sm" value={access} onValueChange={setAccess} options={MAY.map((m) => ({ value: m.id, label: m.label }))} aria-label="May change things" />
+              <span className="lc-ad-l">Permissions</span>
+              {/* The message box's own list of levels, by the same names. */}
+              <Pop
+                label={`Permissions: ${accessOf(access).label}. Change them`}
+                width={340}
+                triggerClass="lc-ad-dd"
+                trigger={
+                  <>
+                    <AccessIcon size={14} />
+                    <span className="lc-ad-dd-t">{accessOf(access).label}</span>
+                    <I.chevD size={12} />
+                  </>
+                }
+              >
+                {(close) => <PermissionRows levels={AGENT_LEVELS} value={access} onPick={(a) => (setAccess(a), close())} />}
+              </Pop>
               <span className="lc-ad-hint">Pushing and merging still ask you.</span>
             </div>
           </div>
@@ -433,7 +450,7 @@ function Paths({ list, onChange, kind }: { list: string[]; onChange: (l: string[
                   <PanelHead>Yours</PanelHead>
                   {found === null && <span className="l-shimmer lc-ad-wait">Looking for skills</span>}
                   {found?.yours.map((x) => (
-                    <Row key={x.path} title={x.name} note={brief(x.description) || shortPath(x.path ?? "")} on={list.includes(x.path ?? "")} onPick={() => (add(x.path ?? ""), close())} />
+                    <Row key={x.path} title={x.name} which={shortPath(x.path ?? "")} whichPath note={brief(x.description) || undefined} on={list.includes(x.path ?? "")} onPick={() => (add(x.path ?? ""), close())} />
                   ))}
                   {found && !found.yours.length && <span className="lc-quiet lc-ad-wait">None in ~/.claude/skills or ~/.codex/skills</span>}
                   {found && found.project.length > 0 && (
@@ -441,7 +458,7 @@ function Paths({ list, onChange, kind }: { list: string[]; onChange: (l: string[
                       <Sep />
                       <PanelHead>Each project's own</PanelHead>
                       {found.project.map((x) => (
-                        <Row key={x.path} title={x.name} note={x.path ?? ""} on={list.includes(x.path ?? "")} onPick={() => (add(x.path ?? ""), close())} />
+                        <Row key={x.path} title={x.name} which={x.path ?? ""} whichPath on={list.includes(x.path ?? "")} onPick={() => (add(x.path ?? ""), close())} />
                       ))}
                     </>
                   )}

@@ -8,6 +8,8 @@ import { appendFileSync, closeSync, copyFileSync, existsSync, fsyncSync, mkdirSy
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import type { Access, AgentProfile, EngineEvent, Item, LimitWindow, ModelPicks, Project, ProviderId, Settings, SidebarGroup, Thread, UsageRecord } from "../../contracts/src/index.ts";
+import { askingOf } from "../../contracts/src/doing.ts";
+import { startIn } from "../../contracts/src/cast.ts";
 import { defaultAgents, modelAgent } from "./agents.ts";
 
 type State = { projects: Project[]; threads: Thread[]; agents: AgentProfile[]; settings: Settings; groups: SidebarGroup[] };
@@ -270,6 +272,9 @@ export class Store {
         console.error(`[store] the sessions didn't move to pairs (${e instanceof Error ? e.message : String(e)}); they'll be tried again on the next start`);
       }
     }
+    // A start edited by hand into something that isn't one of its forms reads as unset, here once, so neither Home's
+    // picker nor Settings has to guard against it (settings.save refuses one through /rpc).
+    if (this.state.settings.start !== undefined && !startIn(this.state.settings.start)) delete this.state.settings.start;
     // A thread that was working when the engine stopped is not working any more. One whose question
     // still asks stays in Needs you: it outlives the turn that asked (timeline()). So does one the
     // Reviewer blocked (Thread.held): the block is the Reviewer's last word, not part of a turn.
@@ -287,6 +292,13 @@ export class Store {
     for (const t of this.state.threads) if (t.agentsAtWork) t.agentsAtWork = undefined;
     // What it was doing went with its turn: a line saved by chance alongside a later save is never read back.
     for (const t of this.state.threads) if (t.doing) t.doing = undefined;
+    // What it asked goes with the ask: only a question still open keeps its session waiting, and its words. The saved words
+    // may be an approval's that just expired over an older question, so a session still waiting has them worked out again.
+    for (const t of this.state.threads) {
+      const asking = t.status === "waiting" ? this.askingNow(t.id) : undefined;
+      if (asking) t.asking = asking;
+      else delete t.asking;
+    }
   }
 
   on(fn: Listener) {
@@ -450,6 +462,12 @@ export class Store {
     this.removed.delete(t.id);
     // Only a running turn is doing anything: a session that stops, ends, fails or waits on you says so at once.
     if (t.doing && t.status !== "running") t = { ...t, doing: undefined };
+    // What it waits on you for is said only while it waits, from the newest ask still open; every way into waiting and out of it comes through here.
+    const asking = t.status === "waiting" ? this.askingNow(t.id) : undefined;
+    if (asking?.text !== t.asking?.text) {
+      t = { ...t, asking };
+      if (!asking) delete t.asking;
+    }
     const i = this.state.threads.findIndex((x) => x.id === t.id);
     if (i < 0) this.state.threads.push(t);
     else this.state.threads[i] = t;
@@ -458,7 +476,18 @@ export class Store {
     return t;
   }
   patchThread(id: string, patch: Partial<Thread>) {
-    return this.putThread({ ...this.thread(id), ...patch });
+    const t = this.thread(id);
+    // A session that starts waiting on you is news until you open it, as a notification is: the app clears it as you look
+    // (unread.ts), and the sidebar draws a question you have seen in grey. Every way into waiting comes through here; a new ask
+    // while it already waits is marked where the ask is put (putItem).
+    const news = patch.status === "waiting" && t.status !== "waiting" && patch.unread === undefined ? { unread: true } : {};
+    return this.putThread({ ...t, ...patch, ...news });
+  }
+  /** What a session waits on you for now (Thread.asking): the newest approval, question or plan still asking, in a few words. */
+  private askingNow(id: string): Thread["asking"] {
+    const it = this.timeline(id).findLast((x) => (x.kind === "approval" || x.kind === "question" || x.kind === "proposal") && x.state === "asking");
+    const text = it && (it.kind === "approval" || it.kind === "question" || it.kind === "proposal") ? askingOf(it) : undefined;
+    return text ? { text } : undefined;
   }
   /**
     What a running session is doing now (Thread.doing), or nothing. It changes often, so it is cheap: sent to the app, but
@@ -592,6 +621,16 @@ export class Store {
     if (i < 0) list.push(item);
     else list[i] = item;
     this.emit({ type: "item", threadId, item });
+    // A new ask (an approval, a question, a plan to approve) is news until you open the session, whatever it was doing
+    // before: a second one while it already waits, or one after a Reviewer block, too. The app clears it as you look.
+    // What it waits on you for follows its asks while it waits (Thread.asking, put right in putThread): a second ask, or one
+    // answered while another is still open.
+    if (item.kind === "approval" || item.kind === "question" || item.kind === "proposal") {
+      const t = this.state.threads.find((x) => x.id === threadId);
+      const news = i < 0 && item.state === "asking" && t && !t.unread;
+      const said = t?.status === "waiting" && this.askingNow(threadId)?.text !== t.asking?.text;
+      if (t && (news || said)) this.patchThread(threadId, news ? { unread: true } : {});
+    }
     if (log) appendFileSync(this.logFile(threadId), `${JSON.stringify(item)}\n`);
     return item;
   }

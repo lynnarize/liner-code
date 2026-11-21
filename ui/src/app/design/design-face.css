@@ -21,10 +21,10 @@
   margin-left: 7px;
   color: var(--l-ink-4);
 }
-/* A label's + (Pages): 24 square, its cross on the rows' end. */
+/* A label's + (Pages): a row action's 28 square, its cross on the rows' end. */
 .ld-lab-b {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   margin-right: -6px;
   color: var(--l-ink-3);
 }
@@ -141,9 +141,6 @@ button.ld-tr:hover {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.ld-tr[data-rest] {
-  color: var(--l-ink-3);
-}
 .ld-tr > svg {
   flex: none;
   color: var(--l-ink-3);
@@ -204,10 +201,63 @@ button.ld-tr:hover {
   color: var(--l-ink-3);
   cursor: pointer;
 }
-.ld-ly .ld-pd {
+/* A frame's mark column, its facts at the end, and its ··· in the facts' place while you point at it (as a list row's acts take its end). */
+.ld-ly-mk {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--l-ink-3);
+}
+.ld-ly-facts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
-/* Design Home's designs: their labels and rows, 1 apart as the sidebar's body has them. */
+.ld-ly-acts {
+  display: none;
+  flex: none;
+  margin: 0 -6px 0 auto;
+}
+.ld-ly:is(:hover, :focus-within) > .ld-ly-acts,
+.ld-tr-w:is(:hover, :focus-within) > .ld-ly-acts,
+.ld-ly-acts:has([data-open]) {
+  display: flex;
+}
+/* A loaded skill's row: its button fills it, its ··· at the end. */
+.ld-tr-w {
+  padding-right: 6px;
+  transition: background 140ms ease;
+}
+.ld-tr-w:hover {
+  background: var(--l-wash);
+}
+.ld-tr-b {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.ld-ly:is(:hover, :focus-within):has(> .ld-ly-acts) > .ld-ly-facts,
+.ld-ly:has(> .ld-ly-acts [data-open]) > .ld-ly-facts {
+  display: none;
+}
+.ld-ly > .lc-sb-rename {
+  flex: 1;
+  min-width: 0;
+}
+/* Design Home's designs: their labels and rows (the list's own, SideRow), 1 apart as the sidebar's body has them. */
 .ld-files {
   display: flex;
   flex-direction: column;
@@ -218,12 +268,13 @@ button.ld-tr:hover {
   font-size: 13px;
   color: var(--l-ink-3);
 }
+/* The filter: a 30px field, as the app's small fields are. */
 .ld-filter {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
-  margin: 8px 0 4px;
+  height: 30px;
+  margin: 4px 0;
   padding: 0 10px;
   border-radius: 10px;
   background: var(--lc-well);
@@ -242,84 +293,6 @@ button.ld-tr:hover {
 .ld-filter input::placeholder {
   color: var(--l-ink-4);
 }
-.ld-file {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: var(--lc-r-field);
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.ld-file:hover {
-  background: var(--l-wash);
-}
-.ld-file-k {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-}
-.ld-file-t {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-.ld-file-t b {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ld-file-t small,
-.ld-file-e {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.ld-file-e {
-  align-self: flex-end;
-}
-.ld-file .lc-sb-rename {
-  flex: 1;
-  min-width: 0;
-}
-/* "All designs": which designs the list shows. */
-.ld-show {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  margin-top: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  cursor: pointer;
-}
-.ld-show:hover {
-  background: var(--l-wash);
-  color: var(--l-ink);
-}
-.ld-show > svg {
-  color: var(--l-ink-3);
-}
-
 /* ---------- the face ---------- */
 .ld-face {
   display: grid;
@@ -349,22 +322,15 @@ html[data-motion="quick"] .ld-face {
 .ld-bar .lc-pop {
   flex: none;
 }
-/* A narrow row gives way from the least needed: the kept copy's name, then the server chip and who is drawing, then the
-   kept copies altogether. The title, the zoom and Play stay: the title shortens (its own rule below). */
-@container ld-bar (max-width: 620px) {
+/* A narrow row gives way from the least needed: the kept copy's name, then the kept copies altogether. The title, the
+   zoom, Play and the ··· stay: the title shortens (its own rule below). */
+@container ld-bar (max-width: 560px) {
   .ld-ver-t .ld-ell {
     display: none;
   }
 }
-@container ld-bar (max-width: 520px) {
-  .ld-srv,
-  .ld-bar .ld-who {
-    display: none;
-  }
-}
 @container ld-bar (max-width: 420px) {
-  .ld-ver,
-  .ld-own-t {
+  .ld-ver {
     display: none;
   }
 }
@@ -435,27 +401,6 @@ html[data-motion="quick"] .ld-face {
   color: var(--l-ink-3);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.ld-who {
-  display: inline-flex;
-  margin-right: 6px;
-}
-.ld-who > i {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-left: -5px;
-  border-radius: 50%;
-  background: var(--ld-side);
-  box-shadow: 0 0 0 2px var(--lc-paper);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
-  color: #fff;
-}
-.ld-who > i[data-lead] {
-  background: var(--ld-lead);
 }
 .ld-zoom {
   display: inline-flex;
@@ -624,6 +569,7 @@ html[data-motion="quick"] .ld-face {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 4px;
   height: 18px;
   padding: 0 6px;
   border-radius: 5px;
@@ -635,44 +581,13 @@ html[data-motion="quick"] .ld-face {
 .ld-ptag[data-lead] {
   background: var(--ld-lead);
 }
-/* The frame an agent is on: a ring in its colour that breathes outward while it works (Canvas.tsx sets --ld-gx/--ld-gy to 7.5 px a side). */
+/* The frame an agent is on: a ring in its colour. That it works is the state mark in its tag (.ld-ptag), the one mark for state. */
 .ld-pres {
-  --ld-pc: var(--ld-side);
   position: absolute;
-  box-shadow: 0 0 0 1.5px var(--ld-pc);
+  box-shadow: 0 0 0 1.5px var(--ld-side);
 }
 .ld-pres[data-lead] {
-  --ld-pc: var(--ld-lead);
-}
-.ld-pres::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  box-shadow: 0 0 0 1.5px var(--ld-pc);
-  opacity: 0;
-  animation: ld-breathe 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-@keyframes ld-breathe {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  80%,
-  100% {
-    transform: scale(var(--ld-gx, 1.02), var(--ld-gy, 1.02));
-    opacity: 0;
-  }
-}
-/* The dot of who is drawing breathes the same way: face.css, so the Code face's status row has it too. */
-html[data-motion="quick"] .ld-pres::after {
-  animation: none;
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ld-pres::after {
-    animation: none;
-    opacity: 0;
-  }
+  box-shadow: 0 0 0 1.5px var(--ld-lead);
 }
 .ld-hover {
   position: absolute;
@@ -852,8 +767,8 @@ html[data-motion="quick"] .ld-pres::after {
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  height: 26px;
-  padding: 0 6px 0 8px;
+  height: 28px;
+  padding: 0 4px 0 8px;
   border-radius: 8px;
   background: color-mix(in oklab, var(--l-accent) 13%, transparent);
   font-size: 13px;
@@ -864,40 +779,21 @@ html[data-motion="quick"] .ld-pres::after {
   flex: none;
   color: var(--l-ink-2);
 }
+/* Its cross: 20 square inside the chip's 28, its corner the chip's less the 4 between them. */
 .ld-chip button {
   display: grid;
   flex: none;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
 }
 .ld-chip button:hover {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-.ld-lk {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  cursor: pointer;
-}
-.ld-lk:hover {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
@@ -931,7 +827,6 @@ html[data-motion="quick"] .ld-pres::after {
 }
 .ld-ly-gone {
   flex: none;
-  margin-left: auto;
   font-size: 12px;
   color: var(--l-ink-3);
 }
@@ -987,47 +882,7 @@ html[data-motion="quick"] .ld-pres::after {
   line-height: 18px;
   color: var(--l-ink-4);
 }
-/* "N more" and "Show fewer": a quiet 32 row on the rows' grid, at the list's end. */
-.ld-open-more {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  column-gap: 8px;
-  align-items: center;
-  width: 100%;
-  height: 32px;
-  margin-top: 2px;
-  box-sizing: border-box;
-  padding: 0 9px 0 8px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-@media (hover: hover) {
-  .ld-open-more:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.ld-open-more-m {
-  display: grid;
-  place-items: center;
-  color: var(--l-ink-4);
-}
-.ld-open-n {
-  color: var(--l-ink-2);
-}
-
-/* ---------- a design on its own: the top row's chip and its panel ---------- */
-.ld-own {
-  flex: none;
-  gap: 7px;
-}
+/* ---------- where a design lives: Home's place chip's panel, and Build in a project under the top row's ··· ---------- */
 .ld-own-pop {
   padding: 4px 4px 8px;
 }

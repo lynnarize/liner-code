@@ -362,7 +362,8 @@ test("parse: what the shell reads is read, and what it can't be sure of isn't", 
 
 /* The runtime: what's offered on the card, what's granted, what goes ahead after. */
 
-const info = (id: ProviderInfo["id"]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: [], supports: { approvals: true, resume: true, effort: true, plan: true } });
+// The stand-in model a session on a gone agent runs on lists the levels the tests pick, since one a model doesn't list is never sent (runtime.ts effortFor).
+const info = (id: ProviderInfo["id"]): ProviderInfo => ({ id, label: id, available: true, adapter: true, login: "", models: id === "claude" ? [{ id: "claude-sonnet-5-5", label: "Sonnet", description: "", efforts: ["low", "medium", "high"].map((e) => ({ id: e, label: e })) }] : [], supports: { approvals: true, resume: true, effort: true, plan: true } });
 const asks = (items: Item[]) => items.filter((x): x is Extract<Item, { kind: "approval" }> => x.kind === "approval");
 
 /** A session on a fake Claude Code (and Codex) whose turn is `work`. */

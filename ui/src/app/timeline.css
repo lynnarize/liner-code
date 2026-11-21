@@ -1,6 +1,7 @@
 /*
   The timeline's newer parts: what you attached to a message, the edit steps that open the Diff,
-  and the column of your prompts at the thread's left edge.
+  the column of your prompts at the thread's left edge, and a working turn's live line at the
+  chat's foot with the line it folds to.
 */
 
 /* ---------- Attachments in your message ---------- */
@@ -238,7 +239,7 @@
 .lc-addon-key input {
   box-sizing: border-box;
   width: 100%;
-  height: 32px;
+  height: 30px;
   padding: 0 10px;
   border: 0;
   border-radius: var(--lc-r-row);
@@ -300,14 +301,6 @@
 }
 
 /* ---------- 0.2.7: the turn, after Devin and Claude Code ---------- */
-/* A finished group leads with how long it worked; what it did follows in the quieter grey. */
-.lc-trail-worked {
-  flex: none;
-  color: var(--l-ink-2);
-}
-.lc-trail-parts[data-after]::before {
-  content: "· ";
-}
 /* What the turn changed: a ruled list in the answer. One thin line above and below, no fill,
    no shadow and no corners, so it never reads as the composer's box. */
 .lc-foot-row:has(> .lc-ledger) {
@@ -326,24 +319,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 32px;
   font-size: 13px;
   color: var(--l-ink-3);
 }
 .lc-ledger-h > b {
   font-weight: 600;
   color: var(--l-ink);
-}
-.lc-ledger-go {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--l-ink);
-  text-decoration: underline;
-  text-decoration-color: var(--l-ink-4);
-  text-underline-offset: 3px;
-  cursor: pointer;
 }
 .lc-ledger-r {
   display: flex;
@@ -355,12 +337,15 @@
   margin: 0 -8px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 13px;
   color: var(--l-ink-2);
   text-align: left;
+}
+/* A row is a button only where its file can be opened (Timeline.tsx, onReview); a plain one has no hand and no plate. */
+button.lc-ledger-r {
   cursor: pointer;
 }
 .lc-ledger-p {
@@ -396,25 +381,212 @@
   background: var(--l-danger);
 }
 @media (hover: hover) {
-  .lc-ledger-r:hover {
+  button.lc-ledger-r:hover {
     background: var(--l-wash);
   }
 }
-/* The turn's closing line: the model's mark and name, how long it took, and Copy at the right. */
+/* Each file's row opens Changes on it; the one Changes shows keeps the plate. */
+.lc-ledger-r[data-here] {
+  background: var(--l-wash);
+}
+/* The answer's end: Copy alone, at the column's left edge (T3 Code's assistant row), its icon on the text's edge. */
 .lc-turn-end {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-height: 28px;
-  font-size: 13px;
+  margin-left: -7px;
   color: var(--l-ink-3);
 }
-.lc-turn-end-mk {
+
+/* ---------- A working turn: one live line at the chat's foot ----------
+   The working mark, how many steps, the kinds used so far; under a hairline on the left only the
+   newest step, which slides up into place as the next one starts (Timeline.tsx, Slide); then the
+   clock. Pressed, the steps so far open in the same place. It sits over the message box in every
+   place a turn is shown (Session.tsx, design/Chat.tsx, security/ScanSession.tsx, SideChat.tsx). */
+.lc-ll {
   display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  min-width: 0;
   color: var(--l-ink-2);
+  font-size: 13.5px;
+}
+.lc-ll-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+}
+.lc-ll-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.lc-ll-head:disabled {
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-ll-head:not(:disabled):hover {
+    background: var(--l-wash);
+  }
+}
+.lc-ll-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+/* The kinds of step used, a mark each, quiet after the count; the folded line has the same row. */
+.lc-kinds {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  color: var(--l-ink-3);
+}
+/* Under the hairline: one step, in a box one line high that never grows. */
+.lc-ll-under {
+  margin: 2px 0 0 7px;
+  padding-left: 15px;
+  border-left: 1px solid var(--lc-hair);
+}
+.lc-ll-tick {
+  position: relative;
+  height: 30px;
+  overflow: hidden;
+}
+.lc-ll-step {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.lc-ll-verb {
+  flex: none;
+  color: var(--l-ink-2);
+}
+.lc-ll-step > .lc-wk-target {
+  color: var(--l-ink);
+}
+/* A frame's name in Liner Design reads as a name (Timeline's plainTarget), as in its chat; files and commands stay mono. */
+.lc-ll .lc-wk-target[data-plain] {
+  font-family: inherit;
+  font-size: inherit;
+}
+.lc-ll-step[data-ph="in"] {
+  animation: lc-ll-in 300ms var(--l-ease-out) both;
+}
+.lc-ll-step[data-ph="out"] {
+  animation: lc-ll-out 200ms ease both;
+}
+@keyframes lc-ll-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes lc-ll-out {
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+/* Reduce motion cuts every animation in the app to a moment (foundation.css, .l-scope *). The step's
+   slide is how a person reads that the work moved on, so it keeps its own: one step more exact than
+   that rule, and as firm. Quick motion leaves it be too (look.ts, HINTS). */
+@media (prefers-reduced-motion: reduce) {
+  .l-scope .lc-ll-tick > [data-ph="in"] {
+    animation-duration: 300ms !important;
+  }
+  .l-scope .lc-ll-tick > [data-ph="out"] {
+    animation-duration: 200ms !important;
+  }
+}
+.lc-ll-clock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+  margin-left: 7px;
+  padding-left: 16px;
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.lc-ll-clock > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-ll-clock b {
+  font-weight: 500;
+  color: var(--l-warn-text);
+}
+.lc-ll-clock .lc-notice-stop {
+  flex: none;
+  margin-left: 0;
+}
+/* No step yet: the mark and the clock on one line. */
+.lc-ll[data-alone] .lc-ll-clock {
+  margin-left: 0;
+  padding-left: 0;
+  font-size: 13.5px;
+}
+/* Over the conversation, which scrolls on under the message box: on the paper, so what passes under
+   it doesn't show through its words, lined up with the text's column. */
+.lc-thread-foot > .lc-ll {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--lc-measure) + 36px);
+  margin: 0 auto;
+  padding: 14px 18px 8px;
+  background: linear-gradient(transparent, var(--lc-paper) 14px);
+}
+html[data-bg] .lc-thread-foot > .lc-ll {
+  background: linear-gradient(transparent, color-mix(in oklab, var(--lc-paper) 86%, transparent) 14px);
+}
+/* In the side chat it sits in the column's flow, between the answers and the box, on the answers' edge. */
+.lc-ll.lc-sc-live {
+  flex: none;
+  padding: 4px 16px 8px;
+}
+
+/* A part's steps, open: behind the same hairline, scrolling inside about eight rows. */
+.lc-steps {
+  max-height: 236px;
+  margin: 2px 0 4px 7px;
+  padding-left: 15px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-left: 1px solid var(--lc-hair);
+  scrollbar-width: thin;
+}
+.lc-ll .lc-steps {
+  margin-bottom: 2px;
+}
+/* The folded line's chevron, first: it points at the words shut and turns down open. */
+.lc-sum-chev {
+  flex: none;
+  color: var(--l-ink-4);
+  transition: rotate 160ms ease;
+}
+[aria-expanded="true"] > .lc-sum-chev {
+  rotate: 90deg;
 }

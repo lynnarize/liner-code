@@ -13,15 +13,16 @@
   default, Codex's past its turn) outlives the turn that sent it and ends on its own row, turns
   later: until then it counts wherever agents at work do, whichever message is the latest.
 */
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { toast } from "@liner/components/toast/toast";
-import { agentState, isPair, type AgentProfile, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
+import { agentState, isPair, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
 import { rpc, useEngine, useItemsWhere } from "./engine";
-import { I, ModelMark, StepMark, type StepState } from "./icons";
+import { I, ModelMark, StateMark, StepMark, type StepState } from "./icons";
 import { useLaunch } from "./launch";
 import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, planEnd, planStatus, plural, sumLines, type PlanEnd } from "./model";
 import { openSurface } from "./TopBar";
 import { Lines, Num, Pop } from "./ui";
+import { SendBox } from "./Composer";
 import "./crew.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -88,10 +89,10 @@ export function agentNow(t: Tool) {
   if (s === "running") return t.agent?.now ?? "Starting";
   if (unstarted(t)) return "Stopped before it started";
   if (s === "stopped") return "Stopped before it finished";
-  if (s === "failed") return firstLine(t.output) ?? "Didn't finish";
+  if (s === "failed") return firstLine(t.output) ?? "Ran into a problem";
   // A row from before agents said how they ended: its call returned and nothing more was heard.
   if (t.agent?.background && t.agent.state === undefined && !t.agent.report) return "Working in the background";
-  return firstLine(t.agent?.report) ?? firstLine(t.output) ?? "Done";
+  return firstLine(t.agent?.report) ?? firstLine(t.output) ?? "Finished";
 }
 /** How long it has run: its clock while it's at work (in the background too), else what the engine kept at its end. */
 const secsOf = (t: Tool, now: number) => (stateOf(t) === "running" ? Math.max(0, (now - t.at) / 1000) : t.seconds);
@@ -194,7 +195,7 @@ const everyAgent = (nodes: AgentNode[]): Tool[] => nodes.flatMap((n) => [n.it, .
 /** Every agent at work now: the latest message's, and those earlier ones left in the background. */
 const atWork = (crew: Crew) => [...crew.agents.filter(running), ...crew.earlier];
 /** Who's held up on, said as the work is: "its sidekick", "2 agents", "its sidekick and an agent". */
-export function onWhom(tools: Tool[]) {
+function onWhom(tools: Tool[]) {
   const side = tools.some(isSidekick);
   const rest = tools.filter((t) => !isSidekick(t)).length;
   return side ? (rest ? `its sidekick and ${plural(rest, "agent")}` : "its sidekick") : plural(rest, "agent");
@@ -238,13 +239,13 @@ function Kind({ name, size = 12 }: { name: string; size?: number }) {
 function Face({ t, size = 12 }: { t: Tool; size?: number }) {
   return isSidekick(t) && t.agent?.model ? <ModelMark kind={markOf(t.agent.model)} size={size} /> : <Kind name={agentName(t)} size={size} />;
 }
-const STATE_WORD: Record<State, string> = { running: "Working", done: "Done", failed: "Didn't finish", stopped: "Stopped" };
+const STATE_WORD: Record<State, string> = { running: "Working", done: "Finished", failed: "Ran into a problem", stopped: "Stopped" };
 const STEP_OF: Record<State, StepState> = { running: "working", done: "done", failed: "failed", stopped: "skipped" };
-const HEAD_WORD: Record<StepState, string> = { working: "Working", done: "All done", failed: "One didn't finish", skipped: "Stopped", waiting: "Waiting" };
+const HEAD_WORD: Record<StepState, string> = { working: "Working", done: "All finished", failed: "One ran into a problem", skipped: "Stopped", waiting: "Waiting" };
 /**
-  How it stands, as the Plan list's marks (icons.tsx StepMark): the arc travelling on the ring at
-  work, a disc with its tick when done, the ring in the danger ink with a × when it didn't finish,
-  the ring dashed when it was stopped, the plain ring when it hasn't started.
+  How it stands, as the Plan list's marks (icons.tsx StepMark, the state mark): the working light
+  at work, the finished shape when done, the problem shape when it ran into one, the faint shape
+  when it was stopped or hasn't started (its words tell those two apart).
 */
 export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
   return <StepMark className="lc-cr-mark" size={14} state={waiting ? "waiting" : STEP_OF[state]} label={waiting ? "Waiting" : STATE_WORD[state]} />;
@@ -253,20 +254,19 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
 /* ---------- the header's crew chip ---------- */
 
 /**
-  Who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents"); once it's
-  over, how many worked on it. A pair is named as one ("Opus 5.5 + Sol"), from before its first
-  message on. Opens the crew as a list. Nothing when one model works alone.
+  Who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents"), only while two
+  or more are at work in this session right now: the lead's turn running counts one, and each agent
+  it sent that still works (its sidekick, a fan-out's agents) one more. At rest the header holds
+  nothing between the title and the Reviewer: who works is the message box's chip, and the split of
+  tokens and the whole list are the Agents surface. A pair is named as one ("Opus 5.5 + Sol"). Opens
+  the crew as a list.
 */
 export function CrewChip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
-  const agents = useEngine((s) => s.agents);
-  const providers = useEngine((s) => s.providers);
-  const pair = crew?.pair ?? pairOf(thread, agents, providers);
-  if (!crew) return pair ? <PairChip thread={thread} pair={pair} /> : null;
-  if (!pair && crew.members.length < 2 && !crew.agents.length && !crew.reviews.length && !crew.earlier.length) return null;
+  if (!crew) return null;
   const working = atWork(crew);
-  // Live while a turn runs or waits, and while an agent works on in the background after it.
-  const live = thread.status === "running" || thread.status === "waiting" || working.length > 0;
+  if ((thread.status === "running" ? 1 : 0) + working.length < 2) return null;
+  const pair = crew.pair;
   const lead = crew.lead!;
   // A pair's sidekick is in its name; the agents besides it are counted.
   const others = [...crew.agents, ...crew.earlier].filter((t) => !isSidekick(t)).length;
@@ -276,19 +276,20 @@ export function CrewChip({ thread }: { thread: Thread }) {
       width={400}
       className="lc-crew-pop"
       triggerClass="lc-crew l-focus"
-      triggerAttrs={{ "data-live": live || undefined }}
       trigger={
         <>
+          {/* It shows only while two or more work: the working mark says so, as everywhere, and the faces say who. */}
+          <StateMark state="working" size={12} />
           <span className="lc-cr-faces" aria-hidden>
-            <span data-lead={live || undefined}>
+            <span>
               <ModelMark kind={markOf(pair ? pair.leadRef : lead.model)} size={12} />
             </span>
             {pair && !pair.same && (
-              <span data-lead={(live && working.some(isSidekick)) || undefined}>
+              <span>
                 <ModelMark kind={markOf(pair.sideRef)} size={12} />
               </span>
             )}
-            {(working.length ? working : crew.agents)
+            {working
               .filter((t) => !pair || !isSidekick(t))
               .slice(0, pair && !pair.same ? 1 : 2)
               .map((t) => (
@@ -301,76 +302,19 @@ export function CrewChip({ thread }: { thread: Thread }) {
           {pair ? (
             <span className="lc-crew-t">
               {pair.name}
-              {live && others > 0 && <span className="lc-quiet"> · {plural(others, "agent")}</span>}
+              {others > 0 && <span className="lc-quiet"> · {plural(others, "agent")}</span>}
             </span>
-          ) : live ? (
+          ) : (
             <span className="lc-crew-t">
               {lead.name}
               {crew.agents.length + crew.earlier.length > 0 && <span className="lc-quiet"> · {plural(crew.agents.length + crew.earlier.length, "agent")}</span>}
             </span>
-          ) : (
-            <span className="lc-crew-t">{countOf(crew)} worked on it</span>
           )}
           <I.chevD size={12} />
         </>
       }
     >
       {(close) => <CrewList thread={thread} crew={crew} close={close} />}
-    </Pop>
-  );
-}
-
-/** A pair before its first message: its two, and what each waits for. */
-function PairChip({ thread, pair }: { thread: Thread; pair: PairNames }) {
-  return (
-    <Pop
-      label="Who's on this session"
-      width={400}
-      className="lc-crew-pop"
-      triggerClass="lc-crew l-focus"
-      trigger={
-        <>
-          <span className="lc-cr-faces" aria-hidden>
-            <span>
-              <ModelMark kind={markOf(pair.leadRef)} size={12} />
-            </span>
-            {!pair.same && (
-              <span>
-                <ModelMark kind={markOf(pair.sideRef)} size={12} />
-              </span>
-            )}
-          </span>
-          <span className="lc-crew-t">{pair.name}</span>
-          <I.chevD size={12} />
-        </>
-      }
-    >
-      {(close) => (
-        <div className="lc-crp">
-          <div className="lc-crp-h">
-            <b>Fusion</b>
-            <span className="lc-quiet">· nothing asked yet</span>
-          </div>
-          <div className="lc-crp-r">
-            <Mark state="running" waiting />
-            <b>{pair.lead}</b>
-            <span className="lc-crp-role">Lead</span>
-            <span className="lc-crp-t">takes your message, plans and reviews</span>
-          </div>
-          <div className="lc-crp-r">
-            <Mark state="running" waiting />
-            <b>{pair.side}</b>
-            <span className="lc-crp-role">Sidekick</span>
-            <span className="lc-crp-t">does the work {pair.lead} hands it</span>
-          </div>
-          <div className="lc-crp-sep" />
-          <div className="lc-crp-foot">
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
-              Show in the panel
-            </button>
-          </div>
-        </div>
-      )}
     </Pop>
   );
 }
@@ -389,7 +333,7 @@ function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: 
         <Mark state={stateOf(n.it)} />
         <b>{whoIs(n.it, providers)}</b>
         {isSidekick(n.it) && <span className="lc-crp-role">Sidekick</span>}
-        <span className={running(n.it) ? "lc-crp-t l-shimmer" : "lc-crp-t"}>{agentNow(n.it)}</span>
+        <span className="lc-crp-t">{agentNow(n.it)}</span>
         <span className="lc-crp-n">{duration(secsOf(n.it, now))}</span>
       </button>,
       ...rows(n.kids, depth + 1),
@@ -562,13 +506,21 @@ function reviewWord(r: Review) {
 /**
   The agents a part of a turn sent, under its work: "Started 3 agents", each on a branch under
   the one that sent it, with what it's doing now, its model and its counts; once they're done,
-  what each sent back. Pressing one opens it in the Agents surface. Whether they're at work is
+  what each sent back. Pressing one opens its newest steps in place, as Claude Code does (Peek), with Open in Agents for its
+  whole trail in the Agents surface. Whether they're at work is
   theirs to say, not the trail's: a trail the model has gone on past (a plan, a word) is no longer
   live, while the agents it sent still are. A pair's sidekick reads as itself: its model, its brief,
   its steps live, and once it's back its report and the files it changed, as Liner Code measured them.
 */
 export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] }) {
   const providers = useEngine((s) => s.providers);
+  // The rows opened in place, by item id: kept while the trail is on screen.
+  const [peeked, setPeeked] = useState<ReadonlySet<string>>(() => new Set());
+  const peek = (id: string) => setPeeked((was) => {
+    const next = new Set(was);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
   const anyRunning = tools.some(running);
   const now = useNow(anyRunning);
   const roots = useMemo(() => {
@@ -612,7 +564,7 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
         .join(". ");
       return (
         <div key={t.id} className="lc-fan-kid" data-last={i === nodes.length - 1 || undefined}>
-          <button type="button" className="lc-fan-ag l-focus" data-on={on || undefined} data-side={side || undefined} onClick={() => showAgent(threadId, t.id)} aria-label={said} title={`Open ${side ? "the sidekick's" : `${whoIs(t, providers)}'s`} brief, steps and report`}>
+          <button type="button" className="lc-fan-ag l-focus" data-on={on || undefined} data-side={side || undefined} data-open={peeked.has(t.id) || undefined} onClick={() => peek(t.id)} aria-expanded={peeked.has(t.id)} aria-label={said} title={peeked.has(t.id) ? "Hide its steps" : "Show its steps"}>
             <span className="lc-fan-1">
               <Mark state={st} />
               {side && <Face t={t} size={12} />}
@@ -623,7 +575,7 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
             </span>
             {on && (
               <span className="lc-fan-2">
-                <span className="lc-fan-now l-shimmer">{agentNow(t)}</span>
+                <span className="lc-fan-now">{agentNow(t)}</span>
                 <span className="lc-fan-m l-num">{agentStats(t, now)}</span>
               </span>
             )}
@@ -637,12 +589,13 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
               </span>
             )}
           </button>
+          {peeked.has(t.id) && <Peek threadId={threadId} t={t} />}
           {n.kids.length > 0 && <div className="lc-fan-kids">{branch(n.kids)}</div>}
         </div>
       );
     });
-  // The header's mark says how they all stand: at work while any is, else a tick only when every one
-  // is done, the danger ring when one didn't finish, the dashed ring when one was stopped.
+  // The header's mark says how they all stand: at work while any is, else finished only when every one
+  // is, the problem shape when one ran into a problem, the faint shape when one was stopped.
   const states = tools.map(stateOf);
   const head: StepState = ongoing ? "working" : states.every((s) => s === "done") ? "done" : states.includes("failed") ? "failed" : states.includes("stopped") ? "skipped" : "working";
   // A pair's lead hands work over; it doesn't start "1 agent".
@@ -653,9 +606,48 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
       <div className="lc-fan-h">
         <StepMark size={14} state={head} label={HEAD_WORD[head]} />
         {ongoing ? (handed ? "Handed work to its sidekick" : `Started ${whom}`) : handed ? `Handed ${plural(tools.length, "brief")} to its sidekick` : `With ${whom}`}
-        <span className="lc-quiet">· {ongoing ? (handed && tools.length === 1 ? "at work" : [done && `${done} done`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ")) : tools.length === 1 ? "what it sent back" : "what each sent back"}</span>
+        <span className="lc-quiet">· {ongoing ? (handed && tools.length === 1 ? "at work" : [done && `${done} finished`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ")) : tools.length === 1 ? "what it sent back" : "what each sent back"}</span>
       </div>
       <div className="lc-fan-kids">{branch(roots)}</div>
+    </div>
+  );
+}
+
+/** How many steps an agent took that its row no longer holds: its tool counts them all, the row keeps its last 40. */
+function earlierOf(t: Tool, kept: AgentStep[]) {
+  const calls = kept.filter((s) => s.toolKind !== "think").length;
+  return Math.max(0, (t.agent?.tools ?? calls) - calls);
+}
+/** A step's time, to the second: "10:02:14". */
+const stepAt = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/**
+  An agent's row opened in place, as Claude Code opens one: its last few steps under it, a thought in quiet italics, the one at
+  work with its mark, how many came before, and Open in Agents for the whole trail. The same for every tool; one whose tool
+  says nothing of its steps (OpenCode, Antigravity) says so.
+*/
+function Peek({ threadId, t }: { threadId: string; t: Tool }) {
+  const steps = t.agent?.steps ?? [];
+  const shown = steps.slice(-4);
+  const earlier = earlierOf(t, shown);
+  return (
+    <div className="lc-fan-peek">
+      {earlier > 0 && <span className="lc-fan-more">+ {plural(earlier, "earlier step")}</span>}
+      {shown.length ? (
+        <ul className="lc-fan-steps" role="list">
+          {shown.map((s, i) => (
+            <li key={i} data-think={s.toolKind === "think" || undefined} data-state={s.status}>
+              {s.status === "running" ? <Mark state="running" /> : <span className="lc-fan-hook" aria-hidden>⎿</span>}
+              <span>{s.title}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span className="lc-fan-more">{stateOf(t) === "running" ? "No steps yet." : "Its tool doesn't say what it did, step by step."}</span>
+      )}
+      <button type="button" className="lc-fan-open l-focus" onClick={() => showAgent(threadId, t.id)}>
+        Open in Agents
+      </button>
     </div>
   );
 }
@@ -671,7 +663,8 @@ export function CrewStrip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
   const providers = useEngine((s) => s.providers);
   const working = crew ? atWork(crew) : [];
-  if (!crew || !working.length) return null;
+  // One agent while the turn runs is the live line's to say (its newest step, and LoneStop at its end), as the crew chip shows only for two or more.
+  if (!crew || !working.length || lone(thread, working)) return null;
   const waited = working.filter(holding);
   const back = working.length - waited.length;
   const latest = working.reduce((a, b) => (b.at > a.at ? b : a));
@@ -706,6 +699,24 @@ export function CrewStrip({ thread }: { thread: Thread }) {
         </button>
       )}
     </div>
+  );
+}
+
+/** Exactly one agent at work while the turn runs: the live line says what it does, so the strip stays away. */
+const lone = (thread: Thread, working: Tool[]) => working.length === 1 && thread.status === "running";
+
+/**
+  With one agent at work while the turn runs, the live line carries it (Timeline.tsx LiveLine): its newest step says what
+  the agent is doing, and this, in its `end`, stops it, in the strip's words ("Stop the sidekick"). Two or more, the strip has Stop.
+*/
+export function LoneStop({ thread }: { thread: Thread }) {
+  const crew = useCrew(thread);
+  const working = crew ? atWork(crew) : [];
+  if (!lone(thread, working) || !working[0].agent?.taskId) return null;
+  return (
+    <button type="button" className="lc-crs-stop l-focus" onClick={() => stopAll(thread.id, working)}>
+      {stopWord(working, "Stop the agent")}
+    </button>
   );
 }
 
@@ -796,7 +807,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
             </b>
             <small>
               <Mark state={stateOf(n.it)} />
-              <span className={running(n.it) ? "l-shimmer" : undefined}>{agentNow(n.it)}</span>
+              <span>{agentNow(n.it)}</span>
             </small>
           </span>
           <span className="lc-cr-n l-num">{duration(secsOf(n.it, now))}</span>
@@ -826,7 +837,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
           {crew.members.map((m, i) => (
             <div key={m.key} className="lc-cr-kid" data-last={(i === crew.members.length - 1 && !review) || undefined}>
               <div className="lc-cr-row">
-                <span className="lc-cr-disc" data-on={m.status === "running" || undefined}>
+                <span className="lc-cr-disc">
                   <ModelMark kind={markOf(m.model)} size={12} />
                 </span>
                 <span className="lc-cr-t">
@@ -852,7 +863,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
           {review && (
             <div className="lc-cr-kid" data-last>
               <div className="lc-cr-row">
-                <span className="lc-cr-disc" data-on={review.status === "running" || undefined}>
+                <span className="lc-cr-disc">
                   <I.shield size={12} />
                 </span>
                 <span className="lc-cr-t">
@@ -1027,6 +1038,13 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
   const sender = parent ? agentName(parent) : (owner?.name ?? (part ? (isModelAgent(part.agent) || part.agent === "demo" ? modelLabel(part.model, providers) : agentOf(part.agent, profiles, providers).name) : "the model"));
   const kids = items.filter((x): x is Tool => isAgent(x) && x.agent?.parent === it.id);
   const steps = a?.steps ?? [];
+  const earlier = earlierOf(it, steps);
+  // While it works, the newest step stays in view as it comes, unless you turn that off to read back.
+  const [follow, setFollow] = useState(true);
+  const end = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (follow && st === "running") end.current?.scrollIntoView({ block: "nearest" });
+  }, [follow, st, steps.length, steps.at(-1)?.status]);
   // An agent whose tool takes a word mid-run (Codex's) hears it at its next step; another's goes to the model that sent it.
   const direct = Boolean(a?.steerable && a.taskId);
   const [heard, setHeard] = useState<string[]>([]);
@@ -1062,8 +1080,8 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         <span className="lc-grow" />
         {st === "running" && a?.taskId && (
           <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.stopAgent", { id: thread.id, item: it.id }).then((ok) => !ok && toast.error(`${name} has already stopped.`)).catch(fail)}>
-            <I.stop size={10} />
-            Stop it
+            <I.stop size={12} />
+            Stop
           </button>
         )}
       </div>
@@ -1110,7 +1128,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
                 <b>{agentName(k)}</b>
                 <small>
                   <Mark state={stateOf(k)} />
-                  <span className={running(k) ? "l-shimmer" : undefined}>{agentNow(k)}</span>
+                  <span>{agentNow(k)}</span>
                 </small>
               </span>
             </button>
@@ -1120,15 +1138,24 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
 
       <div className="lc-cr-h" role="heading" aria-level={3}>
         Steps<span className="lc-cr-rule" />
-        <span>{steps.length || ""}</span>
+        {st === "running" && steps.length > 0 ? (
+          <span className="lc-cr-follow">
+            Follows the newest
+            <button type="button" role="switch" aria-checked={follow} aria-label="Keep the newest step in view" className="lc-sinfo-switch l-focus" onClick={() => setFollow((f) => !f)} />
+          </span>
+        ) : (
+          <span>{steps.filter((s) => s.toolKind !== "think").length + earlier || ""}</span>
+        )}
       </div>
+      {earlier > 0 && <p className="lc-cr-earlier">+ {plural(earlier, "earlier step")}, no longer kept here</p>}
       {steps.length ? (
         // role="list": WebKit drops a list's role once its bullets are styled away, and VoiceOver stops saying "list, 4 items".
         <ul className="lc-cr-steps" role="list">
           {steps.map((s, i) => (
-            <li key={i} data-state={s.status}>
-              <Mark state={s.status === "running" ? "running" : s.status === "failed" ? "failed" : "done"} />
-              <span className={s.status === "running" ? "l-shimmer" : undefined}>{s.title}</span>
+            <li key={i} ref={i === steps.length - 1 ? end : undefined} data-state={s.status} data-think={s.toolKind === "think" || undefined}>
+              {s.toolKind === "think" ? null : <Mark state={s.status === "running" ? "running" : s.status === "failed" ? "failed" : "done"} />}
+              <span>{s.title}</span>
+              {s.at !== undefined && <time className="lc-cr-at" dateTime={new Date(s.at).toISOString()}>{s.status === "running" && i === steps.length - 1 ? "now" : stepAt(s.at)}</time>}
             </li>
           ))}
         </ul>
@@ -1143,21 +1170,11 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
 
       {side && !unstarted(it) && <Measured threadId={thread.id} files={st === "running" ? undefined : a?.files} frames={a?.frames} running={st === "running"} />}
 
-      {st === "running" && (direct || (thread.status === "running" && !parent)) && (
+      {/* One at work in the background past its turn takes a word too: to the model that sent it, as your next message. */}
+      {st === "running" && (direct || (!parent && (thread.status === "running" || it.status !== "running"))) && (
         <>
-          <label className="lc-cr-steer">
-            <input
-              type="text"
-              value={say}
-              placeholder={direct ? `Tell ${name} something…` : `Tell ${sender} what ${name} should do instead…`}
-              onChange={(e) => setSay(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                if (e.key === "Enter") send();
-              }}
-            />
-            <span className="lc-quiet">↵</span>
-          </label>
+          {/* The message box's field and Send, as every place that writes to an agent has them. */}
+          <SendBox className="lc-cr-steer" value={say} onChange={setSay} label={direct ? `Tell ${name} something` : `Tell ${sender} what ${name} should do instead`} placeholder={direct ? `Tell ${name} something…` : `Tell ${sender} what ${name} should do instead…`} onSend={send} />
           {heard.map((w, i) => (
             <div key={i} className="lc-cr-heard">
               <Mark state="done" />

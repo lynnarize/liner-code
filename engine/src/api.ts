@@ -7,10 +7,10 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
-import { emptyUsage } from "../../contracts/src/index.ts";
+import { emptyUsage, keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
 import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
 import { saveToDownloads, sessionMarkdown } from "./export.ts";
@@ -19,6 +19,7 @@ import { outside, run, shellOf, which } from "./exec.ts";
 import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
 import { findFiles, gitStatus, tree } from "./files.ts";
+import { savedModelsNamed } from "./providers/claude.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
 import { detectOnce, endpointModels } from "./providers/endpoint.ts";
 import { skillsIn } from "./providers/models.ts";
@@ -233,12 +234,12 @@ type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies:
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
   let detected: ProviderInfo[] = [];
-  // Model ids you added go after the tool's own, taking the effort levels of its default model.
+  // Model ids you added go after the tool's own. With no effort levels: the tool doesn't list them, so it hasn't said which
+  // they take, and another model's would be a guess (levels differ by model).
   const withCustom = (d: ProviderInfo): ProviderInfo => {
     const mine = (store.settings.customModels ?? []).filter((c) => c.provider === d.id && !d.models.some((m) => m.id === c.id));
     if (!mine.length) return d;
-    const like = d.models.find((m) => m.isDefault && m.efforts?.length) ?? d.models.find((m) => m.efforts?.length);
-    return { ...d, models: [...d.models, ...mine.map((c): ModelInfo => ({ id: c.id, label: c.label?.trim() || c.id, description: "A model id you added", efforts: like?.efforts, defaultEffort: like?.defaultEffort, custom: true }))] };
+    return { ...d, models: [...d.models, ...mine.map((c): ModelInfo => ({ id: c.id, label: c.label?.trim() || c.id, description: "A model id you added", custom: true }))] };
   };
   const shown = () => detected.map(withCustom);
   const apply = () => {
@@ -276,7 +277,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!Array.isArray(saved) || !saved.length || !saved.every(isInfo)) return false;
       const kept = saved.filter((d) => Object.hasOwn(providers, d.id));
       if (Object.keys(providers).some((id) => id.includes(".") && !kept.some((d) => d.id === id))) return false;
-      detected = kept;
+      // A tool's own list is named as models.json's is (a price out of Claude Code's descriptions, no levels copied onto an older
+      // model); an endpoint's models are ids you typed, and a list from before the tool answered is no list of its own.
+      detected = kept.map((d) => (d.modelsFrom === "cli" && !d.endpoint ? { ...d, models: savedModelsNamed(d.id, d.models) } : d));
       apply();
       return true;
     } catch {
@@ -292,6 +295,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   let listed: Record<string, Listed> = {};
   try {
     listed = JSON.parse(readFileSync(modelsFile, "utf8")) as Record<string, Listed>;
+    for (const [id, had] of Object.entries(listed)) if (Array.isArray(had?.models)) listed[id] = { ...had, models: savedModelsNamed(id, had.models) };
   } catch {
     // first run
   }
@@ -787,9 +791,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       createdAt: now,
       updatedAt: now,
     };
-    // A new session that starts as a pair with no effort said works at the pair's effort (Settings.pairEffort, else medium), as
-    // near as its lead's model has one (resolve, nearestEffort). A fork keeps its parent's, which the person may have set.
-    if (!parent && t.effort === undefined && isPair(t)) t.effort = runtime.resolve({ ...t, effort: store.settings.pairEffort ?? "medium" }).effort;
+    // A new session that starts as a pair with no effort said ("" is none, as unset is) works at the pair's effort when you set
+    // one (Settings.pairEffort), as near as its lead's model has one (resolve, nearestEffort); else at the level the lead's tool
+    // marks as that model's default, else none. Never a word nobody picked. A fork keeps its parent's, which the person may have set.
+    if (!parent && !t.effort && isPair(t)) {
+      const lead = runtime.resolve({ ...t, effort: "" });
+      t.effort = store.settings.pairEffort ? runtime.resolve({ ...t, effort: store.settings.pairEffort }).effort : runtime.defaultEffortOf(lead.provider, lead.model);
+    }
     return t;
   };
 
@@ -1740,6 +1748,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (patch.pictures) for (const e of patch.pictures) pictures.checkEndpointUrl(e?.url);
       if (patch.openIn !== undefined && patch.openIn !== "code" && patch.openIn !== "design" && patch.openIn !== "security") throw new Error("Liner opens in Code, Design or Security.");
       if (patch.securityEndpoints !== undefined && (!Array.isArray(patch.securityEndpoints) || patch.securityEndpoints.some((e) => typeof e !== "string"))) throw new Error("securityEndpoints is a list of endpoint ids.");
+      // Home's picker and a session started without an agent read it (startOf): only its forms are kept, and null clears it.
+      if (patch.start !== undefined && patch.start !== null && !startIn(patch.start)) throw new Error('A new session starts as "pair", "best", "fast" or "@" and a model.');
+      if (patch.start === null) patch.start = undefined;
       pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
@@ -1892,7 +1903,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const ahead = base ? Number((await git(cwd, ["rev-list", "--count", `${base}..HEAD`])).stdout.trim()) || 0 : 0;
       if (gh.state !== "ready" || !branch) return { pr: null, branch, ahead, gh: gh.state, detail: gh.detail };
       const pr = await prFor(cwd, branch, env);
-      if (pr && (t.pr?.number !== pr.number || t.pr.state !== pr.state)) store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state } });
+      // Its checks come with it (prChecksOf), so the session's row says how they stand as of this read; running, when they
+      // were first read so is kept, which bounds how long the minute's watch follows them (watch.ts).
+      const checks = pr ? keptSince(t.pr?.number === pr.number ? t.pr.checks : undefined, prChecksOf(pr.checks)) : undefined;
+      if (pr && (t.pr?.number !== pr.number || t.pr.state !== pr.state || !sameChecks(t.pr.checks, checks))) store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state, ...(checks ? { checks } : {}) } });
       return { pr, branch, ahead, gh: "ready" };
     },
     "pr.test": ({ threadId, itemId }) => runtime.prTest(threadId, itemId),
@@ -1970,7 +1984,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const base = await mainBranch(cwd);
       if (base && base.replace(/^origin\//, "") === branch) throw new Error(`This session works on ${branch} itself. Start it in a worktree to open a pull request from a branch of its own.`);
       const pr = await prCreate(cwd, branch, { title, body, draft }, env);
-      store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state } });
+      const checks = keptSince(undefined, prChecksOf(pr.checks));
+      store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state, ...(checks ? { checks } : {}) } });
       return pr;
     },
     "pr.list": async ({ projectId }) => {
@@ -2224,6 +2239,21 @@ function pairSettings(patch: Record<string, unknown>) {
     if (patch.pairEffort !== null && patch.pairEffort !== undefined && (typeof patch.pairEffort !== "string" || !patch.pairEffort.trim())) throw new Error("pairEffort is an effort's name.");
     patch.pairEffort = patch.pairEffort ?? undefined;
   }
+  if ("modelSources" in patch) patch.modelSources = sourcesIn(patch.modelSources);
+}
+
+/** At most this many sources are kept, each key and value this long: a picker's memory, not a store for anything sent. */
+export const SOURCES_MAX = 500;
+const SOURCE_LEN = 300;
+
+/**
+  modelSources as it may be kept: an object of strings, at most SOURCES_MAX of them and none longer than SOURCE_LEN. Anything
+  else in it is dropped rather than refused, since it only remembers where a picker was left; nothing left clears it.
+*/
+export function sourcesIn(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const kept = Object.entries(value as Record<string, unknown>).filter(([k, v]) => typeof v === "string" && k.length <= SOURCE_LEN && v.length <= SOURCE_LEN).slice(0, SOURCES_MAX);
+  return kept.length ? Object.fromEntries(kept) as Record<string, string> : undefined;
 }
 
 /**

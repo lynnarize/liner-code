@@ -5,9 +5,10 @@
   OpenAI's Images API) and you allow it (the design file's `pictures.ask`: before the first, before
   each, or never). You can also ask it yourself from a picture's Style tab.
 
-  Here: the Settings section, the dock's "AI pictures" chip with who does what, a picture
+  Here: the Settings section, the AI pictures (a row of the box's + menu, and a chip after the +
+  while a design file's choice isn't the default), a picture
   layer's Made by / Asked for at the top of Style (who made it, what it cost and took when the
-  model said, the words, Make again, 3 more), the shimmer and the maker's tag on a picture being
+  model said, the words in the message box's own field with its Send, 3 more like this), the shimmer and the maker's tag on a picture being
   made, the dock's row while one is, and the rail's Picture tool (ask the model, a file, a picture
   of the project's). Who made an agent's picture comes from its design_picture call on the
   session's timeline; one you made here is marked on the element (data-by, data-prompt).
@@ -15,14 +16,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import type { DesignFile, DesignFrame, Item, PictureEndpoint, Rect } from "@contracts";
 import { pictureKey } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
 import { getState, onStream, rpc, useEngine, useItems } from "../engine";
 import { pairOf } from "../Crew";
-import { I } from "../icons";
+import { I, StateMark } from "../icons";
 import { agentOf, duration, money } from "../model";
 import { NamedSwitch, Pop, Row } from "../ui";
+import { SendBox } from "../Composer";
 import { frames } from "./bridge";
 import { Row as IRow, Section } from "./inspect/controls";
 import { STYLE_TOP } from "./inspect/slots";
@@ -223,7 +224,7 @@ function ProjectPictures({ onPick }: { onPick: (path: string) => void }) {
       <div className="ld-pic-list">
         {list === null && <p className="ld-note l-shimmer">Looking in the project</p>}
         {list?.length === 0 && <p className="ld-note">No pictures in the project{q ? " match that" : ""}.</p>}
-        {list?.map((p) => <Row key={p} title={p.split("/").pop()} note={p} onPick={() => onPick(p)} />)}
+        {list?.map((p) => <Row key={p} title={p.split("/").pop()} which={p} whichPath onPick={() => onPick(p)} />)}
       </div>
     </>
   );
@@ -245,8 +246,7 @@ function MadeBy({ t }: { t: Target }) {
   const by = attrOf(t.node.html, "data-by");
   const asked = info?.prompt || attrOf(t.node.html, "data-prompt") || "";
   const [words, setWords] = useState(asked);
-  const [editing, setEditing] = useState(false);
-  const field = useRef<HTMLTextAreaElement>(null);
+  const field = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => setWords(asked), [asked, t.node.id]);
   useEffect(() => {
@@ -283,23 +283,21 @@ function MadeBy({ t }: { t: Target }) {
         </IRow>
       </Section>
       <Section id="asked-for" title="Asked for" plain>
-        {editing || !asked ? (
-          <textarea ref={field} className="lc-input ld-pic-ask" rows={4} value={words} placeholder={model ? "What the picture shows, its light and its style" : "No model for AI pictures yet"} onChange={(e) => setWords(e.target.value)} onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && model && void makeFor(t.frame, node, words, 1, lean)} />
-        ) : (
-          <button type="button" className="ld-pic-words l-focus" title="Change the words" onClick={() => (setEditing(true), requestAnimationFrame(() => field.current?.focus()))}>
-            {words}
-            <I.edit size={14} />
-          </button>
-        )}
+        {/* The message box's field and Send: Send makes the picture from these words (again, once it has one). Each Send costs
+            money, so Enter is a new line and only ⌘Enter sends; with no model, or while one is made, only Send waits, never the words. */}
+        <SendBox field={field} className="ld-pic-ask" lines={3} value={words} label="What the picture shows" placeholder={model ? "What the picture shows, its light and its style" : "No model for AI pictures yet"} enter="line" sendOff={!model || busy} onChange={setWords} onSend={() => void makeFor(t.frame, node, words, 1, lean)} />
         {model ? (
+          // Three takes to choose from is another thing than Send, which makes one and puts it in: it keeps its own button.
           <div className="ld-ck-acts">
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || !words.trim()} onClick={() => void makeFor(t.frame, node, words, 1, lean)}>
-              {src ? "Make again" : "Make it"}
-            </button>
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || !words.trim()} onClick={() => void makeFor(t.frame, node, words, 3, lean)}>
-              3 more
+              3 more like this
             </button>
-            {busy && <span className="ld-ck-q l-shimmer">Making</span>}
+            {busy && (
+              <span className="ld-ck-q ld-pic-busy">
+                <StateMark state="working" size={12} label="Making the picture" />
+                Making
+              </span>
+            )}
           </div>
         ) : (
           <p className="ld-note ld-pic-note">No model makes AI pictures for this design. The dock's AI pictures menu picks one; your own image files always work.</p>
@@ -364,11 +362,11 @@ export function PictureTool() {
     <Pop label="Picture: into what's picked" side="left" width={260} triggerClass="lc-tb" triggerAttrs={{ title: "Picture: into what's picked" }} trigger={<D.picture />} menu>
       {(close) => (
         <>
-          {model && <Row title="Ask for an AI picture" note={model.label || model.model} icon={<I.sparkle size={14} />} onPick={() => (close(), (want = "ask"), void add(() => {}))} />}
-          <Row title="From a file" note="On this Mac" icon={<I.file size={14} />} onPick={() => (close(), void add((f, n) => fromFile(f, n)))} />
-          <Row title="From the project" note="A picture it already has" icon={<I.folder size={14} />} onPick={() => (close(), (want = "project"), void add(() => {}))} />
+          {model && <Row title="Ask for an AI picture" note={model.label || model.model} icon={<I.sparkle size={16} />} onPick={() => (close(), (want = "ask"), void add(() => {}))} />}
+          <Row title="From a file" note="On this Mac" icon={<I.file size={16} />} onPick={() => (close(), void add((f, n) => fromFile(f, n)))} />
+          <Row title="From the project" note="A picture it already has" icon={<I.folder size={16} />} onPick={() => (close(), (want = "project"), void add(() => {}))} />
           {!models.length && (
-            <Row title="Add a model for AI pictures" note="Settings › Models › AI pictures" icon={<I.plus size={14} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
+            <Row title="Add a model for AI pictures" note="Settings › Models › AI pictures" icon={<I.plus size={16} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
           )}
         </>
       )}
@@ -442,7 +440,7 @@ export function PicturesRow() {
   const forWhom = one ? (one.asker === "you" ? "you" : one.asker) : who.lead;
   return (
     <div className="lc-trow ld-pic-row" role="status">
-      <span className="ld-pd" aria-hidden />
+      <StateMark state="working" tint="var(--ld-side)" />
       <span className="lc-trow-t">
         <b>{maker}</b> is making {one && one.count > 1 ? `${one.count} pictures` : "a picture"} for {forWhom}
         {one && one.count > 1 && <span className="ld-q"> {one.done} of {one.count}</span>}
@@ -451,10 +449,42 @@ export function PicturesRow() {
   );
 }
 
-// ---------- The dock's chip: who does what
+// ---------- AI pictures: a row of the box's + menu, and a chip after the + once it isn't the default
 
-/** `lead`: who will lead, for a design with no session yet. `home`: Design Home's, before there's a design file to pick for. */
-export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead?: string; home?: boolean }) {
+/**
+  The AI pictures where you are, for the + menu's row: the model's name ("No one" for none), and
+  whether this design file's choice differs from the default (Settings' first model, asking before
+  the first picture), which is when the box shows it as a chip too. Design Home has no file yet, so
+  it never differs there.
+*/
+export function usePicturesNow(home?: boolean): { name: string; own: boolean } {
+  const models = usePictureModels();
+  const file = useDesign((s) => s.file);
+  useDesign((s) => s.mock);
+  const on = modelFor(home ? undefined : file, models);
+  const ask = file?.pictures?.ask ?? "first";
+  return { name: on ? on.label || on.model : "No one", own: !home && ((on?.id ?? null) !== (models[0]?.id ?? null) || (Boolean(on) && ask !== "first")) };
+}
+
+/** The chip after the +, shown while this design file's AI pictures aren't the default: it opens their panel. */
+export function PicturesChip({ threadId, lead }: { threadId?: string; lead?: string }) {
+  const { name: model } = usePicturesNow();
+  const on = model !== "No one";
+  const name = on ? `AI pictures: ${model}` : "No AI pictures";
+  return (
+    <Pop label={`${name}. Change it`} side="top" width={320} triggerClass="lc-seg-b ld-pic-chip" trigger={<><D.picture size={14} /><span className="lc-chip-name">{name}</span><I.chevD size={12} /></>}>
+      {() => <PicturesPanel threadId={threadId} lead={lead} />}
+    </Pop>
+  );
+}
+
+/**
+  Who makes AI pictures for this design file, picked from rows as the who panel's are (the lead and
+  its sidekick are picked in who works, not here), and whether it asks you first. `lead`: who will
+  lead, for a design with no session yet, named in the words. `home`: Design Home's, before there's
+  a design file to pick for.
+*/
+export function PicturesPanel({ threadId, lead, home }: { threadId?: string; lead?: string; home?: boolean }) {
   const models = usePictureModels();
   const file = useDesign((s) => s.file);
   const cwd = useDesign((s) => s.cwd);
@@ -468,8 +498,6 @@ export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead
   const on = modelFor(home ? undefined : file, models);
   const ask = file?.pictures?.ask ?? "first";
   void thread;
-  // "AI pictures": pictures a model makes from words. Optional: with none, the person's own files still go in.
-  const name = on ? `AI pictures: ${on.label || on.model}` : "No AI pictures";
   /** The design file's pictures, saved (canvas.save), and the canvas reads the file again. */
   const save = (pictures: NonNullable<DesignFile["pictures"]>) => {
     if (shownOld()) return;
@@ -482,64 +510,65 @@ export function PicturesChip({ threadId, lead, home }: { threadId?: string; lead
   const pick = (model: string | null) => save({ ask, model });
   const setAsk = (v: "first" | "always" | "never") => save({ ask: v, model: file?.pictures?.model });
   return (
-    <Pop label={`Who does what: ${name}`} side="top" width={360} triggerClass="lc-seg-b ld-pic-chip" trigger={<>{on && <span className="ld-pd" data-pic aria-hidden />}<span className="lc-chip-name">{name}</span><I.chevD size={12} /></>}>
-      {() => (
-        <div className="ld-pic-pop">
-          <div className="ld-way-mh">Who does what</div>
-          <div className="ld-pic-who">
-            <span className="ld-pd" data-lead aria-hidden />
-            <b>Lead</b>
-            <span className="ld-ell">{who.lead}</span>
-            <small>designs</small>
-          </div>
-          {who.side && (
-            <div className="ld-pic-who">
-              <span className="ld-pd" aria-hidden />
-              <b>Sidekick</b>
-              <span className="ld-ell">{who.side}</span>
-              <small>small jobs</small>
-            </div>
-          )}
-          <div className="ld-pic-who" data-on>
-            <span className="ld-pd" data-pic aria-hidden />
-            <b>AI pictures</b>
-            <span className="ld-ell">{on ? on.label || on.model : "No one"}</span>
-            <small>{on ? `your ${host(on.url)} key` : "optional"}</small>
-          </div>
-          <p className="ld-note ld-pic-note">This is only for pictures an AI makes from words. Your own image files always work: drop them on a frame or use the Picture tool.</p>
-          {models.length > 0 && !home && (
-            <div role="group" aria-label="AI pictures from">
-              <div className="ld-way-mh">AI pictures for this design from</div>
-              {models.map((m) => (
-                <Row key={m.id} title={m.label || m.model} note={host(m.url)} on={on?.id === m.id} onPick={() => pick(m.id)} />
-              ))}
-              <Row title="No one" note="no AI pictures" on={!on} onPick={() => pick(null)} />
-            </div>
-          )}
-          {on ? (
-            <>
-              <p className="ld-note ld-pic-note">
-                {who.lead} designs but doesn't make pictures, so it asks {on.label || on.model} through Liner, the way it asks a sidekick.{" "}
-                {ask === "never" ? "It doesn't ask you first." : ask === "always" ? "It asks you before each one." : "It asks you before the first one."}
-              </p>
-              <div className="ld-pic-askw">
-                <Segmented size="sm" full value={ask} onValueChange={(v) => setAsk(v as "first" | "always" | "never")} aria-label="Ask me" options={[{ value: "first", label: "Ask first" }, { value: "always", label: "Ask each time" }, { value: "never", label: "Don't ask" }]} />
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="ld-note ld-pic-note">With no one here, {who.lead} leaves a labelled empty box where it would have asked for a picture, and nothing is charged.</p>
-              {!models.length && (
-                <button type="button" className="ld-pic-add l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
-                  <I.plus size={14} />
-                  Add a model for AI pictures
-                </button>
-              )}
-            </>
-          )}
+    <div className="ld-pic-pop">
+      {models.length > 0 && !home ? (
+        <div className="lc-who-scroll" role="group" aria-label="AI pictures for this design from">
+          {models.map((m) => (
+            <button key={m.id} type="button" className="lc-who-row l-focus" data-on={on?.id === m.id || undefined} aria-pressed={on?.id === m.id} onClick={() => pick(m.id)}>
+              <I.sparkle size={14} />
+              <span className="lc-who-row-t">{m.label || m.model}</span>
+              <span className="lc-who-row-n">{host(m.url)}</span>
+              {on?.id === m.id && <I.check size={16} className="lc-who-tick" />}
+            </button>
+          ))}
+          <button type="button" className="lc-who-row l-focus" data-on={!on || undefined} aria-pressed={!on} onClick={() => pick(null)}>
+            <span className="lc-who-row-t">No one</span>
+            <span className="lc-who-row-n">No AI pictures</span>
+            {!on && <I.check size={16} className="lc-who-tick" />}
+          </button>
+        </div>
+      ) : (
+        <div className="lc-who-row" aria-disabled>
+          <I.sparkle size={14} />
+          <span className="lc-who-row-t">{on ? on.label || on.model : "No one"}</span>
+          <span className="lc-who-row-n">{on ? `your ${host(on.url)} key` : "optional"}</span>
         </div>
       )}
-    </Pop>
+      <p className="ld-note ld-pic-note">This is only for pictures an AI makes from words. Your own image files always work: drop them on a frame or use the Picture tool.</p>
+      {on ? (
+        <>
+          <p className="ld-note ld-pic-note">
+            {who.lead} designs but doesn't make pictures, so it asks {on.label || on.model} through Liner, the way it asks a sidekick.
+          </p>
+          <div className="lc-team-lab">Before a picture</div>
+          <div className="lc-who-scroll" role="group" aria-label="Before a picture">
+            {(
+              [
+                ["first", "Ask me first", "Before the first one"],
+                ["always", "Ask me each time", "Before each one"],
+                ["never", "Don't ask", "It goes ahead"],
+              ] as const
+            ).map(([v, title, note]) => (
+              <button key={v} type="button" className="lc-who-row l-focus" data-on={ask === v || undefined} aria-pressed={ask === v} onClick={() => setAsk(v)}>
+                <span className="lc-who-row-t">{title}</span>
+                <span className="lc-who-row-n">{note}</span>
+                {ask === v && <I.check size={16} className="lc-who-tick" />}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="ld-note ld-pic-note">With no one here, {who.lead} leaves a labelled empty box where it would have asked for a picture, and nothing is charged.</p>
+          {!models.length && (
+            <button type="button" className="ld-pic-add l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
+              <I.plus size={14} />
+              Add a model for AI pictures
+            </button>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

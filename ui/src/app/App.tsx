@@ -3,7 +3,7 @@
   nothing drawn between them. ⌘K reaches everything; the shell's menu bar sends the same commands.
 */
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AgentProfile, PanelPlace, RoutineRun, SessionMode } from "@contracts";
+import type { AgentProfile, PanelPlace, RoutineRun, SessionMode, Thread } from "@contracts";
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
@@ -13,7 +13,9 @@ import { bridge, onCommand } from "./bridge";
 import { EngineAway, getState, onNotify, onStream, RpcError, rpc, startEngine, useEngine } from "./engine";
 import { Home } from "./Home";
 import { I } from "./icons";
-import { ACCESS_LEVELS, agentOf, wallShown } from "./model";
+import { ACCESS_LEVELS, agentOf, ago, markOf, threadModel, wallShown } from "./model";
+import { markLabelOf, markStateOf } from "./session-state";
+import { SideMark } from "./SideList";
 import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
 import { useSteady } from "./ui";
@@ -426,7 +428,7 @@ export function App() {
     if (tab) keepDock(id, openTab(keptDock(id), tab));
     go({ kind: "session", id });
   };
-  // An app made from an offer, opened on its page, and the session that made it ("Watch it"), or
+  // An app made from an offer, opened on its page, and the session that made it ("Open it" on the offer), or
   // where a panel ran, with it up there (the Add-ons page's Retry).
   useEffect(() => {
     const app = (e: Event) => {
@@ -660,7 +662,7 @@ export function App() {
     const on = (e: Event) => {
       const el = e.target;
       if (!(el instanceof HTMLInputElement) || !el.classList.contains("l-cmd__input")) return;
-      // A page of its own (Change what it may do) searches only its own items.
+      // A page of its own (Permissions) searches only its own items.
       setAsked(document.querySelector(".l-cmd__crumb") ? "" : el.value.trim());
     };
     // Heard as the event bubbles out, after the menu's own onChange. Caught on the way in (capture),
@@ -717,6 +719,17 @@ export function App() {
   */
   const lastCommands = useRef<CommandItem[]>([]);
   const whileOpen = <T,>(x: T) => (menu ? x : null);
+  // A session among the results reads as its row does (SideList.tsx): the state mark in its model's colour, the title, then where it is and the time since it last did something. Who works on it is still found by its name.
+  const sessionPick = (t: Thread) => {
+    const ref = threadModel(t, agents, providers);
+    const mark = markStateOf(t, { busy: t.status === "running" });
+    return {
+      label: t.title || "New session",
+      icon: <SideMark state={mark} brand={ref ? markOf(ref) : undefined} label={markLabelOf(t, mark)} />,
+      hint: [projects.find((p) => p.id === t.projectId)?.name, ago(t.updatedAt)].filter(Boolean).join(" · "),
+      keywords: [agentOf(t.agent, agents, providers).name],
+    };
+  };
   const commands = useMemo<CommandItem[]>(() => {
     if (!menu) return lastCommands.current;
     const items: CommandItem[] = [
@@ -743,11 +756,11 @@ export function App() {
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
         ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
-        { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, onSelect: () => copy(here.id, "the session id") },
-        { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], onSelect: () => void rpc("thread.stop", { id: here.id }) },
-        { id: "pin", label: here.pinned ? "Unpin it" : "Pin it", group: "This session", onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
-        { id: "settle", label: "Settle it", group: "This session", onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
-        { id: "archive", label: "Archive it", group: "This session", keywords: ["put away", "hide"], onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
+        { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, icon: <I.copy size={16} />, onSelect: () => copy(here.id, "the session id") },
+        { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], icon: <I.stop size={16} />, onSelect: () => void rpc("thread.stop", { id: here.id }) },
+        { id: "pin", label: here.pinned ? "Unpin it" : "Pin it", group: "This session", icon: <I.pin size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
+        { id: "settle", label: "Settle it", group: "This session", icon: <I.settle size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
+        { id: "archive", label: "Archive it", group: "This session", keywords: ["put away", "hide"], icon: <I.box size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
         {
           id: "fork",
           label: "Fork it",
@@ -757,8 +770,9 @@ export function App() {
         },
         {
           id: "access",
-          label: "Change what it may do",
+          label: "Permissions",
           group: "This session",
+          keywords: ["access", "what it may do"],
           icon: <I.lock size={16} />,
           items: ACCESS_LEVELS.map((l) => ({ id: `access-${l.id}`, label: l.label, hint: l.note, onSelect: () => void rpc("thread.update", { id: here.id, access: l.id }) })),
         },
@@ -766,6 +780,7 @@ export function App() {
           id: "reveal",
           label: `Show the project in ${os.fileManager}`,
           group: "This session",
+          icon: <I.folder size={16} />,
           onSelect: () => {
             const p = projects.find((x) => x.id === here.projectId);
             if (p) bridge.openIn(here.worktree?.path ?? p.path, "finder");
@@ -789,8 +804,8 @@ export function App() {
           icon: <I.trash size={16} />,
           // It can't be undone, so it asks first, on a page of its own; Enter alone keeps it.
           items: [
-            { id: "delete-keep", label: "Keep it", onSelect: () => {} },
-            { id: "delete-archive", label: "Archive it instead", hint: "Out of the sidebar, back from Settings any time", onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
+            { id: "delete-keep", label: "Keep it", icon: <I.close size={16} />, onSelect: () => {} },
+            { id: "delete-archive", label: "Archive it instead", hint: "Out of the sidebar, back from Settings any time", icon: <I.box size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
             {
               id: "delete-yes",
               label: `Delete “${here.title}” for good`,
@@ -805,11 +820,11 @@ export function App() {
         },
       );
     }
-    for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, label: t.title, group: "Sessions", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openSession(t.id) });
+    for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, ...sessionPick(t), group: "Sessions", onSelect: () => openSession(t.id) });
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={16} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
     for (const p of projects) if (p.kind !== "design" && !p.demoFor) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
-    for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", onSelect: () => setAgentDialog({ open: true, agent: a }) });
+    for (const a of agents) items.push({ id: `a-${a.id}`, label: `Edit ${a.name}`, group: "Team", icon: <I.edit size={16} />, onSelect: () => setAgentDialog({ open: true, agent: a }) });
     lastCommands.current = items;
     return items;
     // New session and New routine read where you are and your last project, so they're here too.
@@ -821,7 +836,7 @@ export function App() {
         : threads
             .filter((t) => !t.archived && t.id !== current?.id && t.id !== besideThread?.id)
             .slice(0, 200)
-            .map((t) => ({ id: `b-${t.id}`, label: t.title, group: "Open beside it", hint: `${projects.find((p) => p.id === t.projectId)?.name ?? ""} · ${agentOf(t.agent, agents, providers).name}`, onSelect: () => openBeside(t.id, besideOf) })),
+            .map((t) => ({ id: `b-${t.id}`, ...sessionPick(t), group: "Open beside it", onSelect: () => openBeside(t.id, besideOf) })),
     [besideOf, threads, projects, agents, providers, current, besideThread, view],
   );
 

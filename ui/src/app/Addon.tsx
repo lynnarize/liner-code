@@ -22,10 +22,11 @@ import { AppModelChip, appModelOf, pickAppModel } from "./AppModel";
 import { getState, loadItems, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { isPanelStopped, panelRunning, panelStopped, STOPPED_REASON } from "./panelLife";
 import { toComposer } from "./Find";
-import { I } from "./icons";
+import { I, StateMark, StepMark } from "./icons";
 import { modelLabel } from "./model";
 import { THEME_ATTRS, theme } from "./Page";
-import { PanelHead, Pop, Row, Sep } from "./ui";
+import { ConfirmRow, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
+import * as os from "./os";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 const ICONS: Record<PanelIcon, (p: { size?: number }) => ReactNode> = { app: I.app, blocks: I.blocks, list: I.list, notes: I.notes, chart: I.usage, check: I.settle, clock: I.clock, globe: I.globe, flask: I.flask, star: I.star, bolt: I.bolt, inbox: I.inbox };
@@ -109,7 +110,7 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
   if (info.removed)
     return (
       <div className="lc-addon-view">
-        <PanelNote icon={<I.trash size={20} />} title={`You removed ${info.name}`} body="Its files, versions and storage are kept, so it can come back." action={<button type="button" className="lc-btn" data-kind="ghost" onClick={() => void rpc("addons.update", { id: info.id, removed: false }).catch(fail)}>Restore</button>} />
+        <PanelNote icon={<I.trash size={20} />} title={`You removed ${info.name}`} body="Its files, versions and storage are kept, so it can come back." action={<button type="button" className="lc-btn" data-kind="ghost" onClick={() => void rpc("addons.update", { id: info.id, removed: false }).catch(fail)}>Bring it back</button>} />
       </div>
     );
   if (!info.enabled || off)
@@ -323,7 +324,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
             Blocked a request to <b>{blocked}</b>. {reach ? `${name} may reach ${reach} and nothing else.` : `${name} didn't ask for the network, so it can't reach it.`}
           </span>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setBlocked(null)}>
-            <I.close size={12} />
+            <I.close size={14} />
           </button>
         </div>
       )}
@@ -333,7 +334,7 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
           <I.folder size={14} />
           <span>{notice}</span>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" onClick={() => setHeard(notice)}>
-            <I.close size={12} />
+            <I.close size={14} />
           </button>
         </div>
       )}
@@ -443,26 +444,21 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
         <div className="lc-addon-menu">
           <PanelHead>Versions</PanelHead>
           {[...a.versions].reverse().map((v) => (
-            <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} on={v === a.version} onPick={() => (set({ version: v }), close())} />
+            <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} end={a.dates?.[v] ? dayOf(a.dates[v]) : undefined} on={v === a.version} onPick={() => (set({ version: v }), close())} />
           ))}
           <Sep />
-          {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={14} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
-          <Row title="Show its files" icon={<I.folder size={14} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
-          {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.panel size={14} />} onPick={() => (close(), onOpenElsewhere())} />}
-          {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={14} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={14} />} onPick={() => (close(), set({ project: here.id }))} />)}
+          {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={16} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
+          <Row title={`Show in ${os.fileManager}`} note="Its files" icon={<I.folder size={16} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
+          {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.panel size={16} />} onPick={() => (close(), onOpenElsewhere())} />}
+          {!page && (a.project ? <Row title="Show it in every project" icon={<I.globe size={16} />} onPick={() => (close(), set({ project: null }))} /> : here && <Row title={`Show it only in ${here.name}`} icon={<I.folder size={16} />} onPick={() => (close(), set({ project: here.id }))} />)}
           <Sep />
-          <Row title={a.enabled ? "Turn it off" : "Turn it on"} icon={<I.shieldOff size={14} />} onPick={() => (close(), set({ enabled: !a.enabled }))} />
-          <RemoveRow name={a.name} onRemove={() => (close(), set({ removed: true }))} />
+          <Row title={a.enabled ? "Turn it off" : "Turn it on"} icon={<I.shieldOff size={16} />} onPick={() => (close(), set({ enabled: !a.enabled }))} />
+          {/* Remove, asked twice; its yes goes with the menu, and a double-click can't give it (ConfirmRow). */}
+          <ConfirmRow title="Remove…" sure={`Remove ${a.name}`} sureNote="Its files, versions and storage are kept" icon={<I.trash size={16} />} onConfirm={() => (close(), set({ removed: true }))} />
         </div>
       )}
     </Pop>
   );
-}
-
-/** Remove, asked twice. Its yes goes with the menu: opened again, it asks from the start. */
-function RemoveRow({ name, onRemove }: { name: string; onRemove: () => void }) {
-  const [sure, setSure] = useState(false);
-  return sure ? <Row title={`Remove ${name}`} note="Its files, versions and storage are kept" icon={<I.trash size={14} />} onPick={onRemove} /> : <Row title="Remove…" icon={<I.trash size={14} />} onPick={() => setSure(true)} />;
 }
 
 /**
@@ -476,9 +472,7 @@ export function AppPage({ id, back, onBack, sidebar, onSidebar }: { id: string; 
     <div className="lc-apppage">
       <header className="lc-top" data-drag>
         {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
+          <ShowSidebar onShow={onSidebar} />
         )}
         <button type="button" className="lc-apppage-back l-focus" onClick={onBack}>
           <I.back size={14} />
@@ -532,7 +526,7 @@ export function willTouch(a: PanelAsk["access"], place: PanelPlace) {
   The card an agent offers at the end of its turn (DeepSeek Harness's creation card, its words):
   what it would make, Add to (the right panel, a session tab, a global page, or where you write),
   what it will touch; Create makes it in a background session, then Installing, Installed, and
-  Keep or Undo; Undo keeps its files, so Restore brings it back.
+  Keep or Undo; Undo keeps its files, so Bring it back brings it back. Stop stops it while it's made.
 */
 /** OfferCard's view of the session it starts: its tool calls. */
 const isToolItem = (it: Item) => it.kind === "tool";
@@ -573,10 +567,10 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
   const settled: Partial<Record<Offer["state"], { title: string; note: string; good?: boolean }>> = {
     installed: { title: "Installed", note: `${it.name} is ${where}. Keep it, or undo.`, good: true },
     kept: { title: "Kept", note: `${it.name} is ${where}.`, good: true },
-    removed: { title: "Removed", note: `Undo keeps its files in .liner/addons/${it.addon}, so Restore brings it back.` },
+    removed: { title: "Removed", note: `Undo keeps its files in .liner/addons/${it.addon}, so it can come back.` },
     dismissed: { title: "Not now", note: "Nothing was made. Ask again whenever you like." },
-    cancelled: { title: "Cancelled", note: "Nothing was installed." },
-    failed: { title: "Didn't make it", note: it.error ?? "Making it failed. Try again." },
+    cancelled: { title: "Stopped", note: "Nothing was installed." },
+    failed: { title: "Ran into a problem", note: it.error ?? "Making it failed. Try again." },
     replaced: { title: "Replaced", note: "A newer offer took its place." },
   };
   const done = settled[it.state];
@@ -585,7 +579,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
       <div className="lc-offer-head">
         <I.turn size={14} />
         <span>Make it an app</span>
-        <span className="lc-quiet">You can remove it at any time</span>
+        <span className="lc-quiet">{who} makes it. You can remove it at any time</span>
       </div>
       <div className="lc-offer-what">
         <b>{it.name}</b>
@@ -664,21 +658,21 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
       )}
       {working && (
         <div className="lc-offer-work">
-          <div className="lc-offer-bar">
-            <div style={{ width: it.state === "installing" ? "88%" : `${20 + Math.min(3, Number(read) + Number(wrote > 0) + Number(checked)) * 18}%` }} />
-          </div>
+          {/* How far it is, said by its steps' marks under this line; the working mark says it is at it. */}
           <div className="lc-offer-row">
+            <StateMark state="working" size={14} />
             <b>{it.state === "installing" ? "Installing…" : "Making it in the background"}</b>
             {it.state === "creating" && (
-              <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} onClick={() => void act("cancel")}>
-                Cancel
+              // Stop, as every running agent is stopped: nothing it made is installed.
+              <button type="button" className="lc-btn" data-kind="ghost" disabled={busy} title="Stop making it. Nothing is installed" onClick={() => void act("cancel")}>
+                Stop
               </button>
             )}
           </div>
           <ul className="lc-offer-steps">
             {steps.map((s) => (
               <li key={s.text} data-done={s.done || undefined} data-now={s.now || undefined}>
-                {s.done ? <I.check size={12} /> : <I.dot size={12} />}
+                <StepMark size={12} state={s.done ? "done" : s.now ? "working" : "waiting"} />
                 {s.text}
               </li>
             ))}
@@ -687,7 +681,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
             {who} is making it in the background. You can keep chatting here.
             {it.child && (
               <button type="button" className="lc-offer-link l-focus" onClick={() => openSession(it.child!)}>
-                Watch it
+                Open it
               </button>
             )}
           </span>
@@ -695,7 +689,8 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
       )}
       {done && (
         <div className="lc-offer-done" role="status" data-good={done.good || undefined}>
-          <span className="lc-offer-tick">{done.good ? <I.check size={14} /> : it.state === "removed" ? <I.undo size={14} /> : <I.close size={14} />}</span>
+          {/* How the making ended is the state mark (finished, or a problem); putting it away or passing on it is an act, with its own icon. */}
+          <span className="lc-offer-tick">{done.good ? <StateMark state="done" size={14} /> : it.state === "failed" ? <StateMark state="problem" size={14} /> : it.state === "removed" ? <I.undo size={14} /> : <I.close size={14} />}</span>
           <span className="lc-offer-said">
             <b>{done.title}</b>
             <span>{done.note}</span>
@@ -722,7 +717,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
           )}
           {it.state === "removed" && (
             <button type="button" className="lc-btn" disabled={busy} onClick={() => void act("restore")}>
-              {busy ? "Restoring…" : "Restore"}
+              {busy ? "Bringing it back…" : "Bring it back"}
             </button>
           )}
           {(it.state === "cancelled" || it.state === "failed") &&

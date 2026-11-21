@@ -21,6 +21,7 @@ import { onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { cssVar, hexOf, takeScripts, onScript } from "./Surfaces";
 import { toComposer } from "./Find";
+import { Pop, Row } from "./ui";
 
 function themeNow() {
   const ink = hexOf(cssVar("--l-ink"), "#1d1f24");
@@ -362,21 +363,23 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
             Ask about this
           </button>
         )}
-        <button
-          type="button"
-          className="lc-ib l-focus"
-          aria-label="Clear"
-          title="Clear"
-          onClick={() => {
-            term.current?.clear();
-            if (idRef.current) void rpc("term.clear", { id: idRef.current }).catch(() => {});
-          }}
-        >
-          <I.trash size={14} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="A new shell" title="A new shell" onClick={onRestart}>
-          <I.refresh size={14} />
-        </button>
+        {/* The rest of a shell's tools under one ···, as every surface's top row has them. */}
+        <Pop label="More for this shell" menu align="end" width={220} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+          {(close) => (
+            <>
+              <Row
+                title="Clear"
+                icon={<I.trash size={16} />}
+                onPick={() => {
+                  close();
+                  term.current?.clear();
+                  if (idRef.current) void rpc("term.clear", { id: idRef.current }).catch(() => {});
+                }}
+              />
+              <Row title="Restart the shell" note="In this tab" icon={<I.refresh size={16} />} onPick={() => (close(), onRestart())} />
+            </>
+          )}
+        </Pop>
     </>
   );
   return (
@@ -389,12 +392,13 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
 }
 
 /**
-  The session's shells. In the dock they're a surface; in the bottom panel (`onHide`) they're the
-  panel itself: its strip is their tabs, a + for another shell, the open one's folder and tools,
-  and the way to put the panel away.
+  The session's shells. In the dock they're a surface; in the bottom panel (`below`) they're the
+  panel itself: its strip is their tabs, a + for a new shell, and the open one's folder and tools.
+  The right edge's lit Terminal icon puts the panel away, as it does every surface, so the strip
+  has no Hide of its own.
 */
 /** `lead` starts the bottom panel's row of shells: the project's scripts, which open as tabs of this row. */
-export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thread; visible: boolean; onHide?: () => void; lead?: ReactNode }) {
+export function TerminalSurface({ thread, visible, below, lead }: { thread: Thread; visible: boolean; below?: boolean; lead?: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const tabs = useTabs(thread.id);
   // The engine's list is the truth: the tabs come back after a reload, and ones whose shells it
@@ -448,7 +452,7 @@ export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thr
       return { panes, on: k.on === p.key || !rest.length ? panes[panes.length - 1].key : k.on };
     });
   };
-  // A new shell in the same tab: the old one ends, and a script isn't run again.
+  // The shell started again in the same tab: the old one ends, and a script isn't run again.
   const restart = (p: Pane) => {
     void idOf(p).then(end);
     opening.delete(p.key);
@@ -463,10 +467,10 @@ export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thr
       </div>
     );
   return (
-    <div className="lc-terms" data-below={onHide ? "" : undefined}>
-      {(panes.length > 1 || onHide) && (
+    <div className="lc-terms" data-below={below ? "" : undefined}>
+      {(panes.length > 1 || below) && (
         <div className="lc-terms-tabs" role="tablist" aria-label="Shells">
-          {onHide && lead}
+          {below && lead}
           {panes.map((p) => (
             <span key={p.key} className="lc-terms-tab" data-on={p.key === on || undefined}>
               <button type="button" role="tab" aria-selected={p.key === on} className="l-focus" onClick={() => setOn(p.key)} title={p.command ?? "A shell"}>
@@ -478,23 +482,20 @@ export function TerminalSurface({ thread, visible, onHide, lead }: { thread: Thr
               </button>
             </span>
           ))}
-          {onHide && (
+          {below && (
             <>
-              <button type="button" className="lc-ib l-focus" aria-label="Another shell" title="Another shell" onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })}>
+              <button type="button" className="lc-ib l-focus" aria-label="A new shell" title="A new shell" onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })}>
                 <I.plus size={14} />
               </button>
               <span className="lc-grow" />
               <span ref={setSlot} className="lc-below-tools" />
-              <button type="button" className="lc-ib l-focus" aria-label="Hide the bottom panel" title="Hide the bottom panel" onClick={onHide}>
-                <I.chevD size={14} />
-              </button>
             </>
           )}
         </div>
       )}
       {panes.map((p) => (
         <div key={p.key} className="lc-terms-pane" hidden={p.key !== on}>
-          <TermPane thread={thread} pane={p} visible={visible && p.key === on} onRestart={() => restart(p)} slot={onHide ? slot : undefined} />
+          <TermPane thread={thread} pane={p} visible={visible && p.key === on} onRestart={() => restart(p)} slot={below ? slot : undefined} />
         </div>
       ))}
     </div>

@@ -12,18 +12,18 @@
   data-source attribute a React plugin left); otherwise the agent finds the file itself. The page
   reloads by itself when the change lands (the dev server's hot reload).
 
-  Here too: the server chip in the canvas's top row (which server, Stop and Restart with the
-  Browser panel's rules), and "Put the running app on the canvas" for the Frame tool's menu and
+  Here too: the server's rows under the canvas's top row's ··· (which server, Stop and Restart with
+  the Browser panel's rules), and "Put the running app on the canvas" for the Frame tool's menu and
   Design Home.
 */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { DesignFrame, FrameOp, LaunchAsk, LaunchServer, LocalServer, NodeRead, Project } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "../engine";
 import { I } from "../icons";
 import { useLaunch } from "../launch";
 import { agentOf } from "../model";
-import { Pop, Row, Sep } from "../ui";
+import { PanelHead, Row } from "../ui";
 import { frames } from "./bridge";
 import { askAgent, shownAsk } from "./BuildTab";
 import { design, getDesign, subscribeDesign, useDesign, type DesignState } from "./store";
@@ -77,7 +77,7 @@ export function useLiveSrc(frame: DesignFrame) {
   return src;
 }
 
-/** Beside a live frame's name: the dot, and its address (or, after the first of a page, what differs: "390 wide", "/station"). */
+/** Beside a live frame's name: the globe that means the running app, and its address (or, after the first of a page, what differs: "390 wide", "/station"). */
 export function LiveMark({ frame }: { frame: DesignFrame }) {
   const file = useDesign((s) => s.file);
   if (frame.kind !== "live") return null;
@@ -89,7 +89,7 @@ export function LiveMark({ frame }: { frame: DesignFrame }) {
   const text = !at ? (frame.url ?? "") : same ? `${frame.w} wide` : host ? at.path : `localhost:${at.port}${at.path === "/" ? "" : at.path}`;
   return (
     <span className="ld-lmark" title={`The running app: ${frame.url}`}>
-      <span className="ld-bdot" aria-hidden />
+      <I.globe size={12} />
       {text}
     </span>
   );
@@ -396,7 +396,6 @@ function Picker({ threadId, onPut, onClose }: { threadId?: string; onPut: (port:
         <div className="ld-lpick-l" role="listbox" aria-label="Servers">
           {list.map((c) => (
             <div key={c.key} className="ld-lpick-r" role="option" aria-selected={chosen?.key === c.key} data-on={chosen?.key === c.key || undefined} onClick={() => c.port && setPick(c.key)}>
-              <span className="ld-bdot" data-off={!c.port || undefined} aria-hidden />
               <span className="ld-ell">
                 <b>{c.name}</b> {c.port ? `localhost:${c.port}` : c.launch?.status === "starting" ? "starting" : "stopped"}
               </span>
@@ -447,18 +446,20 @@ function Picker({ threadId, onPut, onClose }: { threadId?: string; onPut: (port:
   );
 }
 
-// The Frame tool's menu opens the picker in the top row's place, where the server chip is.
+// The Frame tool's menu (and the server's rows under the top row's ···) open the picker in the top row's place.
 let pickerOpen = false;
 const pickerFns = new Set<() => void>();
 export const openLivePicker = (on = true) => ((pickerOpen = on), pickerFns.forEach((f) => f()));
 const usePicker = () => useSyncExternalStore((f) => (pickerFns.add(f), () => void pickerFns.delete(f)), () => pickerOpen);
 
 /**
-  The canvas's top row: the server the live frames are of (its name and port), with Stop and
-  Restart as the Browser panel has them (launch.json's by name; one the session started, Stop
-  only; anyone else's, neither), and the picker when it's open.
+  The canvas's top row keeps the server of the live frames under its ···: which server (its name, its
+  port and whether it runs, in words), Stop and Restart as the Browser panel has them (launch.json's by
+  name; one the session started, Stop only; anyone else's, neither), and another page of it. The rows
+  go in the menu (`rows`, none while no live frame is on the canvas); what they open outlives the menu
+  (`floats`: the ask before a launch.json command runs, and the picker when it's open).
 */
-export function LiveChip() {
+export function useLiveServer(): { rows: ((close: () => void) => ReactNode) | null; floats: ReactNode } {
   const file = useDesign((s) => s.file);
   const cwd = useDesign((s) => s.cwd);
   const threadId = useDesign((s) => s.threadId);
@@ -505,43 +506,29 @@ export function LiveChip() {
     await addLive(s.cwd, s.file.id, p, path, sizes);
     await design.open(s.cwd, s.file.id);
   };
-  return (
-    <>
-      {port && (
-        <Pop
-          label={`${name} on port ${port}: the server of the live frames`}
-          width={260}
-          align="end"
-          triggerClass="ld-srv"
-          trigger={
+  // Whether it runs is a fact, so it is said in words (no dot), as the Browser panel's server rows say it.
+  const rows = port
+    ? (close: () => void) => (
+        <>
+          <PanelHead end={up ? "Running" : "Stopped"}>
+            {name} :{port}
+          </PanelHead>
+          <Row title="Put another page on the canvas" icon={<I.plus size={16} />} onPick={() => (close(), openLivePicker())} />
+          {server ? (
             <>
-              <span className="ld-bdot" data-off={!up || undefined} aria-hidden />
-              <span>
-                {name} {up ? "on" : "stopped,"} :{port}
-              </span>
-              <I.chevD size={12} />
+              <Row title={server.status === "running" ? "Restart" : "Run"} note={server.changed ? "launch.json changed" : undefined} icon={<I.refresh size={16} />} onPick={() => (close(), void restart())} />
+              <Row title="Stop" icon={<I.stop size={16} />} disabled={server.status === "stopped"} onPick={() => (close(), void stop())} />
             </>
-          }
-          menu
-        >
-          {(close) => (
-            <>
-              <Row title="Put another page on the canvas" icon={<I.plus size={14} />} onPick={() => (close(), openLivePicker())} />
-              <Sep />
-              {server ? (
-                <>
-                  <Row title={server.status === "running" ? "Restart" : "Run"} note={server.changed ? "launch.json changed" : undefined} icon={<I.refresh size={14} />} onPick={() => (close(), void restart())} />
-                  <Row title="Stop" icon={<I.stop size={9} />} disabled={server.status === "stopped"} onPick={() => (close(), void stop())} />
-                </>
-              ) : local?.owner ? (
-                <Row title="Stop" note={local.process} icon={<I.stop size={9} />} onPick={() => (close(), void stop())} />
-              ) : (
-                <Row title="Started outside this session" note="Stop it where it runs" disabled />
-              )}
-            </>
+          ) : local?.owner ? (
+            <Row title="Stop" note={local.process} icon={<I.stop size={16} />} onPick={() => (close(), void stop())} />
+          ) : (
+            <Row title="Started outside this session" note="Stop it where it runs" keepNote disabled />
           )}
-        </Pop>
-      )}
+        </>
+      )
+    : null;
+  const floats = (
+    <>
       {asked && (
         <div className="ld-lpick ld-lpick-float" role="dialog" aria-label="Restart the server">
           <div className="ld-lpick-ask">
@@ -565,18 +552,15 @@ export function LiveChip() {
       )}
     </>
   );
+  return { rows, floats };
 }
 
-/** Design Home's Or row: the running app on the canvas, in a new design file of the project, then opened. */
-export function HomeLive({ project, onOpen }: { project: Project; onOpen: (file: string) => Promise<void> }) {
+/** Design Home's "Start another way" in the box's + menu: the running app on the canvas, in a new design file of the project, then opened. */
+export function HomeLive({ project, onOpen, onClose }: { project: Project; onOpen: (file: string) => Promise<void>; onClose: () => void }) {
   const put = async (port: number, path: string, sizes: ("desktop" | "phone")[]) => {
     const df = await rpc("canvas.create", { cwd: project.path, title: "The running app" });
     await addLive(project.path, df.id, port, path, sizes);
     await onOpen(df.id);
   };
-  return (
-    <Pop label="Put the running app on the canvas, live" width={340} triggerClass="lc-under-b l-focus" trigger={<><I.globe size={14} />put the running app on the canvas, live</>}>
-      {(close) => <Picker onPut={put} onClose={close} />}
-    </Pop>
-  );
+  return <Picker onPut={put} onClose={onClose} />;
 }

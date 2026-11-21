@@ -74,8 +74,8 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.965 0.002 265);
   --lc-ctl-ink-2: oklch(0.74 0.006 265);
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
-  /* A merged pull request's mark, in the sidebar's rows. */
-  --lc-merged: oklch(0.56 0.17 295);
+  /* A merged pull request's purple: Liner has no token of its own for it (the state mark, .lc-mk). */
+  --lc-merged: oklch(0.6 0.19 300);
   /* No text lighter than this: the fourth grey is 4.6:1 on the paper (it was 3.6:1). */
   --l-ink-4: oklch(0.545 0.006 265);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
@@ -91,7 +91,7 @@ html[data-action="ink"] {
   --lc-ctl-hover: oklch(0.2 0.004 265);
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
-  --lc-merged: oklch(0.72 0.14 295);
+  --lc-merged: oklch(0.72 0.15 300);
   --l-ink-4: oklch(0.64 0.005 265);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
 }
@@ -401,12 +401,10 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
     background 140ms ease,
     color 140ms ease;
 }
+/* Pressed, or its menu open, an icon button looks as the right edge's lit icon does: a wash, no ring (and so does a header's .lc-tb below). */
 .lc-ib[aria-pressed="true"],
 .lc-ib[data-open] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 1px var(--l-drop);
+  background: var(--l-wash-2);
   color: var(--l-ink);
 }
 @media (hover: hover) {
@@ -415,14 +413,15 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
     color: var(--l-ink);
   }
 }
+/* A header's button: 30px with its 16px icon in every face's top row; an icon button in content is .lc-ib, 28. */
 .lc-tb {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 32px;
-  height: 32px;
+  min-width: 30px;
+  height: 30px;
   padding: 0;
   border: 0;
   border-radius: var(--lc-r-row);
@@ -487,13 +486,6 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   white-space: nowrap;
   animation: l-swap-in 280ms var(--l-ease-out) backwards;
 }
-.lc-badge[data-dot]::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 .lc-badge[data-tone="ok"] {
   background: color-mix(in oklab, var(--l-ok) 13%, transparent);
   color: var(--l-ok-text);
@@ -553,33 +545,14 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   box-shadow: none;
   color: var(--l-surface);
 }
+/* A small mark's 20px place in a line (a model's, an agent's, the Reviewer's shield): bare, as every model's and tool's mark is, with no plate round it. */
 .lc-tile {
   display: grid;
   flex: none;
   place-items: center;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  background: var(--l-wash-2);
   color: var(--l-ink-2);
-}
-/* The spinner: an accent arc travelling on the waiting ring. A holder that tints its work (a
-   session's model, in .lc-mk) passes its own ink down instead. */
-.lc-spin {
-  flex: none;
-  color: var(--l-accent);
-}
-.lc-mk[data-s="run"] .lc-spin {
-  color: inherit;
-}
-.lc-spin-arc {
-  transform-origin: 8px 8px;
-  animation: lc-turn 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
-}
-@keyframes lc-turn {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* Buttons on the ground, outside a tray: pills. The action colour for the main action ("accent"),
@@ -763,6 +736,20 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   border-radius: 14px;
   text-align: left;
 }
+/* A menu of actions (a Pop's menu, a ··· or right-click menu): its rows touch, 5 in from its edge, as the heading's menu has them. */
+.l-pop.lc-pop-panel[role="menu"] {
+  gap: 0;
+  padding: 5px;
+}
+/* A panel whose parts draw their own cards (the model picker's rail, list and side card): no glass, edge or inset of its own. */
+.l-pop.lc-pop-panel.lc-pop-bare {
+  padding: 0;
+  overflow: visible;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 /* Panels sit in the layer above the window: placed by script, so nothing they open from clips them. */
 .l-pop.lc-layer {
   position: fixed;
@@ -803,13 +790,20 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   margin: 4px 8px;
   background: var(--l-line);
 }
+/*
+  The app's one menu row (ui.tsx Row), in every menu and picker: one line 30 high, 8 in, a 16px icon in
+  the second ink and 9 to the title, its key, value or › at the far right in the third ink. A row
+  that keeps a note under its title (a confirm about to act) grows to two lines; nothing else does.
+*/
 .lc-row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: start;
-  column-gap: 10px;
+  align-items: center;
+  column-gap: 9px;
   width: 100%;
-  padding: 8px 9px;
+  min-height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -817,14 +811,32 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   cursor: pointer;
   transition: background 140ms ease;
 }
+.lc-row:has(> .lc-row-t > small) {
+  align-items: start;
+  padding-block: 6px;
+}
+/* Such a row's title may take a second line too: it is read before it is pressed. */
+.lc-row:has(> .lc-row-t > small) .lc-row-t b {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .lc-row[data-on] {
   background: var(--lc-plate);
   box-shadow: none;
 }
 @media (hover: hover) {
-  .lc-row:hover:not([data-on]):not(:disabled) {
+  .lc-row:hover:not([data-on]):not([data-danger]):not(:disabled) {
     background: var(--l-wash-2);
   }
+}
+/* A confirm about to act (ConfirmRow): the danger look a confirm button has (.lc-btn[data-kind="danger"]). */
+.lc-row[data-danger] {
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+}
+/* A row that deletes for good is red from the start, its icon too; one that can be undone (Archive) is not. */
+.lc-row:is([data-danger], [data-for-good]) .lc-row-tick,
+.lc-row:is([data-danger], [data-for-good]) .lc-row-t b {
+  color: var(--l-danger-text);
 }
 .lc-row:disabled {
   opacity: 0.45;
@@ -833,15 +845,26 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 .lc-row-tick {
   display: grid;
   place-items: center;
+  width: 16px;
   height: 18px;
-  color: var(--l-accent-text);
+  color: var(--l-ink-2);
+}
+/* Every icon in the column at 16, whatever size it was handed. */
+.lc-row-tick > svg {
+  width: 16px;
+  height: 16px;
+}
+.lc-row-t {
+  min-width: 0;
 }
 .lc-row-t b {
   display: block;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-row-t small {
   display: block;
@@ -850,11 +873,47 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
   color: var(--l-ink-3);
   overflow-wrap: anywhere;
 }
+/* What tells a row from another of the same name, on the title's line at its end: it gives way before the title, a path cut from its start. */
+.lc-row-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.lc-row-line > b {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* The name has first call on the row: what tells it apart gives way first, down to a few letters, and only then is the name cut. */
+.lc-row-which {
+  flex: 0 100000 auto;
+  min-width: 4ch;
+  max-width: 60%;
+  margin-left: auto;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+.lc-row-which[data-path] {
+  direction: rtl;
+}
 .lc-row-end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
   font-size: 12px;
   line-height: 18px;
   color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lc-row-end > svg {
+  flex: none;
+  color: var(--l-ink-3);
 }
 
 /* A session's place, from its bar: rows that do the usual thing, with more under a chevron. */
@@ -1170,8 +1229,9 @@ html[data-native="mac"] .lc-sb-head {
   top: 0;
   left: 0;
   right: 0;
-  background: var(--lc-plate);
-  box-shadow: none;
+  /* The open session's row is a small card, as a list row in the reference draws it (.lc-sl-row[data-current]). */
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
   pointer-events: none;
   /* It's on the open session as you get there: no glide or spring between rows, only a fade in and out. */
   transition: opacity 160ms ease;
@@ -1250,30 +1310,20 @@ html[data-native="mac"] .lc-sb-head {
   font-weight: 500;
   color: var(--l-ink);
 }
-.lc-sb-a,
-.lc-sl-acts .lc-pick {
+.lc-sb-a {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 8px;
   background: none;
   color: var(--l-ink-3);
   cursor: pointer;
 }
-.lc-sb-a[aria-pressed="true"],
-.lc-sl-acts .lc-pick[data-open] {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 1px var(--l-drop);
-  color: var(--l-ink);
-}
 @media (hover: hover) {
-  .lc-sb-a:hover,
-  .lc-sl-acts .lc-pick:hover {
+  .lc-sb-a:hover {
     color: var(--l-ink);
     background: var(--l-wash-2);
   }
@@ -1362,12 +1412,9 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-ndot[data-k="danger"] {
   background: var(--l-danger);
 }
-/* The sidebar's menus: their icons in the icons' grey, the picked one's tick in the accent. */
+/* The sidebar's menus: their icons in the second ink as every menu's (.lc-row-tick), the picked one's tick in full ink. */
 .lc-sb-menu {
   display: contents;
-}
-.lc-sb-menu .lc-row-tick {
-  color: var(--l-ink-3);
 }
 .lc-sb-menu .lc-row[data-on] .lc-row-tick {
   color: var(--l-ink);
@@ -1435,62 +1482,169 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-2);
 }
 
-/* Status marks: the spinner at work (in the tint of whose model it is), an amber dot with a soft halo
-   when it needs you, an alert on a problem, a hollow ring before it starts, a quiet check. */
+/* ---------- The state mark ----------
+   icons.tsx StateMark: nine dots in a 3×3 grid, the one mark for how anything stands (a session,
+   turn, agent, step, scan, design, add-on build, pull request). A state is which dots show and in
+   what colour (dots 1 to 9, row by row). A change runs across them corner to corner, 35ms a
+   diagonal: the dots leaving shrink and fade, the ones arriving grow in, and the colour follows.
+   Working is a light running round the outer eight in the tint of whose model it is; checks is a
+   light crossing from one corner to the other. They always move, whatever Reduce motion and the
+   app's Motion setting say: they are how a person reads state, not decoration (the block's end
+   holds them against foundation.css; look.ts HINTS keeps Quick's entering window off the dots). */
 .lc-mk {
-  display: grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  animation: l-swap-in 280ms var(--l-ease-out) backwards;
+  display: inline-grid;
+  flex: none;
+  grid-template-columns: repeat(3, var(--mk-d, 3px));
+  grid-auto-rows: var(--mk-d, 3px);
+  gap: var(--mk-g, 2.5px);
+  vertical-align: middle;
+  color: var(--l-ink);
 }
-.lc-mk[data-s="run"] {
+.lc-mk > i {
+  width: var(--mk-d, 3px);
+  height: var(--mk-d, 3px);
+  border-radius: calc(var(--mk-d, 3px) * 0.3);
+  background-color: currentColor;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 260ms ease, transform 300ms cubic-bezier(0.22, 1, 0.36, 1), color 260ms ease;
+}
+.lc-mk > i:is(:nth-child(2), :nth-child(4)) {
+  transition-delay: 35ms;
+}
+.lc-mk > i:is(:nth-child(3), :nth-child(5), :nth-child(7)) {
+  transition-delay: 70ms;
+}
+.lc-mk > i:is(:nth-child(6), :nth-child(8)) {
+  transition-delay: 105ms;
+}
+.lc-mk > i:nth-child(9) {
+  transition-delay: 140ms;
+}
+.lc-mk[data-s="needs"] > i:is(:nth-child(4), :nth-child(5), :nth-child(6), :nth-child(8)),
+.lc-mk:is([data-s="fresh"], [data-s="done"]) > i:nth-child(even),
+.lc-mk[data-s="pr"] > i:is(:nth-child(2), :nth-child(4), :nth-child(5), :nth-child(6)),
+.lc-mk[data-s="ready"] > i:not(:nth-child(5)),
+.lc-mk[data-s="merged"] > i,
+.lc-mk[data-s="problem"] > i:nth-child(odd),
+.lc-mk[data-s="limit"] > i:is(:nth-child(3n + 1), :nth-child(3n)) {
+  opacity: 1;
+  transform: none;
+}
+.lc-mk[data-s="new"] > i:nth-child(even) {
+  opacity: 0.28;
+  transform: none;
+}
+.lc-mk:is([data-s="needs"], [data-s="limit"]) {
+  color: var(--l-warn);
+}
+.lc-mk[data-s="fresh"] {
   color: var(--l-accent);
-}
-.lc-mk[data-s="run"]:is([data-brand="claude"], [data-brand="claudecode"]) {
-  color: oklch(0.67 0.13 41);
-}
-.lc-mk[data-s="run"]:is([data-brand="openai"], [data-brand="codex"]) {
-  color: oklch(0.64 0.11 170);
-}
-.lc-mk[data-s="run"]:is([data-brand="gemini"], [data-brand="deepseek"], [data-brand="meta"], [data-brand="glm"]) {
-  color: oklch(0.62 0.15 260);
-}
-.lc-mk[data-s="run"]:is([data-brand="qwen"], [data-brand="kimi"], [data-brand="minimax"]) {
-  color: oklch(0.6 0.15 295);
-}
-.lc-mk[data-s="run"][data-brand="mistral"] {
-  color: oklch(0.68 0.16 50);
-}
-.lc-mk[data-s="run"]:is([data-brand="grok"], [data-brand="cursor"], [data-brand="antigravity"]) {
-  color: var(--l-ink-2);
-}
-.lc-mk[data-s="needs"] > i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--l-warn);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
-  animation: lc-ping 1.6s var(--l-ease-in-out) 3;
-}
-.lc-mk[data-s="needs"] {
-  color: var(--l-warn-text);
-}
-.lc-mk[data-s="error"] {
-  color: var(--l-danger-text);
-}
-.lc-mk[data-s="new"] > i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--l-ink-4);
 }
 .lc-mk[data-s="done"] {
   color: var(--l-ink-4);
 }
-@keyframes lc-ping {
-  50% {
-    box-shadow: 0 0 0 6px color-mix(in oklab, var(--l-warn) 0%, transparent);
+.lc-mk[data-s="checks"] {
+  --mk-loop: 1.5s;
+  color: var(--l-ink-3);
+}
+.lc-mk[data-s="ready"] {
+  color: var(--l-ok);
+}
+.lc-mk[data-s="merged"] {
+  color: var(--lc-merged);
+}
+.lc-mk[data-s="problem"] {
+  color: var(--l-danger);
+}
+/* Working, in the tint its holder passes (--mk-tint) or the colour of whose model it is (data-brand), else the accent. */
+.lc-mk[data-s="working"] {
+  --mk-loop: 1.2s;
+  color: var(--mk-tint, var(--l-accent));
+}
+.lc-mk[data-s="working"]:is([data-brand="claude"], [data-brand="claudecode"]) {
+  color: var(--mk-tint, oklch(0.67 0.13 41));
+}
+.lc-mk[data-s="working"]:is([data-brand="openai"], [data-brand="codex"]) {
+  color: var(--mk-tint, oklch(0.64 0.11 170));
+}
+.lc-mk[data-s="working"]:is([data-brand="gemini"], [data-brand="deepseek"], [data-brand="meta"], [data-brand="glm"]) {
+  color: var(--mk-tint, oklch(0.62 0.15 260));
+}
+.lc-mk[data-s="working"]:is([data-brand="qwen"], [data-brand="kimi"], [data-brand="minimax"]) {
+  color: var(--mk-tint, oklch(0.6 0.15 295));
+}
+.lc-mk[data-s="working"][data-brand="mistral"] {
+  color: var(--mk-tint, oklch(0.68 0.16 50));
+}
+.lc-mk[data-s="working"]:is([data-brand="grok"], [data-brand="cursor"], [data-brand="antigravity"]) {
+  color: var(--mk-tint, var(--l-ink-2));
+}
+.lc-mk:is([data-s="working"], [data-s="checks"]) > i {
+  opacity: 0.16;
+  transform: none;
+  animation: lc-mk-light var(--mk-loop) linear infinite;
+}
+/* Working: round the outer eight (1, 2, 3, 6, 9, 8, 7, 4); the middle stays dim. */
+.lc-mk[data-s="working"] > i:nth-child(1) {
+  animation-delay: -1.2s;
+}
+.lc-mk[data-s="working"] > i:nth-child(2) {
+  animation-delay: -1.05s;
+}
+.lc-mk[data-s="working"] > i:nth-child(3) {
+  animation-delay: -0.9s;
+}
+.lc-mk[data-s="working"] > i:nth-child(6) {
+  animation-delay: -0.75s;
+}
+.lc-mk[data-s="working"] > i:nth-child(9) {
+  animation-delay: -0.6s;
+}
+.lc-mk[data-s="working"] > i:nth-child(8) {
+  animation-delay: -0.45s;
+}
+.lc-mk[data-s="working"] > i:nth-child(7) {
+  animation-delay: -0.3s;
+}
+.lc-mk[data-s="working"] > i:nth-child(4) {
+  animation-delay: -0.15s;
+}
+.lc-mk[data-s="working"] > i:nth-child(5) {
+  animation: none;
+}
+/* Checks: from the top left corner to the bottom right, a diagonal at a time. */
+.lc-mk[data-s="checks"] > i:nth-child(1) {
+  animation-delay: -1.5s;
+}
+.lc-mk[data-s="checks"] > i:is(:nth-child(2), :nth-child(4)) {
+  animation-delay: -1.3s;
+}
+.lc-mk[data-s="checks"] > i:is(:nth-child(3), :nth-child(5), :nth-child(7)) {
+  animation-delay: -1.1s;
+}
+.lc-mk[data-s="checks"] > i:is(:nth-child(6), :nth-child(8)) {
+  animation-delay: -0.9s;
+}
+.lc-mk[data-s="checks"] > i:nth-child(9) {
+  animation-delay: -0.7s;
+}
+@keyframes lc-mk-light {
+  0% {
+    opacity: 1;
+  }
+  38%,
+  100% {
+    opacity: 0.16;
+  }
+}
+/* Reduce motion cuts every animation and transition in the app to a moment (foundation.css, .l-scope *). The mark is how a person
+   reads state, so its dots keep their own: one step more exact than that rule, and as firm. */
+@media (prefers-reduced-motion: reduce) {
+  .l-scope .lc-mk > i {
+    animation-duration: var(--mk-loop, 0s) !important;
+    animation-iteration-count: infinite !important;
+    transition-duration: 260ms, 300ms, 260ms !important;
   }
 }
 
@@ -1594,15 +1748,6 @@ html[data-native="mac"] .lc-sb-head {
   place-items: center;
   height: 17px;
   color: var(--l-ink-3);
-}
-.lc-sbc-i .lc-mk {
-  animation: none;
-}
-.lc-sbc-facts > [data-tone="warn"] {
-  color: var(--l-warn-text);
-}
-.lc-sbc-facts > [data-tone="danger"] {
-  color: var(--l-danger-text);
 }
 .lc-sbc-keys {
   display: flex;
@@ -1782,7 +1927,7 @@ html[data-native="mac"] .lc-sb-head {
   .lc-top {
     gap: 6px;
   }
-  .lc-verdict > span:not(.l-shimmer) {
+  .lc-verdict > span {
     font-size: 0;
   }
 }
@@ -1872,7 +2017,8 @@ html[data-native="mac"] .lc-sb-head {
   cursor: col-resize;
   user-select: none;
 }
-.lc-session[data-resizing] .lc-body {
+.lc-session[data-resizing] .lc-body,
+.lc-session[data-snap] .lc-body {
   transition: none;
 }
 /* A page in the Browser would take the pointer while it crosses. */
@@ -2261,9 +2407,6 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   color: var(--l-ink-3);
   white-space: nowrap;
 }
-.lc-disc-model {
-  color: var(--l-ink);
-}
 
 /* A wide session (full screen, or a big window): the conversation grows a little and its text
    goes a size up, still centred, so the room goes to reading rather than to empty margins. */
@@ -2425,7 +2568,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
    would vanish and leave only its padding, an indent with nothing round it. */
 .lc-tl .lc-fcard,
 .lc-tl .lc-prc,
-.lc-panel :is(.lc-linked-card, .lc-rt-card, .lc-rv-thread, .lc-limits-tool, .lc-sc-compose) {
+.lc-panel :is(.lc-linked-card, .lc-rt-card, .lc-rv-thread, .lc-limits-tool) {
   background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
   box-shadow: none;
 }
@@ -2510,88 +2653,8 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   color: var(--l-ink-3);
 }
 
-/*
-  A step's mark (icons.tsx StepMark): every state's parts are drawn and the state shows the ones it
-  needs, so a change plays as a transition. Waiting: the ring. Working: the ring goes faint and the
-  accent arc travels on it, as the Spinner does. Done: the ring gives way to a soft disc, then the
-  tick draws in. Skipped: the ring dashed. Failed: the ring and a small × in the danger ink.
-*/
-.lc-stepmark {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  position: relative;
-}
-.lc-stepmark > svg {
-  display: block;
-  overflow: visible;
-}
-.lc-stepmark-ring {
-  stroke: var(--l-ink-5);
-  transition: stroke 300ms ease, opacity 300ms ease;
-}
-.lc-stepmark-arc {
-  stroke: var(--l-accent);
-  opacity: 0;
-  transform-origin: 8px 8px;
-  animation: lc-turn 900ms cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
-  animation-play-state: paused;
-  transition: opacity 200ms ease;
-}
-.lc-stepmark-disc {
-  fill: var(--l-wash-3);
-  opacity: 0;
-  transform-origin: 8px 8px;
-  transform: scale(0.6);
-  transition: transform 320ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 200ms ease;
-}
-.lc-stepmark-tick {
-  stroke: var(--l-ink);
-  stroke-dasharray: 9;
-  stroke-dashoffset: 9;
-  transition: stroke-dashoffset 240ms 120ms cubic-bezier(0.3, 0.7, 0.3, 1);
-}
-.lc-stepmark-x {
-  stroke: var(--l-danger-text, var(--l-danger));
-  opacity: 0;
-  transition: opacity 200ms ease;
-}
-.lc-stepmark[data-s="working"] .lc-stepmark-ring {
-  stroke: var(--l-wash-3);
-}
-.lc-stepmark[data-s="working"] .lc-stepmark-arc {
-  opacity: 1;
-  animation-play-state: running;
-}
-.lc-stepmark[data-s="done"] .lc-stepmark-ring {
-  opacity: 0;
-}
-.lc-stepmark[data-s="done"] .lc-stepmark-disc {
-  opacity: 1;
-  transform: none;
-}
-.lc-stepmark[data-s="done"] .lc-stepmark-tick {
-  stroke-dashoffset: 0;
-}
-.lc-stepmark[data-s="skipped"] .lc-stepmark-ring {
-  stroke-dasharray: 2 2.6;
-}
-.lc-stepmark[data-s="failed"] .lc-stepmark-ring {
-  stroke: var(--l-danger-text, var(--l-danger));
-}
-.lc-stepmark[data-s="failed"] .lc-stepmark-x {
-  opacity: 1;
-}
-/* Reduced motion: the arc stands still where it is, and the tick is there without drawing in. */
+/* Reduced motion: a step's words and rail change at once. Its mark (icons.tsx StepMark, the state mark) moves still. */
 @media (prefers-reduced-motion: reduce) {
-  .lc-stepmark-arc {
-    animation: none;
-  }
-  .lc-stepmark-ring,
-  .lc-stepmark-arc,
-  .lc-stepmark-disc,
-  .lc-stepmark-tick,
-  .lc-stepmark-x,
   .lc-todo-t,
   .lc-todo li::after {
     transition: none;
@@ -2892,8 +2955,9 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   border-radius: 18px;
   transition: background-color 200ms ease;
 }
-/* Tinted only while it carries a row: a head row that renders (CrewStrip, what's to commit), or Home's strip. */
-.lc-tray:has(> .lc-tray-head > *, > .lc-strip) {
+/* Tinted on Home, where it holds the box on the paper; in a session only while a head row renders (CrewStrip, what's to commit). */
+.lc-tray:has(> .lc-tray-head > *),
+.lc-tray[data-variant="home"] {
   background: var(--l-wash);
 }
 .lc-tray-head {
@@ -2921,10 +2985,30 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   margin-right: 6px;
   color: var(--l-ink-3);
 }
+/* A row about something that runs (a scan) leads with its state mark, in the icon's place, in its own colour. */
+.lc-trow > .lc-mk {
+  margin: 0 7px 0 1px;
+}
 .lc-trow-t {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Words that open what they name (N files to commit opens Changes): plain text, underlined when pointed at. */
+button.lc-trow-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.lc-trow-open:hover {
+    text-decoration: underline;
+  }
 }
 .lc-trow .lc-lines {
   flex: none;
@@ -3072,9 +3156,9 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex-shrink: 1;
 }
 /* The choices are plain text buttons in one row, nothing behind them and no rules between,
-   each drawn small beside its word (Home and the session alike); attach is a plain icon before
-   them, and Send and Stop the solid rounds. The row never shrinks: what doesn't fit gives way in
-   steps instead (below). */
+   each drawn small beside its word (every face alike); the + is a plain icon at the row's start,
+   and Send and Stop the solid rounds at its end. The row never shrinks: what doesn't fit gives way
+   in steps instead (below). */
 .lc-seg {
   display: inline-flex;
   align-items: center;
@@ -3117,29 +3201,15 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-seg-b > svg:last-child,
 .lc-card-row .lc-way-marks,
-.lc-chip-more {
+.lc-who-eff {
   color: var(--l-ink-3);
 }
-/* No rules between the choices any more: their gaps and hovers part them. */
-.lc-seg-div {
-  display: none;
+/* Who works: the model's mark (or an agent's glyph) bare, in the second ink, as the drawing has it; how hard follows its name, quieter. */
+.lc-seg-b.lc-who > :is(.lc-mark, svg:first-child) {
+  color: var(--l-ink-2);
 }
-.lc-seg .lc-effort-word {
-  display: none;
-}
-/* The who's icon (a team's or a route's mark, an agent's disc) is drawn plain, as the other
-   controls' icons are: no tile behind it. */
-.lc-card-row .lc-disc,
-.lc-card-row .lc-disc[data-filled] {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: none;
-  box-shadow: none;
-  color: var(--l-ink-3);
+.lc-who-eff {
+  font-weight: 400;
 }
 .lc-chip-name {
   overflow: hidden;
@@ -3150,7 +3220,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lc-ctl-attach,
+.lc-plus-b,
 .lc-send {
   display: grid;
   flex: none;
@@ -3167,11 +3237,113 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     box-shadow 240ms ease,
     transform 200ms var(--l-spring-snappy);
 }
-/* Attach: a plain icon button, as the header's are. */
-.lc-ctl-attach {
+/* The +: a plain icon button, as the header's are. */
+.lc-plus-b {
   border-radius: 8px;
   background: none;
   color: var(--l-ink-3);
+}
+.lc-plus-b[data-open] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+/* A choice after the + that isn't its default (Home's mode, what a design is drawn for): its icon, its name, a cross that puts the default back. */
+.lc-plus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 200px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash);
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+.lc-plus-chip > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+/* The cross sits 4 in from the chip's 8px corner, so its own corner is the chip's less that inset, as a file chip's × is. */
+.lc-plus-chip > button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-plus-chip > button:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+/* The + menu: rows of an icon, a name, and at the end the key that does the same or the choice's value. */
+.lc-plus-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+/* The + menu's rows are the app's menu row (.lc-row): 30 high, 8 in, 9 from the icon to the name. */
+.lc-plus-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lc-plus-row > svg {
+  flex: none;
+  color: var(--l-ink-2);
+}
+/* A choice's ›, at the far end in the third ink. */
+.lc-plus-row > svg:last-child:not(:first-child) {
+  color: var(--l-ink-3);
+}
+.lc-plus-row:disabled {
+  color: var(--l-ink-4);
+  cursor: default;
+}
+.lc-plus-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-plus-k,
+.lc-plus-v {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  font: inherit;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-plus-row:not(:disabled):hover {
+    background: var(--l-wash-2);
+  }
 }
 /* Send is the composer's main button: in the action colour, a shade deeper until there's
    something to send, then lifted. */
@@ -3220,7 +3392,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   }
 }
 .lc-send:not(:disabled):active,
-.lc-ctl-attach:active {
+.lc-plus-b:active {
   transform: scale(0.95);
 }
 .lc-seg-b[data-open] {
@@ -3229,7 +3401,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 @media (hover: hover) {
   .lc-seg-b:hover,
-  .lc-ctl-attach:hover {
+  .lc-plus-b:hover {
     background: var(--l-wash-2);
     color: var(--l-ink);
   }
@@ -3242,6 +3414,50 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-send[data-stop]:hover {
     background: var(--l-wash-3);
   }
+}
+/*
+  A box to write to an agent outside the message box (a line in Changes, an agent at work, a comment
+  on the canvas, a picture, an add-on to make): the message box's field and its round Send inside it
+  at the right, Stop while the agent works. 36 high on one line, its corner the box's 10, Send 3 in.
+*/
+.lc-sbox {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 3px 3px 3px 12px;
+  border-radius: 10px;
+  background: var(--lc-field);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  transition: box-shadow 160ms ease;
+}
+.lc-sbox:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--l-accent),
+    0 0 0 4px var(--l-accent-soft);
+}
+.lc-sbox > :is(input, textarea) {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 30px;
+  color: var(--l-ink);
+}
+.lc-sbox > textarea {
+  padding: 4px 0;
+  line-height: 22px;
+}
+.lc-sbox > :is(input, textarea)::placeholder {
+  color: var(--l-ink-4);
 }
 /* What Enter does while a turn runs, and what's waiting: a quiet note in the tray. */
 .lc-tray-note {
@@ -3273,8 +3489,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   }
 }
 /* Giving way (Composer's useTrayFit sets these, one more each time the row still spills): the
-   note's short form, then its key alone; then access, effort and who down to their icons; then
-   the row wraps, and a bar on a line of its own may cut its who's name. */
+   note's short form, then its key alone; then access down to its icon, who without its effort,
+   then down to its mark; then the row wraps, and a bar on a line of its own may cut its who's name. */
 .lc-card-row[data-give~="short"] .lc-note-long {
   display: none;
 }
@@ -3293,12 +3509,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   padding: 0;
 }
 .lc-card-row[data-give~="access"] .lc-access .lc-ctl-label,
-.lc-card-row[data-give~="effort"] .lc-effort .lc-ctl-label,
-.lc-card-row[data-give~="who"] .lc-who :is(.lc-chip-name, .lc-way-marks, .lc-chip-more) {
+.lc-card-row[data-give~="effort"] .lc-who-eff,
+.lc-card-row[data-give~="who"] .lc-who :is(.lc-chip-name, .lc-way-marks) {
   display: none;
 }
-.lc-card-row[data-give~="access"] .lc-access,
-.lc-card-row[data-give~="effort"] .lc-effort {
+.lc-card-row[data-give~="access"] .lc-access {
   gap: 4px;
   padding: 0 7px;
 }
@@ -3325,7 +3540,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transition: none;
   }
 }
-/* A quiet picker on the ground: the composer's strip on Home, and pickers elsewhere. */
+/* A quiet picker on the ground: where Home's session works, and pickers elsewhere. */
 .lc-pb {
   display: inline-flex;
   align-items: center;
@@ -3356,113 +3571,13 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     background: var(--lc-well);
   }
 }
-/* Home's strip is the tray's foot: one 36px row under the card, 4px in from the tray's edges. */
-.lc-strip {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0 4px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-@media (hover: hover) {
-  .lc-strip .lc-pb:hover {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-/* When the column is narrow, the note at the end steps aside; the pickers keep their size. */
-/*
-  It never reaches past the box: each name has a cap and shortens with an ellipsis, and when the box
-  is narrow the gap goes first, then the branch's name shortens, then (narrower still) the branch.
-*/
-.lc-strip > * {
-  flex-shrink: 0;
-}
-.lc-strip > .lc-grow,
-.lc-strip > .lc-strip-note {
-  flex-shrink: 1;
-  min-width: 0;
-}
+/* A name in a quiet picker, capped and cut with an ellipsis so it never reaches past its row. */
 .lc-strip-cap {
   min-width: 0;
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lc-strip-note > .lc-strip-cap {
-  max-width: 280px;
-}
-@container lc-composer (max-width: 420px) {
-  .lc-strip > .lc-strip-note {
-    display: none;
-  }
-}
-.lc-strip .lc-pb {
-  height: 30px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-.lc-strip-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  white-space: nowrap;
-}
-.lc-strip-note > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-/* Under the tray, quietly: the other ways to start, which aren't settings of this task. */
-.lc-strip-under {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 2px 4px;
-  padding: 0 8px;
-  font-size: 13px;
-  color: var(--l-ink-4);
-}
-.lc-under-b {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  font: inherit;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-under-b[data-open] {
-  background: var(--lc-plate);
-  color: var(--l-ink-2);
-}
-@media (hover: hover) {
-  .lc-under-b:hover {
-    background: var(--lc-well);
-    color: var(--l-ink-2);
-  }
-}
-/* Narrow, the line wraps, without its dots. */
-@container lc-composer (max-width: 420px) {
-  .lc-strip-under > [aria-hidden] {
-    display: none;
-  }
 }
 .lc-files {
   display: flex;
@@ -3588,138 +3703,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/*
-  Who works on this: as tall as its taller column, never a fixed box. When the room it opens into
-  is shorter than that, the panel fits it and the model list gives way first (it scrolls).
-*/
-.lc-pop-panel:has(> .lc-team) {
-  grid-template-rows: minmax(0, 1fr);
-}
-.lc-team {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 1px;
-  min-height: 0;
-  container-type: inline-size;
-  width: 100%;
-}
-.lc-team-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  min-height: 0;
-}
-.lc-team-col {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  min-height: 0;
-}
-.lc-team-col > .lc-mp {
-  flex: 0 1 auto;
-}
-/* Side by side when there's room (a pair's Lead and Sidekick beside the rows); stacked in a narrow window. */
-@container (min-width: 560px) {
-  .lc-team-cols {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    gap: 0;
-  }
-  .lc-team-col + .lc-team-col {
-    padding-left: 6px;
-    margin-left: 6px;
-    border-left: 1px solid var(--l-line);
-  }
-  .lc-team-col:not(:has(> .lc-mp)) {
-    margin: calc(var(--lc-ring) * -1);
-    padding: var(--lc-ring);
-    overflow: hidden auto;
-    scrollbar-width: none;
-  }
-}
+/* A small grey label over rows in a list (a maker's, "Your agents", a line's choices). */
 .lc-team-lab {
   padding: 6px 9px 4px;
   font-size: 12px;
   color: var(--l-ink-3);
-}
-/*
-  The picker's rows (the mockup "one model or a pair"): Pair, Best and Fast with their tile, who's
-  in each and their makers' marks; then each tool, your agents and the Demo as rows that open.
-*/
-/*
-  The panel is no taller than the room it opened into (Pop caps it): each column holds to that
-  height, and inside it the search, the three rows and the compare line stay put while the lists
-  between them scroll. The Pair column scrolls as one, its open model list with it. The columns
-  clip rather than scroll, with room left for the focus rings at their edges.
-*/
-.lc-who-panel,
-.lc-who-panel .lc-team-cols {
-  grid-template-rows: minmax(0, 1fr);
-  min-height: 0;
-}
-.lc-who-panel .lc-team-col {
-  margin: 0;
-  padding: 0;
-  overflow: clip;
-  overflow-clip-margin: 6px;
-}
-.lc-who-panel .lc-team-col > * {
-  flex: none;
-}
-.lc-who-panel .lc-team-col > :is(.lc-who-scroll, .lc-mp) {
-  flex: 0 1 auto;
-  min-height: 0;
-}
-.lc-who-panel .lc-team-col.lc-who-pair {
-  margin-block: calc(var(--lc-ring) * -1);
-  margin-right: calc(var(--lc-ring) * -1);
-  padding-block: var(--lc-ring);
-  padding-right: var(--lc-ring);
-  overflow: hidden auto;
-  scroll-padding: 6px;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-/* Showing every model, the list scrolls itself, as it does in the first column: the column round it holds still. */
-.lc-who-panel .lc-team-col.lc-who-pair[data-full] {
-  overflow: clip;
-}
-@container (min-width: 560px) {
-  .lc-who-panel .lc-team-col + .lc-team-col {
-    margin-left: 6px;
-    padding-left: 6px;
-  }
-}
-/*
-  Stacked in a narrow window, the panel scrolls as one, so the tools never shrink away under the
-  Fusion column; that column sits under a line, and once it opens a list (Lead, Sidekick, how it
-  works) it takes the panel, its way back at its top.
-*/
-@container (max-width: 559.98px) {
-  .lc-who-panel .lc-team-cols {
-    grid-template-rows: none;
-    grid-auto-rows: max-content;
-    margin: calc(var(--lc-ring) * -1);
-    padding: var(--lc-ring);
-    overflow: hidden auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-  }
-  .lc-who-panel .lc-team-col,
-  .lc-who-panel .lc-team-col.lc-who-pair,
-  .lc-who-panel .lc-team-col.lc-who-pair[data-full],
-  .lc-who-panel .lc-who-scroll {
-    overflow: visible;
-  }
-  .lc-who-panel .lc-team-cols:not([data-deep]) > .lc-who-pair {
-    margin-top: 6px;
-    padding-top: 6px;
-    border-top: 1px solid var(--l-line);
-  }
-  .lc-who-panel .lc-team-cols[data-deep] > .lc-team-col:first-child {
-    display: none;
-  }
 }
 .lc-who-scroll {
   display: flex;
@@ -3736,142 +3724,88 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-who-scroll > * {
   flex: none;
 }
-/* Space, not a line, sets the tools apart from the three rows. */
+/* A maker's name, or "Older versions", over its rows: a little space above, not a line. */
 .lc-who-scroll > .lc-team-lab {
-  padding-top: 11px;
+  padding-top: 8px;
 }
 .lc-who-find {
   margin-bottom: 4px;
 }
 /*
-  Kept short so the whole first view fits the room it opens into: Fusion, Best and Fast are one
-  strip of three (who's in each on a rest), and the tools sit two to a row.
+  A row of the who panel's own column: an icon, the name, at its end where it comes from or a
+  count, then a tick when it's the one picked; a row that opens a list ends with a chevron. Tool
+  and Effort carry their label first. A row that can't be picked reads in the third ink, with why
+  at its end; an older version too.
 */
-.lc-who-strip {
+.lc-who-row {
   display: flex;
-  gap: 2px;
-  margin: 2px 0 4px;
-  padding: 2px;
-  border-radius: var(--lc-r-field);
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
-}
-.lc-who-seg-at {
-  flex: 1;
-}
-.lc-who-seg {
-  display: inline-flex;
-  flex: 1;
+  flex: none;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 8px;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
+  font: inherit;
   font-size: 13px;
-  white-space: nowrap;
-  color: var(--l-ink-2);
+  text-align: left;
+  color: var(--l-ink);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease;
 }
-.lc-who-seg > svg {
+.lc-who-row > svg {
   flex: none;
   color: var(--l-ink-3);
 }
-.lc-who-seg > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.lc-who-row > .lc-mark {
+  color: var(--l-ink-2);
 }
-.lc-who-seg[data-on] {
-  background: var(--l-raised);
-  box-shadow:
-    0 0 0 1px var(--l-line),
-    0 1px 2px var(--l-drop);
-  font-weight: 500;
+.lc-who-row > .lc-who-tick {
   color: var(--l-ink);
 }
-.lc-who-seg[data-on] > svg {
-  color: var(--l-accent-text);
+.lc-who-row[data-also] > .lc-who-tick {
+  color: var(--l-ink-4);
 }
-/* Quiet but still readable: the name takes the grey of a note rather than fading, and only the icon fades. */
-.lc-who-seg:disabled {
+.lc-who-row[data-on] > .lc-who-tick {
+  color: var(--l-ink);
+}
+.lc-who-row-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-who-row-n {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  max-width: 55%;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--l-ink-3);
+}
+.lc-who-row-n > svg {
+  flex: none;
+}
+.lc-who-row[data-old],
+.lc-who-row[data-old] > .lc-mark,
+.lc-who-row:disabled {
+  color: var(--l-ink-3);
+}
+.lc-who-row:disabled {
   cursor: default;
 }
-.lc-who-seg:disabled > svg {
-  opacity: 0.55;
-}
-.lc-who-tool {
-  display: grid;
-  align-items: center;
-  width: 100%;
-  min-height: 34px;
-  border: 0;
-  background: none;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.lc-who-tools {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-}
-.lc-who-tool {
-  grid-template-columns: 22px minmax(0, 1fr) 13px;
-  column-gap: 8px;
-  padding: 0 8px 0 10px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-.lc-who-tool > svg:last-child {
-  color: var(--l-ink-3);
-}
 @media (hover: hover) {
-  .lc-who-seg:not([data-on], :disabled):hover,
-  .lc-who-tool:hover,
+  .lc-who-row:not(:disabled):hover,
   .lc-who-opt:not([data-on]):hover,
   .lc-who-back:hover {
     background: var(--l-wash-2);
   }
-}
-.lc-who-i {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-}
-.lc-who-tool-t {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* A tool's own list: the way back, and the account it's signed in with at the other end. */
-.lc-who-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.lc-who-top > .lc-who-back {
-  margin-bottom: 0;
-}
-.lc-who-acct {
-  min-width: 0;
-  overflow: hidden;
-  padding-right: 9px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .lc-who-sep {
   flex: none;
@@ -3892,10 +3826,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   line-height: 17px;
   color: var(--l-ink-3);
 }
-.lc-who-foot {
-  margin-top: 4px;
-  border-top: 1px solid var(--l-line);
-}
 .lc-who-back {
   display: flex;
   flex: none;
@@ -3910,6 +3840,13 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 13px;
   color: var(--l-ink-2);
   cursor: pointer;
+}
+/* In a menu the way back is one of its rows: 30 high, 8 in, its chevron on the icons' edge. */
+.lc-pop-panel[role="menu"] .lc-who-back {
+  height: 30px;
+  margin-bottom: 2px;
+  padding: 0 8px;
+  border-radius: 8px;
 }
 /* An agent or a choice in a short list: its disc or mark, its name, and what it runs on. */
 .lc-who-opt {
@@ -3986,51 +3923,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transform: translateY(-2px);
   }
 }
-.lc-who-part {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 4px 0 9px;
-  color: var(--l-ink-2);
-}
-.lc-who-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 190px;
-  height: 28px;
-  padding: 0 8px 0 10px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
-  color: var(--l-ink);
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.lc-who-pick > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-who-pick > svg:last-child {
-  flex: none;
-  color: var(--l-ink-3);
-}
-@media (hover: hover) {
-  .lc-who-pick:hover {
-    background: var(--l-wash-2);
-  }
-}
 /*
-  How the pair works, opened from its row under Lead and Sidekick: the six lines behind it in the
-  column's own place. A line the session changed carries the accent's dot before its value, and
-  so does the row's pick when any did.
+  How the pair works, opened from Fusion's card: the lines behind it in the card's own place. A line the session changed
+  carries the accent's dot before its value, and so does the How it works row's end when any did.
 */
-.lc-who-pick[data-own] > span::before {
+.lc-pk-own .lc-who-row[data-own] > .lc-who-row-n::before {
   content: "";
   display: inline-block;
   width: 6px;
@@ -4273,27 +4170,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transition: none;
   }
 }
-/* The composer's chip: the marks of who works, each on a small tile, a pair's two overlapping. */
-.lc-who-marks {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-}
-.lc-who-tile {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--l-surface);
-  box-shadow: inset 0 0 0 1px var(--l-line);
-}
-.lc-who-tile + .lc-who-tile {
-  margin-left: -5px;
-  box-shadow:
-    inset 0 0 0 1px var(--l-line),
-    0 0 0 1.5px var(--l-surface);
-}
 .lc-quiet + .lc-quiet {
   margin-left: 4px;
 }
@@ -4415,27 +4291,15 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   margin-left: 1px;
 }
 /*
-  Changes in the panel: rows on the paper, no card. A quiet row of its own (the turn picker as a text
-  button, then previous, next and wrap), each file's row (chevron, path, its numbers), then the diff
-  edge to edge of the column: added and removed lines keep a tint and their sign, with no bar down
-  their edge, and an unchanged run is a quiet row. The foot lines up with the composer's controls.
+  Changes' split view (Review.tsx), drawn by Liner's CodeDiff as rows on the paper, no card: each
+  file's row (chevron, path, its numbers), then the diff edge to edge of the column. Added and removed
+  lines keep a tint and their sign, with no bar down their edge, and an unchanged run is a quiet row.
+  Changes' own row has the tools, so CodeDiff's is not drawn.
 */
-.lc-changes-panel {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-.lc-diff {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-}
 .lc-diff .l-cdiff {
   min-height: 0;
 }
-/* One scroller, the panel's: the card grows to its content (over CodeDiff's own max-height, set
+/* One scroller, Changes': the card grows to its content (over CodeDiff's own max-height, set
    inline) and clips without scrolling, so its pinned rows hold to the panel. No corner, edge or fill:
    the column is the only container. */
 .lc-diff .l-cdiff__card {
@@ -4445,33 +4309,12 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   background: none;
   box-shadow: none;
 }
-/* The diff's own row, pinned over the lines as they pass: 36 high, the picker 16px in (its text
-   button starts 8px in, its text 8px further), the icons 10px from the column's edge. */
 .lc-diff .l-cdiff__top {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  gap: 2px;
-  min-height: 36px;
-  padding: 0 10px 0 8px;
-  background: var(--lc-paper);
-}
-/* The picker stays at any width (CodeDiff drops its title under 380px, when the title was only words),
-   and its plate isn't clipped. The total is on each file's row, so the row doesn't say it twice. */
-.lc-diff .l-cdiff__label {
-  display: inline-flex;
-  overflow: visible;
-}
-.lc-diff .l-cdiff__tally {
   display: none;
 }
-.lc-diff .l-cdiff__icon svg {
-  width: 16px;
-  height: 16px;
-}
-/* A file's row: pinned under the diff's own, on the paper, with no rule under it. */
+/* A file's row: pinned at the top as its lines pass, on the paper, with no rule under it. */
 .lc-diff .l-cdiff__head {
-  top: 36px;
+  top: 0;
   min-height: 32px;
   padding: 0 16px 0 8px;
   background: var(--lc-paper);
@@ -4497,10 +4340,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-diff .l-cdiff__file + .l-cdiff__file {
   border-top-color: var(--l-line);
 }
-/* The lines: 12px on 22, the numbers right-aligned 10px short of the sign. */
+/* The lines: 13px on 22, as the unified view's, the numbers right-aligned 10px short of the sign. */
 .lc-diff .l-cdiff__rows {
   --cd-gut: calc(var(--cd-digits, 3) * 1ch + 30px);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 22px;
 }
 .lc-diff .l-cdiff__line {
@@ -4753,8 +4596,12 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   gap: 12px;
   font-size: 13px;
 }
+/* Who: the model's mark, then the name. */
 .lc-bar-row b {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-weight: 500;
 }
 .lc-bar-row small {
@@ -5069,8 +4916,9 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   color: var(--l-ink);
   cursor: pointer;
 }
-.lc-ad-dd:has(> .lc-ad-mk) {
-  padding-left: 6px;
+.lc-ad-dd > svg:first-child:not(:last-child) {
+  flex: none;
+  color: var(--l-ink-3);
 }
 .lc-ad-dd[data-off] {
   color: var(--l-ink-3);
@@ -5094,15 +4942,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-ad .lc-pop {
   min-width: 0;
-}
-.lc-ad-mk {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background: var(--lc-plate);
 }
 .lc-ad-hint {
   font-size: 12px;
@@ -5422,14 +5261,12 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-st-row[data-below] .lc-st-c {
   display: block;
 }
+/* A setting's mark (a tool's, a model's, an add-on's) sits bare in the rows' 24px mark column, as a session row's does: no tile round it. */
 .lc-st-mark {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--lc-r-field);
-  background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  width: 24px;
+  height: 24px;
   color: var(--l-ink-2);
 }
 .lc-st-models {
@@ -6002,10 +5839,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-boot-wm {
     animation: none !important;
   }
-  .lc-spin-arc {
-    animation-duration: 3.6s;
-    animation-timing-function: linear;
-  }
 }
 
 /* ---------- Commit and push, in the thread ---------- */
@@ -6352,21 +6185,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-ship :is(.h3, .m1) {
   color: var(--l-ok-text);
 }
-.lc-ship .h3 i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.lc-ship-spin {
-  width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  border: 1.6px solid color-mix(in oklab, currentColor 25%, transparent);
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: l-spin 900ms linear infinite;
-}
 .lc-ship-diff {
   position: absolute;
   top: 0;
@@ -6438,14 +6256,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   .lc-ship-msg {
     transition-duration: 0ms !important;
   }
-  .lc-ship[data-p="2"] .lc-ship-rail .dash,
-  .lc-ship-spin {
+  .lc-ship[data-p="2"] .lc-ship-rail .dash {
     animation: none;
-  }
-  .lc-ship .l-shimmer {
-    animation: none;
-    background: none;
-    color: var(--l-ink-3);
   }
 }
 
@@ -6498,12 +6310,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 }
 .lc-prc-state[data-tone="warn"] {
   color: var(--l-warn-text);
-}
-.lc-prc-state i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
 }
 .lc-prc-title {
   display: flex;
@@ -6732,22 +6538,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   place-items: center;
   width: 14px;
   height: 14px;
-  color: var(--l-ok);
-}
-.lc-prc-ck > span {
-  width: 12px;
-  height: 12px;
-  box-sizing: border-box;
-  border: 1.4px dashed var(--l-ink-4);
-  border-radius: 50%;
-}
-.lc-prc-checks li[data-state="running"] .lc-prc-ck > span {
-  border: 1.6px solid color-mix(in oklab, var(--l-accent) 25%, transparent);
-  border-top-color: var(--l-accent);
-  animation: l-spin 900ms linear infinite;
-}
-.lc-prc-checks li[data-state="failed"] .lc-prc-ck {
-  color: var(--l-danger);
 }
 .lc-prc-cm {
   font-size: 12px;
@@ -6773,11 +6563,11 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-weight: 500;
   white-space: nowrap;
   color: var(--l-ink-2);
-  animation: l-swap-in 300ms var(--l-ease-out) backwards;
 }
 .lc-prc-status > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
+  animation: l-swap-in 300ms var(--l-ease-out) backwards;
 }
 .lc-prc-status[data-tone="ok"] {
   color: var(--l-ok-text);
@@ -6788,9 +6578,10 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-prc-line .lc-btn {
   animation: l-swap-in 260ms var(--l-ease-out) backwards;
 }
+/* The state mark's dots keep moving (.lc-mk): they say how the checks stand. */
 @media (prefers-reduced-motion: reduce) {
   .lc-prc,
-  .lc-prc *,
+  .lc-prc *:not(.lc-mk > i),
   .lc-prc-row {
     animation: none !important;
   }
@@ -7021,11 +6812,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   font-size: 13px;
   animation: l-blur-in 220ms var(--l-ease-out) backwards;
 }
-.lc-sb-bulk .lc-sb-a {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-}
 .lc-sb-bulk-n {
   margin-right: 6px;
   font-weight: 500;
@@ -7173,7 +6959,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
    column), a sheet and the sidebar's column (with the header's room for the traffic lights, which
    moves with it) take 180ms. Each frame of the sidebar's move lays the paper out again, so the
    shorter it is the fewer there are.
-   The system's Reduce motion turns all of it off at either level (foundation.css, at the end). */
+   The system's Reduce motion turns all of it off at either level (foundation.css, at the end).
+   Neither level stops the state mark (.lc-mk): its light and its change of state are how state is read. */
 html[data-motion="quick"] .lc-panel:not([data-leaving]),
 html[data-motion="quick"] .lc-sheet[open] .lc-sheet-frame {
   animation-duration: 180ms;
@@ -7201,7 +6988,7 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   gap: 0;
 }
 .lc-sb-hb {
-  width: 26px;
+  width: 28px;
   height: 28px;
   color: var(--l-ink-2);
 }
@@ -7315,8 +7102,7 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
 /* ---------- 0.2.7: Home, as Devin lays it out ---------- */
 /*
   The composer sits in the middle of the paper, a touch below centre. The project's name and
-  This checkout / Worktree rest on top of it. Liner Design's Pick up hangs below its box and
-  never moves it.
+  This checkout / Worktree rest on top of it.
 */
 .lc-home-in[data-mid] {
   display: grid;
@@ -7367,104 +7153,41 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
 .lc-home-name[data-open] {
   background: var(--l-wash-2);
 }
-.lc-home-where {
-  display: flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 10px;
-  background: var(--l-wash);
-}
-.lc-home-where > button {
-  height: 26px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
+/* Where Home's session works, at the line's right end: the branch icon, its name in mono, a small chevron (a quiet picker, .lc-pb). */
+.lc-home-branch {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
   font-size: 13px;
-  color: var(--l-ink-3);
-  cursor: pointer;
+  white-space: nowrap;
+  color: var(--l-ink-2);
 }
-.lc-home-where > button[aria-checked="true"] {
-  background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair);
-  font-weight: 500;
-  color: var(--l-ink);
+.lc-home-branch > svg {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-home-branch .lc-mono {
+  font-size: 12.5px;
 }
 .lc-home-in[data-mid] .lc-home-compose {
   width: 100%;
-}
-.lc-home-pickup {
-  display: flex;
-  align-self: start;
-  flex-direction: column;
-  animation: lc-focus-in 420ms 160ms var(--l-ease-enter) backwards;
-}
-.lc-home-pickup .lc-home-pick {
-  padding: 0 8px;
 }
 @media (hover: hover) {
   .lc-home-name:hover {
     background: var(--l-wash-2);
   }
 }
-.lc-home-card-h {
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-home-pick {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 34px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  color: var(--l-ink);
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.lc-home-pick > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.lc-home-pick-t {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-home-pick small {
-  flex: none;
-  max-width: 55%;
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-@media (hover: hover) {
-  .lc-home-pick:hover {
-    background: var(--l-wash);
-  }
-}
 
 /* ---------- 0.2.7: the rail of surfaces ---------- */
 /*
-  The session's surfaces run down the paper's right edge as 20px icons, there whether the panel is
-  open or shut. The lit one is the surface in the panel; the Terminal's is lit while the bottom
-  panel is up. The panel's own row keeps what it had; its tabs are no longer the way in.
+  The session's surfaces run down the paper's right edge as 20px icons on 36px buttons, the group
+  centred top to bottom, there whether the panel is open or shut. The lit one is the surface in the
+  panel; the Terminal's is lit while the bottom panel is up. The + opens the rest as a menu. The
+  panel's own row keeps what it had; its tabs are no longer the way in.
 */
 .lc-session {
   flex-direction: row;
@@ -7477,34 +7200,21 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
   flex: none;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 6px;
   width: 46px;
   box-sizing: border-box;
-  padding: 7px 0 10px;
+  padding: 10px 0;
 }
 .lc-rail-b {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   color: var(--l-ink-2);
-}
-.lc-rail-b[aria-pressed="true"] {
-  background: var(--l-wash-2);
-  box-shadow: none;
-  color: var(--l-ink);
 }
 .lc-rail-b[aria-pressed="true"] > svg {
   fill: color-mix(in srgb, currentColor 12%, transparent);
-}
-.lc-rail-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--lc-act);
-  box-shadow: 0 0 0 2px var(--lc-paper);
 }
 /* The scripts menu starts the bottom panel's row of shells. */
 .lc-terms-run {
@@ -7544,12 +7254,6 @@ html[data-motion="quick"][data-native="mac"] :is(.lc-top, .lc-panel-top) {
     border-top: 0.5px solid var(--lc-line);
     border-bottom: 0.5px solid var(--lc-line);
   }
-  .lc-home-where > button[aria-checked="true"] {
-    box-shadow: 0 0 0 0.5px var(--lc-line);
-  }
-}
-.lc-rail-gap {
-  height: 10px;
 }
 .lc-trow-commit {
   height: 26px;
@@ -7591,10 +7295,6 @@ body,
 .lc-seg-b,
 .lc-chip-name {
   font-weight: 400;
-}
-/* Liner Design's Home: Pick up's rows. */
-.lc-home-pick {
-  font-size: 13px;
 }
 /* Tooltips and menus' rows: 13 regular, the picked row at 500, a menu's head at 500. */
 /* (Liner's own sheets load after this one: these two are a step more specific.) */
@@ -7646,15 +7346,9 @@ body,
   width: 20px;
   height: 20px;
 }
-/* Home: the project's row (and Liner Design's Pick up) stand where the mockup puts them. */
+/* Home: the project's row stands where the mockup puts it. */
 .lc-home-top {
   padding: 0 8px 0 6px;
-}
-.lc-home-pickup {
-  padding: 4px 4px 0;
-}
-.lc-home-pickup .lc-home-card-h {
-  padding: 0 8px;
 }
 
 /* ---------- 0.2.7, second pass: every surface beside the thread is a card, as the mockup draws it ---------- */
@@ -7789,97 +7483,46 @@ html[data-native="mac"] .lc-sb-head {
 
 /* ---------- 0.2.8: a compact Home and Recent in the sidebar (the smaller Code / Design switch is in its own rules, "The foot's option") ---------- */
 /*
-  Home's project picker is small, as Devin's folder picker: a quiet Recent, one line a project (its
-  folder, its name in ink, its path in grey after it, a check on the one picked), then the ways to
-  add one. A path too long gives way at its start, so the folder it ends in stays readable.
+  Home's project picker, a small card (Projects.tsx ProjectQuickPick): the model picker's find line across its top (no box,
+  a hairline under it, reaching the card's edges), the projects as the app's 30px rows with their paths at their ends, six
+  in sight before the list scrolls inside the card, and the foot (Add a project, Manage projects) pinned under a hairline.
+  The card is never taller than the room its Pop was given (--lc-pop-room, less the panel's 6px padding top and bottom):
+  only the list gives way.
 */
 .lc-qp {
-  display: grid;
-  gap: 1px;
-}
-.lc-qp-find {
-  margin: 0 0 2px;
-}
-.lc-qp-head {
   display: flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 9px;
-  font-size: 12px;
-  color: var(--l-ink-3);
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  max-height: calc(var(--lc-pop-room, calc(100vh - 24px)) - 12px);
+}
+.lc-qp > * {
+  flex: none;
+}
+.lc-qp > .lc-pk-top {
+  margin: -6px -6px 4px;
 }
 .lc-qp-list {
   display: grid;
+  flex: 0 1 auto;
   gap: 2px;
-  max-height: calc(34px * 8 + 7px);
-  overflow: auto;
+  min-height: 0;
+  max-height: calc(30px * 6 + 2px * 5);
+  overflow: hidden auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-.lc-qp-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  min-width: 0;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.lc-qp-icon {
+.lc-qp-foot {
   display: grid;
-  flex: none;
-  place-items: center;
-  width: 16px;
-  color: var(--l-ink-3);
-}
-.lc-qp-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 62%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lc-qp-row[data-on] .lc-qp-name {
-  font-weight: 500;
-}
-.lc-qp-path {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  /* Right to left, so the ellipsis eats the path's start; the marks round it keep it reading left to right. */
-  direction: rtl;
-  text-align: left;
-  text-overflow: ellipsis;
-  color: var(--l-ink-3);
-}
-.lc-qp-row > svg {
-  flex: none;
-  color: var(--l-ink-2);
+  gap: 2px;
+  margin: 4px -6px 0;
+  padding: 6px 6px 0;
+  border-top: 1px solid var(--l-line);
 }
 .lc-qp-none {
   margin: 0;
   padding: 6px 9px;
   font-size: 13px;
-}
-@media (hover: hover) {
-  .lc-qp-row:hover {
-    background: var(--l-wash-2);
-  }
-}
-/* What Enter in the find field picks: the first project shown, washed as if the pointer were on it. */
-.lc-qp-row[data-hl] {
-  background: var(--l-wash-2);
 }
 
 /* ---------- 0.2.8: the sidebar's name at the foot, its list on one grid, and Carry on ---------- */
@@ -7960,7 +7603,7 @@ html:not([data-native="mac"]) .lc-sb-head {
   align-content: center;
   column-gap: 8px;
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   box-sizing: border-box;
   padding: 0 10px 0 8px;
   border: 0;
@@ -7990,12 +7633,14 @@ html:not([data-native="mac"]) .lc-sb-head {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-carry-do {
+/* The time at the title's end, as the list's rows have it (.lc-sl-ago). */
+.lc-carry-ago {
   grid-column: 3;
   grid-row: 1;
   font-size: 12px;
   line-height: 19px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
 }
 .lc-carry-s {
   grid-column: 2 / span 2;
@@ -8003,7 +7648,7 @@ html:not([data-native="mac"]) .lc-sb-head {
   min-width: 0;
   overflow: hidden;
   font-size: 12.5px;
-  line-height: 16px;
+  line-height: 17px;
   color: var(--l-ink-4);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8159,8 +7804,8 @@ span.lc-sb-name {
 }
 .lc-sl-menu .lc-row-tick {
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 .lc-sl-menu .lc-row-tick:empty {
   display: none;
@@ -8179,7 +7824,7 @@ span.lc-sb-name {
   flex: none;
   align-items: center;
   font-size: 13px;
-  color: var(--l-ink-4);
+  color: var(--l-ink-3);
 }
 .lc-sl-menu .lc-row[data-on] .lc-row-end {
   color: var(--l-ink);
@@ -8323,15 +7968,6 @@ span.lc-sb-name {
   gap: 7px;
   color: var(--l-ink-4);
 }
-.lc-sl-ndot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin-right: 2px;
-  border-radius: 50%;
-  background: var(--l-warn);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
-}
 /* A row, two lines. Its root is a grid of two: the words (the pick) across it, and the actions that take the end's place while you point at it. */
 /* Rows that light up (the open one, the one under the pointer) keep 2px apart, so two plates never run into one. */
 :is(.lc-sl-row, .lc-sl-fold) + .lc-sl-row,
@@ -8348,8 +7984,10 @@ span.lc-sb-name {
   border-radius: 10px;
   animation: lc-row-in 180ms ease-out backwards;
 }
+/* The open one is a small card: the cards' surface, their hairline ring and their smallest shadow (light only), in both themes. No other row has an edge. */
 .lc-sl-row[data-current] {
-  background: var(--lc-plate);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 @media (hover: hover) {
   .lc-sl-row:not([data-current]):hover,
@@ -8395,18 +8033,73 @@ span.lc-sb-name {
 .lc-sl-row[data-quiet]:not([data-current]) .lc-sl-title {
   color: var(--l-ink-2);
 }
-.lc-sl-sub {
-  grid-column: 2;
+/* The time since it last did something, at the title's end: the fourth ink, in figures that don't jitter as they change. */
+.lc-sl-ago {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The second line across the title and the time: the words, which give way with an ellipsis, then the facts, which never wrap. */
+.lc-sl-l2 {
+  display: flex;
+  grid-column: 2 / -1;
   grid-row: 2;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  overflow: hidden;
+  height: 17px;
+}
+.lc-sl-sub {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   font-size: 12.5px;
   line-height: 17px;
   color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
   /* A new state fades in over the old one's place: no letters sliding or popping. */
   animation: lc-row-in 160ms ease-out backwards;
+}
+.lc-sl-sub > svg {
+  flex: none;
+}
+.lc-sl-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sl-facts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  color: var(--l-ink-4);
+}
+.lc-sl-fact {
+  display: grid;
+  place-items: center;
+}
+/* A pull request's number takes its state's colour: green open or ready, purple merged, red when its checks failed, grey while they run or once it's closed. */
+.lc-sl-pr {
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.lc-sl-pr[data-s="open"] {
+  color: var(--l-ok-text);
+}
+.lc-sl-pr[data-s="merged"] {
+  color: var(--lc-merged);
+}
+.lc-sl-pr[data-s="bad"] {
+  color: var(--l-danger-text);
 }
 .lc-sl-sub[data-tone="warn"] {
   color: var(--l-warn-text);
@@ -8414,56 +8107,30 @@ span.lc-sb-name {
 .lc-sl-sub[data-tone="danger"] {
   color: var(--l-danger-text);
 }
-.lc-sl-end {
-  display: grid;
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  place-items: center;
-  align-self: center;
-  width: 20px;
-  height: 20px;
-  color: var(--l-ink-4);
+/* Something left for you (files to review): a step darker than grey, so the row stands out without a mark. */
+.lc-sl-sub[data-tone="strong"] {
+  color: var(--l-ink-2);
 }
-.lc-sl-pr,
-.lc-sl-chg {
-  display: grid;
-  place-items: center;
-}
-/* Finished and not opened yet: a blue dot at the row's end, gone once you open it (Claude Code's sidebar). */
-.lc-sl-new {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: oklch(0.62 0.17 255);
-}
-[data-theme="dark"] .lc-sl-new {
-  background: oklch(0.7 0.15 255);
-}
-.lc-sl-end:has(> .lc-sl-ends) {
-  width: auto;
-}
-.lc-sl-ends {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.lc-sl-pr[data-pr="merged"] {
-  color: var(--lc-merged);
-}
-.lc-sl-pr[data-pr="open"] {
-  color: var(--l-ok);
-}
-/* Security's rows: every word shown, the title on two lines when it needs them. */
+/* Security's rows: every word shown, the title and the words on two lines when they need them; the time and the facts stay on their lines' ends. */
 .lc-sl-row[data-wrap] .lc-sl-pick {
   padding-top: 5px;
   padding-bottom: 5px;
 }
-.lc-sl-row[data-wrap] :is(.lc-sl-title, .lc-sl-sub) {
+.lc-sl-row[data-wrap] .lc-sl-l2 {
+  align-items: start;
+  height: auto;
+}
+.lc-sl-row[data-wrap] :is(.lc-sl-title, .lc-sl-words) {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.lc-sl-row[data-wrap] .lc-sl-sub {
+  align-items: start;
+}
+.lc-sl-row[data-wrap] .lc-sl-facts {
+  height: 17px;
 }
 /* Renaming in place: the field takes the title's line. */
 .lc-sl-title:has(.lc-sb-rename) {
@@ -8476,14 +8143,7 @@ span.lc-sb-name {
   font-size: 13.5px;
   font-weight: 450;
 }
-/* A done row's mark: a small dot in the fifth grey. */
-.lc-sl-dot > i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--l-ink-5);
-}
-/* Pointing at a row or a folder, or the keyboard in it: the actions take the end's place, vertically centred, and the words make room. */
+/* Pointing at a row or a folder, or the keyboard in it: the actions show. A folder's take its end's place, vertically centred, and its name makes room. */
 .lc-sl-acts {
   display: none;
   grid-column: 2;
@@ -8496,14 +8156,44 @@ span.lc-sb-name {
 .lc-sl-acts:has([data-open]) {
   display: flex;
 }
-.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts) > .lc-sl-pick,
-.lc-sl-row:has(> .lc-sl-acts [data-open]) > .lc-sl-pick,
 .lc-sl-fold:is(:hover, :focus-within):has(> .lc-sl-acts) > .lc-sl-fold-b {
   grid-column: 1;
   padding-right: 4px;
 }
-.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts) .lc-sl-end,
-.lc-sl-row:has(> .lc-sl-acts [data-open]) .lc-sl-end,
+/*
+  A row's actions are 24px buttons at its title's end, level with the title (Settle, Archive, ··· in
+  Code; one where a row has one). The time gives way to them and comes back after; the title ends
+  short of them by as many buttons as there are; the second line keeps its whole width.
+*/
+.lc-sl-row > .lc-sl-acts {
+  align-self: center;
+  gap: 0;
+  padding-right: 5px;
+}
+.lc-sl-row:has(.lc-sl-l2) > .lc-sl-acts {
+  align-self: start;
+  margin-top: 2px;
+}
+.lc-sl-row[data-wrap] > .lc-sl-acts {
+  margin-top: 3px;
+}
+.lc-sl-row > .lc-sl-acts .lc-sb-a {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+:is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row:has(> .lc-sl-acts [data-open])) .lc-sl-ago {
+  display: none;
+}
+:is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row:has(> .lc-sl-acts [data-open])) .lc-sl-title {
+  margin-right: 18px;
+}
+:is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts > :nth-child(2)), .lc-sl-row:has(> .lc-sl-acts > :nth-child(2)):has(> .lc-sl-acts [data-open])) .lc-sl-title {
+  margin-right: 42px;
+}
+:is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts > :nth-child(3)), .lc-sl-row:has(> .lc-sl-acts > :nth-child(3)):has(> .lc-sl-acts [data-open])) .lc-sl-title {
+  margin-right: 66px;
+}
 .lc-sl-fold:is(:hover, :focus-within):has(> .lc-sl-acts) .lc-sl-fold-end {
   display: none;
 }
@@ -8537,17 +8227,9 @@ span.lc-sb-name {
     color: var(--l-ink);
   }
 }
-.lc-sl-counts-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin: 0 2px 0 7px;
-  border-radius: 50%;
-  background: var(--l-warn);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--l-warn) 22%, transparent);
-}
-.lc-sl-counts-dot:first-child {
-  margin-left: 2px;
+/* The needs mark after the working count keeps a little more room than the gap, so the two counts read as two. */
+.lc-sl-counts-needs:not(:first-child) {
+  margin-left: 6px;
 }
 
 /*
@@ -8559,16 +8241,18 @@ span.lc-sb-name {
 .lc-sb-inner .lc-sl-row[data-current] {
   background: none;
 }
-/* A row first drawn already open (a session just sent from Home) is there at once, words and
-   mark: the plate is drawn under it at once, so a fade would leave the plate empty. data-fresh
-   never comes off (Sidebar.tsx), so no animation value changes as the open row changes. */
+/* A row first drawn already open (a session just sent from Home) is there at once, with its
+   words: the plate is drawn under it at once, so a fade would leave the plate empty. data-fresh
+   never comes off (Sidebar.tsx), so no animation value changes as the open row changes. The
+   mark has no fade of its own to stop. */
 .lc-sb-inner .lc-sl-row[data-fresh],
-.lc-sb-inner .lc-sl-row[data-fresh] :is(.lc-sl-sub:not([data-swap]), .lc-mk) {
+.lc-sb-inner .lc-sl-row[data-fresh] .lc-sl-sub:not([data-swap]) {
   animation: none;
 }
+/* At the second line's end, after the facts; the row's buttons are on the title's line, so it stays put. */
 .lc-sb-row > .lc-sb-forks {
   position: absolute;
-  right: 38px;
+  right: 9px;
   bottom: 5px;
   z-index: 1;
   display: flex;
@@ -8598,12 +8282,8 @@ span.lc-sb-name {
     color: var(--l-ink);
   }
 }
-.lc-sb-row[data-forks] .lc-sl-sub {
-  padding-right: 44px;
-}
-.lc-sb-row[data-forks]:is(:hover, :focus-within) > .lc-sb-forks,
-.lc-sb-row[data-forks]:has(> .lc-sl-acts [data-open]) > .lc-sb-forks {
-  right: 80px;
+.lc-sb-row[data-forks] .lc-sl-l2 {
+  padding-right: 50px;
 }
 .lc-sb-inner .lc-sb-kids {
   gap: 0;

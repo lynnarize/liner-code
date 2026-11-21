@@ -20,7 +20,7 @@ import { DESIGN_UNREADABLE } from "@contracts";
 import { SHIM } from "./Design";
 import { onStream, rpc, useEngine } from "./engine";
 import { drawingOf, landOn } from "./face";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import { plural } from "./model";
 import { reviewHeld } from "./session-state";
 import { SurfaceNote } from "./Surfaces";
@@ -433,7 +433,7 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
         <div className="lc-dm-status" aria-hidden>
           {status.map((w, i) => (
             <span key={i} className="lc-dm-who">
-              <span className="ld-pd" data-lead={w.lead || undefined} aria-hidden />
+              <StateMark state="working" size={12} tint={w.lead ? "var(--ld-lead)" : "var(--ld-side)"} />
               <span>
                 <b>{w.name}</b> is drawing {w.frame ?? "on the canvas"}
               </span>
@@ -472,6 +472,7 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
                     <b>{f.name}</b>
                     {p && (
                       <span className="lc-dm-tag" data-lead={p.lead || undefined}>
+                        <StateMark state="working" size={12} tint="#fff" />
                         {p.name}
                       </span>
                     )}

@@ -2,7 +2,8 @@
   The dock: the session's composer, floating at the foot of the canvas, or at the foot of the chat's column when the chat is
   pinned (Chat.tsx). It is Composer.tsx itself (not a copy), with the canvas's own parts: the chat at the top of its tray
   (one row, or the conversation open above the box), an agent's ask docked as Liner Code docks it (Ask.tsx), the selection
-  as chips in the input row, and a design turn's mark on what it sends, so the engine tells the agent where the design
+  as chips in the input row, the design skills and who makes AI pictures in its + menu (each a chip after the + while it
+  isn't the default), and a design turn's mark on what it sends, so the engine tells the agent where the design
   file is and what is picked. What you send with a selection keeps the selection's names as chips (thread.send's `shown`).
 
   The other side of it, "Watch on the canvas" in Liner Code's own composer, is Composer.tsx's,
@@ -12,7 +13,7 @@ import { useContext, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { DesignSelection, Project, ShownChip, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { Composer, type RunSettings } from "../Composer";
+import { Composer, type PlusChoice, type RunSettings } from "../Composer";
 import { pairOf } from "../Crew";
 import { loadItems, rpc, useEngine } from "../engine";
 import { I } from "../icons";
@@ -23,11 +24,12 @@ import { makeSession, runFor } from "./session";
 import { design, frameOf, getDesign, selectionOf, useDesign, type DesignState } from "./store";
 import { ChatBody, ChatMin, ChatOpen, DockHosts } from "./Chat";
 import "./design-face.css";
-import { DockRows, DockSkills, onDockText, useSlashRows } from "./Skills";
+import { DockRows, onDockText, SkillRows, SkillsChip, SkillsValue, useSlashRows } from "./Skills";
 import { WaitRow } from "./BuildTab";
 import { ChecksRow } from "./ChecksTab";
-import { PicturesChip, PicturesRow } from "./Pictures";
+import { PicturesChip, PicturesPanel, PicturesRow, usePicturesNow } from "./Pictures";
 import { WaysRow } from "./Ways";
+import { D } from "./Rail";
 
 const KIND_ICON: Record<string, (p: { size?: number }) => ReactNode> = { stack: I.list, text: ({ size }) => <span style={{ fontSize: size, lineHeight: 1, fontWeight: 600 }}>T</span>, image: I.camera, box: I.box };
 
@@ -115,6 +117,16 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
   const asking = useDockAsk(thread ?? NO_THREAD, lead);
   const settings: RunSettings = thread ? { agent: thread.agent, model: thread.model, effort: thread.effort ?? coder.effort, access: thread.access, ...(thread.sidekick ? { sidekick: thread.sidekick } : {}), ...(thread.tuning ? { tuning: thread.tuning } : {}) } : first;
   const busy = thread?.status === "running";
+  /*
+    The dock's start choices, in the + menu: the design skills loaded for this file (a chip while any is),
+    and who makes AI pictures (a chip while this file's choice isn't Settings' first model, asking first).
+    The box's own "Skills $" is the tool's skills; these are the design file's, so each keeps its row.
+  */
+  const pictures = usePicturesNow();
+  const choices: PlusChoice[] = [
+    { key: "skills", label: "Design skills", icon: <I.sparkle size={16} />, value: <SkillsValue cwd={cwd} />, body: (done) => <SkillRows cwd={cwd} done={done} />, chip: <SkillsChip cwd={cwd} /> },
+    { key: "pictures", label: "AI pictures", icon: <D.picture size={16} />, value: pictures.name, say: pictures.name, body: () => <PicturesPanel threadId={thread?.id} lead={coder.name} />, chip: pictures.own ? <PicturesChip threadId={thread?.id} lead={coder.name} /> : undefined },
+  ];
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
   const update = (patch: Partial<RunSettings>) => {
     if (!thread) return setFirst((s) => ({ ...s, ...patch }));
@@ -141,7 +153,7 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
     }
   };
   // The chat at the top of the tray: one row, or open above the box. Pinned, it is the column instead.
-  const chat = thread && size !== "pinned" ? size === "open" ? <ChatOpen thread={thread} /> : <ChatMin thread={thread} /> : null;
+  const chat = thread && size !== "pinned" ? size === "open" ? <ChatOpen /> : <ChatMin thread={thread} /> : null;
   const composer = (
     <Composer
       variant="session"
@@ -158,7 +170,7 @@ export function Dock({ thread, project, tab }: { thread?: Thread; project: Proje
       chips={<Chips />}
       ask={asking ?? undefined}
       top={<>{chat}{asking && <AskDock dock={asking} />}<DockRows cwd={cwd} />{thread && <WaitRow thread={thread} />}<PicturesRow /><WaysRow /><ChecksRow /></>}
-      trayEnd={<><PicturesChip threadId={thread?.id} lead={coder.name} /><DockSkills cwd={cwd} /></>}
+      choices={choices}
       onText={onDockText}
       slashRows={slashRows}
     />

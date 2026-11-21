@@ -52,18 +52,7 @@
 }
 /* The tabs' pill starts on the column's edge, the title's and the chips' edge, never past it. */
 .lf-tab {
-  height: 30px;
   margin-right: 6px;
-  font-size: 13.5px;
-}
-.lf-q,
-.lf-x-q {
-  font-weight: 400;
-  color: var(--l-ink-3);
-}
-.lf-tab[aria-selected="true"] .lf-q,
-.lf-x-tab[aria-selected="true"] .lf-x-q {
-  color: var(--l-ink-2);
 }
 
 /* The row that narrows the list: chips, then search, sort. */
@@ -92,9 +81,9 @@
   align-items: center;
   gap: 6px;
   min-width: 120px;
-  height: 28px;
+  height: 30px;
   margin-left: 4px;
-  padding: 0 4px 0 9px;
+  padding: 0 10px;
   border-radius: var(--l-r-sm);
   background: var(--l-wash);
   color: var(--l-ink-3);
@@ -115,22 +104,6 @@
 .lf-search input::placeholder {
   color: var(--l-ink-4);
 }
-.lf-clear {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.lf-clear:hover {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-
 /* Bring in, over a list narrowed to GitHub's alerts or report files. */
 .lf-bring {
   display: flex;
@@ -208,6 +181,25 @@
   font-size: 13.5px;
   font-weight: 400;
   color: var(--l-ink);
+}
+/* The first line: the title, and the time since it last changed at its end, small and grey as a sidebar row's (.lc-sl-ago). */
+.lf-l1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.lf-l1 > b {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lf-ago {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .lf-tl2 small {
   font-size: 12.5px;
@@ -290,10 +282,6 @@
 }
 .lf-x-tabs {
   margin: 14px 0 0;
-}
-.lf-x-tab {
-  height: 30px;
-  font-size: 13.5px;
 }
 .lf-x-lead {
   margin: 10px 0 0;
@@ -397,7 +385,7 @@
   color: var(--l-ink-3);
 }
 
-/* Code: an excerpt with its line numbers and its lines that matter; a command; a file and Open in editor above. */
+/* Code: an excerpt with its line numbers and its lines that matter; a command; a file and Open in your editor above. */
 .lf-x-exc + .lf-x-exc {
   margin-top: 8px;
 }
@@ -426,7 +414,8 @@
   background: var(--l-wash);
   overflow: hidden;
   font-family: var(--l-font-mono);
-  font-size: 12px;
+  /* Code at 13 on a 22px line, as Files, Changes and Compare show it. */
+  font-size: 13px;
   line-height: 22px;
   color: var(--l-ink);
 }

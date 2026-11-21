@@ -10,12 +10,13 @@ import { SEVERITIES, SEVERITY_LABEL } from "@contracts";
 import { Switch } from "@liner/components/switch/switch";
 import { I } from "../icons";
 import { Pop, Row } from "../ui";
+import * as os from "../os";
 import "./security.css";
 
 /** A colour key for a part of a whole: a severity, or the second look's three answers. */
 export type Tone = Severity | "ok" | "no" | "na";
 
-/** How bad: a small square in the severity's colour and its word, in a fixed column (`dot`: as wide as it is). */
+/** How bad: a small square in the severity's colour and its word, drawn this one way everywhere; in a list's fixed column, or as wide as it is (`dot`) where it stands alone (a finding's own top row). */
 export function SevMark({ severity, dot, children }: { severity: Severity; dot?: boolean; children?: ReactNode }) {
   return (
     <span className="ls-sev" data-sev={severity} data-dot={dot || undefined}>
@@ -185,7 +186,7 @@ export function PageTop({ title, sidebar, onSidebar, children }: { title: ReactN
   return (
     <header className="lc-top ls-top" data-drag>
       {!sidebar && (
-        <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" onClick={onSidebar}>
+        <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
           <I.sidebar size={16} />
         </button>
       )}

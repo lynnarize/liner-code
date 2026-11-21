@@ -15,8 +15,8 @@ import { plainWay, splitModel } from "@contracts";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
-import { I } from "./icons";
-import { modelLabel } from "./model";
+import { I, ModelMark } from "./icons";
+import { markOf, modelLabel } from "./model";
 import { ModelPicker } from "./Models";
 
 type Asking = { addon: string; name: string; done: Promise<string | null>; resolve: (ref: string | null) => void };
@@ -114,7 +114,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
       }
     >
       {any ? (
-        <ModelPicker value={pick} onPick={(ref) => setPick(ref)} only={only} height={300} autoFocus foot={<span className="lc-appmodel-foot">Models that only run through Codex, OpenCode or Hermes aren't here: those tools bring tools of their own, which an app must never reach.</span>} />
+        <ModelPicker value={pick} onPick={(ref) => setPick(ref)} only={only} height={380} autoFocus foot={<span className="lc-appmodel-foot">Models that only run through Codex, OpenCode or Hermes aren't here: those tools bring tools of their own, which an app must never reach.</span>} />
       ) : (
         <p className="lc-appmodel-none">None of your models can answer an app yet. Sign in to Claude Code, or add an API endpoint in Settings › Models, and it shows here.</p>
       )}
@@ -122,7 +122,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
   );
 }
 
-/** On an app's strip: the model it asks, or a way to pick one, opening the popup. */
+/** On an app's strip: the model it asks, read as the message box's who chip (its maker's mark, bare, and its name), or a way to pick one, opening the popup. */
 export function AppModelChip({ addon, name }: { addon: string; name: string }) {
   const ref = useEngine((s) => s.settings.addonModels?.[addon]);
   const providers = useEngine((s) => s.providers);
@@ -130,8 +130,8 @@ export function AppModelChip({ addon, name }: { addon: string; name: string }) {
   const ready = appModelReady(ref, providers, settings);
   return (
     <button type="button" className="lc-appmodel-chip l-focus" title={ready ? "The model this app asks. Change it" : "Pick the model this app may ask"} onClick={() => void pickAppModel(addon, name)}>
-      <I.turn size={12} />
-      {ref && ready ? modelLabel(ref, providers) : ref ? "Its model isn't ready" : "Pick a model"}
+      {ref && ready ? <ModelMark kind={markOf(ref)} size={14} /> : <I.turn size={14} />}
+      <span className="lc-chip-name">{ref && ready ? modelLabel(ref, providers) : ref ? "Its model isn't ready" : "Pick a model"}</span>
     </button>
   );
 }

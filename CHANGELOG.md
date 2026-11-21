@@ -1,5 +1,159 @@
 # Changelog
 
+## 0.3.1 (beta), 2026-11-22
+
+Update from 0.3.0: on a Mac Liner Code does it by itself (Restart to update), or download the new
+DMG; on Windows, run the new setup. **Fewer buttons.** Where two controls did the same job there is
+now one, in Code, Liner Design and Liner Security alike. **One look everywhere:** one mark for how a
+thing stands, one row for a session, one line for a working turn, one message box and one model
+picker, in every face. **Changes for an engineer**, wider and with the tools of a diff viewer. **A
+model picker by tool**, with each model's own effort levels.
+
+### Added
+
+- **Each agent's progress, as Claude Code shows it.** Press an agent's row to open its newest
+  steps in place (a thought in quiet italics, the one at work with its mark, how many came before),
+  and Open in Agents for its whole trail: each step with its time, a Follows the newest switch, and
+  a word for it even once its turn is over. The same for every tool: Claude Code's thinking and
+  Codex's reasoning show as its thoughts, and Hermes's agents in the background show their live
+  log as they work.
+
+- **Tools in Changes:** show spaces and tabs, fold every file, copy the diff as a patch that
+  `git apply` takes, and a file's row with a letter for what happened to it (M, A, D, R), a Viewed
+  tick and Open in your editor (in the desktop app).
+- **Older versions of a model** sit under their own label in All models, with the newest of each
+  first. A tool with more than one source (OpenCode Zen and OpenCode Go) lists its sources first,
+  and each model says which one it comes from.
+- **Session details** is a row in a session's title menu.
+- **The state mark:** nine dots that say how a session, a turn, an agent, a step, a scan or a pull
+  request stands, by shape and colour: working (a light running round, in the model's colour),
+  needs you, finished and not opened yet, finished, not started, pull request open, checks running,
+  ready to merge, merged, ran into a problem, hit its plan's limit. One state turns into the next
+  dot by dot. It replaces every spinner and state dot, and it keeps moving with Reduce motion on.
+- **A session's row says everything:** the time since it last did something at the title's end; a
+  second line with what it does, how it ended, or the question it asks in its own words; and at
+  the line's end its worktree, its model and its pull request's number in the colour of its state.
+  The same row is in Liner Design, Liner Security, The Wall's tiles, the command menu and
+  Settings › Archive.
+- **A pull request's checks on the row:** Checks running, 2 checks failed, Ready to merge, Merged.
+  While checks run, Liner asks `gh` for them once a minute, for two hours at most.
+- **A working turn is one live line** right over the message box: how many steps, the kinds of
+  step, only the newest step sliding in, and a clock. When the turn ends it folds into the chat
+  as "Worked for 11.4s · 12 steps · 1 didn't work", which opens to every step. The same line is
+  in a side chat, Liner Design's chat, a scan, and a working tile on The Wall.
+
+### Changed
+
+- **The message box:** one **+** holds Attach files, Commands, Skills and A file in the project, and
+  on Home the mode. The model, its tool and its effort are one chip on the right, beside
+  Permissions and Send, opening one panel: Find, Fusion, five models at most, All models, then Tool
+  and Effort as lists. Best and Fast are gone from it.
+- **Home:** where a session works is one chip at the end of the project's line (This checkout, A
+  new worktree, From a branch). Nothing sits under the box. A mode other than Standard shows as a
+  chip you can cross off.
+- **Liner Design's Home and dock:** the lean, design skills, what it's drawn for and AI pictures are
+  rows of the same +, and show as a chip only when they differ from the usual.
+- **The session list:** a folder counts its sessions only while it is folded. A row no longer ends
+  in a mark that repeats its second line. Pointing at a row shows one ··· with Pin, Settle, every
+  snooze time, groups, Rename, Export and Archive.
+- **A question clears like a notification:** the amber mark and amber words show until you open the
+  session, then go grey, in every face. A second question marks it again.
+- **A session's header** shows who works only while two or more agents are at work.
+- **The right edge** has four larger icons and a +: Changes, Files, Browser, Terminal. The lit one
+  is showing, and pressing it hides the panel. Session, Design, Agents, your apps and the full
+  canvas are under +.
+- **An answer ends with Copy alone.** A turn's cost moved to its "Worked for" line.
+- **One model picker:** the Reviewer's menu, Settings, a new agent and a scan's start pick a model
+  through the same panel as the message box. How a new session starts is Fusion or a model
+  (a saved Best or Fast still works). The words are Permissions and Effort everywhere.
+- **The model picker, by tool:** a rail of your tools at the left (Claude Code, Codex, OpenCode…),
+  that tool's models in a list that keeps one size, and a card at the side for the model you point
+  at: what it is for, which tool runs it, what it costs, its effort levels and a star. Fusion is the
+  first row and its Lead, Sidekick and how it works take the card. Find still looks in every tool,
+  and picking a model from another tool moves the session to that tool. In a narrow window the
+  card is one line at the list's foot.
+- **A tool with several sources is one tool:** OpenCode's Zen and Go are a switch over its models,
+  a model both offer is one row that says which runs it, and its card switches the source.
+- **A tool that runs only its own maker's models** (Claude Code, Codex) shows each model under what
+  it is for, in the tool's words; a tool with many makers groups its models by maker.
+- **Claude Code's models say their version** (Opus 5.5, not Opus), and its older models are offered
+  under Older versions.
+- **Menus are compact:** one line a row, grey icons, a key or a › at the end; a set of choices
+  inside a menu opens in place (Snooze until, Move to a group). A menu hangs under its ··· and stays
+  clear of the window's own buttons.
+- **A session's row:** pointing at it shows Settle, Archive and ··· at the title's end, and the open
+  session is drawn as a small card.
+- **One message box:** a question on a line in Changes, steering an agent, a comment on the canvas,
+  an element in the Browser and a reply on The Wall are the same field with the same Send. A
+  picture prompt in Liner Design sends on ⌘Enter, since each one is paid for.
+- **One sidekick at work** is said once: the live line names its step and holds Stop the sidekick.
+  The strip over the box shows only while two or more agents work.
+- **Top rows keep the everyday tools** and put the rest under one ···: the Browser (zoom, page
+  theme, width, offline), Changes (Unified or Split, wrap, spaces), the Terminal (clear, restart
+  the shell), Liner Design's canvas (the running app, Show in Finder, Build in a project; kept
+  copies are one menu) and an add-on's sheet.
+- **The Terminal** is hidden from the right edge like every panel; its own Hide button is gone.
+- **Needs you means one thing:** The Wall counts by the sidebar's rule (a question, a problem, a
+  limit, or finished and not opened yet).
+- **The same words for the same thing:** Finished, Needs you, Ran into a problem, Bring it back,
+  Look again, Open in your editor, Show in Finder, Add a project, Remove then Remove it.
+- **The same sizes:** header buttons 30px, buttons in content 28px, one look for a pressed button,
+  one close icon, a model's or tool's mark with no tile round it, and code at 13px in Files,
+  Changes, Compare and a finding's excerpt, with a changed line the same green or red in each.
+- **Changes opens at half the window**, with its own width that you can drag, code at 13px, and
+  long lines wrapped unless you turn that off. It is the same in the side panel and the full
+  canvas, so the side panel also takes questions on a line and the Reviewer's notes. While it is
+  open its foot holds the only Commit.
+- **Effort is a slider** with the model's own levels: press the level you're on again for the
+  tool's own default. Ultracode and Ultrathink are switches under it.
+- **The model picker opens under the message box** when there is room, and above it only when
+  there isn't.
+- **The project chooser on Home** is a small card: Find, your recent projects, Add a project and
+  Manage projects.
+- **One set of corners and edges:** corners come in four sizes, every panel beside the thread starts
+  8px inside its card, the conversation and the message box share their left edge, and the top
+  row's first word starts at the same place in Code, Design, Security and Settings.
+- **A push** says every commit it carries and when it publishes a branch, and one that carries
+  nothing says up to date.
+
+### Fixed
+
+- A double-click on Remove could remove a design, or a project in Settings with every session in
+  it. Remove now always asks first.
+- A Hermes agent still at work when its session closed kept saying it worked, and its session never
+  settled.
+- A changed submodule read as added or deleted in Changes, without Open in your editor.
+- A failed read said nothing and looked empty. It now says so, and a notice you dismissed stays
+  away.
+- A window whose storage was blocked broke at start. It now starts.
+- Compact and Send now took two presses.
+- Switching to Design or Security could leave another page showing.
+- **A stopped scan carries on when you say so.** A message in the chat of a scan that was stopped
+  (by you or at its time) or ran into a problem puts the scan back to work: its row, its status line
+  and the found panel say it is working, it reports findings again, its clock starts again with
+  the same Stops after, and its second look reads only what it found since.
+- **Hermes's agents come back.** Hermes now always sends its agents off past the turn and answers
+  with what they found in a turn of its own. Liner used to drop that turn, so the agents sat at
+  "Working in the background" for good. It now shows as "Hermes carries on by itself", in a scan
+  too, where what it finds is taken as the scan's. Stop can't end a turn Hermes began itself:
+  it stops showing it and says so.
+- **Open in editor never runs what it opens:** a file an agent wrote opens as text or is shown in
+  its folder, and on a Mac a folder that is really a program is shown in Finder.
+- **Liner Security's Open in editor** only opens a file inside the project it belongs to.
+- **Start a scan lets you set how hard the reader works** (Effort, the model's own levels) and
+  run with **no time limit** (Stops after › No limit). With Claude Code signed out, the Specialist
+  scan says so, rather than that Claude Code has no security model (Mythos is listed only once you
+  sign in), and its Sign in runs `claude auth login` in Terminal and looks again when you're back.
+- **Effort levels are each model's own,** as its tool lists them, never a shared Low to Max: GLM
+  5.3 has no Medium, a model with none shows none, and a new session leaves the level to the tool
+  until you pick one. OpenCode's models now have their levels and prices at all, read from
+  OpenCode's own server (version 2 or later).
+- **A link to a program is not launched:** Show in Finder and Open in your editor judge a link by
+  what it points at.
+- **After a restart a waiting session says the question that is still open**, not an approval that
+  expired with the restart.
+- **Making Liner Design's chat small from the keyboard** keeps focus on its small row.
+
 ## 0.3.0 (beta), 2026-11-19
 
 Update from 0.2.9: on a Mac Liner Code does it by itself (Restart to update), or download the new DMG;

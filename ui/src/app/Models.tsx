@@ -359,9 +359,12 @@ export function ModelPop({ label, value, onPick, only, choices = [], width = 400
 }
 
 /** The effort levels for a model, as rows: the tool's levels, then Claude Code's extras apart. */
-export function EffortRows({ modelRef, value, onPick }: { modelRef: string; value: string; onPick: (id: string) => void }) {
+/** `leave`: levels the place can't run (a security scan denies workflows, so no Ultracode there). */
+export function EffortRows({ modelRef, value, onPick, leave }: { modelRef: string; value: string; onPick: (id: string) => void; leave?: string[] }) {
   const providers = useEngine((s) => s.providers);
-  const { list, fallback } = effortsFor(modelRef, providers);
+  const all = effortsFor(modelRef, providers);
+  const list = leave ? all.list.filter((e) => !leave.includes(e.id)) : all.list;
+  const fallback = all.fallback;
   if (!list.length) return <PanelHead>This model takes no effort level</PanelHead>;
   const levels = list.filter((e) => !EXTRA_EFFORTS.has(e.id));
   const extras = list.filter((e) => EXTRA_EFFORTS.has(e.id));

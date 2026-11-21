@@ -410,6 +410,41 @@ test("scan: Stops after is the engine's: the scan is stopped at its time, says w
   }
 });
 
+test("scan: Stops after is optional: with none the scan has no end time, nothing stops it, its first message says so, and the effort picked reaches its session", async () => {
+  Object.assign(clock, { tickMs: 20, minuteMs: 300, settleMs: 10 });
+  try {
+    const { sec, sent, stopped } = rig();
+    const { scan, thread: t } = await startScan(sec, { projectId: "p", depth: "project", reader: { kind: "specialist", source: "cli:claude:claude-mythos-1", model: "@claude:claude-mythos-1", effort: "max" } });
+    assert.equal(scan.stopsAfter, undefined);
+    assert.equal(scan.endsAt, undefined);
+    assert.equal(sent.find((x) => x.method === "thread.create")!.params.effort, "max");
+    assert.equal(sec.scan(scan.id).reader?.kind === "specialist" && sec.scan(scan.id).reader?.effort, "max");
+    await until(() => sent.some((x) => x.method === "thread.send"));
+    const text = (sent.find((x) => x.method === "thread.send")!.params as { text: string }).text;
+    assert.match(text, /There is no time limit/);
+    assert.doesNotMatch(text, /You have about/);
+    // Well past what any limit would have been: still running, and the engine stopped nothing.
+    await tick(900);
+    assert.equal(sec.scan(scan.id).state, "running");
+    assert.deepEqual(stopped, []);
+    await stopScan(sec, scan.id);
+    assert.equal(sec.scan(scan.id).state, "stopped");
+    assert.ok(t);
+  } finally {
+    Object.assign(clock, { tickMs: 5_000, minuteMs: 60_000, settleMs: 1_500 });
+  }
+});
+
+test("scan: with Claude Code signed out, Start a scan names it as the reason no security model is listed", async () => {
+  const out = rig({ providers: [tool("claude", "Claude Code", ["claude-opus-5-5"], { signedIn: false }), tool("codex", "Codex", ["gpt-5.5"])] });
+  const c = await scanOptions(out.sec, "p");
+  assert.deepEqual(c.specialist, []);
+  assert.deepEqual(c.signedOut, ["Claude Code"]);
+  // Signed in everywhere: no reason given.
+  const { sec } = rig();
+  assert.equal((await scanOptions(sec, "p")).signedOut, undefined);
+});
+
 const own = { kind: "own" as const, agent: "@claude:claude-opus-5-5" };
 
 test("scan, round 3: a Specialist scan's sidekick must be able to seal: one that can't is left out, and the security model reads alone", async () => {

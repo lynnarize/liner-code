@@ -19,7 +19,7 @@
 import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { CodeExcerpt, Effort, FindingExplain, FreeCheckRun, NewFinding, ProviderInfo, Question, ScanChoices, ScanDepth, ScanOptions, ScanRecord, ScanState, SecondLookState, SecurityFinding, SecurityFindingAdded, SecurityItem, Severity, Thread, ThreatModel } from "../../contracts/src/index.ts";
-import { DISMISS_LABEL, FREE_CHECK_LABEL, familyOf, normalKey, reviewerOf, sealable, SEVERITIES, SEVERITY_LABEL, splitModel, startOf } from "../../contracts/src/index.ts";
+import { DISMISS_LABEL, FREE_CHECK_LABEL, familyOf, normalKey, reviewerOf, sealable, SEVERITIES, SEVERITY_LABEL, SPECIALIST_MODELS, splitModel, startOf } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
 import { outside, run } from "./exec.ts";
 import { uid } from "./store.ts";
@@ -161,10 +161,20 @@ export async function scanOptions(sec: Security, projectId: string): Promise<Sca
     ],
     specialist: specialists(providers, sec.store.settings),
     lookedIn: ["Claude Code", "Codex"],
+    ...signedOutOf(providers),
     defaults: { projectId: p.id, depth, reader: { kind: "own", agent }, ...(look ? { secondLook: look } : {}), threatModel: { file: model.file || MODEL_FILE, write: !model.exists }, stopsAfter: depth === "branch" ? 10 : 30, ...(branch?.base ? { base: branch.base } : {}) },
     threatModel: model,
     ...(branch ? { branch: { name: branch.name, ...(branch.base ? { base: branch.base } : {}), files: n } } : {}),
   };
+}
+
+/**
+  The tools that could list a security model but are signed out here: Claude Code lists Mythos only to an account signed in,
+  so with none found Start a scan says which sign-in is missing rather than that the CLI has no such model.
+*/
+function signedOutOf(providers: ProviderInfo[]): { signedOut?: string[] } {
+  const out = [...new Set(providers.filter((p) => p.available && !p.endpoint && p.signedIn === false && SPECIALIST_MODELS.some((w) => w.family === p.id.split(".")[0])).map((p) => p.label))];
+  return out.length ? { signedOut: out } : {};
 }
 
 /* ---------- The scan's first message ---------- */
@@ -175,7 +185,8 @@ export type ScanBrief = {
   depth: Exclude<ScanDepth, "checks">;
   branch?: { name: string; base?: string; files: string[] };
   lookFirst?: string;
-  stopsAfter: number;
+  /** Minutes till Liner stops it; unset: no limit. */
+  stopsAfter?: number;
   model: ThreatModel;
   /** The threat model may be proposed for writing (it's missing, and you allowed it). */
   write: boolean;
@@ -223,7 +234,7 @@ How to work:
 4. Keep a plan of the scan with your own plan or to-do tool, the areas in the order you'll read them, and tick them off as you go. Call security_note_area as you start and finish each area of the threat model, and say which areas this scan won't touch.
 5. Report each problem with security_report_finding the moment you are sure of it, not at the end: the person sees it at once. One problem per finding. Give its title as one plain sentence about the code, the one sentence of what someone can do with it, what is wrong (name the functions, routes or values), where (short code excerpts with the lines that matter), who can do it and what they need, what they get, and steps to see it that use the app as an ordinary user would. Name its area in the threat model. The person reads these parts as plain text with three marks only: code names in \`backticks\`, a command inside \`\`\` fences on lines of their own, and a list as lines that start with "- " (write what someone needs to do it that way, one need a line).
 6. Rank each finding against the threat model and the person's answers, not in general: critical, someone from outside takes over accounts, data or the server; high, someone gets or changes what isn't theirs, at scale; medium, it takes an account or a condition, or reaches one person's data; low, it helps an attack but does little alone. A guess you couldn't check is not a finding; say what you'd need to check it.
-7. You have about ${plural(b.stopsAfter, "minute")}. Liner stops the scan at the limit, so report as you go and keep the most likely problems first. When you are done, or nearly out of time, call security_finish with one sentence that says what this code lets someone do (or that you found nothing worth acting on), what you read, and what you did not get to and why. Then say the same to the person in a few short paragraphs: that sentence first, then the findings, then "What I read" and "What I did not get to".${b.lookBy ? `\n\nWhen you finish, ${b.lookBy} gives what you found a second look; you don't need to do anything for it.` : ""}${checks}${known}${first}${files}`;
+7. ${b.stopsAfter ? `You have about ${plural(b.stopsAfter, "minute")}. Liner stops the scan at the limit, so report as you go and keep the most likely problems first. When you are done, or nearly out of time, call` : "There is no time limit: take the time the code needs, report as you go, and keep the most likely problems first. When you are done, call"} security_finish with one sentence that says what this code lets someone do (or that you found nothing worth acting on), what you read, and what you did not get to and why. Then say the same to the person in a few short paragraphs: that sentence first, then the findings, then "What I read" and "What I did not get to".${b.lookBy ? `\n\nWhen you finish, ${b.lookBy} gives what you found a second look; you don't need to do anything for it.` : ""}${checks}${known}${first}${files}`;
 }
 
 /* ---------- Starting, watching and stopping a scan ---------- */
@@ -242,7 +253,9 @@ export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: 
   wake(sec);
   const p = sec.project(o.projectId);
   if (!["checks", "branch", "project"].includes(o.depth)) throw new Error("How far is the free checks, this branch's changes or the whole project.");
-  const stopsAfter = Math.max(1, Math.min(240, Math.round(Number(o.stopsAfter) || 30)));
+  // Stops after is optional: unset (or 0) is no limit, and the scan runs till it finishes or you stop it.
+  const asked = Number(o.stopsAfter);
+  const stopsAfter = asked > 0 ? Math.max(1, Math.min(240, Math.round(asked))) : undefined;
   if (o.threatModel?.file && o.threatModel.file !== sec.modelFile(p.id)) sec.setModelFile(p.id, o.threatModel.file);
   if (o.depth === "checks") {
     const rec = sec.newScan({ projectId: p.id, depth: "checks", title: titleOf_(p.name, "checks") });
@@ -278,7 +291,7 @@ export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: 
   const lookFirst = str(o.lookFirst, 600);
   const title = titleOf_(p.name, o.depth);
   const reader = r.kind === "specialist" ? { kind: r.kind, source: r.source, model: agent, ...(r.effort ? { effort: r.effort } : {}), ...(sidekick ? { sidekick } : {}) } : r;
-  const rec = sec.newScan({ projectId: p.id, depth: o.depth, reader, title, stopsAfter, ...(secondLook ? { secondLook } : {}), endsAt: Date.now() + stopsAfter * clock.minuteMs });
+  const rec = sec.newScan({ projectId: p.id, depth: o.depth, reader, title, ...(stopsAfter ? { stopsAfter, endsAt: Date.now() + stopsAfter * clock.minuteMs } : {}), ...(secondLook ? { secondLook } : {}) });
   // The Demo reading its own sample: the free checks aren't run for real (no npm audit on the sample).
   const demo = r.kind === "own" && refOf(agent).split(":")[0] === "demo";
   const live = keepLive(sec, rec.id, { asked: 0, write: o.threatModel?.write !== false, pending: [], tries: 0 });

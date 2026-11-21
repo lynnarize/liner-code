@@ -131,8 +131,8 @@ export type ScanOptions = {
   secondLook?: string;
   /** The threat model: the file (SECURITY.md by default), and whether the scan may write it when it is missing (asked again on the card). */
   threatModel?: { file: string; write: boolean };
-  /** Stops after this many minutes. */
-  stopsAfter: number;
+  /** Stops after this many minutes; unset: no limit, it runs till it finishes or you stop it. */
+  stopsAfter?: number;
   /** "Look at first", in your words. */
   lookFirst?: string;
   /** For depth "branch": what it is compared with (the main branch when unset). */
@@ -251,6 +251,8 @@ export type ScanChoices = {
   specialist: SpecialistSource[];
   /** Where it looked for them, for C2's words: "Claude Code or Codex". */
   lookedIn: string[];
+  /** Of those, the tools installed here but signed out ("Claude Code"): a CLI lists its security model only to an account signed in. */
+  signedOut?: string[];
   /** What a scan starts with unless you change it. */
   defaults: ScanOptions;
   threatModel: ThreatModel;

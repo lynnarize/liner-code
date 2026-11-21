@@ -4,7 +4,9 @@
   and who reads it (your own tool, with the app's own model picker in its tile; or a Specialist scan, offered only for a
   security model a CLI you're signed in to lists, or an API endpoint you added). With none found (C2) that box can't be
   picked: a tile says so, with Look again, and the endpoint tile stays as the way in. Then the rest: a second look by
-  another maker's model (a switch and its model), the threat model (Read or edit), Stops after, and Look at first. Start
+  another maker's model (a switch and its model), the reader's effort (its tool's own levels), the threat model (Read or
+  edit), Stops after (or no limit), and Look at first. When a CLI that could list a security model is signed out, the
+  Specialist tile says so and offers that tool's own Sign in. Start
   the scan opens the scan's session; the free checks alone run here and land on Findings.
 
   Everything it offers comes from the engine (security.scan.options): the cost lines, the models found, the defaults.
@@ -14,11 +16,11 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import type { ScanDepth, ScanOptions, ScanReader, SpecialistSource } from "@contracts";
 import { reviewerOf, sealable, splitModel } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { bridge } from "../bridge";
+import { bridge, isNative } from "../bridge";
 import { rpc, useEngine } from "../engine";
 import { I, ModelMark, Spinner } from "../icons";
-import { ModelPicker, ModelPop } from "../Models";
-import { agentOf, markOf, modelLabel, plural, toolMarkOf } from "../model";
+import { EffortRows, ModelPicker, ModelPop } from "../Models";
+import { agentOf, effortName, effortsFor, markOf, modelLabel, plural, toolMarkOf } from "../model";
 import { Pop, Row } from "../ui";
 import { OnOff, PageTop, PickTile, Tag } from "./parts";
 import { mockChoices, mockMode } from "./scan-mock";
@@ -26,8 +28,10 @@ import { addSecurityFolder, goSecurity, getSecurityScope, useSecurity, useSecuri
 import "./scan.css";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
-/** Stops after: the choices, in minutes. */
+/** Stops after: the choices, in minutes; 0 is no limit. */
 const STOPS = [5, 10, 15, 30, 60];
+/** Effort levels a scan can't run: Ultracode brings workflows, which a scan denies (claude.ts SCAN_DENIED). */
+const SCAN_LEAVES = ["ultracode"];
 /** "12 Nov". */
 const dayOf = (at: number) => new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
@@ -52,9 +56,26 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const [lookOn, setLookOn] = useState(true);
   const [lookBy, setLookBy] = useState<string | undefined>();
   const [stops, setStops] = useState(10);
+  // The reader's effort: "" is its tool's own default.
+  const [effort, setEffort] = useState("");
   const [first, setFirst] = useState("");
   const [looking, setLooking] = useState(false);
   const [lookedAt, setLookedAt] = useState<number | null>(null);
+  // Sign in was pressed: the tool's own login runs in Terminal, and Start a scan looks again when you come back to the window.
+  const [signingIn, setSigningIn] = useState(false);
+  const again = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    if (!signingIn) return;
+    // Coming back from Terminal: look again, as often as you come back, till the tool says it's signed in.
+    const back = () => void again.current();
+    window.addEventListener("focus", back);
+    return () => window.removeEventListener("focus", back);
+  }, [signingIn]);
+  // Signed in now (nothing signed out is left): Sign in has done its part.
+  const outCount = choices?.signedOut?.length ?? 0;
+  useEffect(() => {
+    if (!outCount) setSigningIn(false);
+  }, [outCount]);
   const [starting, setStarting] = useState(false);
   // Set as start() begins and cleared when it ends, so a second press (Enter held, or pressed again in Look at first) can't
   // slip past before React draws the button as Starting.
@@ -69,7 +90,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
     if (d.reader.kind === "own") setAgent(d.reader.agent);
     setWho("own");
     setSource(undefined);
-    setStops(d.stopsAfter);
+    setStops(d.stopsAfter ?? 0);
     setFirst(d.lookFirst ?? "");
     if (d.secondLook) setLookBy(d.secondLook);
   }, [choices, readFor]);
@@ -80,6 +101,9 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const readerRef = who === "specialist" && src ? src.ref.replace(/^@/, "") : agent.startsWith("@") ? agent.slice(1) : agent ? agentOf(agent, agents, providers).model : "";
   const autoLook = useMemo(() => reviewerOf(readerRef ? [readerRef] : [], providers.filter((p) => p.id !== "demo" || settings.showDemo)), [readerRef, providers, settings.showDemo]);
   const look = lookBy ?? autoLook ?? undefined;
+  // The reader's levels as its tool lists them; a level picked for another model isn't sent to this one.
+  const levels = readerRef ? effortsFor(readerRef, providers).list.filter((e) => !SCAN_LEAVES.includes(e.id)) : [];
+  const level = effort && levels.some((e) => e.id === effort) ? effort : "";
 
   const addFolder = async () => {
     const id = await addSecurityFolder(hidden);
@@ -116,6 +140,10 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
   const billed = !ownTool ? "" : ownTool.id === "demo" ? "Scripted: nothing to pay" : ownTool.id.startsWith("claude") ? (settings.claudeBilling === "key" ? "Billed to your API key" : "On your Claude plan") : `On your ${ownTool.label} account`;
   // C's foot: which of the tools looked in list none, as "Codex lists none."
   const none = (choices?.lookedIn ?? []).filter((n) => !specialist.some((s) => s.via.toLowerCase().includes(n.toLowerCase())));
+  // A CLI signed out lists no security model (Claude Code shows Mythos only to an account signed in): C2 says so, not "none",
+  // and offers that tool's own sign-in (ProviderInfo.login, as Setup's Sign in does).
+  const signedOut = choices?.signedOut ?? [];
+  const loginOf = signedOut.map((name) => providers.find((p) => p.label === name && p.signedIn === false && p.login)).find(Boolean);
   const tm = choices?.threatModel;
 
   const lookAgain = async () => {
@@ -129,6 +157,13 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
     } finally {
       setLooking(false);
     }
+  };
+  again.current = lookAgain;
+  const signIn = () => {
+    if (!loginOf) return;
+    bridge.runInTerminal(loginOf.login);
+    setSigningIn(true);
+    if (!isNative()) toast(`Copied ${loginOf.login}`, { description: "Run it in your terminal, then press Look again." });
   };
   const use = (s: SpecialistSource) => (setWho("specialist"), setSource(s.id));
   const addEndpoint = () => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }));
@@ -147,15 +182,15 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
     const reader: ScanReader =
       who === "specialist" && src
         ? // Your own tool reads for the security model only when it too can run sealed (Claude Code); else the model reads alone.
-          { kind: "specialist", source: src.id, model: src.ref, ...(agent.startsWith("@") && agent !== src.ref && sealable(splitModel(agent.slice(1)).provider) ? { sidekick: agent.slice(1) } : {}) }
-        : { kind: "own", agent };
+          { kind: "specialist", source: src.id, model: src.ref, ...(level ? { effort: level } : {}), ...(agent.startsWith("@") && agent !== src.ref && sealable(splitModel(agent.slice(1)).provider) ? { sidekick: agent.slice(1) } : {}) }
+        : { kind: "own", agent, ...(level ? { effort: level } : {}) };
     const o: ScanOptions = {
       projectId: project.id,
       depth,
       reader,
       ...(depth !== "checks" && lookOn && look ? { secondLook: look } : {}),
       threatModel: { file: tm?.file ?? "SECURITY.md", write: true },
-      stopsAfter: stops,
+      ...(stops ? { stopsAfter: stops } : {}),
       ...(first.trim() ? { lookFirst: first.trim() } : {}),
       ...(choices.branch?.base ? { base: choices.branch.base } : {}),
     };
@@ -278,7 +313,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                   ) : (
                     <>
                       Nothing to run it with yet
-                      <i className="lsc-r">{lookedAt ? "Looked just now. " : ""}A model shows here once a CLI lists it.</i>
+                      <i className="lsc-r">{lookedAt ? "Looked just now. " : ""}{signedOut.length ? (signingIn ? "Finish in Terminal; it looks again when you're back." : `Sign in runs ${loginOf?.login ?? "its sign-in"} in Terminal.`) : "A model shows here once a CLI lists it."}</i>
                     </>
                   )
                 }
@@ -302,19 +337,25 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                     <PickTile
                       nil
                       mark={<I.search size={16} />}
-                      title="No security model"
-                      note={`in ${(choices?.lookedIn ?? ["Claude Code", "Codex"]).join(" or ")}`}
+                      title={signedOut.length ? `${signedOut.join(" and ")} ${signedOut.length === 1 ? "isn't" : "aren't"} signed in` : "No security model"}
+                      note={signedOut.length ? `a security model like Mythos is listed only once you sign in` : `in ${(choices?.lookedIn ?? ["Claude Code", "Codex"]).join(" or ")}`}
                       action={
-                        <button type="button" className="lsc-pb l-focus" disabled={looking} aria-busy={looking || undefined} onClick={(e) => (e.stopPropagation(), void lookAgain())}>
-                          {looking ? (
-                            <>
-                              <Spinner size={12} />
-                              Looking
-                            </>
-                          ) : (
-                            "Look again"
-                          )}
-                        </button>
+                        loginOf && !signingIn ? (
+                          <button type="button" className="lsc-pb l-focus" title={`${loginOf.login}, in Terminal`} onClick={(e) => (e.stopPropagation(), signIn())}>
+                            Sign in
+                          </button>
+                        ) : (
+                          <button type="button" className="lsc-pb l-focus" disabled={looking} aria-busy={looking || undefined} onClick={(e) => (e.stopPropagation(), void lookAgain())}>
+                            {looking ? (
+                              <>
+                                <Spinner size={12} />
+                                Looking
+                              </>
+                            ) : (
+                              "Look again"
+                            )}
+                          </button>
+                        )
                       }
                     />
                   )}
@@ -336,6 +377,30 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
 
           <div className="lsc-blk">
             <div className="ls-blkh">And</div>
+            {depth !== "checks" && (
+            <div className="lsc-kvr">
+              <span className="lsc-k">Effort</span>
+              {readerRef && levels.length ? (
+                <Pop
+                  label={`How hard it reads: ${level ? effortName(level, readerRef, providers) : "its own default"}. Change it`}
+                  width={290}
+                  triggerClass="lsc-cb l-focus"
+                  trigger={
+                    <>
+                      {level ? effortName(level, readerRef, providers) : "Its own default"}
+                      <I.chevD size={12} />
+                    </>
+                  }
+                >
+                  {(close) => <EffortRows modelRef={readerRef} value={level} leave={SCAN_LEAVES} onPick={(id) => (close(), setEffort(id))} />}
+                </Pop>
+              ) : (
+                <span className="lsc-v">None</span>
+              )}
+              <span className="lc-grow" />
+              <span className="lsc-quiet">{levels.length ? "optional · its tool's own default until you pick" : "this model has no effort levels"}</span>
+            </div>
+            )}
             {depth !== "checks" && (
             <div className="lsc-kvr">
               <span className="lsc-k">A second look</span>
@@ -367,21 +432,21 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
             <div className="lsc-kvr">
               <span className="lsc-k">Stops after</span>
               <Pop
-                label={`Stops after ${stops} minutes. Change it`}
+                label={stops ? `Stops after ${stops} minutes. Change it` : "No time limit. Change it"}
                 menu
                 width={180}
                 triggerClass="lsc-cb l-focus"
                 trigger={
                   <>
-                    {stops} min
+                    {stops ? `${stops} min` : "No limit"}
                     <I.chevD size={12} />
                   </>
                 }
               >
-                {(close) => STOPS.map((m) => <Row key={m} title={`${m} min`} on={m === stops} onPick={() => (close(), setStops(m))} />)}
+                {(close) => [...STOPS, 0].map((m) => <Row key={m} title={m ? `${m} min` : "No limit"} on={m === stops} onPick={() => (close(), setStops(m))} />)}
               </Pop>
               <span className="lc-grow" />
-              <span className="lsc-quiet">it says what it did not get to</span>
+              <span className="lsc-quiet">{stops ? "optional · it says what it did not get to" : "optional · it reads till it's done, or you stop it"}</span>
             </div>
             <label className="lsc-kvr">
               <span className="lsc-k">Look at first</span>

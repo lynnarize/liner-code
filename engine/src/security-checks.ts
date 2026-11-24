@@ -12,7 +12,7 @@
   (the shapes gitleaks and GitHub's secret scanning know best), with obvious placeholders left out, so a finding here is
   worth reading. Everything works offline but npm audit, which asks the registry and fails soft.
 */
-import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import type { FreeCheckId, FreeCheckResult, FreeCheckRun, FindingExplain, NewFinding, SecurityFinding, SecurityFindingAdded, Severity, CodeExcerpt } from "../../contracts/src/index.ts";
@@ -414,11 +414,40 @@ export function excerptOf(root: string, file: string, start: number, end = start
 type Found = { check: FreeCheckId; finding: NewFinding };
 type CheckOut = { result: FreeCheckResult; found: Found[]; /** For secrets: the files read in full, so a finding in one of them that isn't found again is closed. Unset: every finding of the check may be closed. */ read?: Set<string>; tracked?: Set<string> };
 
-/** The tracked files, relative to the project's folder; null outside a repository. */
+const WALK_SKIP = new Set([".git", "node_modules", "dist", "build", ".next", ".nuxt", ".svelte-kit", "vendor", ".venv", "venv", "__pycache__", "target", ".turbo", ".cache", "coverage"]);
+
+/** Walks a non-git project folder safely (skipping vendor/build trees and symlinks) up to FILES_CAP files. */
+function walkNonGit(root: string): string[] {
+  const out: string[] = [];
+  const stack: string[] = [""];
+  while (stack.length && out.length < FILES_CAP) {
+    const dir = stack.pop()!;
+    const abs = dir ? join(root, dir) : root;
+    let entries;
+    try {
+      entries = readdirSync(abs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (out.length >= FILES_CAP) break;
+      if (e.isSymbolicLink()) continue;
+      const rel = dir ? `${dir}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (!WALK_SKIP.has(e.name)) stack.push(rel);
+      } else if (e.isFile()) {
+        out.push(rel);
+      }
+    }
+  }
+  return out;
+}
+
+/** The tracked files, relative to the project's folder; falls back to a safe ignore-walked list outside a git repository. */
 async function tracked(root: string, env: NodeJS.ProcessEnv): Promise<string[] | null> {
   const r = await git(root, ["ls-files", "-z"], env);
-  if (r.code !== 0) return null;
-  return r.stdout.split("\0").filter(Boolean);
+  if (r.code === 0) return r.stdout.split("\0").filter(Boolean);
+  return walkNonGit(root);
 }
 
 async function secretsCheck(root: string, files: string[] | null, skip: Set<string>): Promise<CheckOut> {
@@ -521,19 +550,94 @@ async function packagesCheck(root: string, env: NodeJS.ProcessEnv): Promise<Chec
     }
   };
   const skipped = (note: string): CheckOut => ({ result: { check: "packages", state: "skipped", count: 0, note, at }, found: [] });
-  if (!has("package-lock.json") && !has("npm-shrinkwrap.json")) {
-    const other = ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"].find(has);
-    return skipped(other ? `${other} not read yet` : has("package.json") ? "no package-lock.json" : "no package.json");
+  if (has("package-lock.json") || has("npm-shrinkwrap.json")) {
+    const r = await npmAudit(root, env);
+    if (!r) return skipped("npm not installed");
+    const vulns = parseAudit(r.stdout);
+    if (!vulns) {
+      const why = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|network|offline/i.test(r.stdout + r.stderr) ? "couldn't reach the npm registry" : r.code !== 0 && !r.stdout.trim() && /timed out|killed|SIGTERM/i.test(r.stderr) ? "npm audit took too long" : "npm audit didn't answer";
+      return { result: { check: "packages", state: "failed", count: 0, note: why, at }, found: [] };
+    }
+    const found = vulns.map((v) => ({ check: "packages" as const, finding: packageFinding(v) }));
+    return { result: { check: "packages", state: found.length ? "found" : "clean", count: found.length, note: "from npm audit", at }, found };
   }
-  const r = await npmAudit(root, env);
-  if (!r) return skipped("npm not installed");
-  const vulns = parseAudit(r.stdout);
+  const alt: { lock: string; bin: string; args: string[]; label: string } | undefined =
+    has("pnpm-lock.yaml")
+      ? { lock: "pnpm-lock.yaml", bin: "pnpm", args: ["audit", "--json"], label: "pnpm audit" }
+      : has("yarn.lock")
+        ? { lock: "yarn.lock", bin: "yarn", args: ["audit", "--json"], label: "yarn audit" }
+        : has("bun.lock") || has("bun.lockb")
+          ? { lock: has("bun.lock") ? "bun.lock" : "bun.lockb", bin: "bun", args: ["audit", "--json"], label: "bun audit" }
+          : undefined;
+  if (!alt) return skipped(has("package.json") ? "no lockfile" : "no package.json");
+  const r = await altAudit(root, env, alt.bin, alt.args, alt.lock);
+  if (!r) return skipped(`${alt.bin} not installed`);
+  const vulns = parseAudit(r.stdout) ?? parseAltAudit(r.stdout);
   if (!vulns) {
-    const why = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|network|offline/i.test(r.stdout + r.stderr) ? "couldn't reach the npm registry" : r.code !== 0 && !r.stdout.trim() && /timed out|killed|SIGTERM/i.test(r.stderr) ? "npm audit took too long" : "npm audit didn't answer";
+    const why = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|network|offline/i.test(r.stdout + r.stderr) ? `couldn't reach the registry (${alt.label})` : `${alt.label} didn't answer`;
     return { result: { check: "packages", state: "failed", count: 0, note: why, at }, found: [] };
   }
   const found = vulns.map((v) => ({ check: "packages" as const, finding: packageFinding(v) }));
-  return { result: { check: "packages", state: found.length ? "found" : "clean", count: found.length, note: "from npm audit", at }, found };
+  return { result: { check: "packages", state: found.length ? "found" : "clean", count: found.length, note: `from ${alt.label}`, at }, found };
+}
+
+/** Parses Yarn v1 NDJSON audit output into the same Vuln shape as parseAudit. */
+function parseAltAudit(stdout: string): Vuln[] | null {
+  const out = new Map<string, Vuln>();
+  const sev = (s: unknown): Severity => NPM_SEVERITY[String(s ?? "").toLowerCase()] ?? "medium";
+  let parsedAny = false;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const o = JSON.parse(trimmed) as { type?: string; data?: { advisory?: Record<string, unknown> } };
+      parsedAny = true;
+      if (o.type !== "auditAdvisory" || !o.data?.advisory) continue;
+      const a = o.data.advisory;
+      const name = String(a.module_name ?? a.name ?? "").trim();
+      if (!name) continue;
+      const title = String(a.title ?? `Vulnerability in ${name}`);
+      const id = a.github_advisory_id ? String(a.github_advisory_id) : a.id ? String(a.id) : "";
+      const cur = out.get(name) ?? { name, severity: sev(a.severity), titles: [], ids: [], url: typeof a.url === "string" ? a.url : undefined, fix: typeof a.patched_versions === "string" ? a.patched_versions : undefined, direct: true, via: [] };
+      if (!cur.titles.includes(title)) cur.titles.push(title);
+      if (id && !cur.ids.includes(id)) cur.ids.push(id);
+      out.set(name, cur);
+    } catch {
+      // ignore non-json lines
+    }
+  }
+  return parsedAny ? [...out.values()] : null;
+}
+
+/** Runs pnpm/yarn/bun audit in an isolated temp folder with only package.json + lockfile copied and a clean environment. */
+async function altAudit(root: string, env: NodeJS.ProcessEnv, binName: string, args: string[], lockfile: string): Promise<{ code: number; stdout: string; stderr: string } | null> {
+  const PATH = auditPath(env, root);
+  const bin = which(binName, { PATH, ...(process.platform === "win32" && env.PATHEXT ? { PATHEXT: env.PATHEXT } : {}) });
+  if (!bin || !isAbsolute(bin)) return null;
+  const box = mkdtempSync(join(tmpdir(), "liner-audit-"));
+  try {
+    const dir = join(box, "project");
+    const home = join(box, "home");
+    for (const d of [dir, home]) mkdirSync(d);
+    for (const f of ["package.json", lockfile]) {
+      try {
+        if (lstatSync(join(root, f)).isFile()) copyFileSync(join(root, f), join(dir, f));
+      } catch {
+        // not there
+      }
+    }
+    try {
+      lstatSync(join(dir, "package.json"));
+    } catch {
+      writeFileSync(join(dir, "package.json"), "{}\n");
+    }
+    const kept: NodeJS.ProcessEnv = {};
+    for (const k of [...MANAGER_HOMES, ...(process.platform === "win32" ? WINDOWS_KEEP : [])]) if (env[k]) kept[k] = env[k];
+    const clean: NodeJS.ProcessEnv = { ...kept, PATH, HOME: home, ...(process.platform === "win32" ? { USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home, TEMP: box, TMP: box } : { TMPDIR: box }) };
+    return await run(bin, args, { cwd: dir, env: clean, timeout: AUDIT_MS });
+  } finally {
+    rmSync(box, { recursive: true, force: true });
+  }
 }
 
 /** Where npm audit asks: npm's own registry, always, whatever the repository's .npmrc says. Only tests point it at a fake one on this Mac. */

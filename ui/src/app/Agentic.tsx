@@ -8,7 +8,7 @@
 */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import type { ModelPicks, ProviderInfo, Settings as EngineSettings, SidekickClass } from "@contracts";
-import { castOf, CLASS_WAYS, frontierClass, makerOf, placedOf, reviewerOf, sidekickClassOf, SMALL_CHANGE, startOf } from "@contracts";
+import { castOf, clampSubagentMax, clampSwarmHibernate, clampSwarmMax, CLASS_WAYS, frontierClass, makerOf, placedOf, reviewerOf, sidekickClassOf, SMALL_CHANGE, startOf } from "@contracts";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
@@ -69,6 +69,8 @@ export function Agentic(_: { onOpen?: (threadId: string) => void }) {
       <PairClasses c={c} />
       <LeadInPair c={c} />
       <Reviewer c={c} />
+      <Subagents c={c} />
+      <Teamwork c={c} />
     </div>
   );
 }
@@ -429,6 +431,95 @@ function Reviewer({ c }: { c: Pair }) {
           </Line>
           <Line title="Small changes too" note={`${SMALL_CHANGE} lines or fewer, or docs alone, go through as they are unless this is on.`} off={!on}>
             <NamedSwitch name="Small changes too" checked={small} onCheckedChange={(reviewSmall) => save({ reviewSmall })} />
+          </Line>
+        </div>
+      </div>
+    </Part>
+  );
+}
+
+/* ---------------------------------- Subagents ---------------------------------- */
+
+function Subagents({ c }: { c: Pair }) {
+  const max = clampSubagentMax(c.settings.maxActiveSubagents);
+  const choices = [1, 2, 4, 6, 8];
+  if (!choices.includes(max)) {
+    choices.push(max);
+    choices.sort((a, b) => a - b);
+  }
+  return (
+    <Part title="Subagents" note="For tools without native subagents (Cursor, Grok, added ACP agents). Claude Code, Codex, OpenCode, Hermes and Antigravity use their own.">
+      <div className="lc-frame">
+        <div className="lc-fcard lc-st-card lc-ag-pair">
+          <Line title="Parallel read-only subagents" note="How many read-only subagents run side by side per session; extra calls queue until a slot opens. Higher values start more processes and use more RAM and API concurrency. Write subagents always run one at a time.">
+            <Segmented size="sm" value={String(max)} onValueChange={(v) => save({ maxActiveSubagents: Number(v) })} options={choices.map((v) => ({ value: String(v), label: String(v) }))} aria-label="Parallel read-only subagents" />
+          </Line>
+        </div>
+      </div>
+    </Part>
+  );
+}
+
+/* ---------------------------------- Teamwork & Swarm ---------------------------------- */
+
+const HIBERNATE_CHOICES = [
+  { value: "0", label: "Immediately" },
+  { value: "30", label: "30 s" },
+  { value: "120", label: "2 min" },
+];
+
+function Teamwork({ c }: { c: Pair }) {
+  const maxActive = clampSwarmMax(c.settings.swarmMaxActive);
+  const hibernate = clampSwarmHibernate(c.settings.swarmHibernateSec);
+  const hibVal = HIBERNATE_CHOICES.some((x) => Number(x.value) === hibernate) ? String(hibernate) : "30";
+  const workspace = c.settings.swarmWorkspace ?? "share";
+  const stall = c.settings.swarmStallMonitor !== false;
+  const autoPost = c.settings.swarmAutoPost !== false;
+  const workerModel = c.settings.swarmWorkerModel?.trim() || "";
+  const sameChoice = {
+    id: "same",
+    title: "Same as main model",
+    note: "Workers inherit the session's coordinator model and CLI",
+    show: (
+      <span className="lc-ag-who">
+        <span className="lc-quiet">Default</span>
+        <b>Same as main model</b>
+      </span>
+    ),
+  };
+  return (
+    <Part title="Teamwork & Swarm" note="Liner Code's own multi-agent board and worker pool, working across every CLI and API endpoint. Waiting workers hibernate to 0 MB RAM until mentioned again.">
+      <div className="lc-frame">
+        <div className="lc-fcard lc-st-card lc-ag-pair">
+          <Line
+            title="Default worker model"
+            note={
+              workerModel && gone(c, workerModel)
+                ? "Your picked tool isn't ready right now, so workers inherit the session's main model instead."
+                : "Used for new Swarm and Teamwork workers when no specific model is requested. Default keeps every worker on your session's main model."
+            }
+          >
+            <ModelPop
+              label="Default worker model"
+              value={workerModel || "same"}
+              choices={[sameChoice]}
+              onPick={(v) => save({ swarmWorkerModel: v === "same" ? "" : v })}
+            />
+          </Line>
+          <Line title="Active worker processes" note="How many CLI workers run at the same time in a Swarm. Larger rosters queue at 0 MB until a slot opens.">
+            <Segmented size="sm" value={String(maxActive)} onValueChange={(v) => save({ swarmMaxActive: Number(v) })} options={[1, 2, 3, 4].map((v) => ({ value: String(v), label: String(v) }))} aria-label="Active worker processes" />
+          </Line>
+          <Line title="Hibernate waiting workers" note="Closes a parked worker's process after it posts to the board and resumes it on the next @mention.">
+            <Segmented size="sm" value={hibVal} onValueChange={(v) => save({ swarmHibernateSec: Number(v) })} options={HIBERNATE_CHOICES} aria-label="Hibernate waiting workers" />
+          </Line>
+          <Line title="Writer workspace" note="Isolated git worktrees let parallel writers edit without colliding; researchers and verifiers always stay read-only.">
+            <Segmented size="sm" value={workspace} onValueChange={(v) => save({ swarmWorkspace: v as "share" | "inherit" })} options={[{ value: "share", label: "Worktree" }, { value: "inherit", label: "Shared folder" }]} aria-label="Writer workspace" />
+          </Line>
+          <Line title="Stall monitor" note="Deterministic engine timer (0 MB RAM, 0 tokens) that nudges unanswered @mentions or unread board results.">
+            <NamedSwitch name="Stall monitor" checked={stall} onCheckedChange={(swarmStallMonitor) => save({ swarmStallMonitor })} />
+          </Line>
+          <Line title="Auto-post fallback" note="Publishes a worker's final reply to @coordinator if it ends a turn without calling swarm_post.">
+            <NamedSwitch name="Auto-post fallback" checked={autoPost} onCheckedChange={(swarmAutoPost) => save({ swarmAutoPost })} />
           </Line>
         </div>
       </div>

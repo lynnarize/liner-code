@@ -104,6 +104,39 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
             <span className="l-num">{((usage.cacheReadTokens / (usage.inputTokens + usage.cacheReadTokens)) * 100).toFixed(1)}%</span>
           </Line>
         )}
+        {thread.spendLimit !== undefined && thread.spendLimit > 0 && (
+          <Line icon={<I.alert size={14} />}>
+            <span className="lc-grow">
+              Spend limit <span className="l-num">{money(thread.spendLimit)}</span>
+              {usage && usage.costUsd > 0 ? <span className="lc-quiet"> ({Math.min(999, Math.round((usage.costUsd / thread.spendLimit) * 100))}%)</span> : null}
+            </span>
+            <button
+              type="button"
+              className="lc-btn"
+              data-kind="ghost"
+              data-size="sm"
+              title="Raise spend limit by $5"
+              onClick={() => void rpc("thread.update", { id: thread.id, spendLimit: Number((thread.spendLimit! + 5).toFixed(2)) }).catch((e: Error) => toast.error(e.message))}
+            >
+              +$5
+            </button>
+            <button
+              type="button"
+              className="lc-btn"
+              data-kind="ghost"
+              data-size="sm"
+              title="Remove session spend limit"
+              onClick={() => void rpc("thread.update", { id: thread.id, spendLimit: null }).catch((e: Error) => toast.error(e.message))}
+            >
+              Clear
+            </button>
+          </Line>
+        )}
+        {thread.effortNow && thread.effort && thread.effortNow !== thread.effort && (
+          <Line icon={<I.alert size={14} />}>
+            <span className="lc-quiet">Running effort: <b>{thread.effortNow}</b> (requested {thread.effort})</span>
+          </Line>
+        )}
       </section>
 
       {more && <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} compacting={compacting} onCompact={compactNow} />}
@@ -131,6 +164,25 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
           </Line>
         )}
         {thread.pr && checks.length > 0 && <ChecksLine checks={checks} />}
+        {!running && thread.turns > 0 && (
+          <Line icon={<I.notes size={14} />}>
+            <span className="lc-grow">Workspace memory</span>
+            <button
+              type="button"
+              className="lc-btn"
+              data-kind="ghost"
+              data-size="sm"
+              title="Distill this session's goal, changed files, and outcome into MEMORY.md"
+              onClick={() =>
+                void rpc("memory.distill", { threadId: thread.id })
+                  .then((r) => toast(r.added ? `Saved ${r.added} notes to MEMORY.md` : "MEMORY.md already has these notes"))
+                  .catch((e: Error) => toast.error(e.message))
+              }
+            >
+              Distill to MEMORY.md
+            </button>
+          </Line>
+        )}
       </section>
 
       <section className="lc-sinfo-card">
@@ -149,6 +201,34 @@ export function SessionSurface({ thread, items, visible, onShowChange }: { threa
             {modelLabel(thread.sidekick, providers)}
           </Line>
         )}
+        {thread.sidekick && (
+          <Line icon={<I.fork size={14} />}>
+            <span className="lc-grow">Sidekick context</span>
+            <button
+              type="button"
+              className="lc-btn"
+              data-kind="ghost"
+              data-size="sm"
+              title="Isolated starts fresh; Fork inherits a summary of this conversation"
+              onClick={() => void rpc("thread.update", { id: thread.id, sidekickContext: thread.sidekickContext === "fork" ? "isolated" : "fork" }).catch((e: Error) => toast.error(e.message))}
+            >
+              {thread.sidekickContext === "fork" ? "Fork" : "Isolated"}
+            </button>
+          </Line>
+        )}
+        <Line icon={<I.sliders size={14} />}>
+          <span className="lc-grow">Tool preset</span>
+          <button
+            type="button"
+            className="lc-btn"
+            data-kind="ghost"
+            data-size="sm"
+            title="Lean omits heavy third-party MCP add-ons for faster, lower-token turns"
+            onClick={() => void rpc("thread.update", { id: thread.id, toolPreset: thread.toolPreset === "lean" ? "standard" : "lean" }).catch((e: Error) => toast.error(e.message))}
+          >
+            {thread.toolPreset === "lean" ? "Lean" : "Standard"}
+          </button>
+        </Line>
         <Line icon={<I.shield size={14} />}>
           <span className="lc-grow">Reviewer</span>
           {thread.review ? "On" : "Off"}

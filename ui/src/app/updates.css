@@ -11,7 +11,13 @@
   bottom: 16px;
   left: 18px;
   z-index: 2;
-  width: min(300px, calc(50% - 120px));
+  width: min(300px, calc(100% - 36px));
+}
+@media (max-width: 820px), (max-height: 620px) {
+  .lc-up-home {
+    position: static;
+    margin: 12px auto 0;
+  }
 }
 /* The cards behind take the front one's box, so every card has one shape: two lines of body
    (the whole story is in Settings) and one action under them. */

@@ -272,7 +272,7 @@ export { bucketOf, reviewHeld, type Bucket } from "./session-state";
   On the Wall: a session you've started that works, waits on you, or has finished and isn't settled
   yet. Snoozed, settled and archived ones stay off it, and so do routines' runs.
 */
-export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.routine && !t.done && t.turns > 0 && !(t.snoozedUntil && t.snoozedUntil > now);
+export const onTheWall = (t: Thread, now = Date.now()) => !t.archived && !t.routine && !t.security && !t.done && t.turns > 0 && !(t.snoozedUntil && t.snoozedUntil > now);
 /**
   What the Wall showed last, in its order, and the tile picked: a session opened from it says where
   it is among them and steps to the one before or after, and coming back picks the tile you left.

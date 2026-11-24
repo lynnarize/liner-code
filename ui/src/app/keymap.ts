@@ -133,9 +133,10 @@ function same(e: KeyboardEvent, c: Chord) {
 /** Where the press happened, for `when`. */
 function context(e: KeyboardEvent) {
   const t = e.target instanceof Element ? e.target : null;
+  const rv = document.querySelector(".lc-panel:not([data-leaving]) .lc-surface:not([hidden]) .lc-rv");
   return {
     session: Boolean(document.querySelector(".lc-session")),
-    review: Boolean(document.querySelector(".lc-rv")),
+    review: Boolean(rv && !rv.closest("[hidden]")),
     settings: Boolean(document.querySelector(".lc-st-side")),
     composer: Boolean(t?.closest(".lc-composer")),
     textInput: Boolean(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as HTMLElement).isContentEditable)),

@@ -746,7 +746,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const wallBrand = wallWorking[0] ? markOf(onIt(wallWorking[0], agents, providers).ref) : undefined;
 
   const out = (
-    <nav ref={nav} className="lc-sb" aria-label="Sessions">
+    <nav ref={nav} className="lc-sb" aria-label={face === "design" ? "Designs" : face === "security" ? "Security" : "Sessions"}>
       {/* As Claude Code's desktop app has it: Hide, Back and Forward together after the lights, the drag area, and at the far right what works and what waits on you, which opens The Wall. The name is at the foot. */}
       <div className="lc-sb-head" data-drag>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onHide}>

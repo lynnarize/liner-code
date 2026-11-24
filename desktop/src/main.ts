@@ -5,14 +5,16 @@
   keys kept encrypted, Terminal and Finder. The page asks for these over one IPC channel
   ("liner") with the same methods it sent the Swift shell; preload.ts is its side of it.
 */
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, session, shell, systemPreferences, type MenuItemConstructorOptions, type NativeImage, type Rectangle } from "electron";
 import { exec, execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
 import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
+import { extractLaunchTarget, launchQuestion, parseDeepLink, type LaunchTarget } from "./deeplink";
 import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, type Live } from "./finish";
+import { afterCrash, engineStatusDue } from "./window-state";
 import { fileIn, folderOf, openAsText, openIn as openInWith, type Opener } from "./editor";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
@@ -66,6 +68,10 @@ const envAtLaunch = firstCopy ? loginEnvironment() : undefined;
 const whoAtLaunch = firstCopy ? whoami() : undefined;
 
 let win: BrowserWindow | null = null;
+/** All open Liner Code windows, keyed by BrowserWindow id so secondary windows and pop-outs work beside the primary window. */
+const windows = new Map<number, BrowserWindow>();
+/** Deep-link or folder target received before the window finished loading. */
+let pendingTarget: LaunchTarget | null = null;
 let quitting = false;
 /** A downloaded update is being put in; quitting doesn't start it again. */
 let updating = false;
@@ -83,7 +89,7 @@ const boot = { base: "", token: "", machine: "This Mac", user: "" };
   `port` is asked for again at the next launch: the page's address includes it, and what the
   page keeps (folds, choices) is kept per address, so a new port each launch would forget it all.
 */
-type Prefs = { material?: string; ground?: string; bounds?: Rectangle; maximized?: boolean; port?: number };
+type Prefs = { material?: string; ground?: string; bounds?: Rectangle; maximized?: boolean; port?: number; keepAwake?: boolean };
 const prefsFile = () => join(app.getPath("userData"), "shell.json");
 let prefs: Prefs = {};
 let saveTimer: NodeJS.Timeout | undefined;
@@ -202,9 +208,9 @@ const ours = (url: string) => {
   }
 };
 
-function createWindow() {
-  const bounds = visibleBounds(prefs.bounds);
-  win = new BrowserWindow({
+function createWindow(secondary = false) {
+  const bounds = !secondary ? visibleBounds(prefs.bounds) : undefined;
+  const w = new BrowserWindow({
     ...(bounds ?? { width: 1360, height: 860 }),
     minWidth: 880,
     minHeight: 580,
@@ -218,37 +224,55 @@ function createWindow() {
     ...(isMac ? { titleBarStyle: "hidden" as const, trafficLightPosition: LIGHTS, vibrancy: mac ? ("sidebar" as const) : undefined } : { autoHideMenuBar: true }),
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: inspect },
   });
+  windows.set(w.id, w);
+  if (!win || !secondary) win = w;
+  const emitWindowState = () => {
+    if (w.isDestroyed()) return;
+    wc.send("liner:windowState", { maximized: w.isMaximized(), fullScreen: w.isFullScreen(), focused: w.isFocused() });
+  };
+  w.on("focus", () => ((win = w), emitWindowState()));
+  w.on("blur", emitWindowState);
+  w.on("maximize", emitWindowState);
+  w.on("unmaximize", emitWindowState);
   applyMaterial();
 
-  const wc = win.webContents;
+  const wc = w.webContents;
   // Showing the window makes it opaque again, so the material goes back on each time it's shown
   // (on launch, from the Dock, from a second launch); without this, Desktop never showed through.
-  win.on("show", () => applyMaterial());
-  win.once("ready-to-show", () => {
+  w.on("show", () => applyMaterial());
+  w.once("ready-to-show", () => {
     // Maximized only now: maximize() shows a hidden window, which would show it before its first paint.
     // It was made at its normal frame, so leaving maximized goes back there.
-    if (prefs.maximized) win?.maximize();
-    win?.show();
+    if (!secondary && prefs.maximized) w.maximize();
+    w.show();
     app.focus({ steal: true });
   });
-  wc.on("did-finish-load", syncLights);
+  wc.on("did-finish-load", () => {
+    syncLights();
+    emitWindowState();
+    if (pendingTarget) {
+      const target = pendingTarget;
+      pendingTarget = null;
+      dispatchLaunchTarget(target);
+    }
+  });
   // The material again on the way in and out of full screen: a see-through window is solid while
   // it's full screen (applyMaterial).
-  win.on("enter-full-screen", () => (syncLights(), applyMaterial()));
+  w.on("enter-full-screen", () => (syncLights(), applyMaterial(), emitWindowState()));
   // Electron puts the lights back only after the window has left full screen.
-  win.on("leave-full-screen", () => (setTimeout(syncLights, 300), applyMaterial()));
+  w.on("leave-full-screen", () => (setTimeout(syncLights, 300), applyMaterial(), emitWindowState()));
   const keepFrame = () => {
-    if (!win || win.isFullScreen()) return;
-    prefs.maximized = win.isMaximized();
-    if (!prefs.maximized) prefs.bounds = win.getNormalBounds();
+    if (secondary || w.isFullScreen()) return;
+    prefs.maximized = w.isMaximized();
+    if (!prefs.maximized) prefs.bounds = w.getNormalBounds();
     savePrefs();
   };
-  win.on("resize", keepFrame);
-  win.on("move", keepFrame);
+  w.on("resize", keepFrame);
+  w.on("move", keepFrame);
 
-  // Closing the window keeps the app (and its sessions) running; the Dock icon brings it back.
-  win.on("close", (e) => {
-    if (quitting || !win) return;
+  // Closing the primary window on Mac keeps the app (and its sessions) running; secondary windows close normally.
+  w.on("close", (e) => {
+    if (quitting || secondary || windows.size > 1) return;
     // Elsewhere closing the window quits, so it asks first while sessions work, as quitting does:
     // asked after the window has gone, Cancel would leave the app running with no window.
     if (!isMac) {
@@ -256,12 +280,15 @@ function createWindow() {
       return;
     }
     e.preventDefault();
-    if (win.isFullScreen()) {
-      win.once("leave-full-screen", () => win?.hide());
-      win.setFullScreen(false);
-    } else win.hide();
+    if (w.isFullScreen()) {
+      w.once("leave-full-screen", () => w.hide());
+      w.setFullScreen(false);
+    } else w.hide();
   });
-  win.on("closed", () => (win = null));
+  w.on("closed", () => {
+    windows.delete(w.id);
+    if (win === w) win = [...windows.values()][0] ?? null;
+  });
 
   // Links out of the app open in your browser; the app itself stays on the engine's origin. A link
   // that asks for a new window (target="_blank", like the PR card's View pull request) does too.
@@ -290,14 +317,42 @@ function createWindow() {
   // there's no reload to reach for: it's loaded again, three times a minute at most (T3 Code:
   // window/DesktopWindow.ts).
   let gone: number[] = [];
+  // The question after the third time is up: a page that goes again meanwhile doesn't put another over it.
+  let askingAfterCrash = false;
   wc.on("render-process-gone", (_e, d) => {
     console.error("[shell] the page went:", d.reason, d.exitCode);
-    const now = Date.now();
-    gone = gone.filter((t) => now - t < 60_000);
-    if (quitting || d.reason === "clean-exit" || d.reason === "launch-failed" || gone.length >= 3) return;
-    gone.push(now);
+    if (quitting || d.reason === "clean-exit" || d.reason === "launch-failed") return;
+    const step = afterCrash(gone, Date.now(), askingAfterCrash);
+    gone = step.gone;
+    if (step.then === "nothing") return;
+    if (step.then === "ask") {
+      askingAfterCrash = true;
+      void dialog
+        .showMessageBox(w, {
+          type: "error",
+          message: "Liner Code's window stopped responding",
+          detail: "The window crashed repeatedly within the last minute. Active engine sessions are still running.",
+          buttons: ["Reload Window", "Show Engine Log", "Quit"],
+          defaultId: 0,
+          cancelId: 2,
+        })
+        .then(({ response }) => {
+          if (response === 0) {
+            gone = [];
+            if (!w.isDestroyed()) wc.reload();
+          } else if (response === 1) {
+            shell.showItemInFolder(logFile);
+          } else if (response === 2) {
+            quitting = true;
+            syncKeepAwake();
+            app.quit();
+          }
+        })
+        .finally(() => (askingAfterCrash = false));
+      return;
+    }
     setTimeout(() => {
-      if (win && !win.isDestroyed()) wc.reload();
+      if (!w.isDestroyed()) wc.reload();
     }, 500);
   });
 
@@ -314,9 +369,48 @@ function createWindow() {
     else if (text) items.push({ role: "copy" });
     if (isMac && text) items.push({ type: "separator" }, { label: `Look Up “${text.length > 24 ? `${text.slice(0, 24)}…` : text}”`, click: () => wc.showDefinitionForSelection() });
     if (inspect) items.push({ type: "separator" }, { label: "Inspect Element", click: () => wc.inspectElement(p.x, p.y) });
-    if (items.length && win) Menu.buildFromTemplate(items).popup({ window: win });
+    if (items.length && !w.isDestroyed()) Menu.buildFromTemplate(items).popup({ window: w });
   });
-  return win;
+  return w;
+}
+
+function openNewWindow() {
+  const url = devUrl || (appOrigin ? `${appOrigin}/` : "");
+  if (!url) return show();
+  const w = createWindow(true);
+  void w.loadURL(url);
+}
+
+function dispatchLaunchTarget(target: LaunchTarget) {
+  show();
+  if (!win || !loaded && !devUrl) {
+    pendingTarget = target;
+    return;
+  }
+  if (target.kind === "thread") return send(`open:${target.id}`);
+  const ask = launchQuestion(target);
+  if (!ask) return send(`open-path:${target.path}`);
+  void dialog.showMessageBox(win, { type: "question", message: ask.message, detail: ask.detail, buttons: ["Add Project", "Cancel"], defaultId: 1, cancelId: 1 }).then(({ response }) => {
+    if (response === 0) send(`open-path:${target.path}`);
+  });
+}
+
+/** How many of argv's first arguments are the app itself: under `electron <path>` (npm run app:dev) its folder is one. */
+const ownArgs = () => (process.defaultApp ? 2 : 1);
+
+/** The menu-bar item's sessions read from the engine, once no window's page is alive to send them (window-state.ts, engineStatusDue). */
+async function syncTrayFromEngine() {
+  if (!loaded && !devUrl) return;
+  if (!engineStatusDue([...windows.values()].map((w) => ({ destroyed: w.isDestroyed() })))) return;
+  try {
+    const s = (await engineRpc("state.get", {}, 2500)) as { threads?: { id: string; title: string; status: string; archived?: boolean; sideOf?: string }[] };
+    if (Array.isArray(s?.threads)) {
+      statusItem.syncFromThreads(s.threads);
+      syncKeepAwake();
+    }
+  } catch {
+    // engine not ready or shutting down
+  }
 }
 
 function show() {
@@ -340,8 +434,8 @@ function send(command: string) {
   stuck but still holds its connection open would otherwise keep the caller waiting for ever.
 */
 async function engineRpc(method: string, params: Record<string, unknown>, ms = 5000) {
-  // npm run dev's engine is on 7317 (scripts/dev.ts), with the dev token the page has too.
-  const port = devUrl ? 7317 : engine.port;
+  // npm run dev's engine defaults to 7317 (scripts/dev.ts) unless overridden by LINER_PORT.
+  const port = devUrl ? Number(process.env.LINER_PORT) || 7317 : engine.port;
   const token = devUrl ? boot.token : engine.token;
   const r = await fetch(`http://127.0.0.1:${port}/rpc`, { method: "POST", headers: { "content-type": "application/json", "x-liner-token": token }, body: JSON.stringify({ method, params }), signal: AbortSignal.timeout(ms) });
   // From here the engine has answered: what goes wrong now is its word, not its silence (`answered`, for a quit that waits).
@@ -353,12 +447,31 @@ async function engineRpc(method: string, params: Record<string, unknown>, ms = 5
   return body.result;
 }
 
+let blockerId: number | null = null;
+/** Prevents app suspension (display may still sleep/lock) while agent turns are active and keep-awake is enabled. */
+function syncKeepAwake() {
+  const want = prefs.keepAwake !== false && statusItem.running() > 0 && !quitting;
+  if (want && blockerId === null) {
+    blockerId = powerSaveBlocker.start("prevent-app-suspension");
+  } else if (!want && blockerId !== null) {
+    if (powerSaveBlocker.isStarted(blockerId)) powerSaveBlocker.stop(blockerId);
+    blockerId = null;
+  }
+}
+
 const statusItem = new StatusItem({
   open: (id) => (id ? send(`open:${id}`) : show()),
   quit: () => app.quit(),
   quitNow: () => {
     quitting = true;
+    syncKeepAwake();
     app.quit();
+  },
+  keepAwake: () => prefs.keepAwake !== false,
+  toggleKeepAwake: () => {
+    prefs.keepAwake = prefs.keepAwake === false;
+    savePrefs();
+    syncKeepAwake();
   },
   rpc: engineRpc,
 });
@@ -367,6 +480,7 @@ async function fail(message: string) {
   const r = dialog.showMessageBoxSync({ type: "error", message: "Liner Code can't start", detail: message, buttons: ["Quit", "Show the log"], defaultId: 0 });
   if (r === 1) await shell.openPath(logFile);
   quitting = true;
+  syncKeepAwake();
   app.quit();
 }
 
@@ -495,7 +609,9 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "status":
       // The page saw something change: a quit that waits looks again now rather than at its next turn.
       if (waiting) setTimeout(() => void checkWaiting(), 300);
-      return statusItem.set(p as unknown as TrayStatus);
+      statusItem.set(p as unknown as TrayStatus);
+      syncKeepAwake();
+      return;
     case "reveal":
       if (str(p.path)) shell.showItemInFolder(local(str(p.path)));
       return;
@@ -519,6 +635,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "relaunch":
       // Start without add-ons: the engine left its mark for the next start, and this is that start.
       quitting = true;
+      syncKeepAwake();
       // An update waiting goes in now, and its swap opens the app: relaunching as well would start
       // this copy just as it's replaced.
       // One that doesn't check out is dropped instead, and the engine that starts next says so.
@@ -557,6 +674,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       if (put !== "started") throw new Error(app.isPackaged ? "There's no downloaded update to put in." : "This copy runs from source: pull and build it instead.");
       updating = true;
       quitting = true;
+      syncKeepAwake();
       setImmediate(() => app.quit());
       return;
     }
@@ -647,6 +765,7 @@ const opener: Opener = {
   isMac,
   isWin,
   editors: EDITORS,
+  cliEditors: ["code", "cursor", "zed"],
   isFile: (p) => {
     try {
       return statSync(p).isFile();
@@ -750,7 +869,7 @@ function buildMenu() {
     ...(isMac
       ? [{ label: "Liner Code", submenu: [{ role: "about", label: "About Liner Code" }, { label: "Check for Updates…", click: () => send("updates") }, { type: "separator" }, settings, { type: "separator" }, { role: "hide", label: "Hide Liner Code" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit", label: "Quit Liner Code" }] } satisfies MenuItemConstructorOptions]
       : []),
-    { label: "File", submenu: [item(menuFace === "design" ? "New Design" : menuFace === "security" ? "New Scan" : "New Session", "new", "mod+n"), item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : isWin ? "Exit" : "Quit" }] },
+    { label: "File", submenu: [item(menuFace === "design" ? "New Design" : menuFace === "security" ? "New Scan" : "New Session", "new", "mod+n"), { label: "New Window", accelerator: "CommandOrControl+Shift+N", click: () => openNewWindow() }, item("Add a Project…", "open-project", "mod+o"), { type: "separator" }, ...(isMac ? [] : [settings, { type: "separator" } as const]), { role: isMac ? "close" : "quit", label: isMac ? "Close Window" : isWin ? "Exit" : "Quit" }] },
     { label: "Edit", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
     {
       label: "View",
@@ -772,6 +891,7 @@ function buildMenu() {
     {
       role: "help",
       submenu: [
+        ...(!isMac ? [{ label: "Check for Updates…", click: () => send("updates") }, { role: "about", label: "About Liner Code" } as MenuItemConstructorOptions, { type: "separator" as const }] : []),
         { label: "Report a Problem…", click: () => void reportProblem().catch((e: unknown) => dialog.showErrorBox("Liner Code couldn't make the report", e instanceof Error ? e.message : String(e))) },
         { label: "Liner Code on GitHub", enabled: Boolean(releasesRepo()), click: () => void shell.openExternal(`https://github.com/${releasesRepo()}`) },
       ],
@@ -835,16 +955,27 @@ async function reportProblem() {
   writeFileSync(join(dir, "versions.txt"), `${[...versions, "", ...tools].join("\n")}\n`);
   if (existsSync(logFile)) copyFileSync(logFile, join(dir, "engine.log"));
   if (existsSync(previousLogFile)) copyFileSync(previousLogFile, join(dir, "engine.previous.log"));
-  const zip = join(app.getPath("downloads"), `${basename(dir)}.zip`);
-  // Windows 10 and later have bsdtar in System32, which writes a zip for a .zip name (-a).
-  const [zipper, zipArgs] = isWin ? [join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"), ["-a", "-c", "-f", zip, "-C", tmpdir(), basename(dir)]] : ["ditto", ["-c", "-k", "--keepParent", dir, zip]];
+  let archive = join(app.getPath("downloads"), `${basename(dir)}.zip`);
+  // Windows 10+ has bsdtar, macOS has ditto, and Linux uses zip with a tar.gz fallback.
+  const runCmd = (cmd: string, args: string[], cwd?: string) => new Promise<void>((done, fail) => execFile(cmd, args, { cwd, windowsHide: true }, (e) => (e ? fail(e) : done())));
   try {
-    await new Promise<void>((done, fail) => execFile(zipper, zipArgs, { windowsHide: true }, (e) => (e ? fail(e) : done())));
+    if (isWin) {
+      await runCmd(join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"), ["-a", "-c", "-f", archive, "-C", tmpdir(), basename(dir)]);
+    } else if (isMac) {
+      await runCmd("ditto", ["-c", "-k", "--keepParent", dir, archive]);
+    } else {
+      try {
+        await runCmd("zip", ["-r", archive, basename(dir)], tmpdir());
+      } catch {
+        archive = join(app.getPath("downloads"), `${basename(dir)}.tar.gz`);
+        await runCmd("tar", ["-czf", archive, "-C", tmpdir(), basename(dir)]);
+      }
+    }
   } finally {
     // The logs' unzipped copy goes, zipped or not: it holds folder names and what the agents did.
     rmSync(dir, { recursive: true, force: true });
   }
-  shell.showItemInFolder(zip);
+  shell.showItemInFolder(archive);
   const repo = releasesRepo();
   if (repo) void shell.openExternal(`https://github.com/${repo}/issues/new?template=bug.yml&version=${encodeURIComponent(app.getVersion())}${isMac ? `&macos=${encodeURIComponent(process.getSystemVersion())}` : ""}`);
 }
@@ -858,7 +989,18 @@ function resources(): Paths | null {
   return existsSync(paths.engine) ? paths : null;
 }
 
-app.on("second-instance", show);
+app.setAsDefaultProtocolClient("liner-code");
+app.on("open-url", (e, url) => {
+  e.preventDefault();
+  const target = parseDeepLink(url);
+  if (target) dispatchLaunchTarget(target);
+  else show();
+});
+app.on("second-instance", (_e, argv, workingDirectory) => {
+  const target = extractLaunchTarget(argv, workingDirectory, undefined, ownArgs());
+  if (target) dispatchLaunchTarget(target);
+  else show();
+});
 app.on("activate", show);
 /**
   ⌘Q while sessions work asks first, in a native alert, since quitting stops their turns (T3 Code
@@ -899,6 +1041,7 @@ async function lookThenAsk() {
   }
   if (held > 0) return askToQuit(statusItem.running(), held);
   quitting = true;
+  syncKeepAwake();
   app.quit();
 }
 async function askToQuit(working: number, held = 0) {
@@ -921,6 +1064,7 @@ async function askToQuit(working: number, held = 0) {
     if (canWait && response === 0) return waitThenQuit();
     if (response !== (canWait ? 1 : 0)) return;
     quitting = true;
+    syncKeepAwake();
     app.quit();
   } finally {
     asking = false;
@@ -984,6 +1128,7 @@ async function checkWaiting() {
     if (!r.quit) return;
     clearInterval(waitTimer);
     quitting = true;
+    syncKeepAwake();
     app.quit();
   } catch (e) {
     // The engine is restarting or busy: the next look tries again. An answer that says no is the engine there, so work may
@@ -995,6 +1140,7 @@ async function checkWaiting() {
     else if (w.unanswered(Date.now())) {
       clearInterval(waitTimer);
       quitting = true;
+      syncKeepAwake();
       app.quit();
     }
   } finally {
@@ -1011,6 +1157,7 @@ app.on("before-quit", (e) => {
     return;
   }
   quitting = true;
+  syncKeepAwake();
   // Windows takes the engine down with the app, mid-save: the app waits for it to finish first.
   if (isWin && !engineGone) {
     e.preventDefault();
@@ -1058,6 +1205,9 @@ void app.whenReady().then(async () => {
   buildMenu();
   startMenu();
   createWindow();
+  setInterval(() => void syncTrayFromEngine(), 15_000).unref();
+  const initialTarget = extractLaunchTarget(process.argv, process.cwd(), undefined, ownArgs());
+  if (initialTarget) pendingTarget = initialTarget;
   setTimeout(() => oldScripts(tmpdir()), 5000);
   mac?.quietWritingBadge();
   // The page reads your name (liner:boot) as it loads: the dev server's page at once, the engine's

@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.ts",
+    "attach": "node engine/src/attach.ts",
     "dev:engine": "npm run dev -w engine",
     "dev:ui": "npm run dev -w ui",
     "build": "npm run build -w ui",

@@ -1445,6 +1445,10 @@
   font: inherit;
   font-size: 12px;
 }
+.lc-dev-filter:focus-visible {
+  outline: 2px solid var(--l-accent);
+  outline-offset: 1px;
+}
 
 /* ---------- Pull request and runs ---------- */
 .lc-pr,
@@ -5591,10 +5595,10 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   stacks over the output.
 */
 .lc-thread[data-below] {
-  --lc-below-h: clamp(180px, 36%, 340px);
+  --lc-below-h: clamp(140px, 34%, 340px);
 }
 .lc-thread[data-below] > .lc-thread-foot {
-  bottom: var(--lc-below-h);
+  bottom: min(var(--lc-below-h), calc(100% - 140px));
 }
 /* Over the bottom panel's top line the thread doesn't run on to the window's edge, so nothing of it
    shows in the strip under the composer: the fade ends solid at the card's foot (12px up). */
@@ -5606,13 +5610,38 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 34px), transparent calc(100% - 14px));
 }
 .lc-below {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
-  height: var(--lc-below-h);
-  min-height: 0;
+  height: min(var(--lc-below-h), calc(100% - 140px));
+  min-height: 120px;
   border-top: 1px solid var(--l-line);
   animation: lc-below-in 260ms var(--l-ease-out) backwards;
+}
+.lc-below-grip {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  left: 0;
+  z-index: 4;
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+.lc-below-grip::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 140ms ease;
+}
+.lc-below-grip:hover::after,
+.lc-below-grip:focus-visible::after {
+  background: var(--l-accent);
 }
 @keyframes lc-below-in {
   from {

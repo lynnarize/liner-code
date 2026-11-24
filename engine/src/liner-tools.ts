@@ -17,6 +17,10 @@ export type ToolDef = { name: string; description: string; inputSchema: Schema }
 const none: Schema = { type: "object", properties: {} };
 /** Set in the server's environment only for a pair's lead: no one else is offered `sidekick`. */
 export const PAIR_ENV = "LINER_SIDEKICK";
+/** Set in the server's environment only for sessions whose provider gets Liner Code's `subagent` tool. */
+export const SUBAGENT_ENV = "LINER_SUBAGENT";
+/** Set in the server's environment for a Swarm session: "coordinator" (lead), "orchestrator" (depth-1 manager), or "worker" (leaf specialist). */
+export const SWARM_ENV = "LINER_SWARM";
 /**
   Set in the server's environment only for a Liner Security session (Thread.security). "scan": every security_* tool and
   none of Liner's others (a scan only reads; nothing of Liner's that runs or reaches things), bar a pair lead's sidekick.
@@ -33,8 +37,15 @@ const securityOffered = (name: string, env: Record<string, string | undefined>) 
   if (level === "read") return !security || SECURITY_READS.includes(name);
   return !security;
 };
-/** The tools a session is offered: all of them for a pair's lead, all but `sidekick` for anyone else; Liner Security's only in its sessions. */
-export const toolsFor = (env: Record<string, string | undefined>) => TOOLS.filter((t) => (t.name !== "sidekick" || env[PAIR_ENV] === "1") && securityOffered(t.name, env));
+const SWARM_WORKER_TOOLS = new Set(["swarm_post", "swarm_read"]);
+const SWARM_ALL_TOOLS = new Set(["swarm_manage", "swarm_post", "swarm_read"]);
+/** The tools a session is offered: `sidekick` only for a pair's lead, `subagent` only where the provider has no native subagents, `swarm_*` only in Swarm sessions (workers get board tools; orchestrators also get swarm_manage), and Liner Security's only in its sessions. */
+export const toolsFor = (env: Record<string, string | undefined>) => {
+  const swarm = env[SWARM_ENV];
+  if (swarm === "worker") return TOOLS.filter((t) => SWARM_WORKER_TOOLS.has(t.name));
+  if (swarm === "orchestrator") return TOOLS.filter((t) => SWARM_ALL_TOOLS.has(t.name));
+  return TOOLS.filter((t) => (t.name !== "sidekick" || env[PAIR_ENV] === "1") && (t.name !== "subagent" || env[SUBAGENT_ENV] === "1") && (!SWARM_ALL_TOOLS.has(t.name) || swarm === "coordinator") && securityOffered(t.name, env));
+};
 export const TOOLS: ToolDef[] = [
   {
     name: "browser_open",
@@ -228,6 +239,77 @@ export const TOOLS: ToolDef[] = [
         fresh: { type: "boolean", description: "Start it over, forgetting your earlier briefs" },
       },
       required: ["brief"],
+    },
+  },
+  {
+    name: "subagent",
+    description: [
+      "Spawns an ephemeral subagent in this folder with a fresh context to handle one focused task and returns its report (10 minutes at most, less where your tool won't wait that long on one call).",
+      "Use mode: \"read\" (the default) for codebase exploration, audits, analysis or planning: multiple read-only subagents run in parallel when you call this tool multiple times in one turn, and they cannot edit files.",
+      "Use mode: \"write\" for bounded implementation tasks: write subagents run one at a time in this folder under the session's access and return the files they changed as Liner Code measured them.",
+      "Make prompt self-contained (goal, paths, constraints, what to report): the subagent knows nothing of this conversation and cannot ask the person questions.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short label for what this subagent is doing (a few words)" },
+        prompt: { type: "string", description: "Self-contained instructions: the goal, files/folders to inspect or change, constraints, and what to report" },
+        mode: { type: "string", enum: ["read", "write"], description: "read (default, parallel, read-only) or write (serialized, can edit files when this session allows edits)" },
+        done_when: { type: "string", description: "Optional check or deliverable that defines when the subagent is done" },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "swarm_manage",
+    description:
+      "Manages your Liner Code Teamwork or Swarm roster, Overview plan and isolated git worktrees. Actions: add (spawn a named worker, homogeneous copies via n, sharded slices via tasks, or fork context from an existing member; workspace 'share' or 'branch' for isolated git worktree writers or 'inherit' for read-only explorers/verifiers), skip (record an optional Teamwork role such as Task Interviewer as skipped), plan (set Overview goal, tasks and outcome workstreams), status (inspect roster and RAM slots), models (list available '<provider>:<model>' refs across CLIs and APIs), model (hot-swap a worker's model across any provider), land (refused: only the person merges a worker's worktree into their checkout, from the Agents panel; tell them which workers are ready), title (name the swarm), or kill (permanently end a worker and prune its clean worktree).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["add", "skip", "plan", "status", "models", "model", "land", "title", "kill"], description: "Management action to perform" },
+        name: { type: "string", description: "Worker roster name (lowercase a-z, 0-9, - or _, up to 24 chars; base name when n or tasks is set), for add, skip, model, land or kill" },
+        role: { type: "string", description: "Clear human-readable title shown in the panel (e.g. 'Project Orchestrator', 'Victory Auditor', 'Backend Fixer'), for add or skip" },
+        can_delegate: { type: "boolean", description: "Allow this Teamwork member (e.g. Project Orchestrator) to spawn leaf specialist workers under itself (max depth 2), for add" },
+        n: { type: "number", description: "Optional count (2..8) of homogeneous copies to spawn (<name>-1..<name>-<n>) sharing brief, for add" },
+        tasks: { type: "array", items: { type: "string" }, description: "Optional per-worker slice targets (up to 8) spawning <name>-1..<name>-<k>, each combining brief with its slice, for add" },
+        fork: { type: "string", description: "Optional existing member name (or 'coordinator') whose recent brief/board context seeds the new worker, for add" },
+        model: { type: "string", description: "Optional '<provider>:<model>' ref to pin or swap to, for add or model" },
+        workspace: { type: "string", enum: ["inherit", "share", "branch"], description: "inherit (shared folder, read-only default) or share/branch (isolated git worktree for writers), for add" },
+        mode: { type: "string", enum: ["read", "write"], description: "read (cannot edit files) or write (can edit files), for add" },
+        channels: { type: "array", items: { type: "string" }, description: "Optional channel names (without #) besides main, for add" },
+        brief: { type: "string", description: "Self-contained assignment: what the worker owns and what done looks like, for add" },
+        reason: { type: "string", description: "Why the model is being switched or why an optional role was skipped, for model or skip" },
+        title: { type: "string", description: "Short swarm title, for title" },
+        plan: { type: "object", description: "Overview plan { goal: { title, line }, tasks: { worker: summary }, threads: [{ id, title, goal, tasks }] }, for plan" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "swarm_post",
+    description:
+      "Posts a message to the Swarm's shared board. Include @mentions (like @coordinator, @backend or @all) to wake teammates automatically — sleeping workers hibernate at 0 MB RAM until mentioned, so post your update and end your turn rather than polling.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Concise update, result, blocker, or handoff (use @name to wake teammates; coordinator posts '[done] ...' when finished)" },
+        to: { type: "array", items: { type: "string" }, description: "Optional explicit recipient names besides @mentions in text" },
+        channel: { type: "string", description: "Optional channel name (defaults to main)" },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "swarm_read",
+    description: "Reads messages from the Swarm's shared board since a sequence number, and optionally inspects every member's live state (working, waiting, hibernated, queued) and active RAM slots.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "number", description: "Return posts with seq > since (default 0)" },
+        channel: { type: "string", description: "Optional channel filter (without #)" },
+        status: { type: "boolean", description: "Include live roster status and active slot counts" },
+      },
     },
   },
   {

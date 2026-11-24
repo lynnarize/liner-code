@@ -126,7 +126,7 @@ export async function openInLinerDesign(thread: Thread, d: { design: string; tit
     if (!cwd) return;
     // Liner Design's store loads only now, when it's asked for.
     const { design } = await import("./design/store");
-    const file = await design.adopt(cwd, { title: d.title, html, size: d.size });
+    const file = await design.adopt(cwd, { title: d.title, html, size: d.size, threadId: thread.id });
     window.dispatchEvent(new CustomEvent("lc:open-liner-design", { detail: { threadId: thread.id, cwd, file } }));
   } catch (e) {
     toast.error(e instanceof Error ? e.message : String(e));

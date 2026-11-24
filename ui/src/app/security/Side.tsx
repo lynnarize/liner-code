@@ -92,14 +92,21 @@ export function SecuritySide() {
   const providers = useEngine((s) => s.providers);
   const [view, setView] = useState<View>(readView);
   const [shut, setShut] = useState<string[]>(readShut);
+  const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState<string | null>(null);
   useMinute();
   const now = Date.now();
   const on = (kind: SecurityPage["kind"]) => (page.kind === kind ? "page" : undefined);
-  // Archived since the engine's answer (security.side leaves archived ones out, but isn't asked again when one is archived): left out here too.
-  const fixes = (data?.fixes ?? []).map((id) => threads.find((t) => t.id === id)).filter((t): t is Thread => Boolean(t) && !t!.archived && !hidden(t!.projectId));
+  // Archived fixes/asks are hidden by default unless the user toggles Show archived in the Sessions menu.
+  const fixes = showArchived
+    ? threads.filter((t) => !t.sideOf && t.archived && !hidden(t.projectId) && t.security?.kind === "fix").sort((a, b) => b.updatedAt - a.updatedAt)
+    : (data?.fixes ?? []).map((id) => threads.find((t) => t.id === id)).filter((t): t is Thread => Boolean(t) && !t!.archived && !hidden(t!.projectId));
   // Sessions that ask about a finding, and a scan's fork (tagged as a scan but not one: it has no record of its own), so it
-  // stays reachable: newest first, a few, quiet under their own label. Never a side chat, never an archived session.
-  const asks = threads.filter((t) => !t.sideOf && !t.archived && !hidden(t.projectId) && (t.security?.kind === "ask" || (t.security?.kind === "scan" && (Boolean(t.forkOf) || !t.security.scan)))).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
+  // stays reachable: newest first, a few, quiet under their own label. Never a side chat.
+  const asks = threads
+    .filter((t) => !t.sideOf && Boolean(t.archived) === showArchived && !hidden(t.projectId) && (t.security?.kind === "ask" || (t.security?.kind === "scan" && (Boolean(t.forkOf) || !t.security.scan))))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, showArchived ? 20 : 8);
   // A session's model: its working light in the model's colour, and its mark among the row's facts, as Code's rows have them.
   const refOf = (t: Thread) => t.model ?? agentOf(t.agent, agents, providers).model;
   const brandOf = (t: Thread) => markOf(refOf(t));
@@ -181,6 +188,7 @@ export function SecuritySide() {
       row: (
         <SideRow
           key={`scan:${s.id}`}
+          data-row={s.threadId}
           wrap
           current={current}
           quiet={state === "done"}
@@ -191,7 +199,7 @@ export function SecuritySide() {
           sub={sub}
           tone={state === "needs" && !seen ? "warn" : state === "error" && s.state === "failed" ? "danger" : undefined}
           facts={t && factsOf(t)}
-          pick={opener(() => (s.threadId ? goSecurity({ kind: "scan", threadId: s.threadId }) : goSecurity({ kind: "projects", projectId: s.projectId })))}
+          pick={opener(() => (s.threadId ? goSecurity({ kind: "scan", threadId: s.threadId }) : goSecurity({ kind: "findings", scan: s.id })))}
         />
       ),
     };
@@ -213,6 +221,7 @@ export function SecuritySide() {
       row: (
         <SideRow
           key={`fix:${t.id}`}
+          data-row={t.id}
           wrap
           current={current}
           quiet={state === "done"}
@@ -246,6 +255,7 @@ export function SecuritySide() {
       row: (
         <SideRow
           key={`ask:${t.id}`}
+          data-row={t.id}
           wrap
           current={current}
           quiet={state === "done"}
@@ -270,9 +280,15 @@ export function SecuritySide() {
     };
   };
 
-  const scanItems = (data?.scans ?? []).filter((s) => !hidden(s.projectId)).map(scanItem);
-  const fixItems = fixes.map(fixItem);
-  const askItems = asks.map(askItem);
+  const sq = search?.trim().toLowerCase() ?? "";
+  const matchQ = (text: string, projectId: string) => {
+    if (!sq) return true;
+    const pname = projects.find((p) => p.id === projectId)?.name ?? "";
+    return `${text}\n${pname}`.toLowerCase().includes(sq);
+  };
+  const scanItems = showArchived ? [] : (data?.scans ?? []).filter((s) => !hidden(s.projectId) && matchQ(s.title, s.projectId)).map(scanItem);
+  const fixItems = fixes.filter((t) => matchQ(t.title, t.projectId)).map(fixItem);
+  const askItems = asks.filter((t) => matchQ(t.title, t.projectId)).map(askItem);
   const all = [...scanItems, ...fixItems, ...askItems];
 
   // By folder: the projects in the engine's order, each holding its own; one whose project has gone is kept under its own name.
@@ -299,14 +315,31 @@ export function SecuritySide() {
         </button>
       </div>
 
-      <SideHead title="Sessions" note={view === "kind" ? "By kind" : undefined} menuLabel="What the list shows">
+      <SideHead title="Sessions" note={showArchived ? "Archived" : view === "kind" ? "By kind" : undefined} menuLabel="What the list shows">
         {(close) => (
           <>
             <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
             <Row title="By kind" icon={<I.list size={16} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
+            <Row title={search !== null ? "Hide filter" : "Filter sessions"} icon={<I.search size={16} />} keepIcon on={search !== null} onPick={() => (close(), setSearch((s) => (s === null ? "" : null)))} />
+            <Row title="Show archived" icon={<I.box size={16} />} keepIcon on={showArchived} onPick={() => (close(), setShowArchived((a) => !a))} />
           </>
         )}
       </SideHead>
+      {search !== null && (
+        <div style={{ padding: "0 12px 6px" }}>
+          <input
+            type="search"
+            className="lc-dev-filter"
+            style={{ width: "100%" }}
+            value={search}
+            placeholder="Filter scans and fixes…"
+            aria-label="Filter security sessions"
+            autoFocus
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))}
+          />
+        </div>
+      )}
 
       <div className="ls-side-list lc-sl-list">
         {/* Not answered yet, or not at all: said in the list's place, never a blank list. */}

@@ -22,7 +22,7 @@ import type { DismissReason, SecurityFinding, SecurityFindingAdded, FindingEvent
 import type { Runtime } from "./runtime.ts";
 import { uid, writeAtomic, type Store } from "./store.ts";
 import { bringGitHub, bringSarif, githubReach } from "./security-bringin.ts";
-import { askAbout, fixFinding, scanOptions, startScan, stopScan } from "./security-scan.ts";
+import { askAbout, fixFinding, lookFinding, scanOptions, startScan, stopScan } from "./security-scan.ts";
 import { outside } from "./exec.ts";
 import { maskFinding, maskText } from "./security-checks.ts";
 
@@ -656,6 +656,34 @@ export class Security {
     this.load(projectId).modelFile = rel === MODEL_FILE ? undefined : rel;
     this.save(projectId);
   }
+  /** Reads the raw SECURITY.md text for inline viewing/editing. */
+  modelText(projectId: string): { file: string; exists: boolean; text: string } {
+    const p = this.project(projectId);
+    const file = this.modelFile(projectId);
+    const abs = join(p.path, file);
+    try {
+      if (!insideReal(p.path, abs)) return { file, exists: false, text: "" };
+      const st = statSync(abs);
+      if (st.isFile() && st.size < 1_000_000) return { file, exists: true, text: readFileSync(abs, "utf8") };
+    } catch {
+      // not written yet
+    }
+    return { file, exists: false, text: "" };
+  }
+  /** Writes the project's SECURITY.md safely inside the project folder and returns the updated ThreatModel. */
+  writeModel(projectId: string, text: string): ThreatModel {
+    const p = this.project(projectId);
+    const file = this.modelFile(projectId);
+    const abs = join(p.path, file);
+    const rel = relative(p.path, abs);
+    if (!rel || outside(rel)) throw new Error("The threat model must live inside the project folder.");
+    mkdirSync(resolve(abs, ".."), { recursive: true });
+    if (!insideReal(p.path, resolve(abs, ".."))) throw new Error("The threat model folder points outside the project.");
+    writeAtomic(abs, `${text.replace(/\r\n/g, "\n").trimEnd()}\n`);
+    const next = this.model(projectId);
+    this.changed(["projects"], projectId);
+    return next;
+  }
   /** The threat model as it is on disk now, its areas with what is open in each. */
   model(projectId: string): ThreatModel {
     const p = this.project(projectId);
@@ -802,11 +830,19 @@ export function rpc(x: () => Security): SecurityRpc {
     },
     "security.finding.dismiss": ({ id, reason, note }) => x().dismiss(id, reason, note),
     "security.finding.reopen": ({ id }) => x().reopen(id),
+    "security.finding.note": ({ id, text }) => {
+      const clean = str(text) ? text.trim().slice(0, 2000) : "";
+      if (!clean) throw new Error("Write a note first.");
+      return x().note(id, { kind: "note", text: clean, by: "you" });
+    },
+    "security.finding.look": ({ id, model }) => lookFinding(x(), id, model),
     "security.finding.fix": (p) => fixFinding(x(), p),
     "security.finding.ask": (p) => askAbout(x(), p),
     "security.bringin.github": ({ projectId }) => bringGitHub(x(), projectId),
     "security.bringin.sarif": (p) => bringSarif(x(), p),
     "security.model.read": ({ projectId }) => x().model(projectId),
+    "security.model.text": ({ projectId }) => x().modelText(projectId),
+    "security.model.write": ({ projectId, text }) => x().writeModel(projectId, text),
     "security.scan.options": ({ projectId }) => scanOptions(x(), projectId),
     "security.scan.start": (p) => startScan(x(), p),
     "security.scan.stop": ({ id }) => stopScan(x(), id),

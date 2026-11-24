@@ -200,6 +200,8 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
     return (
       <SideRow
         key={k}
+        data-row={s?.id ?? k}
+        data-design-tab={k}
         current={on}
         quiet={state === "done"}
         mark={<SideMark state={mark} brand={brand} label={seen ? "Waits for your answer" : undefined} />}

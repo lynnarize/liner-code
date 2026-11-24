@@ -14,8 +14,8 @@ type Session = { id: string; title: string };
   you (routines', snoozed and settled ones too), whose turn a quit would stop if its request is still open.
 */
 export type TrayStatus = { show: boolean; working: Session[]; needs: (Session & { waiting: boolean })[]; running?: number; asking?: string[] };
-type Ask = { kind: string; id: string; title?: string; state?: string };
-type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; rpc: (method: string, params: Record<string, unknown>, ms?: number) => Promise<unknown> };
+type Ask = { kind: string; id: string; title?: string; state?: string; questions?: { question: string }[] };
+type Hooks = { open: (threadId?: string) => void; quit: () => void; quitNow: () => void; keepAwake?: () => boolean; toggleKeepAwake?: () => void; rpc: (method: string, params: Record<string, unknown>, ms?: number) => Promise<unknown> };
 
 /**
   A 16-point template image, drawn at 2x: a ring, with a gap or a dot in it. Windows has no
@@ -104,6 +104,20 @@ export class StatusItem {
     if (process.platform === "win32") this.tray.setToolTip(["Liner Code", this.held && waitLine(this.held), working.length && `${working.length} working`, needs.length && `${needs.length} ${needs.length === 1 ? "needs" : "need"} you`].filter(Boolean).join(" · "));
   }
 
+  /** Updates tray status from engine state when the renderer window is hidden or silent. */
+  syncFromThreads(threads: { id: string; title: string; status: string; archived?: boolean; sideOf?: string }[]) {
+    const active = threads.filter((t) => !t.archived && !t.sideOf);
+    const working = active.filter((t) => t.status === "running").map((t) => ({ id: t.id, title: t.title }));
+    const waiting = active.filter((t) => t.status === "waiting").map((t) => ({ id: t.id, title: t.title, waiting: true }));
+    this.set({
+      show: this.status.show,
+      working,
+      needs: waiting,
+      running: working.length,
+      asking: waiting.map((w) => w.id),
+    });
+  }
+
   /** How many sessions have a turn going, as the page last said: quitting asks first while any do. */
   running() {
     return this.status.running ?? this.status.working.length;
@@ -132,7 +146,7 @@ export class StatusItem {
         .slice(0, 8)
         .map(async (n) => {
           const items = (await this.hooks.rpc("thread.items", { id: n.id }, 800).catch(() => [])) as Ask[];
-          asks.set(n.id, items.filter((i) => i.kind === "approval" && i.state === "asking"));
+          asks.set(n.id, items.filter((i) => (i.kind === "approval" || i.kind === "question" || i.kind === "proposal") && i.state === "asking"));
         }),
     );
     const short = (s: string) => (s.length > 48 ? `${s.slice(0, 47)}…` : s);
@@ -142,19 +156,48 @@ export class StatusItem {
       items.push({ type: "separator" }, { label: "Needs you", enabled: false });
       for (const n of needs.slice(0, 10)) {
         items.push({ label: short(n.title), click: () => this.hooks.open(n.id) });
-        for (const a of asks.get(n.id) ?? [])
-          items.push({
-            label: `    Allow: ${short(a.title ?? "the request")}`,
-            click: () => void this.hooks.rpc("approval.answer", { threadId: n.id, itemId: a.id, allow: true }).catch(() => this.hooks.open(n.id)),
-          });
+        for (const a of asks.get(n.id) ?? []) {
+          if (a.kind === "approval") {
+            items.push(
+              {
+                label: `    Allow: ${short(a.title ?? "the request")}`,
+                click: () => void this.hooks.rpc("approval.answer", { threadId: n.id, itemId: a.id, allow: true }).catch(() => this.hooks.open(n.id)),
+              },
+              {
+                label: `    Deny: ${short(a.title ?? "the request")}`,
+                click: () => void this.hooks.rpc("approval.answer", { threadId: n.id, itemId: a.id, allow: false }).catch(() => this.hooks.open(n.id)),
+              },
+            );
+          } else if (a.kind === "question") {
+            const q = a.questions?.[0]?.question ?? "Question waiting";
+            items.push({ label: `    Answer: ${short(q)}`, click: () => this.hooks.open(n.id) });
+          } else if (a.kind === "proposal") {
+            items.push({ label: `    Review plan: ${short(a.title ?? "Plan")}`, click: () => this.hooks.open(n.id) });
+          }
+        }
       }
     }
     if (working.length) {
       items.push({ type: "separator" }, { label: "Working", enabled: false });
-      for (const w of working.slice(0, 10)) items.push({ label: short(w.title), click: () => this.hooks.open(w.id) });
+      for (const w of working.slice(0, 10)) {
+        items.push(
+          { label: short(w.title), click: () => this.hooks.open(w.id) },
+          {
+            label: `    Stop: ${short(w.title)}`,
+            click: () => void this.hooks.rpc("thread.stop", { id: w.id }).catch(() => this.hooks.open(w.id)),
+          },
+        );
+      }
     }
     // While it waits to quit, Open Liner Code calls that off (main.ts, show), and Quit now doesn't ask again.
-    items.push({ type: "separator" }, { label: "Open Liner Code", click: () => this.hooks.open() }, held ? { label: "Quit Now", click: () => this.hooks.quitNow() } : { label: "Quit Liner Code", click: () => this.hooks.quit() });
+    items.push(
+      { type: "separator" },
+      ...(this.hooks.toggleKeepAwake
+        ? [{ label: "Keep awake while working", type: "checkbox" as const, checked: this.hooks.keepAwake?.() ?? true, click: () => this.hooks.toggleKeepAwake?.() }]
+        : []),
+      { label: "Open Liner Code", click: () => this.hooks.open() },
+      held ? { label: "Quit Now", click: () => this.hooks.quitNow() } : { label: "Quit Liner Code", click: () => this.hooks.quit() },
+    );
     this.tray?.popUpContextMenu(Menu.buildFromTemplate(items));
   }
 }

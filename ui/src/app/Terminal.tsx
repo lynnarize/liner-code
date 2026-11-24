@@ -274,7 +274,10 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
       .catch((e) => live && setSt({ error: e instanceof Error ? e.message : String(e) }));
     const selection = t.onSelectionChange(() => setPicked(t.getSelection().trim().slice(0, 8000)));
     const input = t.onData((d) => {
-      if (idRef.current) void rpc("term.write", { id: idRef.current, data: d }).catch(() => {});
+      if (idRef.current)
+        void rpc("term.write", { id: idRef.current, data: d }).catch((e) => {
+          if (live) setSt((s) => ({ ...s, error: e instanceof Error ? e.message : "The terminal stopped answering." }));
+        });
     });
     /*
       The panel resizes it; once the panel has settled the view refits and the shell hears the new
@@ -337,6 +340,41 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
   }, [visible]);
 
   const where = st.cwd && project ? (st.cwd.startsWith(project.path) ? `${project.name}${st.cwd.slice(project.path.length) || ""}` : st.cwd) : "";
+  const [finding, setFinding] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findHit, setFindHit] = useState<{ line: number; total: number } | null>(null);
+  const findInput = useRef<HTMLInputElement>(null);
+
+  const searchScrollback = (query: string, dir: 1 | -1 = 1) => {
+    const t = term.current;
+    const q = query.trim().toLowerCase();
+    if (!t || !q) return void setFindHit(null);
+    const buf = t.buffer.active;
+    const matches: number[] = [];
+    for (let i = 0; i < buf.length; i++) {
+      const line = buf.getLine(i)?.translateToString(true) ?? "";
+      if (line.toLowerCase().includes(q)) matches.push(i);
+    }
+    if (!matches.length) return void setFindHit({ line: 0, total: 0 });
+    const prevIdx = findHit && findHit.line > 0 ? matches.indexOf(findHit.line - 1) : -1;
+    const nextIdx = prevIdx < 0 ? (dir > 0 ? matches.length - 1 : 0) : (prevIdx + dir + matches.length) % matches.length;
+    const targetLine = matches[nextIdx];
+    t.scrollToLine(Math.max(0, targetLine - Math.floor(t.rows / 2)));
+    setFindHit({ line: targetLine + 1, total: matches.length });
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f" && box.current?.closest(".lc-term")?.contains(document.activeElement)) {
+        e.preventDefault();
+        setFinding(true);
+        requestAnimationFrame(() => findInput.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visible]);
 
   const barParts: ReactNode = (
     <>
@@ -385,6 +423,40 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
   return (
     <div className="lc-term">
       {slot ? visible && createPortal(barParts, slot) : <div className="lc-term-bar">{barParts}</div>}
+      {finding && (
+        <div className="lc-find" role="search" aria-label="Find in terminal">
+          <I.search size={13} />
+          <input
+            ref={findInput}
+            value={findQuery}
+            placeholder="Find in terminal output"
+            aria-label="Find in terminal output"
+            onChange={(e) => {
+              setFindQuery(e.target.value);
+              searchScrollback(e.target.value, -1);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setFinding(false);
+                term.current?.focus();
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                searchScrollback(findQuery, e.shiftKey ? -1 : 1);
+              }
+            }}
+          />
+          {findHit && <span className="lc-quiet l-num">{findHit.total ? `line ${findHit.line} (${findHit.total})` : "No match"}</span>}
+          <button type="button" className="lc-ib l-focus" aria-label="Previous match" onClick={() => searchScrollback(findQuery, -1)}>
+            <I.chevU size={12} />
+          </button>
+          <button type="button" className="lc-ib l-focus" aria-label="Next match" onClick={() => searchScrollback(findQuery, 1)}>
+            <I.chevD size={12} />
+          </button>
+          <button type="button" className="lc-ib l-focus" aria-label="Close search" onClick={() => (setFinding(false), term.current?.focus())}>
+            <I.close size={12} />
+          </button>
+        </div>
+      )}
       {st.error && <p className="lc-term-err">{st.error}</p>}
       <div ref={box} className="lc-term-box" onClick={() => term.current?.focus()} />
     </div>

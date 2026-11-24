@@ -69,7 +69,7 @@ const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string;
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
-  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; and the Reviewer, which reads each change before it's yours.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes" },
+  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; the Reviewer; and parallel subagents.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes subagent subagents parallel concurrency workers" },
   { id: "modes", label: "Modes", icon: <I.toggle />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
   { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
   { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "Permissions: what a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
@@ -213,7 +213,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
       save({ notify: true, badge: true, menuBar: true });
       feedback.setEnabled(false);
     },
-    agentic: () => save({ review: true, reviewRounds: 2, reviewSmall: false }),
+    agentic: () => save({ review: true, reviewRounds: 2, reviewSmall: false, maxActiveSubagents: 4 }),
     safety: () => save({ defaultAccess: "auto", guardDestructive: true }),
     git: () => save({ branchPrefix: "liner/" }),
   };
@@ -2351,6 +2351,58 @@ function Outside() {
   );
 }
 
+/** Last-match-wins glob permission matrix (allow / ask / deny) evaluated before Auto allowlists. */
+function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"; pattern: string; action: "allow" | "ask" | "deny" }[]; onSave: (next: { kind: "command" | "path"; pattern: string; action: "allow" | "ask" | "deny" }[]) => void }) {
+  const [kind, setKind] = useState<"command" | "path">("command");
+  const [pattern, setPattern] = useState("");
+  const [action, setAction] = useState<"allow" | "ask" | "deny">("deny");
+  const add = () => {
+    const p = pattern.trim();
+    if (!p) return;
+    onSave([...rules, { kind, pattern: p, action }]);
+    setPattern("");
+  };
+  return (
+    <Group title="Permission rules" note="Glob rules for the steps an agent asks Liner Code to approve, read top to bottom (the last match wins). Deny refuses a step even where Auto or a session grant would let it through. At Full access, and where a tool's own Auto lets a step through, nothing is asked, so no rule is read there.">
+      <Field title="Command and path globs" below>
+        <div className="lc-mem">
+          {rules.map((r, i) => (
+            <div key={`${i}:${r.kind}:${r.pattern}`} className="lc-mem-row">
+              <span className="lc-mono">
+                <b>{r.action.toUpperCase()}</b> · {r.kind}: {r.pattern}
+              </span>
+              <button type="button" className="lc-ib l-focus" aria-label={`Remove rule ${r.pattern}`} onClick={() => onSave(rules.filter((_, j) => j !== i))}>
+                <I.close size={14} />
+              </button>
+            </div>
+          ))}
+          <form
+            className="lc-mem-add"
+            onSubmit={(e) => {
+              e.preventDefault();
+              add();
+            }}
+          >
+            <select className="lc-input" style={{ width: 110, flex: "none" }} aria-label="Rule kind" value={kind} onChange={(e) => setKind(e.target.value as "command" | "path")}>
+              <option value="command">command</option>
+              <option value="path">path</option>
+            </select>
+            <input className="lc-input lc-mono" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder={kind === "command" ? "git push* or npm publish*" : "**/.env* or secrets/**"} aria-label="Glob pattern" />
+            <select className="lc-input" style={{ width: 90, flex: "none" }} aria-label="Rule action" value={action} onChange={(e) => setAction(e.target.value as "allow" | "ask" | "deny")}>
+              <option value="deny">deny</option>
+              <option value="ask">ask</option>
+              <option value="allow">allow</option>
+            </select>
+            <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!pattern.trim()}>
+              Add
+            </button>
+          </form>
+        </div>
+      </Field>
+    </Group>
+  );
+}
+
 function Safety() {
   const s = useEngine((x) => x.settings);
   return (
@@ -2366,6 +2418,7 @@ function Safety() {
         </Field>
         <Field title="Committing, pushing and merging" note="Agents never commit, push or merge on their own. Commit stays a press in the Changes panel." />
       </Group>
+      <PermissionMatrix rules={s.permissionRules ?? []} onSave={(permissionRules) => save({ permissionRules })} />
       <Outside />
     </>
   );
@@ -2643,6 +2696,7 @@ function Projects() {
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
   const showDemo = useEngine((x) => x.settings.showDemo === true);
+  const hooksTrusted = useEngine((x) => x.settings.worktreeHooksTrusted ?? []);
   // The project whose Remove was pressed once, and when: a press inside the settle is the same double-click (confirm.ts).
   const [sure, setSure] = useState<{ id: string; at: number } | null>(null);
   const add = () =>
@@ -2721,18 +2775,30 @@ function Projects() {
             <RulesEditor project={p} />
             <MemoryEditor project={p} />
             {p.git && (
-              <Field title="Set up each new worktree" note="Runs in a session's own worktree before its first turn, since a new worktree has none of this checkout's installed packages.">
-                <input
-                  className="lc-input lc-mono lc-st-setup"
-                  key={p.setup ?? ""}
-                  defaultValue={p.setup ?? ""}
-                  placeholder="npm install"
-                  spellCheck={false}
-                  aria-label={`Setup command for ${p.name}`}
-                  onBlur={(e) => e.target.value.trim() !== (p.setup ?? "") && void rpc("project.update", { id: p.id, setup: e.target.value.trim() }).catch(fail)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                />
-              </Field>
+              <>
+                <Field title="Set up each new worktree" note="Runs in a session's own worktree before its first turn, since a new worktree has none of this checkout's installed packages.">
+                  <input
+                    className="lc-input lc-mono lc-st-setup"
+                    key={p.setup ?? ""}
+                    defaultValue={p.setup ?? ""}
+                    placeholder="npm install"
+                    spellCheck={false}
+                    aria-label={`Setup command for ${p.name}`}
+                    onBlur={(e) => e.target.value.trim() !== (p.setup ?? "") && void rpc("project.update", { id: p.id, setup: e.target.value.trim() }).catch(fail)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                  />
+                </Field>
+                <Field title="Trust .liner/worktree-setup.sh" note="Run this repo's worktree-setup.sh automatically on new worktrees with LINER_WORKTREE_PORT_OFFSET set.">
+                  <NamedSwitch
+                    name={`Trust worktree setup hook for ${p.name}`}
+                    checked={hooksTrusted.includes(p.id)}
+                    onCheckedChange={(on) => {
+                      const next = on ? [...new Set([...hooksTrusted, p.id])] : hooksTrusted.filter((id) => id !== p.id);
+                      save({ worktreeHooksTrusted: next });
+                    }}
+                  />
+                </Field>
+              </>
             )}
           </div>
         );
@@ -2750,12 +2816,23 @@ function Projects() {
 /** What agents saved about a project with memory_add: every new session there starts with it. */
 function MemoryEditor({ project }: { project: Project }) {
   const [facts, setFacts] = useState<string[] | null>(null);
+  const [memFile, setMemFile] = useState<{ exists: boolean; text: string; path: string } | null>(null);
+  const [memDraft, setMemDraft] = useState("");
+  const [memOpen, setMemOpen] = useState(false);
+  const [memSaving, setMemSaving] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [again, setAgain] = useState(0);
   useEffect(() => {
-    void rpc("memory.list", { projectId: project.id })
-      .then((f) => (setFacts(f), setFailed(null)))
+    void Promise.all([rpc("memory.list", { projectId: project.id }), rpc("memory.file.read", { projectId: project.id }).catch(() => null)])
+      .then(([f, m]) => {
+        setFacts(f);
+        if (m) {
+          setMemFile(m);
+          setMemDraft(m.text);
+        }
+        setFailed(null);
+      })
       .catch((e) => setFailed(e instanceof Error ? e.message : String(e)));
   }, [project.id, again]);
   // The field stays while the first read is out, and says a failed one: empty words would read as nothing saved.
@@ -2772,6 +2849,17 @@ function MemoryEditor({ project }: { project: Project }) {
     void rpc("memory.add", { projectId: project.id, fact: draft })
       .then((f) => (setFacts(f), setDraft("")))
       .catch(fail);
+  };
+  const saveFile = () => {
+    setMemSaving(true);
+    void rpc("memory.file.write", { projectId: project.id, text: memDraft })
+      .then((m) => {
+        setMemFile(m);
+        setMemDraft(m.text);
+        toast("Saved MEMORY.md");
+      })
+      .catch(fail)
+      .finally(() => setMemSaving(false));
   };
   return (
     <Field title="What agents remember" note={facts.length ? `${plural(facts.length, "fact")} agents saved here. Every new session in this project starts with them.` : "Nothing yet. Agents save facts here as they learn them (a command that works, a decision you made), and every new session starts with them."} below>
@@ -2796,6 +2884,29 @@ function MemoryEditor({ project }: { project: Project }) {
             Remember
           </button>
         </form>
+        <div style={{ marginTop: 10 }}>
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setMemOpen((o) => !o)}>
+            <I.notes size={13} />
+            {memOpen ? "Hide MEMORY.md" : memFile?.exists ? "Edit MEMORY.md" : "Create MEMORY.md"}
+          </button>
+          {memOpen && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              <textarea
+                className="lc-input lc-mono"
+                rows={6}
+                value={memDraft}
+                onChange={(e) => setMemDraft(e.target.value)}
+                placeholder="# Project Memory\n\n- Build commands, conventions, and decisions distilled from sessions"
+                aria-label={`MEMORY.md for ${project.name}`}
+              />
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={memSaving} onClick={saveFile}>
+                  {memSaving ? "Saving…" : "Save MEMORY.md"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </Field>
   );
@@ -2979,6 +3090,16 @@ function Git() {
             <I.branch size={14} />
             <input value={prefix} onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} spellCheck={false} aria-label="Branch prefix" />
           </span>
+        </Field>
+        <Field title="Worktree layout" note="Place new worktrees under Liner's worktrees folder (sibling) or inside <repo>/.worktrees/ for direnv/monorepo tools.">
+          <div className="lc-seg">
+            <button type="button" className="lc-seg-b l-focus" aria-pressed={(s.worktreePlace ?? "sibling") === "sibling"} onClick={() => save({ worktreePlace: "sibling" })}>
+              Liner home
+            </button>
+            <button type="button" className="lc-seg-b l-focus" aria-pressed={s.worktreePlace === "inside"} onClick={() => save({ worktreePlace: "inside" })}>
+              Inside repo (.worktrees/)
+            </button>
+          </div>
         </Field>
         <Field title="Where worktrees live" note="Another drive or folder, for big projects. Worktrees already made stay where they are.">
           <span className="lc-st-input lc-st-wide">

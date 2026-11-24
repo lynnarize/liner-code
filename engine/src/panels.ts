@@ -11,15 +11,15 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import type { Item, PanelAccess, PanelPlace, Thread } from "../../contracts/src/index.ts";
 import { PANEL_API } from "../../contracts/src/index.ts";
-import { outside } from "./exec.ts";
-import { listFiles } from "./files.ts";
+import { outside, run } from "./exec.ts";
+import { gitStatus, listFiles } from "./files.ts";
 import { readFile } from "./surfaces.ts";
 
 /** The colours a panel is checked in: the app's light theme, as the frame's variables. */
 export const CHECK_THEME = { "--bg": "#f9f9fb", "--surface": "#ffffff", "--well": "#f4f4f5", "--plate": "#ececee", "--ink": "#1f2024", "--ink-2": "#46484f", "--ink-3": "#6b6e76", "--ink-4": "#8b8e95", "--hair": "rgba(31, 32, 36, 0.08)", "--line": "rgba(30, 33, 45, 0.11)", "--accent": "#3a6df0", "--act": "oklch(0.6 0.215 27)", "--act-ink": "#ffffff", "--ok": "oklch(0.6 0.15 152)", "--warn": "oklch(0.7 0.15 65)", "--danger": "oklch(0.6 0.21 25)", "--font": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-display": "'Instrument Sans Variable', 'Instrument Sans', system-ui, sans-serif", "--font-mono": "'Geist Mono', ui-monospace, monospace" };
 
 /** Every call a frame can make (apiVersion 1), and the access each needs. */
-export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys", "ai.ask", "ai.model", "ai.pick"] as const;
+export const PANEL_METHODS = ["context", "files.list", "files.read", "files.search", "git.status", "git.diff", "session.info", "session.commands", "sessions.list", "composer.put", "storage.get", "storage.set", "storage.remove", "storage.keys", "ai.ask", "ai.model", "ai.pick"] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];
 
 /** Where a call comes from: the panel's access, its place, and the session it's beside (none on a page). */
@@ -40,6 +40,8 @@ export function refusal(w: PanelWhere, method: string, apiVersion: number = PANE
     case "files.list":
     case "files.read":
     case "files.search":
+    case "git.status":
+    case "git.diff":
       return a.files === "project" ? needSession() : "It didn't ask to read the project's files (access.files).";
     case "session.info":
     case "session.commands":
@@ -135,8 +137,34 @@ export async function panelCall(env: PanelEnv, w: PanelWhere, method: PanelMetho
     case "files.read": {
       const path = readable(root(), args.path);
       const f = readFile(root(), path);
-      if (f.binary) return { path, size: f.size, text: "", binary: true };
-      return { path, size: f.size, text: f.text.length > 1_000_000 ? f.text.slice(0, 1_000_000) : f.text };
+      if (f.binary) return { path, size: f.size, text: "", binary: true, truncated: false };
+      const hasStart = typeof args.startLine === "number" && Number.isFinite(args.startLine);
+      const hasLimit = typeof args.limit === "number" && Number.isFinite(args.limit);
+      if (hasStart || hasLimit) {
+        const lines = f.text.split("\n");
+        const start = Math.max(1, Math.floor(hasStart ? (args.startLine as number) : 1));
+        const count = hasLimit ? Math.max(1, Math.min(20_000, Math.floor(args.limit as number))) : lines.length;
+        const slice = lines.slice(start - 1, start - 1 + count).join("\n");
+        const over = slice.length > 1_000_000;
+        const text = over ? slice.slice(0, 1_000_000) : slice;
+        const endLine = Math.min(lines.length, start - 1 + count);
+        return { path, size: f.size, text, truncated: over || endLine < lines.length, startLine: start, endLine, totalLines: lines.length };
+      }
+      const truncated = f.text.length > 1_000_000;
+      return { path, size: f.size, text: truncated ? f.text.slice(0, 1_000_000) : f.text, truncated };
+    }
+    case "git.status": {
+      const st = await gitStatus(root());
+      return { ...st, changes: st.changes.filter((c) => !hidden(c.path)) };
+    }
+    case "git.diff": {
+      const file = typeof args.path === "string" && args.path.trim() ? readable(root(), args.path) : undefined;
+      const gitArgs = ["diff", "--relative", ...(file ? ["--", file] : [])];
+      const r = await run("git", gitArgs, { cwd: root(), timeout: 15000 });
+      if (r.code !== 0 && !r.stdout) return { diff: "", truncated: false };
+      const MAX = 500_000;
+      const truncated = r.stdout.length > MAX;
+      return { diff: truncated ? r.stdout.slice(0, MAX) : r.stdout, truncated };
     }
     case "files.search": {
       // Plain words, never patterns: nothing a panel writes runs here, a regular expression included.

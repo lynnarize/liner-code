@@ -31,8 +31,10 @@ import { devices, pagePath, readFile, screenshot } from "./surfaces.ts";
 import { remember, searchSessions } from "./memory.ts";
 import { uid, type Store } from "./store.ts";
 import { script } from "./paths.ts";
-import { PAIR_ENV, SECURITY_ENV } from "./liner-tools.ts";
+import { PAIR_ENV, SECURITY_ENV, SUBAGENT_ENV, SWARM_ENV } from "./liner-tools.ts";
 import { AS_SIDEKICK, sidekickTitle } from "./sidekick.ts";
+import { subagentTitle } from "./subagent.ts";
+import { AS_SWARM, parseSwarmTarget } from "./swarm.ts";
 import * as canvas from "./canvas.ts";
 import * as lean from "./lean.ts";
 import * as buildlinks from "./buildlinks.ts";
@@ -105,6 +107,17 @@ export function linerTitle(tool: string, input: unknown): string {
       return `Ask to add the mode ${s(a.name) || ""}`.trim();
     case "sidekick":
       return sidekickTitle(raw.brief);
+    case "subagent":
+      return subagentTitle(raw.title, raw.prompt);
+    case "swarm_manage": {
+      const act = s(raw.action) || "status";
+      const who = s(raw.name).replace(/^@/, "");
+      return who ? `Swarm ${act} @${who}` : `Swarm ${act}`;
+    }
+    case "swarm_post":
+      return raw.channel ? `Post to #${s(raw.channel)}` : "Post to the swarm board";
+    case "swarm_read":
+      return raw.status ? "Check swarm status" : "Read the swarm board";
     default:
       for (const m of DESIGN) {
         const title = m.titleOf(tool, raw);
@@ -206,6 +219,10 @@ export type AddonHost = {
   toolOf(threadId: string): { label: string; family: string };
   /** A pair's lead hands its sidekick a brief: the runtime runs it and says how it went (sidekick.ts). */
   delegate?(threadId: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<{ text: string; isError?: boolean }>;
+  /** Spawns an ephemeral subagent for providers without native subagents (subagent.ts). */
+  spawnSubagent?(threadId: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<{ text: string; isError?: boolean }>;
+  /** Answers Liner-native Swarm board and orchestration tools (swarm.ts). */
+  swarmTool?(threadId: string, worker: string | undefined, tool: string, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }>;
 };
 
 /** The agent tools a connection reaches, by family, and whether each takes one in mid-session. */
@@ -299,9 +316,10 @@ export class AgentTools {
     `pair`: it's a pair's lead, offered `sidekick` too. `sidekick`: it's that pair's sidekick, with
     a key of its own, so a call it makes is told apart from the lead's (it may not hand work on).
   */
-  serverFor(threadId: string, o: { pair?: boolean; sidekick?: boolean } = {}): { command: string; args: string[]; env: Record<string, string>; key: string } | null {
+  serverFor(threadId: string, o: { pair?: boolean; sidekick?: boolean; subagent?: boolean; swarm?: "coordinator" | "orchestrator" | "worker"; swarmWorker?: string } = {}): { command: string; args: string[]; env: Record<string, string>; key: string } | null {
     if (!this.url) return null;
-    const who = o.sidekick ? `${threadId}${AS_SIDEKICK}` : threadId;
+    const isSubSwarm = o.swarm === "worker" || o.swarm === "orchestrator";
+    const who = isSubSwarm && o.swarmWorker ? `${threadId}${AS_SWARM}${o.swarmWorker}` : o.sidekick ? `${threadId}${AS_SIDEKICK}` : threadId;
     let key = [...this.keys].find(([, t]) => t === who)?.[0];
     if (!key) {
       key = randomBytes(18).toString("hex");
@@ -326,7 +344,7 @@ export class AgentTools {
     const held = this.store.threads?.find((t) => t.id === threadId);
     const tag = held?.security;
     const level = !tag ? undefined : tag.kind !== "scan" ? "read" : tag.scan && !held?.sideOf ? "scan" : "scan-read";
-    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY_FILE: keyFile, ...(o.pair && !o.sidekick ? { [PAIR_ENV]: "1" } : {}), ...(level ? { [SECURITY_ENV]: level } : {}) }, key };
+    return { command: process.execPath, args: [script("mcp")], env: { ...electron, LINER_SURFACE_URL: `${this.url}/surface`, LINER_SURFACE_KEY_FILE: keyFile, ...(o.pair && !o.sidekick && !isSubSwarm ? { [PAIR_ENV]: "1" } : {}), ...(o.subagent && !o.sidekick && !isSubSwarm ? { [SUBAGENT_ENV]: "1" } : {}), ...(o.swarm ? { [SWARM_ENV]: o.swarm } : {}), ...(level && !isSubSwarm ? { [SECURITY_ENV]: level } : {}) }, key };
   }
 
   threadOf(key: string) {
@@ -336,7 +354,19 @@ export class AgentTools {
   /** Forgets every key of a thread that never came to be (a session opened ahead of it that no thread took): those keys reach nothing now. */
   forget(threadId: string) {
     for (const [key, who] of this.keys) {
-      if (who !== threadId && who !== `${threadId}${AS_SIDEKICK}`) continue;
+      if (who !== threadId && who !== `${threadId}${AS_SIDEKICK}` && !who.startsWith(`${threadId}${AS_SWARM}`)) continue;
+      this.keys.delete(key);
+      const file = this.keyFiles.get(key);
+      if (file) rmSync(file, { force: true });
+      this.keyFiles.delete(key);
+    }
+  }
+
+  /** Removes a single killed swarm worker's surface key file. */
+  forgetSwarmWorker(threadId: string, worker: string) {
+    const target = `${threadId}${AS_SWARM}${worker}`;
+    for (const [key, who] of this.keys) {
+      if (who !== target) continue;
       this.keys.delete(key);
       const file = this.keyFiles.get(key);
       if (file) rmSync(file, { force: true });
@@ -397,33 +427,52 @@ export class AgentTools {
   }
 
 
-  /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it. `gone`: its caller let go of the call. */
+  /** `threadId` as threadOf gave it: a sidekick's key names its thread with AS_SIDEKICK after it, a swarm worker's with AS_SWARM. `gone`: its caller let go of the call. */
   async call(threadId: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<McpResult> {
     // A model that takes no pictures never gets one (OpenCode would put "Cannot read image" in its place, another API may refuse the request).
-    const sidekick = threadId.endsWith(AS_SIDEKICK);
+    const parsed = parseSwarmTarget(threadId);
+    const sidekick = !parsed.worker && threadId.endsWith(AS_SIDEKICK);
+    const own = parsed.worker ? parsed.threadId : sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId;
     let sees = true;
     try {
-      sees = this.host?.seesPictures?.(sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId, sidekick) ?? true;
+      sees = this.host?.seesPictures?.(own, sidekick) ?? true;
     } catch {
       // a thread that's gone: its call fails below as it would have
     }
     // A security scan (its side chats and forks too) only reads: Liner's tools that run or reach things aren't for it.
-    const own = sidekick ? threadId.slice(0, -AS_SIDEKICK.length) : threadId;
     if (this.store.threads?.find((t) => t.id === own)?.security?.kind === "scan" && !tool.startsWith("security_") && tool !== "sidekick") return { content: [{ type: "text", text: `${tool} isn't used in a security scan: it only reads, with your own reading tools and Liner's security tools.` }], isError: true };
     const r = await this.answer(threadId, tool, args, gone, sees);
     return sees ? r : wordsOnly(r);
   }
 
   private async answer(threadId: string, tool: string, args: Record<string, unknown>, gone: AbortSignal | undefined, sees: boolean): Promise<McpResult> {
-    const sidekick = threadId.endsWith(AS_SIDEKICK);
-    if (sidekick) threadId = threadId.slice(0, -AS_SIDEKICK.length);
+    const parsed = parseSwarmTarget(threadId);
+    const swarmWorker = parsed.worker;
+    const sidekick = !swarmWorker && threadId.endsWith(AS_SIDEKICK);
+    if (swarmWorker) threadId = parsed.threadId;
+    else if (sidekick) threadId = threadId.slice(0, -AS_SIDEKICK.length);
     try {
       switch (tool) {
+        case "swarm_manage":
+        case "swarm_post":
+        case "swarm_read": {
+          if (sidekick) return fail("You are the sidekick here: do the brief yourself.");
+          if (!this.host?.swarmTool) return fail("Swarm isn't available in this session.");
+          const r = await this.host.swarmTool(threadId, swarmWorker, tool, args);
+          return r.isError ? fail(r.text) : text(r.text);
+        }
         case "sidekick": {
           // The sidekick never hands work on: it would wait on itself.
           if (sidekick) return fail("You are the sidekick here: do the brief yourself.");
           if (!this.host?.delegate) return fail("This session has no sidekick to hand work to.");
           const r = await this.host.delegate(threadId, args, gone);
+          return r.isError ? fail(r.text) : text(r.text);
+        }
+        case "subagent": {
+          // A sidekick may not spawn subagents either.
+          if (sidekick) return fail("You are the sidekick here: do the brief yourself without spawning subagents.");
+          if (!this.host?.spawnSubagent) return fail("Subagents aren't available in this session.");
+          const r = await this.host.spawnSubagent(threadId, args, gone);
           return r.isError ? fail(r.text) : text(r.text);
         }
         case "browser_open": {

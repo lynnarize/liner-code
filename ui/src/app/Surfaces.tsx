@@ -155,6 +155,81 @@ export function PanelGrip({ body, width, onWidth, onDrag, store = WIDTH_KEY, thr
   );
 }
 
+const BELOW_H_KEY = "lc:below-h";
+export const BELOW_MIN = 120;
+const BELOW_THREAD_MIN = 160;
+const readBelowH = () => {
+  try {
+    const n = Number(localStorage.getItem(BELOW_H_KEY));
+    return n >= BELOW_MIN ? n : null;
+  } catch {
+    return null;
+  }
+};
+export const useBelowHeight = () => useState<number | null>(readBelowH);
+
+/** The horizontal resize handle at the top of the bottom terminal drawer: drag or arrow keys; double-click resets. */
+export function TerminalGrip({ thread, height, onHeight, onDrag }: { thread: RefObject<HTMLElement | null>; height: number | null; onHeight: (h: number | null) => void; onDrag: (on: boolean) => void }) {
+  const start = useRef<{ y: number; h: number } | null>(null);
+  const last = useRef<number | null>(null);
+  const maxH = () => Math.max(BELOW_MIN + 40, (thread.current?.clientHeight ?? 600) - BELOW_THREAD_MIN);
+  const fit = (h: number) => Math.round(Math.max(BELOW_MIN, Math.min(h, maxH())));
+  const shown = () => {
+    const el = thread.current?.querySelector<HTMLElement>(":scope > .lc-below");
+    return el ? el.offsetHeight : (height ?? 220);
+  };
+  const keep = (h: number | null) => {
+    onHeight(h);
+    try {
+      if (h === null) localStorage.removeItem(BELOW_H_KEY);
+      else localStorage.setItem(BELOW_H_KEY, String(h));
+    } catch {
+      // storage off: lasts while the app is open
+    }
+  };
+  const end = () => {
+    if (start.current === null) return;
+    if (last.current !== null) keep(last.current);
+    start.current = null;
+    last.current = null;
+    onDrag(false);
+  };
+  return (
+    <div
+      className="lc-below-grip l-focus"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Terminal height"
+      aria-valuenow={Math.round(shown())}
+      aria-valuemin={BELOW_MIN}
+      aria-valuemax={Math.round(maxH())}
+      tabIndex={0}
+      title="Drag to resize · double-click to reset"
+      onPointerDown={(e) => {
+        if (e.button !== 0 || !thread.current) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { y: e.clientY, h: shown() };
+        onDrag(true);
+      }}
+      onPointerMove={(e) => {
+        if (start.current === null) return;
+        last.current = fit(start.current.h + (start.current.y - e.clientY));
+        onHeight(last.current);
+      }}
+      onPointerUp={end}
+      onLostPointerCapture={end}
+      onDoubleClick={() => keep(null)}
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowUp" ? 24 : e.key === "ArrowDown" ? -24 : 0;
+        if (!step) return;
+        e.preventDefault();
+        keep(fit(shown() + step));
+      }}
+    />
+  );
+}
+
 /**
   The New tab guide, the + menu's Every surface: every built-in surface with what it holds right now and its key,
   then the panels you have, then Make one…, which asks the agent for one (DeepSeek Harness's guide

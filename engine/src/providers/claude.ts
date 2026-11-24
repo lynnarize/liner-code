@@ -964,7 +964,7 @@ class ClaudeSession implements ProviderSession {
     // Sealed (a Specialist scan): Liner's own server alone, and none of your settings files (so no hooks, plugins or CLAUDE.md),
     // skills, MCP servers or subagents; the Skill tool refused too.
     // What a side chat, a sidekick or a scan may not use, said once for both lists below.
-    const denied = [...new Set([...(o.side ? SIDE_DENIED : o.sidekick ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])];
+    const denied = [...new Set([...(o.side ? SIDE_DENIED : o.sidekick || o.swarm ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])];
     const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...new Set([...denied, "Skill"])] } : {};
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
     const own: { mark: Mark; pid?: number } = { mark: { name: RUN_ENV, value: randomUUID() } };
@@ -2269,6 +2269,10 @@ class ClaudeSession implements ProviderSession {
     the process (Query.performCleanup awaits the transport's waitForExit, bounded: stdin's end, a grace of about 2 s, then a kill).
     Bounded here too (CLOSE_WAIT_MS): one that doesn't settle in time is let go, rather than holding the next turn for good.
   */
+  canCompact() {
+    return true;
+  }
+
   close(): Promise<void> {
     // A resume's check begun ahead of a message ends here rather than at its own time limit.
     this.closed = true;
@@ -2299,7 +2303,7 @@ export const claude: Provider = {
   id: "claude",
   async detect(env): Promise<ProviderInfo> {
     const path = which("claude", env);
-    const base = { id: "claude" as const, label: "Claude Code", adapter: true, login: "claude auth login", models: FALLBACK, modelsFrom: "builtin" as const, supports: { approvals: true, resume: true, effort: true, plan: true } };
+    const base = { id: "claude" as const, label: "Claude Code", adapter: true, login: "claude auth login", models: FALLBACK, modelsFrom: "builtin" as const, supports: { approvals: true, resume: true, effort: true, plan: true, compact: true } };
     if (!path) return { ...base, available: false, detail: "Claude Code isn't installed.", install: "npm install -g @anthropic-ai/claude-code && claude auth login" };
     const [version, status] = await Promise.all([versionOf(path, env), run(path, ["auth", "status"], { env, timeout: 15000 })]);
     // Claude Code's own answer; Liner Code never sees the sign-in itself. An older claude has no `auth status`.

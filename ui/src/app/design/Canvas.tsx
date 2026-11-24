@@ -103,6 +103,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   const [hover, setHover] = useState<{ frame: string; rect: Rect } | null>(null);
   const [space, setSpace] = useState(false);
   const [drawBox, setDrawBox] = useState<Box | null>(null);
+  const [guides, setGuides] = useState<{ axis: "x" | "y"; at: number }[]>([]);
   const [naming, setNaming] = useState<string | null>(null);
   const drag = useRef<Drag | null>(null);
   const depth = useRef(0);
@@ -377,7 +378,44 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     if (d.kind === "move") {
       if (!d.moved && Math.hypot(dx, dy) < DRAG) return;
       d.moved = true;
-      return design.place(d.start.map((f) => ({ id: f.id, x: f.x + dx / s.zoom, y: f.y + dy / s.zoom })), undefined, true);
+      let moveX = dx / s.zoom;
+      let moveY = dy / s.zoom;
+      // Snap dragged frames to sibling edges and centers on the same page.
+      const movingIds = new Set(d.ids);
+      const curPage = s.page ?? s.file?.pages[0]?.id;
+      const siblings = (s.file?.frames ?? []).filter((f) => f.page === curPage && !movingIds.has(f.id));
+      const snapGuides: { axis: "x" | "y"; at: number }[] = [];
+      if (siblings.length && d.start.length) {
+        const tol = 8 / s.zoom;
+        const minX = Math.min(...d.start.map((f) => f.x)) + moveX;
+        const maxX = Math.max(...d.start.map((f) => f.x + f.w)) + moveX;
+        const cx = (minX + maxX) / 2;
+        const minY = Math.min(...d.start.map((f) => f.y)) + moveY;
+        const maxY = Math.max(...d.start.map((f) => f.y + f.h)) + moveY;
+        const cy = (minY + maxY) / 2;
+        let bestDx = tol + 1;
+        let snapX: number | null = null;
+        let bestDy = tol + 1;
+        let snapY: number | null = null;
+        for (const sib of siblings) {
+          for (const targetX of [sib.x, sib.x + sib.w / 2, sib.x + sib.w]) {
+            for (const srcX of [minX, cx, maxX]) {
+              const diff = targetX - srcX;
+              if (Math.abs(diff) < Math.abs(bestDx)) (bestDx = diff), (snapX = targetX);
+            }
+          }
+          for (const targetY of [sib.y, sib.y + sib.h / 2, sib.y + sib.h]) {
+            for (const srcY of [minY, cy, maxY]) {
+              const diff = targetY - srcY;
+              if (Math.abs(diff) < Math.abs(bestDy)) (bestDy = diff), (snapY = targetY);
+            }
+          }
+        }
+        if (snapX !== null && Math.abs(bestDx) <= tol) (moveX += bestDx), snapGuides.push({ axis: "x", at: snapX });
+        if (snapY !== null && Math.abs(bestDy) <= tol) (moveY += bestDy), snapGuides.push({ axis: "y", at: snapY });
+      }
+      setGuides(snapGuides);
+      return design.place(d.start.map((f) => ({ id: f.id, x: f.x + moveX, y: f.y + moveY })), undefined, true);
     }
     if (d.kind === "frame-size") {
       const f = d.start;
@@ -411,6 +449,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
     if (!d) return;
     const s = getDesign();
     if (d.kind === "move") {
+      setGuides([]);
       if (d.moved) design.place(d.start.map((f) => ({ id: f.id })), { before: d.start });
       else {
         const p = world(e);
@@ -685,6 +724,13 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
         <CheckMarks frames={onPage} boxOf={boxOf} />
         <PictureOver frames={onPage} boxOf={boxOf} />
         <WaysOver frames={onPage} boxOf={boxOf} />
+        {guides.map((g, i) =>
+          g.axis === "x" ? (
+            <div key={`gx-${i}`} style={{ position: "absolute", left: g.at * zoom + pan.x, top: 0, bottom: 0, width: 1, background: "var(--accent)", pointerEvents: "none", zIndex: 40 }} />
+          ) : (
+            <div key={`gy-${i}`} style={{ position: "absolute", top: g.at * zoom + pan.y, left: 0, right: 0, height: 1, background: "var(--accent)", pointerEvents: "none", zIndex: 40 }} />
+          ),
+        )}
         {drawBox && <div className="ld-draw" style={boxOf({ ...drawBox, id: "", page: "", name: "", kind: "drawn" } as DesignFrame)} />}
       </div>
       {sayAt && !editing && !drag.current && <SayBar x={sayAt.x} y={sayAt.y} above={sayAt.above} />}

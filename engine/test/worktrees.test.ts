@@ -149,6 +149,12 @@ test("undo won't overwrite a later edit unless forced, and never under another s
   runtime.isRunning = (id: string) => id === other.id || running(id);
   await assert.rejects(call("checkpoint.revert", { threadId: t.id, itemId: cp.id, force: true }), /"Other work" is working in this folder now/);
   await assert.rejects(call("git.switch", { threadId: t.id, branch: "elsewhere", create: true }), /"Other work" is working in this folder now/);
+  // Nor a stash or a pull, from this session or from the project with no session at all: either moves the files under it.
+  await assert.rejects(call("git.stash", { projectId: "p", threadId: t.id, action: "push" }), /"Other work" is working in this folder now/);
+  await assert.rejects(call("git.stash", { projectId: "p", action: "push" }), /"Other work" is working in this folder now/);
+  await assert.rejects(call("git.sync", { projectId: "p" }), /"Other work" is working in this folder now/);
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), "your edit after it\n", "nothing was stashed from under it");
+  assert.deepEqual((await call<{ stashes: unknown[] }>("git.stash", { projectId: "p", action: "list" })).stashes, [], "listing still answers");
   runtime.isRunning = running;
   const done = await call<Extract<Item, { kind: "checkpoint" }>>("checkpoint.revert", { threadId: t.id, itemId: cp.id, force: true });
   assert.equal(done.reverted, true);

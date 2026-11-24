@@ -1093,8 +1093,8 @@ test("acp: Liner Code's own tools go by themselves by name, from the list that d
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
   const listed = JSON.parse(await reply) as { result: { tools: { name: string }[] } };
   child.kill();
-  // All of them but sidekick, which only a pair's lead is offered (sidekick.test.ts), and Liner Security's, which only its sessions are (security-scan.test.ts).
-  assert.deepEqual(listed.result.tools.map((t) => t.name), TOOLS.map((t) => t.name).filter((n) => n !== "sidekick" && !n.startsWith("security_")));
+  // All of them but sidekick (a pair's lead: sidekick.test.ts), subagent (providers without native subagents: subagent.test.ts), the swarm_* board (Swarm sessions: swarm.test.ts) and Liner Security's (its sessions: security-scan.test.ts).
+  assert.deepEqual(listed.result.tools.map((t) => t.name), TOOLS.map((t) => t.name).filter((n) => n !== "sidekick" && n !== "subagent" && !n.startsWith("swarm_") && !n.startsWith("security_")));
 });
 
 test("acp: a name that only looks like Liner Code's isn't titled as one", async () => {

@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 import { constants as fsc, copyFileSync, cpSync, createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statfsSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { copyFile, cp, link, lstat, mkdir, readdir, utimes } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { DesignSize, EngineEvent, Item, RpcMethod, RpcParams, RpcResult } from "../../contracts/src/index.ts";
+import { CodedError, type DesignSize, type EngineEvent, type Item, type RpcMethod, type RpcParams, type RpcResult } from "../../contracts/src/index.ts";
 import { DESIGN_UNREADABLE, FRAME_CHANGED, FRAME_SIZES, type CanvasVersion, type FrameOp, type FramePlaced, type DesignFile, type DesignFileInfo, type DesignFrame, type DesignPatch, type DesignPresence, type DesignSelection, type DesignSkill, type FrameBuild, type NewFrame } from "../../contracts/src/design.ts";
 import type { AddonHost, McpResult } from "./agent-tools.ts";
 import { applyOps, attr, byId, elements, outer, outline, parse, replaceNode, stamp, type Outline } from "./canvas-html.ts";
@@ -265,7 +265,7 @@ const state = (ctx: DesignCtx) =>
 export const revOf = (bytes: string | Buffer) => createHash("sha1").update(bytes).digest("hex").slice(0, 12);
 
 /** The error a write gives when the frame changed since the revision it was based on. */
-const changedSince = (name: string) => new Error(`${FRAME_CHANGED} “${name}” changed since you read it (the agent, or another window, wrote it). Nothing was written; read it again first.`);
+const changedSince = (name: string) => new CodedError("FRAME_CHANGED", `${FRAME_CHANGED} “${name}” changed since you read it (the agent, or another window, wrote it). Nothing was written; read it again first.`);
 
 /** A tool call of a session that only reads (Read only, a side chat) writes nothing, not even ids or a found frame. */
 const mayWrite = (ctx: DesignCtx) => !quiet.getStore() && !("threadId" in ctx && typeof (ctx as DesignCall).threadId === "string" && ctx.readOnly((ctx as DesignCall).threadId));

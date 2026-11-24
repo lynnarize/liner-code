@@ -7,6 +7,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 type Lights = { x: number; y: number };
+type WindowState = { maximized: boolean; fullScreen: boolean; focused: boolean };
 type Boot = { base: string; token: string; machine: string; user: string; platform: string; lights: Lights; clear: boolean };
 
 const boot = ipcRenderer.sendSync("liner:boot") as Boot;
@@ -22,7 +23,18 @@ contextBridge.exposeInMainWorld("linerShell", {
     return r.value;
   },
   onCommand(fn: (name: string) => void) {
-    ipcRenderer.on("liner:command", (_e, name: string) => fn(name));
+    const handler = (_e: Electron.IpcRendererEvent, name: string) => fn(name);
+    ipcRenderer.on("liner:command", handler);
+    return () => {
+      ipcRenderer.removeListener("liner:command", handler);
+    };
+  },
+  onWindowState(fn: (state: WindowState) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, state: WindowState) => fn(state);
+    ipcRenderer.on("liner:windowState", handler);
+    return () => {
+      ipcRenderer.removeListener("liner:windowState", handler);
+    };
   },
 });
 

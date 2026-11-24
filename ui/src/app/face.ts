@@ -118,6 +118,9 @@ export const useTabs = () => useSyncExternalStore(subscribeTabs, getTabs);
 export const lastDesignTab = () => tabs.list.find((t) => tabKey(t) === (tabs.at !== HOME_TAB ? tabs.at : lastDesign));
 /** The design tab showing, if one is (not Home). */
 export const currentTab = () => tabs.list.find((t) => tabKey(t) === tabs.at);
+const notifyFaceNav = () => {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("lc:face-nav"));
+};
 /** Opens a design in its tab (the one it has, else a new one at the end) and shows it unless `show` is false. */
 export function openTab(t: DesignTab, show = true) {
   const k = tabKey(t);
@@ -125,8 +128,13 @@ export function openTab(t: DesignTab, show = true) {
   const merged = { ...had, ...Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined)) } as DesignTab;
   const list = had ? tabs.list.map((x) => (tabKey(x) === k ? merged : x)) : [...tabs.list, merged];
   putTabs({ list, at: show ? k : tabs.at });
+  if (show) notifyFaceNav();
 }
-export const showTab = (key: string) => key !== tabs.at && putTabs({ ...tabs, at: key === HOME_TAB || tabs.list.some((x) => tabKey(x) === key) ? key : HOME_TAB });
+export function showTab(key: string) {
+  const next = key === HOME_TAB || tabs.list.some((x) => tabKey(x) === key) ? key : HOME_TAB;
+  if (next !== tabs.at) putTabs({ ...tabs, at: next });
+  notifyFaceNav();
+}
 /** Closes a tab: nothing is deleted or stopped. The one showing hands over to its right-hand neighbour, else its left, else Home. */
 export function closeTab(key: string) {
   const i = tabs.list.findIndex((x) => tabKey(x) === key);

@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { PANEL_FRAME, checkConnections, panelFrame, type EngineEvent, type Snapshot } from "../../contracts/src/index.ts";
+import { PANEL_FRAME, checkConnections, panelFrame, rpcErrorCode, type EngineEvent, type Snapshot } from "../../contracts/src/index.ts";
 import type { Store } from "./store.ts";
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".ico": "image/x-icon" };
@@ -156,7 +156,8 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
         const result = await api.call(String(method), params);
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: result ?? null }));
       } catch (e) {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        const code = rpcErrorCode(e);
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) }));
       }
       return;
     }

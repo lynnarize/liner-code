@@ -115,6 +115,7 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
     return m;
   }, [cps]);
 
+  const [treeTick, setTreeTick] = useState(0);
   useEffect(() => {
     let live = true;
     void rpc("fs.tree", { projectId: thread.projectId, threadId: thread.id })
@@ -127,7 +128,7 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
     return () => {
       live = false;
     };
-  }, [thread.id, cps.length]);
+  }, [thread.id, cps.length, treeTick]);
 
   // A file asked for from elsewhere: picked, with its line to go to. A line shows in the source,
   // without changing how you like Markdown shown.
@@ -184,7 +185,7 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
     return () => {
       live = false;
     };
-  }, [sel, thread.id, changed.get(sel ?? "")?.cp]);
+  }, [sel, thread.id, changed.get(sel ?? "")?.cp, treeTick]);
 
   const nodes = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -253,7 +254,23 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
       <div className="lc-files-side">
         <div className="lc-files-find">
           <I.search size={14} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a file" aria-label="Find a file" onKeyDown={(e) => e.key === "Escape" && setQuery("")} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a file or :line"
+            aria-label="Find a file or :line"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") return void setQuery("");
+              if (e.key === "Enter" && /^:\d+$/.test(query.trim()) && sel) {
+                const line = Number(query.trim().slice(1));
+                if (line > 0) setGoto((g) => ({ path: sel, line, n: (g?.n ?? 0) + 1 }));
+                setQuery("");
+              }
+            }}
+          />
+          <button type="button" className="lc-ib l-focus" aria-label="Refresh files" title="Refresh files" onClick={() => setTreeTick((n) => n + 1)}>
+            <I.refresh size={13} />
+          </button>
         </div>
         <Segmented
           size="sm"
@@ -314,6 +331,17 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
                   Show changes
                 </button>
               )}
+              <button type="button" className="lc-ib l-focus" aria-label="Copy path" title="Copy path" onClick={() => void navigator.clipboard?.writeText(sel).then(() => toast("Copied path"), () => {})}>
+                <I.copy size={14} />
+              </button>
+              {file && !file.binary && (
+                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" title="Copy file contents" onClick={() => void navigator.clipboard?.writeText(file.text).then(() => toast("Copied file"), () => {})}>
+                  Copy text
+                </button>
+              )}
+              <button type="button" className="lc-ib l-focus" aria-label="Refresh file" title="Refresh file" onClick={() => setTreeTick((n) => n + 1)}>
+                <I.refresh size={14} />
+              </button>
               <button type="button" className="lc-ib l-focus" aria-label="Open in your editor" title="Open in your editor" onClick={() => cwd && bridge.openIn(`${cwd}/${sel}`, "editor")}>
                 <I.external size={14} />
               </button>

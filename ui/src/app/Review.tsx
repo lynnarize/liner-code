@@ -11,7 +11,7 @@
   panel's tab row above is the paper's header; ··· and the right edge's menu lead back to the session.
 */
 import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { FileDiff, Finding, Item, Thread } from "@contracts";
+import type { FileChange, FileDiff, Finding, Item, Thread } from "@contracts";
 import type { Token } from "@liner/components/code-block/tokenize";
 import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { diffRows, segment, type Row } from "@liner/pro/code-diff/diff";
@@ -190,6 +190,18 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   const [at, setAt] = useState(0);
   const [busy, setBusy] = useState<"undo" | null>(null);
   const [finding, setFinding] = useState(false);
+  const [wtStatus, setWtStatus] = useState<{ branch?: string; changes: FileChange[] } | null>(null);
+  const [wtTick, setWtTick] = useState(0);
+  useEffect(() => {
+    if (!project?.git || cps.length > 0) return;
+    let live = true;
+    void rpc("git.status", { projectId: project.id, threadId: thread.id })
+      .then((st) => live && setWtStatus({ branch: st.branch, changes: st.changes }))
+      .catch(() => live && setWtStatus(null));
+    return () => {
+      live = false;
+    };
+  }, [project?.id, project?.git, thread.id, thread.turns, cps.length, wtTick]);
   // The turn you chose, or else the newest. While a comment is being written on a line, the newest stands still: a turn that
   // ends meanwhile would otherwise move the view to its own diff and close the comment under your hands.
   const chosen = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : undefined;
@@ -302,6 +314,14 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   }, [diff, focus]);
 
   const goChange = (i: number) => {
+    if (view === "split") {
+      const hunks = box.current?.querySelectorAll<HTMLElement>(".l-cdiff__hunk, .l-cdiff__row--add, .l-cdiff__row--del") ?? [];
+      if (!hunks.length) return;
+      const n = ((i % hunks.length) + hunks.length) % hunks.length;
+      setAt(n);
+      hunks[n]?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      return;
+    }
     if (!changes.length) return;
     const n = (i + changes.length) % changes.length;
     setAt(n);
@@ -318,7 +338,7 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   useEffect(() => {
     if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!keys) return;
+      if (!keys || e.defaultPrevented) return;
       const t = e.target as HTMLElement;
       if (!wide && !root.current?.contains(t)) return;
       if (is(e, "find")) {
@@ -327,9 +347,8 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
         return;
       }
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey) return;
-      // Split draws its own rows, with no changes to step to.
-      if (e.key === "j" && view === "unified") stepTo.current(at + 1);
-      else if (e.key === "k" && view === "unified") stepTo.current(at - 1);
+      if (e.key === "j") stepTo.current(at + 1);
+      else if (e.key === "k") stepTo.current(at - 1);
       else if (e.key === "Escape" && sel) setSel(null);
     };
     window.addEventListener("keydown", onKey);
@@ -391,14 +410,53 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   const more = diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />;
   const find = shortcutOf("find");
 
-  if (!cps.length)
+  if (!cps.length) {
+    const wtFiles = wtStatus?.changes ?? [];
+    if (wtFiles.length > 0)
+      return (
+        <div ref={root} className="lc-rv" data-wide={wide || undefined} tabIndex={-1}>
+          <div className="lc-rv-body">
+            <section className="lc-rv-main">
+              <div className="lc-rv-bar">
+                <span className="lc-mono">Working tree ({plural(wtFiles.length, "file")})</span>
+                <span className="lc-grow" />
+                <button type="button" className="lc-ib l-focus" title="Refresh working tree" aria-label="Refresh working tree" onClick={() => setWtTick((n) => n + 1)}>
+                  <I.refresh size={14} />
+                </button>
+              </div>
+              <div className="lc-rv-files">
+                {wtFiles.map((f) => (
+                  <div key={f.path} className="lc-rv-fm">
+                    <span className="lc-rv-st" data-st={f.status[0]?.toUpperCase() || "M"} aria-hidden>
+                      {f.status[0]?.toUpperCase() || "M"}
+                    </span>
+                    <button
+                      type="button"
+                      className="lc-rv-fmb l-focus"
+                      title={f.path}
+                      onClick={() => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, threadId: thread.id } }))}
+                    >
+                      <span className="lc-mono lc-path">
+                        <span className="lc-quiet">{dirOf(f.path)}</span>
+                        <span>{baseOf(f.path)}</span>
+                      </span>
+                    </button>
+                    <Lines added={f.added} removed={f.removed} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+      );
     return (
       <div className="lc-panel-empty">
         <I.changes size={20} />
         <b>No changes yet</b>
-        <p>When a turn edits files, its changes land here, kept by turn, so you can review, undo or commit them.</p>
+        <p>When a turn or your working tree edits files, changes land here so you can review, undo or commit them.</p>
       </div>
     );
+  }
 
   return (
     <div ref={root} className="lc-rv" data-wide={wide || undefined} tabIndex={-1}>
@@ -568,9 +626,52 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
                 </button>
               </div>
             ) : view === "split" ? (
-              // Its own row of tools is hidden (app.css, .lc-diff): this row has them. Wrap and folding are where it starts, so a change remakes it.
-              <div className="lc-diff">
+              // Its own row of tools is hidden (app.css, .lc-diff): this row has them. Clicking a line number lets you ask about that line in split view too.
+              <div
+                className="lc-diff"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement | null;
+                  const numCell = target?.closest<HTMLElement>("[data-line], .l-cdiff__ln, td:first-child, td:nth-child(3)");
+                  const lineNo = Number(numCell?.dataset.line || numCell?.textContent?.trim());
+                  if (!Number.isInteger(lineNo) || lineNo <= 0) return;
+                  const fileEl = target?.closest<HTMLElement>(".l-cdiff__file");
+                  const idx = fileEl ? Array.from(box.current?.querySelectorAll(".l-cdiff__file") ?? []).indexOf(fileEl) : -1;
+                  const path = shown[idx]?.file.path;
+                  if (!path) return;
+                  setSel((prev) => (e.shiftKey && prev?.file === path ? { file: path, line: Math.min(prev.line, lineNo), endLine: Math.max(prev.line, lineNo) } : { file: path, line: lineNo }));
+                }}
+              >
                 <CodeDiff key={`${wrap}:${[...folded].join("\n")}`} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} defaultCollapsed={[...folded]} />
+                {sel && (
+                  <div className="lc-rv-ask">
+                    <span className="lc-mono lc-quiet">
+                      Ask about {sel.file}:{sel.line}
+                      {sel.endLine && sel.endLine !== sel.line ? `–${sel.endLine}` : ""}
+                    </span>
+                    <textarea
+                      className="lc-input"
+                      rows={2}
+                      placeholder="Ask the agent about these lines…"
+                      value={ask}
+                      onChange={(e) => setAsk(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          void send();
+                        } else if (e.key === "Escape") setSel(null);
+                      }}
+                    />
+                    <div className="lc-you-acts">
+                      <span className="lc-grow" />
+                      <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setSel(null)}>
+                        Cancel
+                      </button>
+                      <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!ask.trim()} onClick={() => void send()}>
+                        Ask
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               shown.map((p) => {

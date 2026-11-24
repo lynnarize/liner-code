@@ -3,9 +3,59 @@
   session comes back to one that's gone, and let go only when nothing in them would be lost.
   T3 Code's storageCleanup.ts, vcs/worktreeRemoval.ts and orchestration-v2/ProviderTurnStartService.ts.
 */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join, relative, resolve } from "node:path";
 import { run } from "./exec.ts";
+
+/**
+  Resolves where a new worktree directory should be created: either under Liner's external
+  `defaultRoot` ("sibling") or inside `<repoRoot>/.worktrees/<tid>` ("inside", automatically
+  appending `.worktrees/` to `.git/info/exclude` so the repo stays clean).
+*/
+export function resolveWorktreePath(repoRoot: string, tid: string, defaultRoot: string, place?: "sibling" | "inside"): string {
+  if (place === "inside") {
+    const dir = join(repoRoot, ".worktrees");
+    mkdirSync(dir, { recursive: true });
+    try {
+      const exclude = join(repoRoot, ".git", "info", "exclude");
+      if (existsSync(exclude)) {
+        const cur = readFileSync(exclude, "utf8");
+        if (!cur.split(/\r?\n/).some((l) => l.trim() === ".worktrees" || l.trim() === ".worktrees/")) {
+          appendFileSync(exclude, `${cur.endsWith("\n") ? "" : "\n"}.worktrees/\n`);
+        }
+      }
+    } catch {
+      // Non-standard .git file or read-only info/exclude: worktree still works.
+    }
+    return join(dir, tid);
+  }
+  mkdirSync(defaultRoot, { recursive: true });
+  return join(defaultRoot, tid);
+}
+
+/** Deterministic per-worktree port offset (1..499) passed as LINER_WORKTREE_PORT_OFFSET so parallel previews don't collide. */
+export function portOffsetFor(tid: string): number {
+  const hash = createHash("sha256").update(tid).digest();
+  return 1 + (hash.readUInt16BE(0) % 499);
+}
+
+/** Returns the real path of `<root>/.liner/worktree-setup.sh` if it exists as a regular file inside `root`. */
+export function worktreeHookPath(root: string): string | null {
+  const candidate = join(root, ".liner", "worktree-setup.sh");
+  if (!existsSync(candidate)) return null;
+  try {
+    const st = lstatSync(candidate);
+    if (!st.isFile() || st.isSymbolicLink()) return null;
+    const realRoot = realpathSync(root);
+    const realFile = realpathSync(candidate);
+    const rel = relative(realRoot, realFile);
+    if (!rel || rel.startsWith("..") || resolve(realRoot, rel) !== realFile) return null;
+    return realFile;
+  } catch {
+    return null;
+  }
+}
 
 // Nothing here can wait on a password prompt nobody sees.
 const git = (cwd: string, args: string[], timeout = 120000) => run("git", args, { cwd, timeout, input: "", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });

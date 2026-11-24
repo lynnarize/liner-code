@@ -5,7 +5,7 @@
 */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Item } from "../../contracts/src/index.ts";
 import type { Store } from "./store.ts";
 
@@ -109,14 +109,42 @@ export async function sessionMarkdown(store: Store, threadId: string, diff: (fro
   return `${out.join("\n").trim()}\n`;
 }
 
-/** Writes it to Downloads under the session's title (with a number when that's taken); the path. */
-export function saveToDownloads(title: string, markdown: string) {
+/** Serializes a session and its timeline (plus turn diffs) as structured JSON. */
+export async function sessionJson(store: Store, threadId: string, diff: (from: string, to: string) => Promise<string>) {
+  const thread = store.thread(threadId);
+  const project = store.project(thread.projectId);
+  const items = store.timeline(threadId) as Item[];
+  const diffs: Record<string, string> = {};
+  for (const it of items) {
+    if (it.kind === "checkpoint" && it.from && it.to) {
+      let d = await diff(it.from, it.to);
+      if (d.length > DIFF_MAX) d = `${d.slice(0, DIFF_MAX)}\n… (the rest of this diff is cut)`;
+      if (d.trim()) diffs[it.id] = d;
+    }
+  }
+  return `${JSON.stringify({ exportedAt: Date.now(), project: { id: project.id, name: project.name, path: project.path }, thread, items, diffs }, null, 2)}\n`;
+}
+
+/** Writes it to Downloads (or a caller-chosen path) under the session's title; returns the written path. */
+export function saveExport(title: string, content: string, o: { path?: string; format?: "md" | "json" } = {}) {
+  const ext = o.format === "json" ? "json" : "md";
+  if (o.path?.trim()) {
+    const target = resolve(o.path.trim().replace(/^~(?=\/|$)/, homedir()));
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+    return target;
+  }
   const base = title.replace(/[\\/:*?"<>|\n]+/g, "-").trim().slice(0, 80) || "Liner Code session";
   const dir = join(homedir(), "Downloads");
   // A Mac set up without one, or a home that isn't a person's (a server, a test): the folder is made rather than the save failing.
   mkdirSync(dir, { recursive: true });
-  let path = join(dir, `${base}.md`);
-  for (let n = 2; existsSync(path); n++) path = join(dir, `${base} ${n}.md`);
-  writeFileSync(path, markdown);
+  let path = join(dir, `${base}.${ext}`);
+  for (let n = 2; existsSync(path); n++) path = join(dir, `${base} ${n}.${ext}`);
+  writeFileSync(path, content);
   return path;
+}
+
+/** Writes it to Downloads under the session's title (with a number when that's taken); the path. */
+export function saveToDownloads(title: string, markdown: string) {
+  return saveExport(title, markdown, { format: "md" });
 }

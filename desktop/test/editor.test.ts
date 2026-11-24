@@ -183,6 +183,43 @@ test("on Linux a file sent to an editor is shown in its folder, as xdg-open woul
   assert.deepEqual(did, ["show /home/me/app/run.sh"]);
 });
 
+test("on Windows and Linux configured CLI editors are tried before falling back to Notepad or file manager", async () => {
+  const calls: { cmd: string; args: string[] }[] = [];
+  const winFile = fake({
+    isMac: false,
+    isWin: true,
+    cliEditors: ["code", "cursor"],
+    files: ["C:/app/index.ts"],
+    started: async (cmd, args) => {
+      calls.push({ cmd, args });
+      return cmd === "cursor";
+    },
+  });
+  await openIn(winFile.opener, "C:/app/index.ts", "editor");
+  assert.deepEqual(calls, [
+    { cmd: "code", args: ["C:/app/index.ts"] },
+    { cmd: "cursor", args: ["C:/app/index.ts"] },
+  ]);
+  assert.deepEqual(winFile.did, []);
+
+  const linuxDir = fake({
+    isMac: false,
+    isWin: false,
+    cliEditors: ["code", "zed"],
+    started: async (cmd, args) => {
+      calls.push({ cmd, args });
+      return cmd === "zed";
+    },
+  });
+  calls.length = 0;
+  await openIn(linuxDir.opener, "/home/me/app", "editor");
+  assert.deepEqual(calls, [
+    { cmd: "code", args: ["/home/me/app"] },
+    { cmd: "zed", args: ["/home/me/app"] },
+  ]);
+  assert.deepEqual(linuxDir.did, []);
+});
+
 test("a link named like a plain path that points at an app is judged by what it points at: shown in Finder, never launched", async () => {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "liner-openin-")));
   try {

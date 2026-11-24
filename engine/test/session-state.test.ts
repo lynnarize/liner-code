@@ -126,8 +126,8 @@ test("Needs you means one thing: The Wall's filter counts a finished session you
   assert.equal(wallKind(unread), "done");
   // Both lists take the one test: The Wall's filter and counts read statusKind, the sidebar's Working reads worksNow and Needs you needsYou.
   const wall = readFileSync(new URL("../../ui/src/app/Wall.tsx", import.meta.url), "utf8");
-  assert.match(wall, /wallFilter = \(all: Thread\[\], filter: Filter, now = Date\.now\(\)\) => \(filter === "all" \? all : all\.filter\(\(t\) => statusKind\(t, now\) === filter\)\)/);
-  assert.match(wall, /const count = \(k: WallKind\) => wallFilter\(all, k, now\)\.length;/);
+  assert.match(wall, /wallFilter = \(all: Thread\[\], filter: Filter, now = Date\.now\(\)\) => \(filter === "all" \? all : filter === "review" \? all\.filter\(needsReview\) : all\.filter\(\(t\) => statusKind\(t, now\) === filter\)\)/);
+  assert.match(wall, /const count = \(k: WallKind \| "review"\) => wallFilter\(all, k, now\)\.length;/);
   assert.doesNotMatch(wall, /wallKind\(t\) === filter|wallKind\(t\) === k/);
   const side = readFileSync(new URL("../../ui/src/app/Sidebar.tsx", import.meta.url), "utf8");
   assert.match(side, /const needs = \(t: Thread\) => needsYou\(t, now\);/);

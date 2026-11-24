@@ -183,12 +183,18 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
       const again = left && left.key === choicesKey ? getState().threads.find((x) => x.id === left.id && x.turns === 0 && !x.archived) : undefined;
       // The tool opened ahead for this draft isn't the one it goes to after all.
       if (again && id && id !== again.id) void rpc("thread.unwarmNew", { id }).catch(() => {});
-      const t = again ?? await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
-      try {
-        await rpc("thread.send", { id: t.id, text: m.text, files: m.files });
-      } catch (e) {
-        made.current = { id: t.id, key: choicesKey };
-        throw e;
+      const tw = asMode === "standard" ? /^\/(teamwork|swarm)(?:\s+([\s\S]*))?$/i.exec(m.text.trim()) : null;
+      const twMode = tw ? (tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork") : undefined;
+      const sendText = tw ? (tw[2] ?? "").trim() : m.text;
+      const t = again ?? await rpc("thread.create", { ...(id ? { id } : {}), projectId: project.id, mode: asMode, agent: settings.agent, sidekick: settings.sidekick, ...(tw ? { swarm: { enabled: true, mode: twMode } } : {}), ...(settings.sidekick && settings.tuning ? { tuning: settings.tuning } : {}), review: settings.review, model: settings.model, effort: settings.effort, access: settings.access, worktree: worktree && project.git && !inWorktree, base: worktree ? base : undefined, inWorktree: inWorktree?.path });
+      if (tw && again && (!again.swarm?.enabled || (again.swarm.mode ?? "teamwork") !== twMode)) await rpc("swarm.enable", { threadId: t.id, enabled: true, mode: twMode });
+      if (sendText || m.files.length) {
+        try {
+          await rpc("thread.send", { id: t.id, text: sendText, files: m.files });
+        } catch (e) {
+          made.current = { id: t.id, key: choicesKey };
+          throw e;
+        }
       }
       if (quietly) {
         setInWorktree(undefined);
@@ -354,6 +360,7 @@ function WhereChip({ project, worktree, onWorktree, base, onBase, inWorktree, co
       </span>
     ) : null;
   const from = base ?? project.branch ?? "HEAD";
+  const onDefault = !worktree && (branch === "main" || branch === "master");
   return (
     <Pop
       label={worktree ? `Where it works: a new worktree from ${from}. Change it` : `Where it works: this checkout${branch ? `, on ${branch}` : ""}. Change it`}
@@ -369,7 +376,10 @@ function WhereChip({ project, worktree, onWorktree, base, onBase, inWorktree, co
               New worktree from <span className="lc-mono">{from}</span>
             </span>
           ) : (
-            <span className="lc-mono lc-strip-cap">{branch ?? "HEAD"}</span>
+            <span className="lc-mono lc-strip-cap" title={onDefault ? `Editing directly on ${branch} — click to isolate in a worktree` : undefined}>
+              {branch ?? "HEAD"}
+              {onDefault && <span style={{ marginLeft: 5, fontSize: 11, fontFamily: "var(--l-font-sans)", color: "var(--l-amber)" }}>(direct)</span>}
+            </span>
           )}
           <I.chevD size={12} />
         </>

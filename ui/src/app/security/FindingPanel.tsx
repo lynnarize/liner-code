@@ -348,17 +348,20 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
             ))}
 
           {tab === "activity" && (
-            <ol className="lf-x-acts">
-              {[...f.activity].reverse().map((a, i) => (
-                <li key={i} data-kind={a.kind}>
-                  <span className="lf-x-dot" aria-hidden />
-                  <span className="lf-x-act">
-                    <b><Inline text={a.text} /></b>
-                    <small>{[who(a.by).replace(/^./, (c) => c.toUpperCase()), when(a.at)].filter(Boolean).join(" · ")}</small>
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <>
+              <AddNoteForm disabled={busy} onAdd={(text) => run(act.note(f.id, text).then((n) => (toast("Note added"), onActed?.(n))))} />
+              <ol className="lf-x-acts">
+                {[...f.activity].reverse().map((a, i) => (
+                  <li key={i} data-kind={a.kind}>
+                    <span className="lf-x-dot" aria-hidden />
+                    <span className="lf-x-act">
+                      <b><Inline text={a.text} /></b>
+                      <small>{[who(a.by).replace(/^./, (c) => c.toUpperCase()), when(a.at)].filter(Boolean).join(" · ")}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </>
           )}
         </div>
       </div>
@@ -367,6 +370,19 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
         {f.state === "open" ? (
           <>
             <Dismiss onDismiss={(r, note) => run(act.dismiss(f.id, r, note).then((n) => (toast(`Dismissed as ${DISMISS_LABEL[r].toLowerCase()}. The next scan won't raise it again.`), onActed?.(n))))} />
+            {f.look.state === "none" && (
+              <button
+                type="button"
+                className="lc-btn l-focus"
+                data-kind="ghost"
+                data-size="sm"
+                disabled={busy}
+                title="Have another model double-check this finding against the code"
+                onClick={() => run(act.look(f.id).then((n) => (toast(n.look.state === "confirmed" ? "Second look confirmed it" : "Second look finished"), onActed?.(n))))}
+              >
+                Get a second look
+              </button>
+            )}
             <span className="lc-grow" />
             <span className="lf-x-hint">{fixing ? (f.fix?.state === "ready" ? "Its fix is ready to merge" : "Being fixed in its own worktree") : "A session in its own worktree, with this as its brief"}</span>
             <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={busy} onClick={() => run(act.ask(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: a session to ask about it would open here."))))}>
@@ -398,5 +414,30 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
         )}
       </footer>
     </aside>
+  );
+}
+
+function AddNoteForm({ disabled, onAdd }: { disabled: boolean; onAdd: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const submit = () => {
+    const clean = text.trim();
+    if (!clean) return;
+    onAdd(clean);
+    setText("");
+  };
+  return (
+    <form
+      className="lc-env-form"
+      style={{ marginBottom: 12 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <input className="lc-input" value={text} disabled={disabled} placeholder="Add a triage note…" aria-label="Add a triage note" onChange={(e) => setText(e.target.value)} />
+      <button type="submit" className="lc-btn l-focus" data-kind="plain" data-size="sm" disabled={disabled || !text.trim()}>
+        Add note
+      </button>
+    </form>
   );
 }

@@ -1,4 +1,79 @@
-# Fix plans from the deep audit of 20 November 2026
+# Polish plans, 22 November 2026
+
+Written by the advisor session on 2026-11-22 against commit `3e5bf0a` (Liner Code 0.3.1 beta), read-only.
+This pass looked at one thing: **detail polish after the 22 November "one look everywhere" change**
+(`41a5994`: 115 files, +8,451/−6,880, including `app.css` rebuilt and `surfaces.css`, `models.css`,
+`Timeline.tsx` and `Composer.tsx` rewritten). It did not re-audit the engine.
+
+There are **four** plans. Three of them are the visible inconsistencies the change either left behind
+or did not reach; the fourth un-sticks three UI plans from 20 November.
+
+## The one thing to know first
+
+`018` (one keyboard pattern), `020` (thin scrollbars, Changes re-scrolls) and `021` (Browser's Back
+and Forward) are still TODO, and `41a5994` rewrote the files they point at. **All three findings
+still hold** — verified line by line at `3e5bf0a` — but every `file:line` in them has moved (e.g.
+018's dock-strip tabs were `Panel.tsx:452-460` and are now `Panel.tsx:468`, with `role="tab"` at
+`:493`). Plan `032` re-anchors them, then runs them. Do that before running 020, because 020 shares
+`Panel.tsx` and `app.css` with it.
+
+## Execution order and status
+
+| Plan | Title | Priority | Effort | Risk | Depends on | Status |
+|------|-------|----------|--------|------|------------|--------|
+| [032](032-the-three-ui-plans-meet-todays-ui.md) | 018, 020 and 021 run against today's UI, not last Thursday's | P1 | S | LOW | — | TODO |
+| [033](033-one-shape-for-every-quiet-place.md) | Every quiet place in the app is one of three shapes | P1 | M | LOW | — | TODO |
+| [034](034-one-height-scale.md) | Every control's height comes from one five-step scale | P2 | M | MED | after 033 (shared sheets); owner approves the scale in Step 2 | TODO |
+| [035](035-small-detail-faults.md) | The last of the small detail faults | P2 | S | LOW | 033, 034 | TODO |
+
+**Recommended order: 032, then 033, then 035, then 034.** 032 costs an hour and unlocks three
+already-written fixes. 033 is the biggest visible win for the least risk. 035 is small and clears
+Security's type before 034 moves heights in the same sheets. 034 is last because it is the only one
+that moves rows, and it wants the owner's yes on the five steps before it touches anything.
+
+**Shared files (run sequentially):** `app.css` and `surfaces.css` (033, 034, 035); `Panel.tsx` (032's
+018 and 020). Nothing here touches the engine outside `engine/test/layout-rules.test.ts`.
+
+## Where the evidence came from
+
+- Counts are greps at `3e5bf0a`, all reproducible: 30 empty-state classes over 84 `className` sites;
+  119 literal control heights at 22/24/26/34/40/44px; 37 fractional type sizes in Liner Security;
+  one dead CSS class (`.lc-pill`).
+- One screenshot of the running app (Demo agent, throwaway `LINER_HOME`) confirmed the app renders
+  and the sidebar/composer hold at a narrow width. **No plan here rests on a picture**: the three
+  plans say where an on-screen check is still owed.
+
+## Findings considered and rejected (this pass)
+
+Kept so the next pass does not re-audit them:
+
+- **Loading states are already one thing.** `l-shimmer` (52 uses) and `.lc-diff-wait` (9) do the job;
+  only the wording varies ("Opening", "Opening the session", "Reading the branches"). Not worth a
+  plan.
+- **Dead CSS is not a problem.** Of 3,667 class selectors across `ui/src`, exactly one is unused
+  (`.lc-pill`, in 035). `L11` and the 22 November change left the sheets clean.
+- **Focus rings are deliberate and complete.** 28 `:focus-visible` rules plus the `.l-focus`
+  convention and `--lc-ring`; the `outline: none` sites all pair with a `box-shadow` ring. Do not
+  "fix" them.
+- **No `transition: all`**, and only 25 `!important`, all in vendor-facing overrides. Nothing to do.
+- **`title=` counts are misleading.** A grep for `title="` in `Settings.tsx` matches `<Field title>`
+  and `<Group title>` props, not DOM tooltips, so the old "163 native titles" figure cannot be
+  reproduced that way. Three tooltip systems may still be real; it needs a component-level count, not
+  a grep — investigate before planning.
+- **Long names that never shorten** (`.lc-model { flex: none; white-space: nowrap }`,
+  `app.css:525-533`, against the ellipsis in `models.css`) is real but needs a ~35-character model
+  name to see. No plan until someone sees it.
+- **The "Not planned" table in `plans/layout/README.md` still stands** for the three side-panel
+  shapes, icon-button sizes (034 claims only the heights), the ten menu-row classes, the ten empty
+  states (033 claims these), the three tooltip systems, the two dialog systems and the Browser's
+  narrow toolbar. Each still needs a decision or a drawing.
+
+## What this pass did not look at
+
+Routines internals, `ui/src/liner` internals, `mac/`, the Demo provider, `site/`, `site-next/`, `ads/`.
+No engine or desktop code. One screen was looked at, at one width, in the Browser pane — not the
+Electron window, not Retina, not VoiceOver, not Reduced Motion.
+
 
 Written by the advisor session on 2026-11-20 against commit `bfb0ebc` (branch `design-and-api-endpoints`, Liner Code 0.3.0 beta).
 Eight parallel read-only auditors (engine core, providers, features, security, performance, tests, UI polish/detail,

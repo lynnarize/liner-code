@@ -6,7 +6,7 @@
 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { keptRead, keptWrite, textRead, wordRead, wordWrite, type Store } from "../../ui/src/app/kept.ts";
+import { draftsToDrop, keptRead, keptWrite, textRead, wordRead, wordWrite, type Store } from "../../ui/src/app/kept.ts";
 
 /** A store that throws on every touch, as a blocked or full one does. */
 const throwing = (): Store => ({
@@ -79,4 +79,12 @@ test("a write and read round-trip through a working store", () => {
   assert.equal(wordRead(s, "lc:enter", ["queue", "steer"], "queue"), "steer");
   wordWrite(s, "lc:device", "A1B2C3D4-E5F6-7890");
   assert.equal(textRead(s, "lc:device", null), "A1B2C3D4-E5F6-7890");
+});
+test("draft attachments kept across a reload stay at the newest drafts', so files of drafts long left don't pile up in IndexedDB", () => {
+  const entries = Array.from({ length: 53 }, (_, i) => ({ key: `d${i}`, at: 1000 + i }));
+  // One kept before drafts had a time counts as the oldest.
+  entries.push({ key: "untimed" } as { key: string; at: number });
+  const drop = draftsToDrop(entries, 50);
+  assert.deepEqual(drop.sort(), ["d0", "d1", "d2", "untimed"].sort());
+  assert.deepEqual(draftsToDrop([{ key: "a", at: 1 }], 50), [], "under the limit nothing goes");
 });

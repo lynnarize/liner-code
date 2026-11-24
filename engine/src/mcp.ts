@@ -36,7 +36,7 @@ async function call(id: string | number, name: string, args: unknown, progress?:
   let n = 0;
   const ac = new AbortController();
   calls.set(id, ac);
-  const message = name === "sidekick" ? "The sidekick is working on the brief" : "Waiting for the person to answer";
+  const message = name === "sidekick" ? "The sidekick is working on the brief" : name === "subagent" ? "The subagent is working on the task" : "Waiting for the person to answer";
   const beat = progress === undefined ? undefined : setInterval(() => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: progress, progress: ++n, message } })}\n`), 20_000);
   try {
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-liner-surface": key }, body: JSON.stringify({ tool: name, args: args ?? {} }), signal: ac.signal });

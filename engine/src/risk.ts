@@ -5,7 +5,7 @@
 */
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
-import { ACCESS_NAMES, type ApprovalWhy, type Risk } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, type ApprovalWhy, type PermissionRule, type Risk } from "../../contracts/src/index.ts";
 
 /**
   Any start of a long flag's name as a pattern, `--h` up to `--hard`: git's parse-options takes each start only that flag
@@ -1691,4 +1691,56 @@ function ruleOne(command: string): string | undefined {
     return whole();
   }
   return SUB.test(name) && rest[0] ? `${head} ${rest[0]}` : head;
+}
+
+/**
+  Matches a glob pattern (`**` across path separators, `*` single segment for paths or any chars
+  for commands, `?` single char) case-insensitively without ReDoS-prone backtracking.
+*/
+export function globMatch(pattern: string, value: string, isPath = false): boolean {
+  const p = isPath ? pattern.replace(/\\/g, "/").trim() : pattern.trim();
+  const v = isPath ? value.replace(/\\/g, "/").trim() : value.trim();
+  if (!p) return false;
+  let re = "^";
+  for (let i = 0; i < p.length; i++) {
+    const ch = p[i];
+    if (ch === "*") {
+      if (isPath && p[i + 1] === "*") {
+        i++;
+        if (p[i + 1] === "/") {
+          i++;
+          re += "(?:.*/)?";
+        } else {
+          re += ".*";
+        }
+      } else {
+        re += isPath ? "[^/]*" : ".*";
+      }
+    } else if (ch === "?") {
+      re += isPath ? "[^/]" : ".";
+    } else {
+      re += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  re += "$";
+  return new RegExp(re, "i").test(v);
+}
+
+/**
+  Evaluates a last-match-wins glob permission matrix (`allow` / `ask` / `deny`) against a tool
+  request's command and/or file path. Returns the last matching rule, or null if none matched.
+*/
+export function evaluatePermissionMatrix(
+  rules: readonly PermissionRule[],
+  target: { command?: string; path?: string },
+): { action: PermissionRule["action"]; rule: PermissionRule } | null {
+  let matched: PermissionRule | null = null;
+  for (const r of rules) {
+    if (r.kind === "command" && target.command !== undefined && globMatch(r.pattern, target.command, false)) {
+      matched = r;
+    } else if (r.kind === "path" && target.path !== undefined && globMatch(r.pattern, target.path, true)) {
+      matched = r;
+    }
+  }
+  return matched ? { action: matched.action, rule: matched } : null;
 }

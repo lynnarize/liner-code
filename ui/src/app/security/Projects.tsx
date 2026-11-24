@@ -10,8 +10,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanRecord, SecurityFinding, SecurityProject } from "@contracts";
 import { SEVERITIES } from "@contracts";
+import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
-import { useEngine } from "../engine";
+import { rpc, useEngine } from "../engine";
 import { I, MARK_WORD, ModelMark, StateMark, type MarkState } from "../icons";
 import { modelLabel, plural, providerLabel, shortName, toolMarkOf } from "../model";
 import { useSec } from "./data";
@@ -204,19 +205,65 @@ function Inside({ p }: { p: SecurityProject }) {
     return rows;
   }, [p.readers, p.scans]);
 
+  const [editingMd, setEditingMd] = useState(false);
+  const [mdText, setMdText] = useState("");
+  const [mdSaving, setMdSaving] = useState(false);
+  const openInlineEditor = async () => {
+    try {
+      const r = await rpc("security.model.text", { projectId: p.projectId });
+      setMdText(r.text || `# Security threat model — ${p.name}\n\n## Areas\n\n### Authentication & Sessions\n- Key entry points, tokens, and session boundaries.\n\n### Data & Storage\n- Sensitive data handling and access controls.\n`);
+      setEditingMd(true);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const saveInlineEditor = async () => {
+    setMdSaving(true);
+    try {
+      await rpc("security.model.write", { projectId: p.projectId, text: mdText });
+      toast.success(`Saved ${p.threatModel.file}`);
+      setEditingMd(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMdSaving(false);
+    }
+  };
+
   return (
     <div className="lo-ptiles">
       <div className="lo-ptile">
         <div className="ls-blkh">
           Areas in the threat model
+          <button type="button" className="lo-lk l-focus" onClick={() => (editingMd ? setEditingMd(false) : void openInlineEditor())}>
+            {editingMd ? "Close editor" : p.threatModel.exists ? `Edit ${p.threatModel.file}` : `Draft ${p.threatModel.file}`}
+          </button>
           {p.threatModel.exists && (
             <button type="button" className="lo-lk l-focus" onClick={readFile} title={`Open ${p.threatModel.file} in your editor`}>
               Open in your editor
             </button>
           )}
         </div>
-        {!p.threatModel.exists ? (
-          <p className="lo-q lo-tilep">No {p.threatModel.file} yet. The first scan of the whole project writes one, when you say yes.</p>
+        {editingMd ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            <textarea
+              className="lc-input lc-mono"
+              rows={10}
+              aria-label={`Edit ${p.threatModel.file}`}
+              value={mdText}
+              onChange={(e) => setMdText(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={mdSaving} onClick={() => setEditingMd(false)}>
+                Cancel
+              </button>
+              <button type="button" className="lc-btn l-focus" data-kind="primary" data-size="sm" disabled={mdSaving} onClick={() => void saveInlineEditor()}>
+                {mdSaving ? "Saving…" : `Save ${p.threatModel.file}`}
+              </button>
+            </div>
+          </div>
+        ) : !p.threatModel.exists ? (
+          <p className="lo-q lo-tilep">No {p.threatModel.file} yet. Draft one inline above, or let the first full-project scan write one.</p>
         ) : (
           <>
             {areas.map((a) => (

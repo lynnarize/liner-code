@@ -8,7 +8,7 @@
   canvas gives the dock the whole paper (on the diff, that's the full-width Review).
 */
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject, type ReactNode } from "react";
-import { isPair, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
+import { isPair, isSwarm, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
 import { MarkdownLinks, type FileLink } from "@liner/pro/ai-kit/markdown";
@@ -31,7 +31,7 @@ import { revealFile } from "./reveal";
 import { onBrowserWanted } from "./agentBrowser";
 import { glyphs, is, matches, shortcutOf } from "./keymap";
 import { entering, readLook } from "./look";
-import { keepDock, keptDock, PANE_MIN, PanelGrip, runScript, surfaceOf, SURFACES, usePanelWidth, type Tab } from "./Surfaces";
+import { keepDock, keptDock, PANE_MIN, PanelGrip, runScript, surfaceOf, SURFACES, TerminalGrip, useBelowHeight, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
 import { useReadWhileShown } from "./unread";
 import { closeTab, closeWhere, GUIDE, openTab, paneOf, replaceTab, toggleFull, toggleTab, type DockState } from "./dock";
@@ -303,6 +303,17 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   const open = checkpointsOf(cps).filter((c) => !c.reverted && !c.committed);
   const lines = sumLines(open.flatMap((c) => c.files));
   const openFiles = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
+  const [wtChanges, setWtChanges] = useState(0);
+  useEffect(() => {
+    if (!project?.git || openFiles > 0) return void setWtChanges(0);
+    let live = true;
+    void rpc("git.status", { projectId: project.id, threadId: thread.id })
+      .then((st) => live && setWtChanges(st.changes.length))
+      .catch(() => live && setWtChanges(0));
+    return () => {
+      live = false;
+    };
+  }, [project?.id, project?.git, thread.id, thread.turns, openFiles]);
   const busy = thread.status === "running";
 
   // One identity for the session's life, so the timeline's turns don't redraw for a new one each time.
@@ -404,8 +415,10 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   const [finding, setFinding] = useState(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!keysOn.current) return;
+      if (!keysOn.current || e.defaultPrevented) return;
       if (!is(e, "find")) return;
+      // Focus inside the side panel (Review) or bottom terminal keeps its own ⌘F find bar.
+      if (e.target instanceof Element && e.target.closest(".lc-panel, .lc-below")) return;
       // The panel over the whole paper (Review has its own find), or the window too narrow for both,
       // or an app's tab: the chat isn't showing, and a bar opened over it couldn't be seen.
       if (view !== "chat" || (threadRef.current && getComputedStyle(threadRef.current).pointerEvents === "none")) return;
@@ -507,6 +520,17 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
 
   const send = async (m: { text: string; files: { name: string; data: string }[]; mode: "queue" | "steer"; once?: string }) => {
     try {
+      const tw = !thread.sideOf && !thread.security ? /^\/(teamwork|swarm)(?:\s+([\s\S]*))?$/i.exec(m.text.trim()) : null;
+      if (tw) {
+        const wantMode = tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork";
+        if (!isSwarm(thread) || (thread.swarm?.mode ?? "teamwork") !== wantMode) await rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: wantMode });
+        setDock((d) => openTab(d, "agents"));
+        const body = (tw[2] ?? "").trim();
+        if (!body && !m.files.length) return;
+        await rpc("thread.send", { id: thread.id, text: body, files: m.files, mode: m.mode, ...(m.once ? { once: m.once } : {}) });
+        stick();
+        return;
+      }
       await rpc("thread.send", { id: thread.id, text: m.text, files: m.files, mode: m.mode, ...(m.once ? { once: m.once } : {}) });
       stick();
     } catch (e) {
@@ -587,6 +611,14 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
     return () => window.removeEventListener("keydown", onKey);
   }, [prompts, jump]);
 
+  const [belowH, setBelowH] = useBelowHeight();
+  // When the session is too narrow for thread + panel side by side (<= 786px), opening the bottom terminal yields the side panel instead of letting .lc-thread + .lc-below collapse to 0px.
+  useEffect(() => {
+    if (!below || !dock.open) return;
+    const w = body.current?.clientWidth ?? 0;
+    if (w > 0 && w <= 786) setDock((d) => ({ ...d, open: false }));
+  }, [below]);
+
   return (
     <MarkdownLinks.Provider value={links}>
     <SideKeys.Provider value={keys}>
@@ -602,7 +634,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
       style={widthNow ? ({ "--lc-panel-w": `${widthNow}px` } as CSSProperties) : undefined}
     >
       <div ref={body} className="lc-body">
-        <section ref={threadRef} className="lc-thread" aria-label="Session" data-below={below || undefined}>
+        <section ref={threadRef} className="lc-thread" aria-label="Session" data-below={below || undefined} style={below && belowH ? ({ "--lc-below-h": `${belowH}px` } as CSSProperties) : undefined}>
           <header className="lc-top" data-drag>
             {!sidebar && (
               <ShowSidebar onShow={onSidebar} />
@@ -663,6 +695,35 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                     <>
                       {/* The Session surface, here since it left the right edge (and in its + menu). */}
                       <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), setDock((d) => openTab(d, "session")))} />
+                      {!thread.sideOf && !thread.security &&
+                        (isSwarm(thread) ? (
+                          <Row
+                            title={(thread.swarm?.mode ?? "teamwork") === "swarm" ? "Swarm panel" : "Teamwork panel"}
+                            icon={<I.agents size={16} />}
+                            onPick={() => (close(), setDock((d) => openTab(d, "agents")))}
+                          />
+                        ) : (
+                          <>
+                            <Row
+                              title="Start Teamwork"
+                              icon={<I.agents size={16} />}
+                              onPick={() => {
+                                close();
+                                void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "teamwork" }).catch(fail);
+                                setDock((d) => openTab(d, "agents"));
+                              }}
+                            />
+                            <Row
+                              title="Start Swarm"
+                              icon={<I.agents size={16} />}
+                              onPick={() => {
+                                close();
+                                void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "swarm" }).catch(fail);
+                                setDock((d) => openTab(d, "agents"));
+                              }}
+                            />
+                          </>
+                        ))}
                       <Row title="Rename" icon={<I.edit size={16} />} onPick={() => (close(), setRenaming(true))} />
                       <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={16} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
                       {onBeside && <Row title="Open another session beside it" icon={<I.split size={16} />} onPick={() => (close(), onBeside())} />}
@@ -796,7 +857,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                     <>
                       {asking && <AskDock dock={asking} />}
                       <CrewStrip thread={thread} />
-                      {openFiles > 0 && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles} lines={lines} onView={() => setDock((d) => openTab(d, "changes"))} />}
+                      {(openFiles > 0 || wtChanges > 0) && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles || wtChanges} lines={openFiles > 0 ? lines : { added: 0, removed: 0 }} onView={() => setDock((d) => openTab(d, "changes"))} />}
                     </>
                   }
                 />
@@ -805,6 +866,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
           </div>
           {below && (
             <div ref={entering} className="lc-below" role="region" aria-label="Bottom panel">
+              <TerminalGrip thread={threadRef} height={belowH} onHeight={setBelowH} onDrag={setResizing} />
               <Boundary label="Terminal" quiet>
                 <Suspense fallback={null}>
                   <TerminalSurface thread={thread} visible below lead={project && <ScriptsPick project={project} onRun={(x) => (runScript(thread.id, x), setBelow(true))} />} />
@@ -1166,8 +1228,8 @@ function ReviewerMenu({ thread, on }: { thread: Thread; on: boolean }) {
       </div>
       {on && (
         <div className="lc-rvm-row">
-          <span className="lc-rvm-k">Who reads</span>
-          <button ref={who} type="button" className="lc-rvm-who l-focus" aria-expanded={choosing} aria-label={`Who reads: ${now ? (mine ? label(now) : `Automatic, ${label(now)}`) : "nobody ready"}. Change it`} onClick={() => setChoosing(!choosing)}>
+          <span className="lc-rvm-k" title="Sets the default Reviewer model used for all new and existing sessions">Default reviewer</span>
+          <button ref={who} type="button" className="lc-rvm-who l-focus" aria-expanded={choosing} aria-label={`Default reviewer for new sessions: ${now ? (mine ? label(now) : `Automatic, ${label(now)}`) : "nobody ready"}. Change it`} onClick={() => setChoosing(!choosing)}>
             {now && <ModelMark kind={markOf(now)} size={12} />}
             <span>{now ? (mine ? label(now) : `Automatic: ${label(now)}`) : "Nobody ready"}</span>
             <I.chevD size={12} />

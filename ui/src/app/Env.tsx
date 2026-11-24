@@ -117,6 +117,8 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
   const [more, setMore] = useState<More>(null);
   const [editors, setEditors] = useState<Editor[] | null>(null);
   const [git, setGit] = useState<RpcResult<"git.branches"> | null>(null);
+  const [status, setStatus] = useState<RpcResult<"git.status"> | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [then, setThen] = useState<Then>(() => (saved("lc:commit-then") as Then) ?? "push");
   const [committing, setCommitting] = useState(false);
   const [script, setScript] = useState({ name: "", command: "" });
@@ -131,8 +133,24 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
     void rpc("apps.editors", {})
       .then(setEditors)
       .catch(() => setEditors([]));
-    if (project.git) void rpc("git.branches", { projectId: project.id }).then(setGit).catch(() => {});
-  }, [project.id]);
+    if (project.git) {
+      void rpc("git.branches", { projectId: project.id }).then(setGit).catch(() => {});
+      void rpc("git.status", { projectId: project.id, threadId: thread.id }).then(setStatus).catch(() => {});
+    }
+  }, [project.id, thread.id]);
+
+  const syncBranch = async (rebase = false) => {
+    setSyncing(true);
+    try {
+      const r = await rpc("git.sync", { projectId: project.id, threadId: thread.id, rebase });
+      setStatus((prev) => ({ branch: r.branch, ahead: r.ahead, behind: r.behind, changes: prev?.changes ?? [] }));
+      toast.success(r.pulled ? `Pulled ${r.branch ?? "branch"}` : "Up to date with origin");
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const editor = editors?.find((e) => e.id === saved("lc:editor")) ?? editors?.find((e) => e.kind === "editor") ?? editors?.[0];
   const openIn = (app?: Editor) => {
@@ -231,32 +249,46 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
       <Sep />
 
       {project.git && (
-        <Line icon={<I.branch size={14} />} title={<span className="lc-mono">{branch ?? "No branch"}</span>} note={thread.worktree ? "Its own worktree" : "This checkout"} open={more === "branch"} onMore={() => toggle("branch")}>
-          {thread.worktree ? (
-            <p className="lc-env-note">This session works in a worktree of its own, so its branch stays put. Start another session for another branch.</p>
-          ) : (
-            <>
-              {(git?.branches ?? [])
-                .filter((b) => !git?.worktrees.some((w) => w.branch === b.name))
-                .slice(0, 8)
-                .map((b) => (
-                  <Pick key={b.name} title={<span className="lc-mono">{b.name}</span>} on={b.name === branch} disabled={busy || running || b.name === branch} onPick={() => void switchTo(b.name)} />
-                ))}
-              <form
-                className="lc-env-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (newBranch.trim()) void switchTo(newBranch.trim(), true);
-                }}
-              >
-                <input className="lc-input lc-mono" value={newBranch} onChange={(e) => setNewBranch(e.target.value)} placeholder="new-branch-name" aria-label="New branch" disabled={running} />
-                <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!newBranch.trim() || busy || running}>
-                  New branch
-                </button>
-              </form>
-              {running && <p className="lc-env-note">Switching waits until the turn finishes.</p>}
-            </>
-          )}
+        <Line
+          icon={<I.branch size={14} />}
+          title={<span className="lc-mono">{branch ?? "No branch"}</span>}
+          note={
+            status && (status.ahead > 0 || status.behind > 0)
+              ? `${thread.worktree ? "Worktree" : "Checkout"} · ↑${status.ahead} ↓${status.behind}`
+              : thread.worktree
+                ? "Its own worktree"
+                : "This checkout"
+          }
+          open={more === "branch"}
+          onMore={() => toggle("branch")}
+        >
+          <Pick
+            title={status && status.behind > 0 ? `Fetch & pull (${status.behind} behind)` : "Fetch from origin"}
+            note={status ? `↑${status.ahead} ↓${status.behind}` : undefined}
+            icon={<I.refresh size={12} />}
+            disabled={syncing || running}
+            onPick={() => void syncBranch(false)}
+          />
+          {!thread.worktree &&
+            (git?.branches ?? [])
+              .filter((b) => !git?.worktrees.some((w) => w.branch === b.name))
+              .slice(0, 8)
+              .map((b) => (
+                <Pick key={b.name} title={<span className="lc-mono">{b.name}</span>} on={b.name === branch} disabled={busy || running || b.name === branch} onPick={() => void switchTo(b.name)} />
+              ))}
+          <form
+            className="lc-env-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newBranch.trim()) void switchTo(newBranch.trim(), true);
+            }}
+          >
+            <input className="lc-input lc-mono" value={newBranch} onChange={(e) => setNewBranch(e.target.value)} placeholder="new-branch-name" aria-label="New branch from here" disabled={running} />
+            <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!newBranch.trim() || busy || running}>
+              {thread.worktree ? "New branch from here" : "New branch"}
+            </button>
+          </form>
+          {running && <p className="lc-env-note">Branch actions wait until the turn finishes.</p>}
         </Line>
       )}
 

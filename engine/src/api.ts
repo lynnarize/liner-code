@@ -7,14 +7,14 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import { castOf, CodedError, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage, keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
 import { branchOf, capture, changes, diffFiles, forget, isRepo, keep, literal, local, PATCH, prefixOf, undo } from "./checkpoints.ts";
-import { recreateWorktree, removeWorktree, submodules } from "./worktrees.ts";
-import { saveToDownloads, sessionMarkdown } from "./export.ts";
-import { importable, recentSessions, transcript } from "./imports.ts";
+import { portOffsetFor, recreateWorktree, removeWorktree, resolveWorktreePath, submodules, worktreeHookPath } from "./worktrees.ts";
+import { saveExport, sessionJson, sessionMarkdown } from "./export.ts";
+import { importable, recentSessions, streamTranscript } from "./imports.ts";
 import { outside, run, shellOf, which } from "./exec.ts";
 import { editors, openWith } from "./apps.ts";
 import { Backgrounds } from "./backgrounds.ts";
@@ -23,6 +23,7 @@ import { savedModelsNamed } from "./providers/claude.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
 import { detectOnce, endpointModels } from "./providers/endpoint.ts";
 import { skillsIn } from "./providers/models.ts";
+import { onAcpCommands, onAcpEfforts } from "./providers/acp.ts";
 import type { Routines } from "./routines.ts";
 import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
@@ -43,7 +44,7 @@ import * as security from "./security.ts";
 import { wake as wakeSecurity } from "./security-scan.ts";
 import { demoOnUse } from "./security-demo.ts";
 import { touched as touchedDesign } from "./design-start.ts";
-import { factsOf, forget as forgetFact, remember, searchSessions, titleForAgents } from "./memory.ts";
+import { distillSessionToMemory, factsOf, forget as forgetFact, readWorkspaceMemory, remember, searchSessions, titleForAgents, writeWorkspaceMemory } from "./memory.ts";
 import { checkManifest } from "./addons.ts";
 import { refusal, type PanelEnv, type PanelMethod, type PanelWhere } from "./panels.ts";
 import type { Offers } from "./offers.ts";
@@ -315,7 +316,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!models.length) return;
       listed = { ...listed, [id]: { version: info.version, at: Date.now(), models } };
       writeFileSync(modelsFile, JSON.stringify(listed));
-      detected = detected.map((d) => (d.id === id ? { ...d, models, modelsFrom: "cli", modelsAt: listed[id].at } : d));
+      const hasEffort = models.some((m) => Boolean(m.efforts?.length));
+      detected = detected.map((d) => (d.id === id ? { ...d, models, modelsFrom: "cli", modelsAt: listed[id].at, supports: { ...d.supports, effort: d.supports.effort || hasEffort } } : d));
       publish();
     } catch (e) {
       console.error(`[models] ${id}:`, e instanceof Error ? e.message : e);
@@ -344,7 +346,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       looked = true;
       detected = found.map((d) => {
         const had = listed[d.id];
-        return had && d.modelsFrom !== "cli" && had.version === d.version ? { ...d, models: had.models, modelsFrom: "cli", modelsAt: had.at } : d;
+        if (had && d.modelsFrom !== "cli" && had.version === d.version) {
+          const hasEffort = had.models.some((m) => Boolean(m.efforts?.length));
+          return { ...d, models: had.models, modelsFrom: "cli", modelsAt: had.at, supports: { ...d.supports, effort: d.supports.effort || hasEffort } };
+        }
+        return d;
       });
       publish();
       for (const d of detected) void askModels(d.id, forced);
@@ -353,6 +359,32 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     detecting = run;
     return run;
   };
+  // Publish live ACP slash-command updates so Composer's `/` menu refreshes immediately.
+  onAcpCommands((provider, _cwd, commands) => {
+    store.emit({ type: "commands", provider, commands });
+  });
+  // When an ACP session switches to a non-default model and reports thought_level options, cache them in models.json so the picker knows that model's effort levels.
+  onAcpEfforts((providerId, modelId, efforts) => {
+    const cur = detected.find((d) => d.id === providerId);
+    if (!cur || !efforts.length) return;
+    const same = (a: ModelInfo["efforts"], b: ModelInfo["efforts"]) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+    let changed = !cur.supports.effort;
+    const models = cur.models.map((m) => {
+      if (m.id !== modelId) return m;
+      if (same(m.efforts, efforts)) return m;
+      changed = true;
+      return { ...m, efforts };
+    });
+    if (!changed) return;
+    listed = { ...listed, [providerId]: { version: cur.version, at: Date.now(), models } };
+    try {
+      writeFileSync(modelsFile, JSON.stringify(listed));
+    } catch {
+      // models cache write is best-effort
+    }
+    detected = detected.map((d) => (d.id === providerId ? { ...d, models, supports: { ...d.supports, effort: true } } : d));
+    publish();
+  });
   // Each tool's plan windows, asked of the tool: once its tools are found, again after a turn on
   // it (fifteen seconds apart at most: Claude Code's answer starts it), and when you press Look
   // again. A minute's answer is reused otherwise. The app is sent them as they come.
@@ -432,6 +464,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const remotes = (await git(cwd, ["remote"])).stdout.split("\n").map((r) => r.trim()).filter(Boolean);
     return remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
   };
+  const prCache = new Map<string, { at: number; items: { number: number; title: string; branch: string; url: string }[] }>();
   const asksOf = (threadId: string) => store.timeline(threadId).flatMap((x) => (x.kind === "user" && !x.text.startsWith("/") ? [x.text] : x.kind === "proposal" && x.state === "approved" ? [`(approved plan) ${x.title}`] : [])).slice(-6);
   const worktreeRoot = () => (store.settings.worktreeRoot?.trim() ? store.settings.worktreeRoot.trim().replace(/^~(?=\/|$)/, homedir()) : join(store.home, "worktrees"));
   const setUp = async (threadId: string, cwd: string, command: string) => {
@@ -439,8 +472,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     const t0 = Date.now();
     note(`Setting up the worktree: ${command}`);
     try {
-      const sh = shellOf(command, env, true);
-      const r = await run(sh.cmd, sh.args, { cwd, env, timeout: 15 * 60_000, verbatim: sh.verbatim });
+      const hookEnv = { ...env, LINER_WORKTREE_PORT_OFFSET: String(portOffsetFor(threadId)), LINER_THREAD_ID: threadId };
+      const sh = shellOf(command, hookEnv, true);
+      const r = await run(sh.cmd, sh.args, { cwd, env: hookEnv, timeout: 15 * 60_000, verbatim: sh.verbatim });
       const secs = Math.round((Date.now() - t0) / 1000);
       note(r.code === 0 ? `Set up in ${secs}s.` : `The setup command failed (${r.code}) after ${secs}s: ${(r.stderr || r.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}. The session carries on without it.`);
     } catch (e) {
@@ -520,7 +554,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     try {
       return await work(ctl.signal);
     } catch (e) {
-      if (ctl.signal.aborted) throw new Error(WRITER_CANCELLED);
+      if (ctl.signal.aborted) throw new CodedError("WRITER_CANCELLED", WRITER_CANCELLED);
       throw e;
     } finally {
       if (writing.get(key) === ctl) writing.delete(key);
@@ -749,7 +783,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     `more`: a fork's parent and whether its last turn is half done, and the worktree made for it.
   */
   const draftThread = (o: Omit<RpcParams<"thread.create">, "id" | "worktree" | "base" | "inWorktree">, tid: string, now: number, more: { parent?: Thread; live?: boolean; tree?: Thread["worktree"] } = {}): Thread => {
-    const { projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn } = o;
+    const { projectId, agent, sidekick, swarm, review, title, forkOf, access, effort, model, mode, design: drawn } = o;
     const { parent, live = false, tree } = more;
     // A fork of a Security session is one too: sealed and Read only as its parent was, never the parent's scan itself.
     const tag = o.security ?? heldTag(parent?.security);
@@ -767,6 +801,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       agent: writer,
       // A pair's sidekick, as a model ref; a fork keeps its parent's, and a session started as Settings say gets theirs.
       ...((sidekick ?? parent?.sidekick ?? start?.sidekick) ? { sidekick: (sidekick ?? parent?.sidekick ?? start!.sidekick)!.replace(/^@/, "") } : {}),
+      ...(swarm?.enabled ? { swarm } : {}),
       // The session's own word on the Reviewer; a fork keeps its parent's.
       ...((review ?? parent?.review) !== undefined ? { review: review ?? parent?.review } : {}),
       status: "idle",
@@ -881,10 +916,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const project = store.project(projectId);
       const taken = store.threads.find((t) => t.providerSession === `${tool}:${id}`);
       if (taken) return taken;
-      const s = transcript(tool, id, project.path, env);
+      const s = await streamTranscript(tool, id, project.path, env);
       // A session of its own on that model, in the project folder where the tool kept it.
       const t = await handlers["thread.create"]({ projectId, agent: `@${tool}:${s.model || "default"}`, title: s.title || "A session brought in" });
-      const label = tool === "claude" ? "Claude Code" : "Codex";
+      const label = tool === "claude" ? "Claude Code" : tool === "codex" ? "Codex" : tool === "opencode" ? "OpenCode" : "Hermes";
       store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: s.started || Date.now(), text: `Brought in from ${label}: ${s.turns} ${s.turns === 1 ? "turn" : "turns"}. The next turn carries on ${label}'s own session.` });
       for (const it of s.items) store.putItem(t.id, it);
       return store.patchThread(t.id, { providerSession: `${tool}:${id}`, turns: s.turns, status: "done" });
@@ -957,8 +992,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       for (const p of store.projects.filter((x) => x.git && (!projectId || x.id === projectId))) {
         const r = await git(p.path, ["worktree", "list", "--porcelain"]);
         const paths = r.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
+        const insideBase = `${realOf(join(p.path, ".worktrees"))}${sep}`;
         for (const path of paths) {
-          if (!realOf(path).startsWith(base)) continue;
+          const rp = realOf(path);
+          if (!rp.startsWith(base) && !rp.startsWith(insideBase)) continue;
           const users = store.threads.filter((t) => t.worktree && realOf(t.worktree.root ?? t.worktree.path) === realOf(path));
           if (users.some((t) => !t.archived || working(t.id))) {
             kept++;
@@ -1041,7 +1078,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return addProject(dest);
     },
 
-    "thread.create": async ({ projectId, agent, sidekick, review, title, forkOf, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn, tuning, security: tagged }) => {
+    "thread.create": async ({ projectId, agent, sidekick, swarm, review, title, forkOf, forkTurn, id, access, effort, model, worktree, base, inWorktree, mode, design: drawn, tuning, security: tagged }) => {
       // Checked before anything is made for it (a worktree): one it can't take fails here.
       tuningOf(tuning);
       const tag = securityTag(tagged);
@@ -1086,15 +1123,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           notice = "This project's repository has no commits yet, so a new worktree would be empty. This session works in the project folder instead.";
         } else {
           const branch = `${store.settings.branchPrefix.trim() || "liner/"}${tid.slice(3, 11)}`;
-          const root = join(worktreeRoot(), tid);
+          const root = resolveWorktreePath(top.stdout.trim(), tid, worktreeRoot(), project.worktreePlace ?? store.settings.worktreePlace);
           const r = await git(project.path, ["worktree", "add", "-b", branch, root, ...(base ? [base] : [])]);
           if (r.code !== 0) throw new Error(r.stderr.trim() || "Couldn't make a worktree.");
           // A project inside a bigger repository works in the same folder of the worktree.
           const sub = relative(top.stdout.trim(), realpathSync(project.path));
           tree = sub ? { path: join(root, sub), branch, root, made: true } : { path: root, branch, made: true };
           // Setting up a new worktree: its submodules, which git leaves empty, then the project's setup
-          // command and its scripts marked to run there.
+          // command, optional trusted `.liner/worktree-setup.sh`, and scripts marked to run there.
           const steps = setupSteps(projectId);
+          const hookFile = worktreeHookPath(tree.path);
+          const hookTrusted = Boolean(hookFile && store.settings.worktreeHooksTrusted?.includes(projectId));
+          if (hookFile && hookTrusted) steps.push(`sh ${JSON.stringify(hookFile)}`);
+          else if (hookFile) notice = "Found .liner/worktree-setup.sh — trust worktree setup hooks for this project in Settings to run it automatically.";
           const mods = existsSync(join(root, ".gitmodules"));
           const at = tree.path;
           const prep = async () => {
@@ -1109,7 +1150,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // (T3 Code: ThreadForkService.ts forks from the last stable run), and gets the conversation as text.
       // Half done is its last turn still running, by that turn's own status: one the Reviewer reads now has ended.
       const live = parent ? runtime.isRunning(parent.id) && store.timeline(parent.id).some((x) => x.kind === "turn" && x.turn === parent.turns && x.status === "running") : false;
-      const t = draftThread({ projectId, agent, sidekick, review, title, forkOf, access, effort, model, mode, design: drawn, tuning, security: tag }, tid, now, { parent, live, tree });
+      const cutTurn = parent && typeof forkTurn === "number" && Number.isFinite(forkTurn) && forkTurn >= 0 && forkTurn < parent.turns ? Math.floor(forkTurn) : undefined;
+      const drafted = draftThread({ projectId, agent, sidekick, swarm, review, title, forkOf, access, effort, model, mode, design: drawn, tuning, security: tag }, tid, now, { parent, live: live || cutTurn !== undefined, tree });
+      // A turn-anchored fork starts from the conversation text up to `cutTurn` rather than branching the parent's later turns.
+      const t = cutTurn !== undefined ? { ...drafted, turns: cutTurn, forkSession: "" } : drafted;
       store.putThread(t);
       if (notice) store.putItem(t.id, { kind: "notice", id: uid("it"), turn: 0, at: now, text: notice });
       // A fork starts with its parent's timeline, so you can see where it branched.
@@ -1126,7 +1170,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           await canvas.forkVersions(store.home, parent.id, t.id);
           for (const it of store.timeline(parent.id)) {
             if (live && it.turn >= parent.turns) continue;
-            const copy = settledCopy(it, !live);
+            if (cutTurn !== undefined && it.turn > cutTurn) continue;
+            const copy = settledCopy(it, !live && cutTurn === undefined);
             store.putItem(t.id, copy.kind === "user" && copy.files ? { ...copy, files: copy.files.map(moved) } : copy);
           }
           // Its own hold on what it copied: deleting the session it came from leaves its diffs, undo and design versions whole.
@@ -1147,6 +1192,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === null ? undefined : k === "sidekick" ? String(v).replace(/^@/, "") : v]));
       const t = store.thread(id);
       if (clean.connectionsOff !== undefined && (!Array.isArray(clean.connectionsOff) || clean.connectionsOff.some((x) => typeof x !== "string"))) throw new Error("connectionsOff is a list of add-on ids.");
+      if (clean.spendLimit !== undefined && (typeof clean.spendLimit !== "number" || !Number.isFinite(clean.spendLimit) || clean.spendLimit < 0)) throw new Error("spendLimit must be a non-negative dollar amount.");
       // A security scan only reads: no level above Read only, from the composer or anywhere else; nor does a question about a finding.
       if (t.security?.kind === "scan" && clean.access !== undefined && clean.access !== "read") throw new Error("A security scan stays at Read only.");
       if (t.security?.kind === "ask" && clean.access !== undefined && clean.access !== "read") throw new Error("A question about a finding stays at Read only.");
@@ -1182,10 +1228,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     },
     "thread.items": ({ id }) => store.timeline(store.thread(id).id),
     "thread.load": ({ id }) => ({ items: store.timeline(store.thread(id).id), seq: store.seq }),
-    "thread.export": async ({ id }) => {
+    "thread.export": async ({ id, path, format }) => {
       const cwd = cwdOf(id);
-      const md = await sessionMarkdown(store, id, async (from, to) => (await git(cwd, ["diff", "--relative", ...PATCH, "-M", from, to])).stdout);
-      return { path: saveToDownloads(store.thread(id).title, md) };
+      const diff = async (from: string, to: string) => (await git(cwd, ["diff", "--relative", ...PATCH, "-M", from, to])).stdout;
+      const content = format === "json" ? await sessionJson(store, id, diff) : await sessionMarkdown(store, id, diff);
+      return { path: saveExport(store.thread(id).title, content, { path, format }) };
     },
     // Its usage records are read from when it was made: none of its own is older. Finished turns only: mid-turn a brief's use
     // is logged as the brief ends but the lead's only as its turn does, so counting the turn at work would show the sidekick
@@ -1239,6 +1286,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "memory.list": ({ projectId }) => factsOf(store.home, store.project(projectId).id),
     "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
     "memory.forget": ({ projectId, fact }) => forgetFact(store.home, store.project(projectId).id, fact),
+    "memory.file.read": ({ projectId }) => readWorkspaceMemory(store.project(projectId).path),
+    "memory.file.write": ({ projectId, text }) => writeWorkspaceMemory(store.project(projectId).path, text),
+    "memory.distill": ({ threadId }) => distillSessionToMemory(store, threadId),
     // The person's own search: it may match and show what they read of a message (shown); an agent's never does.
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query, { person: true }),
     "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
@@ -1258,6 +1308,24 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (/^\/reviewer\s*$/.test(text.trim()) && !runtime.isRunning(id)) {
         void runtime.review(id, t.turns, 1);
         return null;
+      }
+      // Universal /teamwork or /swarm trigger: works from Home, Session, or any external caller across every CLI and API.
+      const tw = !t.sideOf && !t.security ? /^\/(teamwork|swarm)(?:\s+([\s\S]*))?$/i.exec(text.trim()) : null;
+      if (tw) {
+        const wantMode = tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork";
+        if (!t.swarm?.enabled || (t.swarm.mode ?? "teamwork") !== wantMode) runtime.swarm.enable(id, { enabled: true, mode: wantMode });
+        const body = (tw[2] ?? "").trim();
+        if (!body && !files?.length) {
+          store.putItem(id, {
+            kind: "notice",
+            id: uid("it"),
+            turn: t.turns,
+            at: Date.now(),
+            text: wantMode === "swarm" ? "Swarm (peer board) is on for this session. Describe the goal and the coordinator will assemble the roster." : "Teamwork (delegation tree) is on for this session. Describe the goal and the coordinator will organize the team.",
+          });
+          return null;
+        }
+        text = body;
       }
       // The turn runs on; its progress comes back as events. A new worktree finishes setting up
       // first, and one that's gone is put back. A side chat works in its session's worktree, so it
@@ -1623,18 +1691,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "git.switch": async ({ threadId, branch, create }) => {
       const t = store.thread(threadId);
       idleOr(threadId, "Wait for the turn to finish before switching branches.");
-      if (t.worktree) throw new Error(`This session works in a worktree of its own, on ${t.worktree.branch}.`);
-      const other = busyBeside(threadId);
+      if (t.worktree && !create) throw new Error(`This session works in a worktree of its own, on ${t.worktree.branch}.`);
+      const other = !t.worktree ? busyBeside(threadId) : undefined;
       if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before switching branches.`);
       const name = branch.trim();
       if (!name || name.startsWith("-") || /[\s~^:?*[\\]|\.\.|@\{/.test(name)) throw new Error("That isn't a name git takes for a branch.");
-      const project = store.project(t.projectId);
-      const r = await run("git", ["switch", ...(create ? ["-c"] : []), name], { cwd: project.path, env, timeout: 30000 });
+      const cwd = t.worktree ? t.worktree.path : store.project(t.projectId).path;
+      const r = await run("git", ["switch", ...(create ? ["-c"] : []), name], { cwd, env, timeout: 30000 });
       if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n").filter((l) => !/^hint:/.test(l)).pop() || "git couldn't switch branches.");
-      store.putProject({ ...project, branch: name });
+      if (t.worktree) store.patchThread(threadId, { worktree: { ...t.worktree, branch: name } });
+      else store.putProject({ ...store.project(t.projectId), branch: name });
       return { branch: name };
     },
-    "apps.editors": () => editors(),
+    "apps.editors": () => editors(env),
     "system.check": () => systemCheck(env),
     "tools.check": async ({ tool, tier }) => {
       if (tier !== 1 && tier !== 2 && tier !== 3) throw new Error("There are three tiers of checks: 1, 2 and 3.");
@@ -1647,7 +1716,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "background.image": ({ id, dark }) => backgrounds.image(id, dark),
     "background.save": async ({ data, name }) => (await backgrounds.save(data, name), null),
     "background.remove": () => (backgrounds.remove(), null),
-    "apps.open": async ({ path, app }) => (await openWith(path, app), null),
+    "apps.open": async ({ path, app }) => (await openWith(path, app, env), null),
     "git.commit": async ({ threadId, message, paths: only }) => {
       const t = store.thread(threadId);
       idleOr(threadId, "Wait for the turn to finish before committing.");
@@ -1751,6 +1820,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Home's picker and a session started without an agent read it (startOf): only its forms are kept, and null clears it.
       if (patch.start !== undefined && patch.start !== null && !startIn(patch.start)) throw new Error('A new session starts as "pair", "best", "fast" or "@" and a model.');
       if (patch.start === null) patch.start = undefined;
+      if (patch.maxActiveSubagents !== undefined && (!Number.isInteger(patch.maxActiveSubagents) || patch.maxActiveSubagents < 1 || patch.maxActiveSubagents > 8)) throw new Error("Parallel subagents must be a whole number from 1 to 8.");
+      if (patch.swarmMaxActive !== undefined && (!Number.isInteger(patch.swarmMaxActive) || patch.swarmMaxActive < 1 || patch.swarmMaxActive > 4)) throw new Error("Swarm active processes must be a whole number from 1 to 4.");
+      if (patch.swarmHibernateSec !== undefined && (!Number.isInteger(patch.swarmHibernateSec) || patch.swarmHibernateSec < 0 || patch.swarmHibernateSec > 300)) throw new Error("Swarm hibernation delay must be a whole number of seconds from 0 to 300.");
+      if (patch.swarmWorkspace !== undefined && patch.swarmWorkspace !== "share" && patch.swarmWorkspace !== "inherit") throw new Error('Swarm workspace must be "share" or "inherit".');
+      if (patch.swarmWorkerModel !== undefined) {
+        const ref = typeof patch.swarmWorkerModel === "string" ? patch.swarmWorkerModel.trim() : "";
+        patch.swarmWorkerModel = !ref || ref === "same" ? undefined : ref;
+      }
       pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
@@ -1768,6 +1845,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "updates.download": () => updates.download(),
     "updates.refused": () => updates.refused(),
     "updates.tool": ({ id }) => updates.updateTool(id),
+    "updates.cancelTool": ({ id }) => updates.cancelTool(id),
     "updates.dismiss": ({ key }) => updates.dismiss(key),
 
     "fs.files": ({ projectId, threadId, query, limit }) => findFiles(threadId ? cwdOf(threadId) : store.project(projectId).path, query, limit),
@@ -1784,7 +1862,78 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (!existsSync(dir)) throw new Error("That attachment isn't there any more.");
       return readInside(realpathSync(dir), path, { gone: "That attachment isn't there any more.", out: "That file isn't an attachment.", cap: 20, big: "That attachment is over 20 MB, too big to show." }, dir);
     },
-    "git.status": ({ projectId }) => gitStatus(store.project(projectId).path),
+    "git.status": ({ projectId, threadId }) => gitStatus(threadId ? cwdOf(threadId) : store.project(projectId).path),
+    "git.sync": async ({ projectId, threadId, rebase }) => {
+      if (threadId) idleOr(threadId, "Wait for the turn to finish before syncing.");
+      const cwd = threadId ? cwdOf(threadId) : store.project(projectId).path;
+      // A pull rewrites the files under any other session working in this folder, as a branch switch would.
+      const other = busyIn(cwd, threadId);
+      if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before pulling.`);
+      const fetchedRes = await run("git", ["fetch", "--prune"], { cwd, env, timeout: 60000 });
+      if (fetchedRes.code !== 0) throw new Error(fetchedRes.stderr.trim().split("\n").pop() || "git fetch failed.");
+      const before = await gitStatus(cwd);
+      let pulled = false;
+      if (before.behind > 0) {
+        const pullArgs = rebase ? ["pull", "--rebase"] : ["pull", "--ff-only"];
+        const r = await run("git", pullArgs, { cwd, env, timeout: 60000 });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n").pop() || "git pull failed.");
+        pulled = true;
+      }
+      const after = await gitStatus(cwd);
+      return { branch: after.branch, ahead: after.ahead, behind: after.behind, pulled };
+    },
+    "git.stash": async ({ projectId, threadId, action, message, ref }) => {
+      if (threadId && action !== "list") idleOr(threadId, "Wait for the turn to finish before changing the stash.");
+      const cwd = threadId ? cwdOf(threadId) : store.project(projectId).path;
+      // Stashing takes every uncommitted file away, and popping puts others down: never under another session working here.
+      const other = action !== "list" ? busyIn(cwd, threadId) : undefined;
+      if (other) throw new Error(`"${other.title}" is working in this folder now. Wait for it to finish before changing the stash.`);
+      let output: string | undefined;
+      if (action === "push") {
+        const args = ["stash", "push", "-u", ...(message?.trim() ? ["-m", message.trim()] : [])];
+        const r = await run("git", args, { cwd, env, timeout: 30000 });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n").pop() || "git stash push failed.");
+        output = r.stdout.trim() || undefined;
+      } else if (action === "pop") {
+        if (ref && !/^stash@\{\d+\}$/.test(ref)) throw new Error("That isn't a valid stash reference.");
+        const args = ["stash", "pop", ...(ref ? [ref] : [])];
+        const r = await run("git", args, { cwd, env, timeout: 30000 });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n").pop() || "git stash pop failed.");
+        output = r.stdout.trim() || undefined;
+      }
+      const list = await run("git", ["stash", "list", "--format=%gd%x1f%gs"], { cwd, env, timeout: 15000 });
+      const stashes = list.code === 0
+        ? list.stdout.split("\n").filter(Boolean).map((line) => {
+            const [r, msg] = line.split("\x1f");
+            return { ref: r ?? "", message: msg ?? "" };
+          }).filter((s) => s.ref)
+        : [];
+      return { stashes, ...(output ? { output } : {}) };
+    },
+    "git.prs": async ({ projectId, query }) => {
+      const p = store.project(projectId);
+      if (!p.git) return [];
+      const cached = prCache.get(projectId);
+      let items = cached && Date.now() - cached.at < 30_000 ? cached.items : null;
+      if (!items) {
+        const gh = which("gh", env);
+        if (!gh) return [];
+        const r = await run(gh, ["pr", "list", "--limit", "25", "--json", "number,title,headRefName,url"], { cwd: p.path, env, timeout: 10_000 });
+        if (r.code !== 0) return [];
+        try {
+          const parsed = JSON.parse(r.stdout) as { number?: number; title?: string; headRefName?: string; url?: string }[];
+          items = parsed
+            .filter((x): x is { number: number; title: string; headRefName?: string; url?: string } => typeof x.number === "number" && typeof x.title === "string")
+            .map((x) => ({ number: x.number, title: x.title, branch: x.headRefName ?? "", url: x.url ?? "" }));
+          prCache.set(projectId, { at: Date.now(), items });
+        } catch {
+          return [];
+        }
+      }
+      const q = (query ?? "").trim().toLowerCase();
+      if (!q) return items.slice(0, 10);
+      return items.filter((x) => String(x.number).includes(q) || x.title.toLowerCase().includes(q) || x.branch.toLowerCase().includes(q)).slice(0, 10);
+    },
 
     "groups.save": ({ groups }) => store.setGroups(groups),
 
@@ -1886,6 +2035,20 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { made, left: [] };
     },
 
+    "swarm.get": ({ threadId }) => runtime.swarm.snapshot(threadId),
+    "swarm.enable": ({ threadId, enabled, mode, preset, title, maxActive, hibernateSec }) => runtime.swarm.enable(threadId, { enabled, mode, preset, title, maxActive, hibernateSec }),
+    "swarm.config": ({ threadId, maxActive, hibernateSec, stallMonitor, title }) => runtime.swarm.updateConfig(threadId, { maxActive, hibernateSec, stallMonitor, title }),
+    "swarm.post": ({ threadId, text, channel }) => runtime.swarm.post(threadId, { from: "you", text, channel, kind: "user" }).snapshot,
+    "swarm.addWorker": async ({ threadId, name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork }) => (await runtime.swarm.addWorkers(threadId, { name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork })).snapshot,
+    "swarm.swapModel": ({ threadId, name, model, reason }) => runtime.swarm.swapModel(threadId, name, model, reason),
+    "swarm.wake": ({ threadId, name, note }) => runtime.swarm.wake(threadId, name, note),
+    "swarm.hibernate": ({ threadId, name }) => runtime.swarm.hibernate(threadId, name),
+    "swarm.stopWorker": ({ threadId, name }) => runtime.swarm.stopWorker(threadId, name),
+    "swarm.killWorker": ({ threadId, name }) => runtime.swarm.killWorker(threadId, name),
+    "swarm.land": ({ threadId, name }) => runtime.swarm.landWorker(threadId, name),
+    "swarm.stopAll": ({ threadId }) => runtime.swarm.stopAllWorkers(threadId, false) ?? runtime.swarm.snapshot(threadId)!,
+    "swarm.resume": ({ threadId }) => runtime.swarm.resume(threadId),
+
     "term.open": ({ threadId, cols, rows, command, title }) => x.terms.open(cwdOf(threadId), cols, rows, command, threadId, title),
     "term.attach": ({ id }) => x.terms.attach(id),
     "term.list": ({ threadId }) => x.terms.list(threadId),
@@ -1977,13 +2140,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       writing.get(`${threadId}:${kind}`)?.abort();
       return null;
     },
-    "pr.create": async ({ threadId, title, body, draft }) => {
+    "pr.create": async ({ threadId, title, body, draft, base: baseArg, reviewers, labels }) => {
       const cwd = cwdOf(threadId);
       const branch = await branchFor(threadId);
       if (!branch) throw new Error("This session isn't on a branch.");
       const base = await mainBranch(cwd);
       if (base && base.replace(/^origin\//, "") === branch) throw new Error(`This session works on ${branch} itself. Start it in a worktree to open a pull request from a branch of its own.`);
-      const pr = await prCreate(cwd, branch, { title, body, draft }, env);
+      const pr = await prCreate(cwd, branch, { title, body, draft, base: baseArg, reviewers, labels }, env);
       const checks = keptSince(undefined, prChecksOf(pr.checks));
       store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state, ...(checks ? { checks } : {}) } });
       return pr;
@@ -1995,8 +2158,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const prs = (await prList(cwd, env)).map((p) => ({ ...p, threadId: store.threads.find((t) => t.projectId === projectId && (t.pr?.number === p.number || t.worktree?.branch === p.head))?.id }));
       return { prs, gh: "ready" };
     },
-    "pr.merge": async ({ projectId, number }) => {
-      await prMerge(store.project(projectId).path, number, env);
+    "pr.merge": async ({ projectId, number, method, deleteBranch }) => {
+      await prMerge(store.project(projectId).path, number, env, { method, deleteBranch });
       return null;
     },
     "ports.list": ({ threadId }) => (threadId ? listeningPorts(env, mine(threadId)) : listeningPorts(env)),
@@ -2121,13 +2284,17 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     reads. T3 Code's orchestration-v2/CheckpointRestoreSafety.ts.
   */
   function busyBeside(threadId: string) {
+    return busyIn(cwdOf(threadId), threadId);
+  }
+  /** Another session running now in `folder` (or inside it, or around it), leaving out `except`: busyBeside for a folder with no session of its own. */
+  function busyIn(folder: string, except?: string) {
     const inside = (a: string, b: string) => {
       const r = relative(a, b);
       return r === "" || !outside(r);
     };
-    const cwd = realOf(cwdOf(threadId));
+    const cwd = realOf(folder);
     return store.threads.find((o) => {
-      if (o.id === threadId || o.sideOf || !working(o.id)) return false;
+      if (o.id === except || o.sideOf || !working(o.id)) return false;
       const there = realOf(cwdOf(o.id));
       return inside(cwd, there) || inside(there, cwd);
     });

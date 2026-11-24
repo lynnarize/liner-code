@@ -4,7 +4,7 @@
   many times a second, so listeners hear about changes once per frame.
 */
 import { useEffect, useSyncExternalStore } from "react";
-import type { AddonInfo, AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, Thread, ToolLimits, Updates } from "@contracts";
+import type { AddonInfo, AgentProfile, EngineEvent, Item, ProviderInfo, Project, Routine, RoutineRun, RpcErrorCode, RpcMethod, RpcParams, RpcResult, Settings, SidebarGroup, SwarmSnapshot, Thread, ToolLimits, Updates } from "@contracts";
 
 declare global {
   interface Window {
@@ -39,6 +39,8 @@ export type EngineState = {
   addonsOff: boolean;
   /** Timelines of the threads that have been opened. */
   items: Record<string, Item[]>;
+  /** Loaded Liner-native Swarm snapshots, keyed by thread id. */
+  swarms: Record<string, SwarmSnapshot | null>;
 };
 
 const base = () => window.__LINER__?.base ?? "";
@@ -64,6 +66,7 @@ let state: EngineState = {
   addons: [],
   addonsOff: false,
   items: {},
+  swarms: {},
 };
 const listeners = new Set<() => void>();
 
@@ -138,7 +141,7 @@ export const onNotify = (fn: (e: NotifyEvent) => void) => {
   is drawing which frame, a picture being made), Liner Security's findings and scans changing. A design shown (an item) goes to the state and
   here too, so the session can bring its Design surface up.
 */
-type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" | "security.changed" | "security.scan" }> | Extract<EngineEvent, { type: "item" }>;
+type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" | "security.changed" | "security.scan" | "commands" }> | Extract<EngineEvent, { type: "item" }>;
 const streamListeners = new Set<(e: Stream) => void>();
 export const onStream = (fn: (e: Stream) => void) => {
   streamListeners.add(fn);
@@ -269,7 +272,8 @@ function apply(e: Numbered) {
       // A session deleted for good (or a side chat let go) goes, with its timeline; an archived one comes as "thread".
       forgetTimeline(e.id);
       const { [e.id]: _gone, ...items } = state.items;
-      return set({ threads: state.threads.filter((t) => t.id !== e.id), sides: state.sides.filter((t) => t.id !== e.id && t.sideOf !== e.id), items });
+      const { [e.id]: _swGone, ...swarms } = state.swarms;
+      return set({ threads: state.threads.filter((t) => t.id !== e.id), sides: state.sides.filter((t) => t.id !== e.id && t.sideOf !== e.id), items, swarms });
     }
     case "item": {
       if (e.item.kind === "design") for (const fn of streamListeners) fn(e);
@@ -315,6 +319,8 @@ function apply(e: Numbered) {
       return set({ limits: e.tools });
     case "addons":
       return set({ addons: e.addons, addonsOff: e.off });
+    case "swarm.changed":
+      return set({ swarms: { ...state.swarms, [e.threadId]: e.snapshot } });
     case "term":
     case "term.exit":
     case "devlog":
@@ -328,6 +334,7 @@ function apply(e: Numbered) {
     case "pictures.progress":
     case "security.changed":
     case "security.scan":
+    case "commands":
       for (const fn of streamListeners) fn(e);
       return;
   }
@@ -388,7 +395,13 @@ export function startEngine() {
   void connect();
 }
 
-export class RpcError extends Error {}
+export class RpcError extends Error {
+  readonly code?: RpcErrorCode;
+  constructor(message: string, code?: RpcErrorCode) {
+    super(message);
+    this.code = code;
+  }
+}
 /** The call never got an answer: the app's own Reconnecting pill says so already. */
 export class EngineAway extends RpcError {}
 
@@ -401,14 +414,14 @@ export async function rpc<M extends RpcMethod>(method: M, params: RpcParams<M>):
   } catch {
     throw new EngineAway("The engine isn't answering. Try again in a moment.");
   }
-  if (!res.ok) throw new RpcError(res.status === 401 ? "The engine turned this window away (401). Quit and open Liner Code again." : `The engine answered with an error (${res.status}). Try again in a moment.`);
-  let body: { ok: boolean; result?: RpcResult<M>; error?: string };
+  if (!res.ok) throw new RpcError(res.status === 401 ? "The engine turned this window away (401). Quit and open Liner Code again." : `The engine answered with an error (${res.status}). Try again in a moment.`, res.status === 401 ? "UNAUTHORIZED" : undefined);
+  let body: { ok: boolean; result?: RpcResult<M>; error?: string; code?: RpcErrorCode };
   try {
     body = (await res.json()) as typeof body;
   } catch {
     throw new EngineAway("The engine isn't answering. Try again in a moment.");
   }
-  if (!body.ok) throw new RpcError(body.error ?? "Something went wrong.");
+  if (!body.ok) throw new RpcError(body.error ?? "Something went wrong.", body.code);
   return body.result as RpcResult<M>;
 }
 
@@ -509,3 +522,21 @@ export const useItemsWhere = (threadId: string | undefined, keep: (it: Item) => 
 export const isCheckpoint = (it: Item) => it.kind === "checkpoint";
 export const isPrompt = (it: Item) => it.kind === "user";
 export const isSubagent = (it: Item) => it.kind === "tool" && it.toolKind === "task";
+
+/** Lazily loads and subscribes to a thread's Liner-native Swarm snapshot while Swarm is enabled. */
+export function useSwarm(threadId: string | undefined, enabled = true): SwarmSnapshot | null {
+  const cached = useEngine((s) => (threadId ? s.swarms[threadId] : undefined));
+  useEffect(() => {
+    if (!threadId || !enabled || cached !== undefined) return;
+    let gone = false;
+    void rpc("swarm.get", { threadId })
+      .then((snap) => {
+        if (!gone) set({ swarms: { ...state.swarms, [threadId]: snap } });
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [threadId, enabled, cached]);
+  return cached ?? null;
+}

@@ -167,6 +167,7 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "i
 const ReviewIn = createContext("in Changes");
 
 const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked, draw }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+  const latestTurn = useEngine((s) => threadOf(s, threadId)?.turns);
   // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
   // a head for each model's part, so who did what reads in order.
   const marks = items.filter((x): x is Mark => x.kind === "turn");
@@ -327,6 +328,11 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
               {it.stop && running && (
                 <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.stop", { id: threadId })}>
                   Stop
+                </button>
+              )}
+              {!running && it.text === "You stopped this turn." && it.turn === latestTurn && (
+                <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.send", { id: threadId, text: "Continue where you left off." })}>
+                  Resume
                 </button>
               )}
             </p>
@@ -1659,9 +1665,40 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
 
 /** The agent asks you to choose, one question at a time. */
 function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Item, { kind: "question" }>; who: string }) {
+  const OTHER = "Something else";
   const [at, setAt] = useState(0);
-  const [picks, setPicks] = useState<Record<string, string>>({});
-  const [other, setOther] = useState<Record<string, string>>({});
+  // Seed from persisted partial answers so reloads don't lose selections in progress.
+  const [picks, setPicks] = useState<Record<string, string[]>>(() => {
+    const init: Record<string, string[]> = {};
+    for (const q of it.questions) {
+      const saved = it.partial?.[q.question];
+      if (!saved) continue;
+      if (q.multiSelect) {
+        const known = new Set(q.options.map((o) => o.label));
+        const parts = saved.split(", ").map((s) => s.trim()).filter(Boolean);
+        init[q.question] = parts.map((p) => (known.has(p) ? p : OTHER));
+      } else {
+        const known = q.options.some((o) => o.label === saved);
+        init[q.question] = [known ? saved : OTHER];
+      }
+    }
+    return init;
+  });
+  const [other, setOther] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const q of it.questions) {
+      const saved = it.partial?.[q.question];
+      if (!saved) continue;
+      const known = new Set(q.options.map((o) => o.label));
+      if (q.multiSelect) {
+        const custom = saved.split(", ").map((s) => s.trim()).filter((p) => p && !known.has(p));
+        if (custom.length) init[q.question] = custom.join(", ");
+      } else if (!known.has(saved)) {
+        init[q.question] = saved;
+      }
+    }
+    return init;
+  });
   if (it.state !== "asking")
     return (
       <div className="lc-answered" data-state={it.state === "answered" ? "approved" : "denied"}>
@@ -1694,13 +1731,37 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
         </button>
       </div>
     );
-  const OTHER = "Something else";
-  // A question that comes with no choices (Codex's and ACP's free text): writing your own is the one there is.
-  const pickOf = (x: (typeof it.questions)[number]) => picks[x.question] ?? x.options[0]?.label ?? OTHER;
-  const chosen = pickOf(q);
+  // A question with no predefined options defaults to free-text; otherwise require an explicit pick instead of silently choosing option 0.
+  const selectedOf = (x: (typeof it.questions)[number], map = picks): string[] => {
+    const cur = map[x.question];
+    if (cur !== undefined) return cur;
+    return x.options.length === 0 ? [OTHER] : [];
+  };
+  const answerOf = (x: (typeof it.questions)[number], map = picks, custom = other): string => {
+    const list = selectedOf(x, map);
+    const resolved = list.map((v) => (v === OTHER ? custom[x.question]?.trim() ?? "" : v)).filter(Boolean);
+    return x.multiSelect ? resolved.join(", ") : (resolved[0] ?? "");
+  };
+  const persistPartial = (nextPicks: Record<string, string[]>, nextOther: Record<string, string>) => {
+    const partial: Record<string, string> = {};
+    for (const x of it.questions) {
+      const val = answerOf(x, nextPicks, nextOther);
+      if (val) partial[x.question] = val;
+    }
+    void rpc("question.partial", { threadId, itemId: it.id, answers: partial }).catch(() => {});
+  };
+  const toggleChoice = (label: string) => {
+    const cur = selectedOf(q);
+    const nextList = q.multiSelect ? (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]) : [label];
+    const nextPicks = { ...picks, [q.question]: nextList };
+    setPicks(nextPicks);
+    persistPartial(nextPicks, other);
+  };
+  const chosenList = selectedOf(q);
+  const currentAnswer = answerOf(q);
   const last = at === it.questions.length - 1;
-  const answers = () =>
-    Object.fromEntries(it.questions.map((x) => [x.question, pickOf(x) === OTHER ? other[x.question]?.trim() || OTHER : pickOf(x)]));
+  const allAnswered = it.questions.every((x) => Boolean(answerOf(x)));
+  const answers = () => Object.fromEntries(it.questions.map((x) => [x.question, answerOf(x)]));
   const submit = () => rpc("question.answer", { threadId, itemId: it.id, answers: answers() }).catch(fail);
   return (
     <section className="lc-q lc-frame" aria-label={`${who} asks: ${q.question}`}>
@@ -1720,25 +1781,40 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
         <div className="lc-q-title">
           <b>{q.question}</b>
           {q.header && <p className="lc-quiet">{q.header}</p>}
+          {q.multiSelect && <p className="lc-quiet">Choose one or more</p>}
         </div>
-        <div className="lc-opts" role="radiogroup" aria-label={q.question}>
+        <div className="lc-opts" role={q.multiSelect ? "group" : "radiogroup"} aria-label={q.question}>
           {[...q.options, { label: OTHER, description: "Write your own answer." }].map((o) => {
-            const on = chosen === o.label;
+            const on = chosenList.includes(o.label);
             return (
-              <div key={o.label} className="lc-opt" role="radio" aria-checked={on} tabIndex={0} data-on={on || undefined} onClick={() => setPicks((p) => ({ ...p, [q.question]: o.label }))} onKeyDown={(e) => {
+              <div key={o.label} className="lc-opt" role={q.multiSelect ? "checkbox" : "radio"} aria-checked={on} tabIndex={0} data-on={on || undefined} onClick={() => toggleChoice(o.label)} onKeyDown={(e) => {
                 // Its own keys only: space and Enter in the field inside it are letters, and space here would scroll the thread.
                 if (e.target !== e.currentTarget || (e.key !== " " && e.key !== "Enter")) return;
                 e.preventDefault();
-                setPicks((p) => ({ ...p, [q.question]: o.label }));
+                toggleChoice(o.label);
               }}>
-                <span className="lc-radio" data-on={on || undefined} />
+                <span className="lc-radio" data-on={on || undefined} data-multi={q.multiSelect || undefined} />
                 <span>
                   <b>
                     {o.label}
                     {"suggested" in o && o.suggested && <Badge tone="accent">{who} suggests</Badge>}
                   </b>
                   {o.description && <small>{o.description}</small>}
-                  {o.label === OTHER && on && <textarea className="lc-else" autoFocus={picks[q.question] === OTHER} aria-label="Your own answer" placeholder="Say what you would like instead" value={other[q.question] ?? ""} onChange={(e) => setOther((x) => ({ ...x, [q.question]: e.target.value }))} onClick={(e) => e.stopPropagation()} />}
+                  {o.label === OTHER && on && (
+                    <textarea
+                      className="lc-else"
+                      autoFocus={chosenList.includes(OTHER)}
+                      aria-label="Your own answer"
+                      placeholder="Say what you would like instead"
+                      value={other[q.question] ?? ""}
+                      onChange={(e) => {
+                        const nextOther = { ...other, [q.question]: e.target.value };
+                        setOther(nextOther);
+                        persistPartial(picks, nextOther);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                 </span>
               </div>
             );
@@ -1752,7 +1828,7 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
               Back
             </button>
           )}
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={chosen === OTHER && !other[q.question]?.trim()} title={chosen === OTHER && !other[q.question]?.trim() ? "Write your answer first" : undefined} onClick={() => (last ? void submit() : setAt(at + 1))}>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!currentAnswer || (last && !allAnswered)} title={!currentAnswer ? (chosenList.includes(OTHER) ? "Write your answer first" : "Pick an option first") : undefined} onClick={() => (last ? void submit() : setAt(at + 1))}>
             {last ? "Send answer" : "Next question"}
           </button>
         </div>
@@ -2067,14 +2143,16 @@ function ErrorCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
 function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kind: "limit" }> }) {
   const status = useEngine((s) => threadOf(s, threadId)?.status);
   const providers = useEngine((s) => s.providers);
+  const resumeAtReset = useEngine((s) => Boolean(s.settings.resumeAtReset));
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!it.until) return;
-    const t = window.setInterval(() => setNow(Date.now()), 30000);
+    const t = window.setInterval(() => setNow(Date.now()), 10_000);
     return () => window.clearInterval(t);
   }, [it.until]);
   const label = providers.find((p) => p.id === it.provider)?.label ?? it.provider;
   const open = !it.until || it.until <= now;
+  const minsLeft = it.until && !open ? Math.max(1, Math.ceil((it.until - now) / 60_000)) : 0;
   const current = status === "limited";
   const [busy, send] = useOneCall(!current);
   return (
@@ -2084,9 +2162,22 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
         <b>{label} hit its usage limit</b>
         <small>
           {it.message}
-          {it.until ? (open ? " It has reset." : ` It resets ${clock(it.until)}.`) : ""}
+          {it.until ? (open ? " It has reset." : ` It resets ${clock(it.until)} (in ${minsLeft}m).`) : ""}
         </small>
       </span>
+      {current && it.until && !open && (
+        <button
+          type="button"
+          className="lc-btn"
+          data-kind="ghost"
+          data-size="sm"
+          aria-pressed={resumeAtReset}
+          title="Automatically carry on once the usage window reopens"
+          onClick={() => void rpc("settings.save", { resumeAtReset: !resumeAtReset }).catch((e: Error) => toast.error(e.message))}
+        >
+          {resumeAtReset ? "Auto-resume on" : "Auto-resume"}
+        </button>
+      )}
       {current && it.fallback && (
         <button type="button" className="lc-btn" data-kind={open ? "plain" : "primary"} data-size="sm" title="Another tool takes over, with the conversation so far" disabled={busy} onClick={() => send(() => rpc("thread.carryOn", { id: threadId, model: it.fallback }))}>
           Carry on with {modelLabel(it.fallback, providers)}
@@ -2109,10 +2200,12 @@ function LimitCard({ threadId, it }: { threadId: string; it: Extract<Item, { kin
 const SHOWN_ICON: Record<ShownChip["kind"], (p: { size?: number }) => ReactNode> = { check: I.shield, frame: I.page, layer: I.box, compare: I.contrast, build: I.code };
 
 function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<Item, { kind: "user" }>; fresh: boolean; onReview?: (checkpointId: string, path?: string) => void }) {
-  const running = useEngine((s) => threadOf(s, threadId)?.status === "running");
+  const thread = useEngine((s) => threadOf(s, threadId));
+  const running = thread?.status === "running";
   // Only the checkpoints: the whole timeline would redraw every message you sent with each streamed word.
   const cps = useItemsWhere(threadId, isCheckpoint) as Checkpoint[];
   const [edit, setEdit] = useState<string | null>(null);
+  const [rewinding, setRewinding] = useState(false);
   const [busy, setBusy] = useState(false);
   // A message Liner wrote for you (Liner Design's "Fix 1 check"): what the agent was told, folded under it.
   const [told, setTold] = useState(false);
@@ -2151,6 +2244,34 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       if (revertFiles && !force && /^Changed after that turn:/.test(message))
         toast.error("Nothing was put back", { description: message, action: { label: "Go back anyway", onClick: () => void go(true, true) }, duration: 10000 });
       else fail(e);
+      setBusy(false);
+    }
+  };
+  const rewindOnly = async (revertFiles: boolean, force = false) => {
+    setBusy(true);
+    try {
+      const r = await rpc("thread.rewind", { threadId, itemId: it.id, files: revertFiles, force });
+      setRewinding(false);
+      toast(`Undid back to turn ${r.turn}`, { description: revertFiles && r.files ? `${plural(r.files, "file")} back as they were` : "The files stay as they are" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (revertFiles && !force && /^Changed after that turn:/.test(message))
+        toast.error("Nothing was put back", { description: message, action: { label: "Go back anyway", onClick: () => void rewindOnly(true, true) }, duration: 10000 });
+      else fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const forkHere = async () => {
+    if (!thread) return;
+    setBusy(true);
+    try {
+      const forked = await rpc("thread.create", { projectId: thread.projectId, forkOf: thread.id, forkTurn: it.turn });
+      toast.success(`Forked from turn ${it.turn}`);
+      window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id: forked.id } }));
+    } catch (e) {
+      fail(e);
+    } finally {
       setBusy(false);
     }
   };
@@ -2240,11 +2361,36 @@ function You({ threadId, it, fresh, onReview }: { threadId: string; it: Extract<
       )}
       {/* The files that changed since the last turn, which the agent was told of ahead of your words (SentWith.tsx). */}
       {it.edits && it.edits.length > 0 && <SentWith edits={it.edits} />}
+      {rewinding && (
+        <div className="lc-you-acts">
+          <span className="lc-quiet">Undo from turn {it.turn} without resending{files ? `; ${plural(files, "file")} changed since` : ""}</span>
+          <span className="lc-grow" />
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={busy} onClick={() => setRewinding(false)}>
+            Cancel
+          </button>
+          {files > 0 && (
+            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || Boolean(committed)} title={committed ? `Turn ${committed.turn} is committed; revert the commit first` : "Put the files back as they were before this message"} onClick={() => void rewindOnly(true)}>
+              Revert files too
+            </button>
+          )}
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy} onClick={() => void rewindOnly(false)}>
+            {files ? "Keep file changes" : "Undo to here"}
+          </button>
+        </div>
+      )}
       {!it.steer && it.turn > 0 && (
         <span className="lc-you-more">
-          <button type="button" className="lc-you-btn l-focus" disabled={running} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => setEdit(part ? said : it.text)}>
+          <button type="button" className="lc-you-btn l-focus" disabled={running || busy} title={running ? "Stop the turn to edit from here" : "Edit this message and go back to it"} onClick={() => (setRewinding(false), setEdit(part ? said : it.text))}>
             <I.edit size={12} />
             Edit from here
+          </button>
+          <button type="button" className="lc-you-btn l-focus" disabled={running || busy} title={running ? "Stop the turn to undo to here" : "Rewind back to before this message without resending"} onClick={() => setRewinding((x) => !x)}>
+            <I.undo size={12} />
+            Undo to here
+          </button>
+          <button type="button" className="lc-you-btn l-focus" disabled={busy} title="Start a new forked session from this turn" onClick={() => void forkHere()}>
+            <I.branch size={12} />
+            Fork from here
           </button>
           <button type="button" className="lc-you-btn l-focus" title="Copy" aria-label="Copy the message" onClick={() => void navigator.clipboard?.writeText(it.shown?.text || said).then(() => toast("Copied"), fail)}>
             <I.copy size={12} />

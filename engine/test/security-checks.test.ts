@@ -173,21 +173,21 @@ test("checks: npm audit's two shapes, one finding per package, and the skips sai
   const off = await runChecks(sec, "p");
   assert.deepEqual([rowOf(off, "packages").state, rowOf(off, "packages").note], ["failed", "couldn't reach the npm registry"]);
   assert.equal(sec.findings("p").find((f) => f.rule === "npm/lodash")?.state, "open");
-  // Another lockfile: not checked, and said.
+  // Another lockfile: checked with its own CLI, or skipped cleanly when that CLI isn't installed.
   rmSync(join(path, "package-lock.json"));
   writeFileSync(join(path, "yarn.lock"), "");
-  assert.equal(rowOf(await runChecks(sec, "p"), "packages").note, "yarn.lock not read yet");
+  assert.equal(rowOf(await runChecks(sec, "p"), "packages").note, "yarn not installed");
   rmSync(join(path, "yarn.lock"));
-  assert.equal(rowOf(await runChecks(sec, "p"), "packages").note, "no package-lock.json");
+  assert.equal(rowOf(await runChecks(sec, "p"), "packages").note, "no lockfile");
 });
 
-test("checks: outside a git repository the file checks are skipped, and two runs at once are one", async () => {
+test("checks: outside a git repository file checks fall back to walking the folder, and two runs at once are one", async () => {
   const { sec } = rig({ "a.js": `const t = "${GH}";\n` }, { repo: false });
   const [a, b] = [runChecks(sec, "p"), runChecks(sec, "p")];
   assert.equal(a, b);
   const run = await a;
-  assert.deepEqual(run.results.map((r) => [r.check, r.state, r.note]), [["secrets", "skipped", "not a git repository"], ["packages", "skipped", "no package.json"], ["files", "skipped", "not a git repository"]]);
-  assert.equal(sec.findings("p").length, 0);
+  assert.deepEqual(run.results.map((r) => [r.check, r.state, r.note]), [["secrets", "found", undefined], ["packages", "skipped", "no package.json"], ["files", "clean", undefined]]);
+  assert.equal(sec.findings("p").length, 1);
 });
 
 test("checks: run for a scan, each finding counts on it", async () => {

@@ -90,16 +90,35 @@ const readView = (): View => keptRead<View>(sessionStorage, "lc:view", { kind: "
   session, the thread, the composer and the panel are the side you're in (`side`).
 */
 const AREAS: { root: string; first: string[] }[] = [
-  { root: ".lc-side:not([inert])", first: [".lc-sb-row[aria-current='page'] .lc-sb-pick", ".lc-sb-pick", "button"] },
+  { root: ".lc-side:not([inert])", first: [".lc-sl-row[aria-current='page'] .lc-sl-pick", ".lc-sb-row[aria-current='page'] .lc-sb-pick", ".lc-sl-pick", ".lc-sb-pick", "button"] },
   { root: ".lc-thread .lc-scroll", first: [] },
   { root: ".lc-composer", first: ["textarea"] },
   { root: ".lc-panel", first: [".lc-surface:not([hidden]) textarea", ".lc-surface:not([hidden]) :is(input, select, button, [tabindex='0'])", "[role='tab'][aria-selected='true']"] },
+  { root: ".ld-cv", first: ["[tabindex='0']", "button"] },
+  { root: ".ld-dock", first: ["textarea", "button"] },
+  { root: ".ld-insp", first: ["input", "select", "button"] },
+  { root: ".ls-scroll", first: ["button", "input", "a"] },
+  { root: ".lf-x", first: ["button", "input", "textarea"] },
 ];
 const lastIn = new Map<number, HTMLElement>();
 const shows = (el: Element | null | undefined): el is HTMLElement => el instanceof HTMLElement && el.isConnected && el.checkVisibility();
-const areaOf = (el: Element | null) => (el ? AREAS.findIndex((a) => el.closest(a.root)) : -1);
+const focusable = (el: Element | null | undefined): el is HTMLElement => shows(el) && el.tabIndex >= 0 && !el.matches(":disabled, [aria-disabled='true']") && !el.closest("[inert]");
+const hasOpenModal = () => Boolean(document.querySelector("dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog']:not([hidden])"));
+const areaOf = (el: Element | null) => {
+  if (!el) return -1;
+  let best = -1;
+  let bestEl: Element | null = null;
+  for (let i = 0; i < AREAS.length; i++) {
+    const m = el.closest(AREAS[i].root);
+    if (m && (!bestEl || bestEl.contains(m))) {
+      best = i;
+      bestEl = m;
+    }
+  }
+  return best;
+};
 function moveFocus(step: 1 | -1, side: ParentNode = document) {
-  if (document.querySelector("dialog[open]")) return;
+  if (hasOpenModal()) return;
   const here = areaOf(document.activeElement);
   const from = here >= 0 ? here : step > 0 ? -1 : AREAS.length;
   for (let n = 1; n <= AREAS.length; n++) {
@@ -107,7 +126,7 @@ function moveFocus(step: 1 | -1, side: ParentNode = document) {
     const root = (i === 0 ? document : side).querySelector(AREAS[i].root);
     if (!shows(root)) continue;
     const kept = lastIn.get(i);
-    const target = (shows(kept) && root.contains(kept) ? kept : undefined) ?? AREAS[i].first.map((q) => [...root.querySelectorAll(q)].find(shows)).find(Boolean) ?? root;
+    const target = (focusable(kept) && root.contains(kept) && areaOf(kept) === i ? kept : undefined) ?? AREAS[i].first.map((q) => [...root.querySelectorAll(q)].find((el): el is HTMLElement => focusable(el) && areaOf(el) === i)).find(Boolean) ?? root;
     // The thread's scroller takes the keyboard too, so the arrows and Page Down read it.
     if (target === root && !root.hasAttribute("tabindex")) root.tabIndex = -1;
     target.focus({ preventScroll: target === root });
@@ -267,8 +286,29 @@ export function App() {
   // The session open beside it, if any, and which side has your keys.
   const besideThread = view.kind === "session" && view.beside && view.beside !== view.id ? threads.find((t) => t.id === view.beside && !t.archived) : undefined;
   const [sideFocus, setSideFocus] = useState(0);
-  // The session your keys are in: the one open, or beside another the side you're in. ⌘K's "This session" is that one.
-  const here = besideThread && sideFocus === 1 ? besideThread : current;
+  // The active Security scan/fix thread, tracked via lc:face-nav so ⌘K's "This session" works in Security without eagerly loading security/store.
+  const [secThreadId, setSecThreadId] = useState<string | undefined>(() => {
+    const p = keptRead<{ kind?: string; threadId?: string } | null>(sessionStorage, "liner.security-page", null, (v): v is { kind?: string; threadId?: string } | null => v === null || (typeof v === "object" && v !== null));
+    return p?.kind === "scan" && typeof p.threadId === "string" ? p.threadId : undefined;
+  });
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const detail = (e as CustomEvent<{ securityThreadId?: string }>).detail;
+      if (detail && "securityThreadId" in detail) setSecThreadId(detail.securityThreadId);
+      setView((v) => (keptOnFaceChange(v.kind) ? v : { kind: "home" }));
+    };
+    window.addEventListener("lc:face-nav", onNav);
+    return () => window.removeEventListener("lc:face-nav", onNav);
+  }, []);
+  // The session your keys are in: the one open, or beside another the side you're in, or the active Design/Security session. ⌘K's "This session" is that one.
+  const here =
+    face === "security"
+      ? (secThreadId ? threads.find((t) => t.id === secThreadId) : undefined)
+      : face === "design"
+        ? (designTab?.threadId ? threads.find((t) => t.id === designTab.threadId) : current)
+        : besideThread && sideFocus === 1
+          ? besideThread
+          : current;
   // The two sides' boxes: F6 moves through the areas of the side you're in.
   const besides = useRef<HTMLDivElement>(null);
   // At Quick motion a view you open shows as it is, in its first frame (look.ts, entering): another
@@ -335,9 +375,17 @@ export function App() {
     }
     const tab = currentTab();
     if (!tab) return void (view.kind === "session" && s.projects.find((p) => p.id === current?.projectId)?.kind === "design" && setView({ kind: "home" }));
+    // Never create a phantom empty thread on a casual Design -> Code switch: open an existing session if one exists, else land on Code Home with the project preselected.
     void designSession()
-      .then((m) => m.makeSession(tab))
-      .then((t) => getFace() === "code" && go({ kind: "session", id: t.id }))
+      .then((m) => {
+        if (getFace() !== "code") return;
+        const existing = m.sessionOf(tab, getState().threads);
+        if (existing) go({ kind: "session", id: existing.id });
+        else {
+          const proj = getState().projects.find((p) => p.id === tab.projectId);
+          go({ kind: "home", projectId: proj && proj.kind !== "design" && !proj.demoFor ? proj.id : undefined });
+        }
+      })
       .catch((e: Error) => toast.error(e.message));
   }, [face]);
   // Code never shows a scan, fix or question about a finding (Thread.security): one left up when you came back from Security goes Home.
@@ -420,7 +468,7 @@ export function App() {
         void import("./security/store").then((m) => m.goSecurity({ kind: "scan", threadId: t.id }));
         return;
       }
-      if (t && getFace() === "security") setFace("code");
+      if (t && getFace() !== "code") setFace("code");
     }
     setView(v);
   };
@@ -517,6 +565,7 @@ export function App() {
   const openRun = (run: RoutineRun) => (!ROUTINES_ON ? run.threadId && openSession(run.threadId) : run.threadId ? openSession(run.threadId, `run:${run.id}`) : go({ kind: "routines" }));
   const editRoutine = (id?: string, projectId?: string) => go({ kind: "routine", id, projectId: projectId ?? (here?.projectId || lastProject), back: view.kind === "routine" ? undefined : view });
   const newSession = (projectId?: string) => {
+    if (getFace() !== "code") setFace("code");
     go({ kind: "home", projectId: projectId ?? (here?.projectId || lastProject) });
   };
   const addProject = () => void bridge.pickFolder().then((p) => (p ? rpc("project.add", { path: p }).then((x) => go({ kind: "home", projectId: x.id })) : undefined)).catch((e: Error) => toast.error(e.message));
@@ -533,8 +582,9 @@ export function App() {
     }
   };
 
-  /** The sessions as the sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. A folded folder's rows aren't drawn, so they don't count; a hidden sidebar's do. */
-  const sidebarOrder = () => [...document.querySelectorAll<HTMLElement>(".lc-side .lc-sb-row[data-row]")].map((r) => r.dataset.row ?? "");
+  /** The rows as the active sidebar shows them, top to bottom: ⌘1 to ⌘9 and "next that needs you" go by it. */
+  const sidebarRows = () => [...document.querySelectorAll<HTMLElement>(".lc-side [data-row]")];
+  const sidebarOrder = () => sidebarRows().map((r) => r.dataset.row ?? "");
   // The next session that waits on you, down the sidebar from the one that's open, round to the top.
   const nextNeeds = () => {
     const order = sidebarOrder();
@@ -598,7 +648,7 @@ export function App() {
   const run = (name: string) => {
     // Nothing of the window's while first run is up, or under a dialog that has the keyboard (⌘K toggles itself; a menu-bar item naming a session still opens it).
     if (!getState().settings.onboarded) return;
-    if (document.querySelector("dialog[open]") && name !== "commands" && name !== "updates" && !name.startsWith("open:")) return;
+    if (hasOpenModal() && name !== "commands" && name !== "updates" && !name.startsWith("open:")) return;
     // ⌘N: a new design while Liner Design shows; Start a scan in Liner Security; in Liner Code, a new session as ever.
     if (name === "new") getFace() === "design" ? void designSession().then((m) => m.newDesign()).catch((e: Error) => toast.error(e.message)) : getFace() === "security" ? void import("./security/store").then((m) => m.goSecurity({ kind: "start" })) : newSession();
     else if (name === "commands") {
@@ -618,6 +668,11 @@ export function App() {
     else if (name === "focus.next") moveFocus(1, sideEl());
     else if (name === "focus.prev") moveFocus(-1, sideEl());
     else if (name.startsWith("open:")) openSession(name.slice(5));
+    else if (name.startsWith("open-path:")) {
+      const target = name.slice(10).trim();
+      // The shell asked first when the folder came in a link (desktop deeplink.ts, launchQuestion): Home opens on it.
+      if (target) void rpc("project.add", { path: target }).then((p) => go({ kind: "home", projectId: p.id })).catch((e: Error) => toast.error(e.message));
+    }
   };
   // The listeners stay; each press reaches what's current through the ref.
   const runRef = useRef(run);
@@ -626,7 +681,7 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // ⌥⌘E: Liner Code and Liner Design, the same session under either.
-      if (is(e, "face") && getState().settings.onboarded && !document.querySelector("dialog[open]")) {
+      if (is(e, "face") && getState().settings.onboarded && !hasOpenModal()) {
         e.preventDefault();
         return toggleFace();
       }
@@ -635,12 +690,14 @@ export function App() {
         e.preventDefault();
         return runRef.current(name);
       }
-      // ⌘1 to ⌘9 open the sessions down the sidebar, unless something inside (a model picker's ⌘1–9) took the press or a dialog (⌘K) has the keyboard.
+      // ⌘1 to ⌘9 open the items down the sidebar, unless something inside (a model picker's ⌘1–9) took the press or an overlay has the keyboard.
       const n = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((k) => matches(e, `mod+${k}`));
-      if (!n || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+      if (!n || e.defaultPrevented || hasOpenModal()) return;
       e.preventDefault();
-      const id = sidebarOrder()[n - 1];
-      if (id) runRef.current(`open:${id}`);
+      const row = sidebarRows()[n - 1];
+      if (!row) return;
+      if (row.dataset.designTab) showTab(row.dataset.designTab);
+      else if (row.dataset.row) runRef.current(`open:${row.dataset.row}`);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -737,8 +794,10 @@ export function App() {
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={16} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
       { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={16} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={16} />, onSelect: () => go({ kind: "usage" }) },
-      // The next face round, as ⌥⌘E goes: Code, Design, Security.
-      { id: "face", label: face === "code" ? "Switch to Liner Design" : face === "design" ? "Switch to Liner Security" : "Switch to Liner Code", group: "Actions", icon: face === "code" ? <I.edit size={16} /> : face === "design" ? <I.shield size={16} /> : <I.code size={16} />, keywords: ["design", "canvas", "code", "security", "scan", "findings", "face"], shortcut: shortcutOf("face"), onSelect: () => toggleFace() },
+      // Direct face switch commands, with ⌥⌘E shown on the next face in cycle.
+      ...(face !== "code" ? [{ id: "face-code", label: "Switch to Liner Code", group: "Actions", icon: <I.code size={16} />, keywords: ["code", "sessions", "face"], shortcut: face === "security" ? shortcutOf("face") : undefined, onSelect: () => setFace("code") }] : []),
+      ...(face !== "design" ? [{ id: "face-design", label: "Switch to Liner Design", group: "Actions", icon: <I.edit size={16} />, keywords: ["design", "canvas", "face"], shortcut: face === "code" ? shortcutOf("face") : undefined, onSelect: () => setFace("design") }] : []),
+      ...(face !== "security" ? [{ id: "face-security", label: "Switch to Liner Security", group: "Actions", icon: <I.shield size={16} />, keywords: ["security", "scan", "findings", "face"], shortcut: face === "design" ? shortcutOf("face") : undefined, onSelect: () => setFace("security") }] : []),
       ...(ROUTINES_ON
         ? [
             { id: "routines", label: "Routines", group: "Actions", icon: <I.routines size={16} />, keywords: ["automation", "schedule", "webhook"], onSelect: () => go({ kind: "routines" }) },
@@ -820,7 +879,11 @@ export function App() {
         },
       );
     }
-    for (const t of threads.filter((x) => !x.archived).slice(0, 200)) items.push({ id: `t-${t.id}`, ...sessionPick(t), group: "Sessions", onSelect: () => openSession(t.id) });
+    for (const t of threads.filter((x) => !x.archived && !x.security).slice(0, 200)) items.push({ id: `t-${t.id}`, ...sessionPick(t), group: "Sessions", onSelect: () => openSession(t.id) });
+    for (const t of threads.filter((x) => !x.archived && x.security).slice(0, 50)) {
+      const p = sessionPick(t);
+      items.push({ id: `t-${t.id}`, ...p, hint: ["Security", p.hint].filter(Boolean).join(" · "), group: "Security sessions", onSelect: () => openSession(t.id) });
+    }
     // Words inside messages: the query itself is a keyword, so a hit stays listed while you type on.
     for (const h of found) items.push({ id: `m-${h.threadId}`, label: h.snippet, group: "In messages", hint: h.title, icon: <I.comment size={16} />, keywords: [asked.toLowerCase()], onSelect: () => openSession(h.threadId) });
     for (const p of projects) if (p.kind !== "design" && !p.demoFor) items.push({ id: `p-${p.id}`, label: `New session in ${p.name}`, group: "Projects", icon: <I.folder size={16} />, onSelect: () => go({ kind: "home", projectId: p.id }) });
@@ -834,7 +897,7 @@ export function App() {
       besideOf === null
         ? []
         : threads
-            .filter((t) => !t.archived && t.id !== current?.id && t.id !== besideThread?.id)
+            .filter((t) => !t.archived && !t.security && t.id !== current?.id && t.id !== besideThread?.id)
             .slice(0, 200)
             .map((t) => ({ id: `b-${t.id}`, ...sessionPick(t), group: "Open beside it", onSelect: () => openBeside(t.id, besideOf) })),
     [besideOf, threads, projects, agents, providers, current, besideThread, view],
@@ -954,7 +1017,7 @@ export function App() {
               <AppPage
                 key={view.id}
                 id={view.id}
-                back={view.back?.kind === "session" ? (threads.find((t) => t.id === (view.back as { id: string }).id)?.title ?? "Back") : view.back?.kind === "usage" ? "Usage" : view.back?.kind === "routines" ? "Routines" : view.back?.kind === "addons" ? "Add-ons" : "Home"}
+                back={view.back?.kind === "session" ? (threads.find((t) => t.id === (view.back as { id: string }).id)?.title ?? "Back") : view.back?.kind === "wall" ? "The Wall" : view.back?.kind === "compare" ? "Comparison" : view.back?.kind === "usage" ? "Usage" : view.back?.kind === "routines" ? "Routines" : view.back?.kind === "addons" ? "Add-ons" : "Home"}
                 onBack={() => setView(view.back ?? { kind: "home" })}
                 sidebar={sidebar}
                 onSidebar={() => setSidebar(true)}

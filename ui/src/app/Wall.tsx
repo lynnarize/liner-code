@@ -20,7 +20,7 @@ import { addToDraft, SendBox } from "./Composer";
 import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I, MARK_WORD } from "./icons";
 import { agentOf, ago, clock, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
-import { markLabelOf, markStateOf, prSaid, seenAsk, statusKind, wallKind, type WallKind } from "./session-state";
+import { markLabelOf, markStateOf, prSaid, reviewHeld, seenAsk, statusKind, wallKind, type WallKind } from "./session-state";
 import { isStep, LiveLine, trailSteps } from "./Timeline";
 import { pairOf } from "./Crew";
 import { rowWords, SideFacts, SideMark } from "./SideList";
@@ -38,18 +38,21 @@ type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
 type Mark = Extract<Item, { kind: "turn" }>;
 
 export type { WallKind };
-type Filter = "all" | WallKind;
+type Filter = "all" | WallKind | "review";
 
 export { wallKind };
 const RANK: Record<WallKind, number> = { needs: 0, working: 1, done: 2 };
+
+/** Sessions waiting for review: Reviewer-blocked, finished with unreviewed files, or with an open pull request. */
+export const needsReview = (t: Thread) => !t.archived && !t.routine && !t.security && !t.done && (reviewHeld(t) || (t.toReview ?? 0) > 0 || t.pr?.state === "open");
 
 /** The sessions on the Wall, in its order: By status's three (statusKind), each newest first, unread answers ahead of read ones. */
 export function wallOrder(threads: Thread[], now = Date.now()) {
   return threads.filter((t) => onTheWall(t, now)).sort((a, b) => RANK[statusKind(a, now)] - RANK[statusKind(b, now)] || Number(Boolean(b.unread)) - Number(Boolean(a.unread)) || b.createdAt - a.createdAt);
 }
 
-/** The Wall's filter and its counts: By status's own test (statusKind), so a finished session you haven't read is under Needs you here as in the sidebar. */
-export const wallFilter = (all: Thread[], filter: Filter, now = Date.now()) => (filter === "all" ? all : all.filter((t) => statusKind(t, now) === filter));
+/** The Wall's filter and its counts: By status's own test (statusKind) plus the centralized Review queue. */
+export const wallFilter = (all: Thread[], filter: Filter, now = Date.now()) => (filter === "all" ? all : filter === "review" ? all.filter(needsReview) : all.filter((t) => statusKind(t, now) === filter));
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** What Retry says to a session that stopped with a problem. */
@@ -281,7 +284,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     return () => window.clearInterval(t);
   }, []);
   // Kept for the window through kept.ts, so a window whose storage throws still opens the Wall, on All.
-  const [filter, setFilter] = useState<Filter>(() => wordRead(sessionStorage, "lc:wall-filter", ["all", "needs", "working", "done"], "all") as Filter);
+  const [filter, setFilter] = useState<Filter>(() => wordRead(sessionStorage, "lc:wall-filter", ["all", "needs", "working", "review", "done"], "all") as Filter);
   useEffect(() => wordWrite(sessionStorage, "lc:wall-filter", filter), [filter]);
   // While the pointer is over the tiles they hold their places: one that finishes or starts to wait
   // doesn't move from under a click. They take their order when it leaves; a new one joins at the end.
@@ -302,7 +305,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
   const ids = shown.map((t) => t.id);
   const key = ids.join(",");
   useEffect(() => void (wallShown.ids = key ? key.split(",") : []), [key]);
-  const count = (k: WallKind) => wallFilter(all, k, now).length;
+  const count = (k: WallKind | "review") => wallFilter(all, k, now).length;
   const working = count("working");
 
   // Each tile reads its session's timeline: fetched once, then kept up by the event stream as an open session's is.
@@ -427,7 +430,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
 
   const projectOf = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const empty = all.length === 0;
-  const none = { needs: "Nothing waits on you", working: "Nothing is working right now", done: "Nothing finished waits to be settled" } as const;
+  const none = { needs: "Nothing waits on you", working: "Nothing is working right now", review: "Nothing awaits review right now", done: "Nothing finished waits to be settled" } as const;
 
   return (
     <div className="lc-wall">
@@ -447,6 +450,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
                 { value: "all", label: "All", count: all.length },
                 { value: "needs", label: "Needs you", count: count("needs") },
                 { value: "working", label: "Working", count: working },
+                { value: "review", label: "Review queue", count: count("review") },
                 { value: "done", label: "Finished", count: count("done") },
               ] as const
             ).map((o) => (

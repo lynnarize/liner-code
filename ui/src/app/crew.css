@@ -227,44 +227,19 @@ button.lc-crp-r:hover {
   font-size: 13px;
   color: var(--l-ink-2);
 }
-/* The rail hangs from the header's mark: its stem is at the mark's centre (7px of 14). */
+/* Clean vertical indent guide only (no horizontal "L" elbows), matching nested subagent trees. */
 .lc-fan-kids {
   position: relative;
   margin-left: 7px;
+  padding-left: 14px;
+  border-left: 1px solid var(--l-wash-3);
 }
-/* An agent's own agents hang from its mark in the same way: the row's padding and half the mark. */
+/* Nested agents hang from their parent's mark with the same clean vertical guide. */
 .lc-fan-kid > .lc-fan-kids {
   margin-left: 17px;
 }
 .lc-fan-kid {
   position: relative;
-  padding-left: 22px;
-}
-/* One rail that branches: the stem goes on past all but the last, and each bends into its row with
-   a small curve that runs on to just short of the agent's mark, as the Plan list's rail does. */
-.lc-fan-kid::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: var(--l-wash-3);
-}
-.lc-fan-kid::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 28px;
-  height: 17px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--l-wash-3);
-  border-left: 1px solid var(--l-wash-3);
-  border-bottom-left-radius: 8px;
-}
-.lc-fan-kid[data-last]::before {
-  display: none;
 }
 .lc-fan-ag {
   display: grid;
@@ -444,7 +419,11 @@ button.lc-crp-r:hover {
 /* ---------- the Agents surface ---------- */
 .lc-agents-panel.lc-cr {
   display: block;
+  min-width: 0;
   padding: 2px 16px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 .lc-cr-h {
   display: flex;
@@ -528,6 +507,7 @@ button.lc-cr-bg:hover {
 }
 .lc-cr-t {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1;
   min-width: 0;
 }
@@ -562,38 +542,15 @@ button.lc-cr-bg:hover {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-/* The tree: you, then who worked, then the agents each sent. */
+/* The tree: clean vertical indent guide only (no horizontal "L" elbows). */
 .lc-cr-kids {
   position: relative;
-  margin-left: 18px;
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 1px solid var(--l-line);
 }
 .lc-cr-kid {
   position: relative;
-  padding-left: 16px;
-}
-.lc-cr-kid::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: var(--l-line);
-}
-.lc-cr-kid::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 12px;
-  height: 20px;
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--l-line);
-  border-left: 1px solid var(--l-line);
-  border-bottom-left-radius: 8px;
-}
-.lc-cr-kid[data-last]::before {
-  display: none;
 }
 /* Agents of agents of agents: past three steps the tree steps in by its rails alone, so a long chain of them stays inside a narrow panel. */
 .lc-cr-kids .lc-cr-kids .lc-cr-kids .lc-cr-kids .lc-cr-kids {
@@ -688,6 +645,8 @@ button.lc-cr-bg:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  min-width: 0;
   height: 28px;
   margin: 4px 0 0 -6px;
   padding: 0 8px 0 4px;
@@ -700,36 +659,55 @@ button.lc-cr-bg:hover {
   color: var(--l-ink-3);
   cursor: pointer;
 }
+.lc-cr-back > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lc-cr-back:hover {
   background: var(--l-wash);
   color: var(--l-ink);
 }
 .lc-cr-ah {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 8px;
+  min-width: 0;
   margin-top: 8px;
 }
 .lc-cr-ah b {
+  min-width: 0;
+  overflow: hidden;
   font-size: 15px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lc-cr-pill {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
   height: 22px;
   padding: 0 8px;
   border-radius: 999px;
   background: var(--l-wash-2);
   font-size: 12px;
+  line-height: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--l-ink-2);
 }
 .lc-cr-astat {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   margin-top: 8px;
   font-size: 13px;
+  overflow-wrap: anywhere;
   color: var(--l-ink-3);
 }
 .lc-cr-stats {
@@ -740,6 +718,7 @@ button.lc-cr-bg:hover {
 .lc-cr-stats > span {
   display: grid;
   flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--l-wash);
@@ -771,6 +750,7 @@ button.lc-cr-bg:hover {
 }
 .lc-cr-steps {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -780,7 +760,10 @@ button.lc-cr-bg:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   min-height: 26px;
+  overflow: hidden;
   font-size: 13px;
   color: var(--l-ink-2);
 }
@@ -795,6 +778,7 @@ button.lc-cr-bg:hover {
 .lc-cr-steps li[data-think] > span:not(.lc-mk) {
   padding-left: 22px;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .lc-cr-steps li[data-state="running"]:last-child {
   color: var(--l-ink);
@@ -824,6 +808,7 @@ button.lc-cr-bg:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 30px;
   margin-top: 6px;
   padding: 0 10px;
@@ -881,6 +866,7 @@ button.lc-cr-bg:hover {
 /* The files a brief changed, measured: a status letter, the path, its lines; each opens in Files. */
 .lc-cr-files {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -891,6 +877,8 @@ button.lc-cr-bg:hover {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: 28px;
   padding: 0 8px;
   border: 0;
@@ -926,6 +914,200 @@ button.lc-cr-bg:hover {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Swarm & Teamwork inside AgentsSurface (Liner 2.0 hairlines and quiet ink) ---------- */
+.lc-sw-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.lc-sw-opt {
+  margin-top: 8px;
+}
+.lc-sw-opt .lc-btn {
+  margin-top: 6px;
+}
+.lc-sw-node {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lc-sw-mrow {
+  flex: 1;
+  min-width: 0;
+}
+.lc-sw-fold,
+.lc-sw-more {
+  flex: none;
+  opacity: 0.65;
+}
+.lc-sw-node:hover .lc-sw-fold,
+.lc-sw-node:hover .lc-sw-more,
+.lc-sw-fold:focus-visible,
+.lc-sw-more:focus-visible {
+  opacity: 1;
+}
+.lc-sw-popm {
+  padding: 4px 6px;
+}
+.lc-sw-addbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.lc-sw-form {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 10px;
+  border-radius: var(--lc-r-row);
+  background: var(--lc-well);
+}
+.lc-sw-fgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+.lc-sw-in {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--lc-hair);
+  border-radius: var(--lc-r-row);
+  background: var(--lc-paper);
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink);
+  resize: vertical;
+}
+.lc-sw-slots {
+  display: inline-flex;
+}
+.lc-sw-chans {
+  margin-bottom: 8px;
+}
+.lc-sw-posts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.lc-sw-post {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--lc-r-row);
+  background: var(--lc-well);
+}
+.lc-sw-post[data-kind="stall"] {
+  box-shadow: inset 2px 0 0 var(--l-warn);
+}
+.lc-sw-ph {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+.lc-sw-ph b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-sw-pb {
+  font-size: 13px;
+  color: var(--l-ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lc-sw-wt {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--lc-hair);
+}
+.lc-sw-wth {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+.lc-sw-wtp {
+  min-width: 0;
+  margin: 3px 0 6px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sw-wslist {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.lc-sw-ws {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--lc-r-row);
+  background: var(--lc-well);
+}
+.lc-sw-wsh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.lc-sw-wsh b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-sw-wsg {
+  margin: 3px 0 6px 21px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  overflow-wrap: anywhere;
+}
+.lc-sw-wsf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: 21px;
+  font-size: 11px;
+}
+.lc-sw-shots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.lc-sw-shot {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--lc-r-row);
+  background: var(--lc-well);
+}
+.lc-sw-shoth {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--l-ink-3);
+}
+.lc-sw-shotc {
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

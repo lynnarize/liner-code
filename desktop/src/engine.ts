@@ -42,6 +42,10 @@ export class Engine {
     this.log = createWriteStream(logFile, { flags: "w" });
     // A full disk costs the log, not a crash dialog from the shell.
     this.log.on("error", (e) => console.error("[shell] the engine's log:", e.message));
+    if (envNotices.length) {
+      for (const line of envNotices) this.log.write(`${line}\n`);
+      envNotices.length = 0;
+    }
     this.keys = { ...keys };
     this.launch(paths, env);
   }
@@ -153,11 +157,16 @@ const SHELL_NAMES = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "SSH_AUTH_SOCK", "SSL
   ones left out. It runs in a session of its own with nothing on stdin, so it never reaches for a
   terminal or waits on a question; whatever it hasn't said in `timeout` ms is left.
 */
+const envNotices: string[] = [];
+
 const shellEnv = (sh: string, flags: string[], timeout: number) =>
   new Promise<Record<string, string>>((resolve) => {
     const child = spawn(sh, [...flags, `printf "__LINER_ENV__"; printf "%s\\0" ${SHELL_NAMES.map((n) => `"${n}=$${n}"`).join(" ")}; printf "__LINER_ENV__"`], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
+    let settled = false;
     const done = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       const vars: Record<string, string> = {};
       for (const entry of /__LINER_ENV__(.*?)__LINER_ENV__/s.exec(out)?.[1]?.split("\0") ?? []) {
@@ -168,6 +177,9 @@ const shellEnv = (sh: string, flags: string[], timeout: number) =>
       resolve(vars);
     };
     const timer = setTimeout(() => {
+      const msg = `[shell] loginEnvironment: ${sh} ${flags.join(" ")} timed out after ${timeout}ms; falling back`;
+      console.warn(msg);
+      envNotices.push(msg);
       try {
         if (child.pid) process.kill(-child.pid, "SIGKILL");
       } catch {

@@ -15,6 +15,7 @@
 import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, DesignPatch, DesignPresence, DesignSelection, DesignSkill, FrameBuild, Lean, NewFrame, PictureAdd, PictureEndpoint, PictureModel } from "./design.ts";
 import type { HandOver, PairTuning, SidekickClass } from "./tuning.ts";
 import type { BringInResult, DismissReason, FindingState, SecurityFinding, ScanChoices, ScanOptions, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, SecuritySide, SecurityTag, SpecialistSource, ThreatModel, SecurityItem } from "./security.ts";
+import type { SwarmConfig, SwarmMode, SwarmPreset, SwarmSnapshot, SwarmWorkspace } from "./swarm.ts";
 
 /** The tools Liner Code knows by name. */
 export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
@@ -124,8 +125,8 @@ export type ProviderInfo = {
   /** "cli" when the tool itself listed them (then `modelsAt` says when), "builtin" when it couldn't. */
   modelsFrom?: "cli" | "builtin";
   modelsAt?: number;
-  /** auto: false where the tool's Auto can't run (Claude Code through another maker's API): Auto runs as Edits on its own there, and Liner Code lets routine commands through itself. */
-  supports: { approvals: boolean; resume: boolean; effort: boolean; plan: boolean; auto?: boolean };
+  /** auto: false where the tool's Auto can't run (Claude Code through another maker's API): Auto runs as Edits on its own there, and Liner Code lets routine commands through itself. compact: true when the tool handles /compact natively. */
+  supports: { approvals: boolean; resume: boolean; effort: boolean; plan: boolean; auto?: boolean; compact?: boolean };
   /** Another account of a tool: its name ("Work"), beside the tool's own label. */
   account?: string;
   /** An ACP agent you added: from the registry, or a command of your own. */
@@ -321,6 +322,8 @@ export type Project = {
     face's projects or its chooser: the app leaves these out of its project lists. Unset: a project.
   */
   kind?: "design";
+  /** Where worktrees for this project go: "sibling" (Liner home / worktreeRoot) or "inside" (<repo>/.worktrees/). */
+  worktreePlace?: "sibling" | "inside";
   /**
     "security": a folder the Demo made to stand in for a project in Liner Security's sample (engine/src/security-demo.ts).
     Shown only in the Security face, and only while the Demo is: never in Code's or Design's project lists.
@@ -341,10 +344,17 @@ export type Usage = {
   contextWindow?: number;
 };
 
+/** A last-match-wins glob permission rule for commands or file paths, read for the steps an agent asks Liner Code to approve (`deny` overrides Auto there; at Full access, or where a tool's own Auto lets a step through, nothing asks). */
+export type PermissionRule = { kind: "command" | "path"; pattern: string; action: "allow" | "ask" | "deny" };
+
 export type Thread = {
   id: string;
   projectId: string;
   title: string;
+  /** Tool/MCP surface preset: "standard" includes project MCP add-ons; "lean" omits heavy third-party MCP bundles. */
+  toolPreset?: "standard" | "lean";
+  /** Sidekick context strategy: "isolated" (fresh context) or "fork" (inherits parent transcript summary). */
+  sidekickContext?: "isolated" | "fork";
   /** The lead, who you talk to and who owns each turn: a bare model ("@claude:claude-opus-5-5") or one of your agents. */
   agent: string;
   /**
@@ -352,6 +362,8 @@ export type Thread = {
     `sidekick` tool. Unset, one model works the session alone.
   */
   sidekick?: string;
+  /** Liner-native Swarm / Teamwork configuration for this session (board, hibernating worker pool, isolated worktrees). */
+  swarm?: SwarmConfig;
   /** This session's own changes to how its pair works, over its sidekick's class and Settings (tuning.ts, waysOf). Unset keys are automatic. */
   tuning?: PairTuning;
   /** Connections (add-on ids) you switched off for this session alone: its tool isn't handed them. The rest follow Add-ons. */
@@ -463,6 +475,10 @@ export type Thread = {
   providerSession?: string;
   /** The provider sessions of others who work here besides `agent` (the sidekick, as "@<ref>"), by who they are. */
   sessions?: Record<string, string>;
+  /** Hermes ACP's last cumulative session token counters, kept so a resumed session subtracts what earlier turns already counted. */
+  hermesCounted?: { input: number; output: number; reads: number };
+  /** "Don't ask again … this session" grants saved with the thread so they survive engine restarts. */
+  grants?: PersistedGrant[];
   /** A fork's first turn: the parent's provider session it continues from. */
   forkSession?: string;
   /**
@@ -863,6 +879,8 @@ export type ApprovalWhy = { kind: "undo" | "outside" | "network" | "changes" | "
 */
 export type GrantKind = "rule" | "skill";
 export type ApprovalGrant = { kind: GrantKind; label: string };
+/** A session approval grant as saved on its thread (rule parts or skill folder). */
+export type PersistedGrant = { kind: GrantKind; label: string; parts: string[]; tool?: boolean };
 
 type Base = { id: string; turn: number; at: number };
 export type Item =
@@ -1032,11 +1050,37 @@ export type ItemKind = Item["kind"];
 // PR_TEST_TOOL, the PR card's own tool, is in doing.ts (exported from here below), which tells steps from cards by it.
 /** What a commit message, PR draft or Desk answer stopped by writer.cancel (or by a newer ask for the same) fails with: no error to show. */
 export const WRITER_CANCELLED = "Stopped writing.";
+/** Machine-readable codes carried beside `/rpc` error messages so callers don't have to parse sentinel strings. */
+export type RpcErrorCode = "FRAME_CHANGED" | "WRITER_CANCELLED" | "BUSY" | "NOT_FOUND" | "UNAUTHORIZED" | "INVALID" | "CONFLICT" | "UNAVAILABLE";
+/** An error carrying a typed `/rpc` code alongside its plain-sentence message. */
+export class CodedError extends Error {
+  readonly code: RpcErrorCode;
+  constructor(code: RpcErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+/** Reads the typed code of an error thrown inside the engine or returned from `/rpc`. */
+export function rpcErrorCode(e: unknown): RpcErrorCode | undefined {
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && ["FRAME_CHANGED", "WRITER_CANCELLED", "BUSY", "NOT_FOUND", "UNAUTHORIZED", "INVALID", "CONFLICT", "UNAVAILABLE"].includes(code)) return code as RpcErrorCode;
+  if (e instanceof Error) {
+    if (e.message === WRITER_CANCELLED) return "WRITER_CANCELLED";
+    if (e.message.startsWith("changed:")) return "FRAME_CHANGED";
+  }
+  return undefined;
+}
 export type PrTestResult = { state: "passed" | "failed" | "skipped"; command?: string; summary: string; seconds?: number };
 export type Finding = { file: string; line?: number; endLine?: number; severity: "blocking" | "note"; note: string };
 
 /** A changed file's text before and after. `status` is git's word for it: a missing side alone can't say, as a side git couldn't show (a submodule) is missing too. */
 export type FileDiff = { path: string; before?: string; after?: string; from?: string; status?: FileChange["status"] };
+
+/** Default and bounds for parallel read-only subagents per session (Settings.maxActiveSubagents). */
+export const SUBAGENT_MAX_DEFAULT = 4;
+export const SUBAGENT_MAX_MIN = 1;
+export const SUBAGENT_MAX_LIMIT = 8;
+export const clampSubagentMax = (n?: number) => (typeof n === "number" && Number.isFinite(n) ? Math.max(SUBAGENT_MAX_MIN, Math.min(SUBAGENT_MAX_LIMIT, Math.round(n))) : SUBAGENT_MAX_DEFAULT);
 
 export type Settings = {
   /** You've been through the first run. */
@@ -1112,8 +1156,28 @@ export type Settings = {
   pairVersion?: number;
   /** Where new worktrees go (default: the Liner Code home's worktrees folder). */
   worktreeRoot?: string;
+  /** Default worktree layout: "sibling" (Liner home / worktreeRoot) or "inside" (<repo>/.worktrees/). */
+  worktreePlace?: "sibling" | "inside";
+  /** Project IDs where the user explicitly trusted `.liner/worktree-setup.sh` lifecycle hooks. */
+  worktreeHooksTrusted?: string[];
   /** Keep each project's default-branch checkout pulled (fast-forward only, when it's clean). */
   autoPull?: boolean;
+  /** Maximum concurrent read-only subagents per session (1..8, default 4). */
+  maxActiveSubagents?: number;
+  /** Maximum active CLI worker processes in a Swarm at once (1..4, default 2 to keep RAM light). */
+  swarmMaxActive?: number;
+  /** Default model for Swarm & Teamwork workers ("<provider>:<model>"). Unset inherits the session's main model. */
+  swarmWorkerModel?: string;
+  /** Seconds a waiting swarm worker stays open before closing to 0 MB RAM (0..300, default 30). */
+  swarmHibernateSec?: number;
+  /** Default workspace isolation for Swarm writers: isolated git worktree ("share") or shared folder ("inherit"). */
+  swarmWorkspace?: SwarmWorkspace;
+  /** Run Liner Code's deterministic engine stall monitor during swarms (0 MB RAM, 0 tokens; default true). */
+  swarmStallMonitor?: boolean;
+  /** Auto-post a worker's final reply to @coordinator when it finishes a turn without calling swarm_post (default true). */
+  swarmAutoPost?: boolean;
+  /** Last-match-wins glob permission rules, read before Auto's allowlists for each step an agent asks to take (`deny` refuses it; steps nobody is asked about never meet them). */
+  permissionRules?: PermissionRule[];
   /** Models you starred, as "<provider>:<model>", first in every model picker. */
   favoriteModels?: string[];
   /** More accounts of a tool, each its own entry in the model picker. */
@@ -1170,7 +1234,7 @@ export type UpdateMode = "auto" | "notify" | "off";
 export type ProjectRules = { claude?: string; agents?: string; linked: boolean };
 
 /** A past Claude Code or Codex session in a project's folder, that can be brought in to carry on here. */
-export type ImportableSession = { tool: "claude" | "codex"; id: string; title: string; at: number };
+export type ImportableSession = { tool: "claude" | "codex" | "opencode" | "hermes"; id: string; title: string; at: number };
 /** One of them in the sidebar's Recent, with the project it was found in. */
 export type RecentSession = ImportableSession & { projectId: string };
 
@@ -1491,6 +1555,8 @@ export type EngineEvent =
   | { type: "timeline"; threadId: string; items: Item[] }
   | { type: "agents"; agents: AgentProfile[] }
   | { type: "providers"; providers: ProviderInfo[] }
+  /** Dynamic slash commands advertised by an active ACP agent via available_commands_update. */
+  | { type: "commands"; provider: ProviderId; commands: CommandInfo[] }
   | { type: "settings"; settings: Settings }
   | { type: "notify"; threadId: string; title: string; body: string; kind: "waiting" | "done" | "error" }
   | { type: "keys"; keys: string[] }
@@ -1525,7 +1591,9 @@ export type EngineEvent =
   /** Liner Security: its findings, scans, free checks, a threat model or its project list changed (in `projectId`, when one): the face asks again. */
   | { type: "security.changed"; what: SecurityChange[]; projectId?: string; at: number }
   /** Liner Security: a scan moved on (started, asks, read an area, found, finished): its record as it is now. */
-  | { type: "security.scan"; scan: ScanRecord };
+  | { type: "security.scan"; scan: ScanRecord }
+  /** Liner Swarm: a session's message board, roster, plan or RAM pool changed. */
+  | { type: "swarm.changed"; threadId: string; snapshot: SwarmSnapshot };
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1599,8 +1667,8 @@ export type Rpc = {
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
-  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; review?: boolean; title?: string; forkOf?: string; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string }; tuning?: PairTuning; /** Liner Security's tag (Thread.security): a scan is made at Read only whatever `access` says. */ security?: SecurityTag }, Thread];
-  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null; /** null clears the session's own. */ tuning?: PairTuning | null }, Thread];
+  "thread.create": [{ projectId: string; agent?: string; sidekick?: string; swarm?: SwarmConfig; review?: boolean; title?: string; forkOf?: string; /** When forking from an earlier turn, copy only items up to and including this turn. */ forkTurn?: number; id?: string; access?: Access; effort?: Effort; model?: string; worktree?: boolean; base?: string; inWorktree?: string; mode?: SessionMode; /** Begun from a design (Thread.design); in a design project it defaults to the project's design file. */ design?: { file: string }; tuning?: PairTuning; /** Liner Security's tag (Thread.security): a scan is made at Read only whatever `access` says. */ security?: SecurityTag }, Thread];
+  "thread.update": [{ id: string; title?: string; archived?: boolean; access?: Access; model?: string | null; effort?: Effort; agent?: string; sidekick?: string | null; swarm?: SwarmConfig | null; connectionsOff?: string[] | null; review?: boolean | null; pinned?: boolean; snoozedUntil?: number | null; done?: boolean; unread?: boolean; group?: string | null; wake?: { kind: "checks" | "reply"; pr: number } | null; /** null clears the session's own. */ tuning?: PairTuning | null; /** Per-session spend cap override in USD (null clears it). */ spendLimit?: number | null; toolPreset?: "standard" | "lean" | null; sidekickContext?: "isolated" | "fork" | null }, Thread];
   "thread.items": [{ id: string }, Item[]];
   /**
     A thread's timeline, with the number of the last event sent when it was read: events for it with
@@ -1613,6 +1681,11 @@ export type Rpc = {
   "memory.list": [{ projectId: string }, string[]];
   "memory.add": [{ projectId: string; fact: string }, string[]];
   "memory.forget": [{ projectId: string; fact: string }, string[]];
+  /** Reads or writes the project's inspectable plain-text MEMORY.md file. */
+  "memory.file.read": [{ projectId: string }, { exists: boolean; text: string; path: string }];
+  "memory.file.write": [{ projectId: string; text: string }, { exists: boolean; text: string; path: string }];
+  /** Manually distills concise session notes into the project's MEMORY.md file. */
+  "memory.distill": [{ threadId: string }, { added: number; path: string; text: string }];
   /** A project's earlier sessions, searched: your messages and the agents' answers. */
   "sessions.search": [{ projectId: string; query: string }, { threadId: string; title: string; at: number; who: "you" | "agent"; snippet: string }[]];
   /** A limited session carries on with another tool's model (`model`, else the one its limit card offers). */
@@ -1736,14 +1809,14 @@ export type Rpc = {
   "thread.info": [{ id: string }, SessionInfo];
   /** A pair's use, by model, and how its briefs went: the crew chip's list. */
   "thread.shares": [{ id: string }, PairShare];
-  /** The session as Markdown (asks, plans, answers, findings, diffs), saved in Downloads; where it went. */
-  "thread.export": [{ id: string }, { path: string }];
-  /** Past Claude Code and Codex sessions in the project's folder, newest first. */
+  /** The session as Markdown (or JSON), saved in Downloads or at a custom path; where it went. */
+  "thread.export": [{ id: string; path?: string; format?: "md" | "json" }, { path: string }];
+  /** Past Claude Code, Codex, OpenCode and Hermes sessions in the project's folder, newest first. */
   "sessions.importable": [{ projectId: string }, ImportableSession[]];
   /** The newest of them across your code projects (`limit`, 6 by default), each with its project: Claude Code's folders and Codex's sessions read once for them all. */
   "sessions.recent": [{ limit?: number }, RecentSession[]];
   /** Brings one in as a session here: its timeline, and its own id, so the next turn carries it on. */
-  "sessions.import": [{ projectId: string; tool: "claude" | "codex"; id: string }, Thread];
+  "sessions.import": [{ projectId: string; tool: ImportableSession["tool"]; id: string }, Thread];
   /** A project's rules for agents, as its CLAUDE.md and AGENTS.md say them. */
   "project.rules": [{ id: string }, ProjectRules];
   /** Writes the rules to AGENTS.md and makes CLAUDE.md point to it, so every tool reads the same. */
@@ -1786,9 +1859,9 @@ export type Rpc = {
   "term.clear": [{ id: string }, null];
   "term.close": [{ id: string }, null];
   "pr.status": [{ threadId: string }, { pr: PrInfo | null; branch?: string; ahead?: number; gh: "ready" | "missing" | "signed-out" | "no-remote"; detail?: string }];
-  "pr.create": [{ threadId: string; title: string; body: string; draft: boolean }, PrInfo];
+  "pr.create": [{ threadId: string; title: string; body: string; draft: boolean; base?: string; reviewers?: string[]; labels?: string[] }, PrInfo];
   "pr.list": [{ projectId: string }, { prs: PrInfo[]; gh: "ready" | "missing" | "signed-out" | "no-remote"; detail?: string }];
-  "pr.merge": [{ projectId: string; number: number }, null];
+  "pr.merge": [{ projectId: string; number: number; method?: "squash" | "merge" | "rebase"; deleteBranch?: boolean }, null];
   /** The branch against its base, fetched at most once a minute, for the pull request card. */
   "pr.picture": [{ threadId: string }, PrPicture];
   /** Runs the project's tests on this Mac for the PR card `itemId`, asking first as the session's access says. */
@@ -1945,7 +2018,13 @@ export type Rpc = {
   "routine.run": [{ id: string }, RoutineRun];
   "routine.test": [{ id: string; number?: number }, RoutineRun];
   "routine.stop": [{ runId: string }, null];
-  "git.status": [{ projectId: string }, { branch?: string; ahead: number; behind: number; changes: FileChange[] }];
+  "git.status": [{ projectId: string; threadId?: string }, { branch?: string; ahead: number; behind: number; changes: FileChange[] }];
+  /** Fetches origin and pulls/rebases the current branch when behind. */
+  "git.sync": [{ projectId: string; threadId?: string; rebase?: boolean }, { branch?: string; ahead: number; behind: number; pulled: boolean }];
+  /** Lists, pushes, or pops git stashes in the project or session worktree. */
+  "git.stash": [{ projectId: string; threadId?: string; action: "list" | "push" | "pop"; message?: string; ref?: string }, { stashes: { ref: string; message: string }[]; output?: string }];
+  /** Lists open GitHub pull requests for the project (cached, fails soft to empty when gh is unavailable). */
+  "git.prs": [{ projectId: string; query?: string }, { number: number; title: string; branch: string; url: string }[]];
   /** Looks for a new Liner Code and new versions of the agent tools now. */
   "updates.check": [Record<string, never>, Updates];
   /** Downloads the new Liner Code and makes it ready for the shell to put in. */
@@ -1954,6 +2033,8 @@ export type Rpc = {
   "updates.refused": [Record<string, never>, Updates];
   /** Runs a tool's own updater (all the tools with one waiting, without `id`), once no session is working on it. */
   "updates.tool": [{ id?: BuiltinProvider }, Updates];
+  /** Cancels a queued tool update (all queued tools without `id`) before it starts running. */
+  "updates.cancelTool": [{ id?: BuiltinProvider }, Updates];
   /** Puts an update's notice away until a newer version comes out. */
   "updates.dismiss": [{ key: "app" | BuiltinProvider }, Updates];
   /** Runs one tier of Check my tools on one tool, or on every tool without `tool`; answers with the rows it changed. */
@@ -1986,17 +2067,35 @@ export type Rpc = {
   "security.findings.list": [{ projectId?: string; state?: FindingState; scan?: string }, SecurityFinding[]];
   "security.finding.dismiss": [{ id: string; reason: DismissReason; note?: string }, SecurityFinding];
   "security.finding.reopen": [{ id: string }, SecurityFinding];
+  "security.finding.note": [{ id: string; text: string }, SecurityFinding];
+  "security.finding.look": [{ id: string; model?: string }, SecurityFinding];
   "security.finding.fix": [{ id: string; agent?: string; model?: string; effort?: Effort }, Thread];
   "security.finding.ask": [{ id: string; agent?: string; model?: string; text?: string }, Thread];
   "security.bringin.github": [{ projectId: string }, BringInResult];
   "security.bringin.sarif": [{ projectId: string; path?: string; text?: string }, BringInResult];
   "security.model.read": [{ projectId: string }, ThreatModel];
+  "security.model.text": [{ projectId: string }, { file: string; exists: boolean; text: string }];
+  "security.model.write": [{ projectId: string; text: string }, ThreatModel];
   "security.scan.options": [{ projectId: string }, ScanChoices];
   "security.scan.start": [ScanOptions, { scan: ScanRecord; thread?: Thread }];
   "security.scan.stop": [{ id: string }, ScanRecord];
   "security.scans.list": [{ projectId?: string }, ScanRecord[]];
   "security.specialist.look": [Record<string, never>, SpecialistSource[]];
   "precheck.split": [{ projectId: string; threadId?: string; /** The draft as it is when Split is pressed: its tasks are read again from it (precheck.ts tasksOf). */ text?: string; tasks?: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
+  /** Universal Liner-native Swarm & Teamwork controls. */
+  "swarm.get": [{ threadId: string }, SwarmSnapshot | null];
+  "swarm.enable": [{ threadId: string; enabled: boolean; mode?: SwarmMode; preset?: SwarmPreset; title?: string; maxActive?: number; hibernateSec?: number }, SwarmSnapshot | null];
+  "swarm.config": [{ threadId: string; maxActive?: number; hibernateSec?: number; stallMonitor?: boolean; title?: string }, SwarmSnapshot];
+  "swarm.post": [{ threadId: string; text: string; channel?: string }, SwarmSnapshot];
+  "swarm.addWorker": [{ threadId: string; name: string; role?: string; model?: string; workspace?: SwarmWorkspace; mode?: "read" | "write"; channels?: string[]; brief: string; parent?: string; canDelegate?: boolean; n?: number; tasks?: string[]; fork?: string }, SwarmSnapshot];
+  "swarm.swapModel": [{ threadId: string; name: string; model: string; reason?: string }, SwarmSnapshot];
+  "swarm.wake": [{ threadId: string; name: string; note?: string }, SwarmSnapshot];
+  "swarm.hibernate": [{ threadId: string; name?: string }, SwarmSnapshot];
+  "swarm.stopWorker": [{ threadId: string; name: string }, SwarmSnapshot];
+  "swarm.killWorker": [{ threadId: string; name: string }, SwarmSnapshot];
+  "swarm.land": [{ threadId: string; name: string }, { snapshot: SwarmSnapshot; summary: string }];
+  "swarm.stopAll": [{ threadId: string }, SwarmSnapshot];
+  "swarm.resume": [{ threadId: string }, SwarmSnapshot];
 };
 export type RpcMethod = keyof Rpc;
 export type RpcParams<M extends RpcMethod> = Rpc[M][0];
@@ -2034,3 +2133,4 @@ export * from "./dsh.ts";
 export * from "./design.ts";
 export * from "./security.ts";
 export * from "./doing.ts";
+export * from "./swarm.ts";

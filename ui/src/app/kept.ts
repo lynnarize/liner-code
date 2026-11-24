@@ -43,3 +43,8 @@ export const textRead = (s: Store, key: string, fallback: string | null): string
     return fallback;
   }
 };
+
+/** The drafts whose kept attachments go (draftFiles.ts): all but the `keep` newest, by when each was last saved (one saved before that was kept counts as oldest). */
+export function draftsToDrop(entries: readonly { key: string; at?: number }[], keep: number): string[] {
+  return [...entries].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(Math.max(0, keep)).map((e) => e.key);
+}

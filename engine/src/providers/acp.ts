@@ -11,16 +11,17 @@ import { open as openFile, readFile, stat, writeFile, mkdir } from "node:fs/prom
 import { homedir } from "node:os";
 import { dirname, join, posix, resolve, sep, win32, type PlatformPath } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { Access, AgentStep, CommandInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, AgentStep, CommandInfo, EffortInfo, ModelInfo, ProviderId, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { randomBytes } from "node:crypto";
 import { below, closesOnExit, endAll, jsonLines, killTree, marked, markedPids, markFile, marking, processes, RUN_ENV, run, spawn, THREAD_ENV, threadMark, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
-import { acpCommands, acpModelRequest, acpModels, agyModels, opencodeModels } from "./models.ts";
+import { acpCommands, acpModelRequest, acpModels, agyModels, opencodeModels, thoughtLevels } from "./models.ts";
 import { imagePart } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
+import { openOpenCodeServer } from "./opencode-server.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
@@ -635,7 +636,7 @@ export function linerCall(title: string | undefined, raw: unknown, server?: stri
 function exactCall(server: string, title: string | undefined, raw: unknown): { name: string; input: unknown } | undefined {
   const t = title ?? "";
   const rule = /^mcp\(([^()/]+)\/([a-z_]+)\)$/.exec(t) ?? /^([^()/\s]+)\/([a-z_]+)$/.exec(t);
-  const named = t.startsWith(`mcp_${server}_`) ? t.slice(server.length + 5) : rule && rule[1] === server ? rule[2] : undefined;
+  const named = t.startsWith(`mcp_${server}_`) ? t.slice(server.length + 5) : t.startsWith(`${server}_`) ? t.slice(server.length + 1) : rule && rule[1] === server ? rule[2] : undefined;
   if (named !== undefined) return /^[a-z_]+$/.test(named) && TOOLS.some((x) => x.name === named) ? { name: named, input: withoutSummary(named, raw) } : undefined;
   return isMcpWrap(title) ? fromWrap(raw, server) : undefined;
 }
@@ -765,6 +766,22 @@ export function inFolder(folder: string, path: unknown, platform = process.platf
   const real = realPath(target, paths, files);
   if (!root || !real) return false;
   return stays(paths.relative(root, real), paths);
+}
+
+/**
+  Resolves an ACP fs/* path against `folder` (and optional extra readable directories) and returns
+  the canonical realpath-resolved target, throwing if NUL bytes or symlinks escape containment.
+*/
+export function resolveContainedPath(folder: string, path: unknown, extraDirs: readonly string[] = [], platform = process.platform, files = FILES): string {
+  const raw = String(path ?? "");
+  if (!raw || raw.includes("\0")) throw new Error("That path is invalid.");
+  const paths = pathsOf(platform);
+  const abs = paths.resolve(folder, raw);
+  const allowed = inFolder(folder, raw, platform, files) || extraDirs.some((d) => inFolder(d, abs, platform, files));
+  if (!allowed) throw new Error("That path is outside the project.");
+  const real = realPath(abs, paths, files);
+  if (!real) throw new Error("That path is outside the project.");
+  return real;
 }
 
 /**
@@ -1003,6 +1020,10 @@ class AcpSession implements ProviderSession {
   private toldHeld = "";
   /** Its thinking level as a config option (Antigravity's thought_level), and the levels it takes now. */
   private thought: { id: string; values: string[]; now?: string } | undefined;
+  /** The model id the live session is currently running on, used to cache observed thought_level options. */
+  private activeModel: string | undefined;
+  /** Whether the agent advertised a native /compact command via available_commands_update. */
+  private compactCommand = false;
   /** A mode it didn't switch to: tried again before the next prompt. */
   private wanted: string | undefined;
   /** The last mode asked for: how an earlier switch ends no longer matters once this one's on its way. */
@@ -1274,7 +1295,14 @@ class AcpSession implements ProviderSession {
         if (s) {
           this.session = this.o.resume;
           this.spent = null;
-          this.counted = null;
+          // Seed Hermes's cumulative session counter from load metadata or the thread's saved counter so the first resumed turn counts only its delta.
+          const u = ((s.usage ?? (s._meta as Json | undefined)?.usage) as { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number; totalTokens?: number; thoughtTokens?: number } | undefined);
+          if (this.pid === "hermes" && u && (typeof u.inputTokens === "number" || typeof u.outputTokens === "number")) {
+            const input = u.inputTokens ?? 0, output = u.outputTokens ?? 0, reads = u.cachedReadTokens ?? 0;
+            const total = u.totalTokens ?? input + output;
+            const excludes = reads > input || total >= input + output + (u.thoughtTokens ?? 0) + reads;
+            this.counted = { input: excludes ? input : Math.max(0, input - reads), output, reads };
+          } else this.counted = this.pid === "hermes" && this.o.hermesCounted ? { ...this.o.hermesCounted } : null;
           // A session it loads already holds its instructions, from the turn that first sent them (or its system prompt, sent again above).
           this.soulSent = true;
           // It couldn't a start ago (the process went), and can now.
@@ -1291,21 +1319,27 @@ class AcpSession implements ProviderSession {
         this.o.resume = this.session;
         this.spent = 0;
         this.counted = { input: 0, output: 0, reads: 0 };
+        if (this.pid === "hermes") this.o.onHermesCounted?.({ ...this.counted });
         if (this.system) this.soulSent = true;
       }
       // The models it names as bases ("gemini-3.8-flash"), for reading its list of models by them (agyModels).
       const option = ((s.configOptions as Json[] | undefined) ?? []).find((c) => c.category === "model" || c.id === "model");
       if (option) FAMILIES.set(this.pid, ((option.options as Json[] | undefined) ?? []).flatMap((c) => (Array.isArray(c.options) ? (c.options as Json[]) : [c])).map((c) => String(c.value)));
+      const initialModel = typeof option?.currentValue === "string" ? option.currentValue : typeof (s.models as Json | undefined)?.currentModelId === "string" ? String((s.models as Json).currentModelId) : undefined;
+      this.activeModel = initialModel || (this.o.model && this.o.model !== "default" ? this.o.model : undefined);
       // A loaded session gets the model and the mode too: a model you switched to reopens the session to
       // load it, on the model it had (T3 Code: provider-acp adapter.ts sets the model after start or load).
       // A model picked in Liner Code, through whichever way this agent takes one.
       const pick = acpModelRequest(s, this.session!, this.o.model);
       // No turn to say it in yet: the turn says it once the agent is up.
-      this.readThought(s);
+      this.readThought(s, this.activeModel);
       if (pick) {
         const r = await this.request(pick.method, pick.params).catch(() => void this.notes.push(this.known.noModel?.(this.o.model) ?? `${this.cmd[0]} didn't switch to ${this.o.model}; it runs on its own default.`));
         // The model's own thinking levels, which a switch of model can change.
-        if (r) this.readThought(r);
+        if (r) {
+          this.activeModel = this.o.model && this.o.model !== "default" ? this.o.model : this.activeModel;
+          this.readThought(r, this.activeModel);
+        }
       }
       await this.toEffort(this.o.effort);
       const held = this.heldNotice();
@@ -1355,11 +1389,18 @@ class AcpSession implements ProviderSession {
   }
 
   /** The thinking option a session's answer lists (category thought_level), as it is now. */
-  private readThought(r: Json | null | undefined) {
+  private readThought(r: Json | null | undefined, modelId = this.activeModel) {
+    const modelOpt = ((r?.configOptions as Json[] | undefined) ?? []).find((c) => c.category === "model" || c.id === "model");
+    if (typeof modelOpt?.currentValue === "string" && modelOpt.currentValue) {
+      this.activeModel = modelOpt.currentValue;
+      modelId = modelOpt.currentValue;
+    }
     const option = ((r?.configOptions as Json[] | undefined) ?? []).find((c) => c.category === "thought_level" && (c.type === undefined || c.type === "select"));
     if (!option) return;
     const values = ((option.options as Json[] | undefined) ?? []).flatMap((c) => (Array.isArray(c.options) ? (c.options as Json[]) : [c])).map((c) => String(c.value));
     this.thought = { id: String(option.id), values, now: typeof option.currentValue === "string" ? option.currentValue : undefined };
+    const levels = thoughtLevels(r?.configOptions);
+    if (levels.length && modelId) for (const fn of EFFORT_LISTENERS) fn(this.pid as ProviderId, modelId, levels);
   }
 
   /** The level it thinks at when it has none like the session's effort (the thread's effortNow), as far as it said; else undefined. */
@@ -1414,7 +1455,12 @@ class AcpSession implements ProviderSession {
       // Its commands as a session it opened for you lists them: what the composer offers for a tool asked no session of its own.
       // Its options as they are now (OpenCode 2 sends them after a switch of model): the new model's own thinking levels.
       if (u?.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) this.readThought(u);
-      if (u?.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands)) heard(this.pid, this.o.cwd, (u.availableCommands as { name: string; description?: string; input?: { hint?: string } }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.input?.hint, source: "tool" as const })));
+      if (u?.sessionUpdate === "available_commands_update" && Array.isArray(u.availableCommands)) {
+        const cmds = (u.availableCommands as { name: string; description?: string; input?: { hint?: string } }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.input?.hint, source: "tool" as const }));
+        this.compactCommand = cmds.some((c) => c.name.replace(/^\//, "").toLowerCase() === "compact");
+        heard(this.pid, this.o.cwd, cmds);
+        for (const fn of COMMAND_LISTENERS) fn(this.pid as ProviderId, this.o.cwd, cmds);
+      }
       return this.onUpdate(u);
     }
     if (m.id === undefined) return;
@@ -1434,17 +1480,10 @@ class AcpSession implements ProviderSession {
 
   /** Requests from the agent: permission, and file access inside the project. */
   private async answer(method: string, p: Json): Promise<Json> {
-    const inside = (path: unknown) => {
-      if (!this.inProject(path)) throw new Error("That path is outside the project.");
-      return resolve(this.o.cwd, String(path));
-    };
+    const inside = (path: unknown) => resolveContainedPath(this.o.cwd, path);
     // What it was handed (your attachments, a long output it saved) it may read too, at every level, as the permission path
     // lets it (handed, below): once links are followed, so a link in there can't lead out. Writes stay in the project.
-    const readable = (path: unknown) => {
-      const abs = resolve(this.o.cwd, String(path));
-      if (!this.inProject(path) && !(this.o.dirs ?? []).some((d) => inFolder(d, abs))) throw new Error("That path is outside the project.");
-      return abs;
-    };
+    const readable = (path: unknown) => resolveContainedPath(this.o.cwd, path, this.o.dirs ?? []);
     if (method === "fs/read_text_file") {
       const text = await readFile(readable(p.path), "utf8");
       const line = typeof p.line === "number" ? p.line - 1 : 0;
@@ -1817,8 +1856,8 @@ class AcpSession implements ProviderSession {
       const call: ToolCall = { ...prev, ...(u as ToolCall), content: (u.content as Json[] | undefined) ?? prev?.content, ...(own ? { _meta: Object.keys(own).length ? own : prev?._meta } : {}) };
       this.calls.set(call.toolCallId, call);
       // A subagent, with `task` denied: a command marked subtask gets past that, and it would wait for good at its first step.
-      // OpenCode 2 calls it `subagent`, by name beside a title of its own.
-      if (call.title === "task" || (this.opencode && (call.name === "subagent" || call.title === "subagent"))) this.cut?.(SUBAGENT);
+      // OpenCode 2 calls it `subagent`, by name beside a title of its own. Liner Code's own `liner_subagent` MCP tool isn't one.
+      if ((call.title === "task" || (this.opencode && (call.name === "subagent" || call.title === "subagent"))) && !(this.o.mcp && this.ours(call))) this.cut?.(SUBAGENT);
       // A tool of an MCP server Liner Code didn't hand it (one of its own settings), under way with no ask, below Full: agy offers
       // such a server's tools up front, and runs them unasked, when its conversation knew them before (seen on 1.5.7 after a
       // resume, for a server of the person's named as an earlier process's liner_<tag>). Liner Code can't refuse a step it isn't
@@ -2188,6 +2227,7 @@ class AcpSession implements ProviderSession {
             if (this.pid === "hermes") {
               const was = this.counted;
               this.counted = { ...now };
+              this.o.onHermesCounted?.({ ...this.counted });
               // Counters that went down started again (its gateway did): what they say is all this turn's.
               if (was && now.input >= was.input && now.output >= was.output && now.reads >= was.reads) Object.assign(now, { input: now.input - was.input, output: now.output - was.output, reads: now.reads - was.reads });
             }
@@ -2326,6 +2366,10 @@ class AcpSession implements ProviderSession {
       for (const p of all) if (!out.has(p.pid) && out.has(p.ppid)) (out.add(p.pid), (grew = true));
     }
     return out;
+  }
+
+  canCompact() {
+    return this.compactCommand;
   }
 
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
@@ -2556,6 +2600,18 @@ const BACKGROUND = /^(?:invoke_subagent|define_subagent|manage_subagents|swarm|s
 const CUT_MARK = "[Earlier output truncated]";
 /** Each agent's base model ids, as its sessions list them ("gemini-3.8-flash"), for reading `agy models` (agyModels). */
 const FAMILIES = new Map<string, string[]>();
+/** Listeners told when an ACP session observes thought_level options for a specific model, so models.json caches them. */
+const EFFORT_LISTENERS = new Set<(provider: ProviderId, modelId: string, efforts: EffortInfo[]) => void>();
+export function onAcpEfforts(fn: (provider: ProviderId, modelId: string, efforts: EffortInfo[]) => void) {
+  EFFORT_LISTENERS.add(fn);
+  return () => { EFFORT_LISTENERS.delete(fn); };
+}
+/** Listeners told when an ACP session advertises updated slash commands via available_commands_update. */
+const COMMAND_LISTENERS = new Set<(provider: ProviderId, cwd: string, commands: CommandInfo[]) => void>();
+export function onAcpCommands(fn: (provider: ProviderId, cwd: string, commands: CommandInfo[]) => void) {
+  COMMAND_LISTENERS.add(fn);
+  return () => { COMMAND_LISTENERS.delete(fn); };
+}
 
 /**
   What a session's access level lets through, as the model is told it (Antigravity's system prompt, and a line when it
@@ -2811,8 +2867,11 @@ export const hermes: Provider = {
     return windows && { plan: "OpenCode Go", windows, models: "opencode-go" };
   },
 };
+const opencodeAcp = acpProvider("opencode", { label: "OpenCode", cmd: ["opencode", "acp"], install: "npm install -g opencode-ai && opencode auth login", login: "opencode auth login" });
 export const opencode: Provider = {
-  ...acpProvider("opencode", { label: "OpenCode", cmd: ["opencode", "acp"], install: "npm install -g opencode-ai && opencode auth login", login: "opencode auth login" }),
+  ...opencodeAcp,
+  // Runs on a shared `opencode serve` V2 HTTP/SSE daemon (opencode-server.ts) so sessions and native subagents share one process; falls back to ACP on older binaries.
+  open: (o) => openOpenCodeServer(o, opencodeAcp.open),
   // OpenCode Go's windows, when it signed in with a Go key; Zen and the rest have none to show.
   async limits(env) {
     const keys = goKeys(env);

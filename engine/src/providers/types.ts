@@ -178,6 +178,8 @@ export type OpenOptions = {
   side?: boolean;
   /** A pair's sidekick: it works the lead's briefs, and sends no agents of its own. */
   sidekick?: boolean;
+  /** Liner-native Swarm / Teamwork session or worker: suppresses the provider's own subagent tools so all delegation flows through Liner's Teamwork tree. */
+  swarm?: boolean;
   /** `cwd` is a design on its own (a project of kind "design", design.new's folder): the Demo draws there as in its sample project. */
   designOnItsOwn?: boolean;
   /** Folders that exist outside `cwd` the tool may read as its own: where your attachments are saved. */
@@ -202,6 +204,10 @@ export type OpenOptions = {
   config?: Record<string, unknown>;
   /** The tool started a turn by itself; the runtime puts it on the timeline. */
   wake?: (w: WakeTurn) => void;
+  /** Hermes ACP's last cumulative session counters, seeded on loadSession so the first resumed turn counts only its delta. */
+  hermesCounted?: { input: number; output: number; reads: number };
+  /** Saves updated Hermes cumulative session counters on the thread record. */
+  onHermesCounted?: (c: { input: number; output: number; reads: number }) => void;
 };
 
 /** One live connection to an agent for one thread. Turns run one at a time. */
@@ -253,6 +259,8 @@ export interface ProviderSession {
     false where it can't tell: never closed for idleness.
   */
   settled?(): boolean | Promise<boolean>;
+  /** Whether this session handles `/compact` natively rather than treating it as a plain chat message. */
+  canCompact?(): boolean;
   /** Ends the tool's process and what it started, whatever is in flight; a promise where ending all of it takes a moment (acp.ts). */
   close(): void | Promise<void>;
 }

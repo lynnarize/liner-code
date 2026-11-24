@@ -19,7 +19,7 @@ import { LayerMark } from "./BuildTab";
 import { LayerChecks } from "./ChecksTab";
 import { useLean } from "./lean";
 import { D } from "./Rail";
-import { design, getDesign, isBlank, isGone, useDesign, type DesignState } from "./store";
+import { design, exportFrameHtml, getDesign, isBlank, isGone, useDesign, type DesignState } from "./store";
 
 /**
   What other builders put in the sidebar: E's skills rows under the lean (in place of the plain
@@ -183,7 +183,21 @@ function LayerList() {
         const p = presence[f.id];
         return (
           <div key={f.id} role="none">
-            <div className="ld-ly" data-top role="treeitem" aria-level={1} aria-expanded={on} aria-selected={sel.some((x) => x.frame === f.id && !x.node)} data-on={sel.some((x) => x.frame === f.id && !x.node) || undefined} onClick={(e) => design.select(e.shiftKey ? [...getDesign().sel, { frame: f.id }] : [{ frame: f.id }])}>
+            <div
+              className="ld-ly"
+              data-top
+              role="treeitem"
+              aria-level={1}
+              aria-expanded={on}
+              aria-selected={sel.some((x) => x.frame === f.id && !x.node)}
+              data-on={sel.some((x) => x.frame === f.id && !x.node) || undefined}
+              onClick={(e) => {
+                if (!e.shiftKey) return design.select([{ frame: f.id }]);
+                const cur = getDesign().sel;
+                const has = cur.some((x) => x.frame === f.id && !x.node);
+                design.select(has ? cur.filter((x) => !(x.frame === f.id && !x.node)) : [...cur, { frame: f.id }]);
+              }}
+            >
               <button
                 type="button"
                 className="ld-ly-tw"
@@ -252,14 +266,30 @@ const OLD_SHOWN = "An old turn is shown: go back to now to change the design";
 function FrameMore({ f, onRename }: { f: DesignFrame; onRename: () => void }) {
   // A kept copy shown (Versions) refuses every change, so its rows wait, saying why, as the rest of the canvas does then.
   const old = useDesign((s) => s.scrub !== undefined);
+  const pages = useDesign((s) => s.file?.pages ?? []);
+  const otherPages = pages.filter((p) => p.id !== f.page);
   return (
     // Its presses are the menu's, not the row's (which picks the frame).
     <span className="ld-ly-acts" onClick={(e) => e.stopPropagation()}>
-      <Pop label={`${f.name}: what to do with it`} menu align="end" width={220} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: old ? OLD_SHOWN : "Rename, duplicate or delete" }} trigger={<I.more size={14} />}>
+      <Pop label={`${f.name}: what to do with it`} menu align="end" width={230} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: old ? OLD_SHOWN : "Rename, duplicate, export or delete" }} trigger={<I.more size={14} />}>
         {(close) => (
           <div title={old ? OLD_SHOWN : undefined}>
             <Row title="Rename" icon={<I.edit size={16} />} disabled={old} onPick={() => (close(), onRename())} />
             <Row title="Duplicate" icon={<I.copy size={16} />} end={keys("mod+d")} disabled={old} onPick={() => (close(), void design.copyFrames([f.id]))} />
+            {f.kind === "drawn" && (
+              <>
+                <Row title="Copy frame HTML" icon={<I.code size={16} />} onPick={() => (close(), void exportFrameHtml(f.id, "copy"))} />
+                <Row title="Export frame HTML…" icon={<I.download size={16} />} onPick={() => (close(), void exportFrameHtml(f.id, "download"))} />
+              </>
+            )}
+            {otherPages.length > 0 && (
+              <>
+                <Sep />
+                {otherPages.map((p) => (
+                  <Row key={p.id} title={`Move to ${p.name}`} icon={<I.file size={16} />} disabled={old} onPick={() => (close(), design.moveFramePage([f.id], p.id), toast(`Moved ${f.name} to ${p.name}`))} />
+                ))}
+              </>
+            )}
             <Sep />
             <Row
               title="Delete"
@@ -289,8 +319,10 @@ function addDesignMd() {
 export function DesignSide({ cwd }: { cwd: string }) {
   const file = useDesign(layersOf);
   const page = useDesign((s) => s.page ?? s.file?.pages[0]?.id);
+  const old = useDesign((s) => s.scrub !== undefined);
   const lean = useLean();
   const Skills = sideSlots.skills;
+  const [renamingPage, setRenamingPage] = useState<string | null>(null);
   const count = (id: string) => file?.frames.filter((f) => f.page === id).length ?? 0;
   return (
     <div className="ld-side">
@@ -315,11 +347,44 @@ export function DesignSide({ cwd }: { cwd: string }) {
             }
           />
           {file.pages.map((p) => (
-            <button key={p.id} type="button" className="ld-tr l-focus" data-on={p.id === page || undefined} onClick={() => design.setPage(p.id)}>
+            <div key={p.id} className="ld-tr" data-on={p.id === page || undefined} onClick={() => design.setPage(p.id)} onDoubleClick={() => !old && setRenamingPage(p.id)}>
               <I.file size={14} />
-              <span className="ld-ell">{p.name}</span>
+              {renamingPage === p.id ? (
+                <input
+                  className="ld-name-in"
+                  autoFocus
+                  defaultValue={p.name}
+                  aria-label="Rename page"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                    if (e.key === "Escape") setRenamingPage(null);
+                  }}
+                  onBlur={(e) => {
+                    const v = e.currentTarget.value.trim();
+                    if (v && v !== p.name) design.renamePage(p.id, v);
+                    setRenamingPage(null);
+                  }}
+                />
+              ) : (
+                <span className="ld-ell">{p.name}</span>
+              )}
               {count(p.id) > 0 && <span className="ld-m">{count(p.id)}</span>}
-            </button>
+              {!old && renamingPage !== p.id && (
+                <span className="ld-ly-acts" onClick={(e) => e.stopPropagation()}>
+                  <Pop label={`${p.name}: page actions`} menu align="end" width={180} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: "Rename or delete page" }} trigger={<I.more size={12} />}>
+                    {(close) => (
+                      <>
+                        <Row title="Rename page" icon={<I.edit size={14} />} onPick={() => (close(), setRenamingPage(p.id))} />
+                        {file.pages.length > 1 && (
+                          <Row title="Delete page" note={count(p.id) > 0 ? "Moves frames" : undefined} icon={<I.trash size={14} />} onPick={() => (close(), design.removePage(p.id))} />
+                        )}
+                      </>
+                    )}
+                  </Pop>
+                </span>
+              )}
+            </div>
           ))}
           <SideLabel name="Layers" />
           <LayerList />

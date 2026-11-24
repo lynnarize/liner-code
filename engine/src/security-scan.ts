@@ -610,6 +610,33 @@ async function secondLook(sec: Security, scanId: string, threadId: string, live:
   sec.changed(["findings"], rec.projectId);
 }
 
+/** Runs a one-off second look on a single finding (from SARIF, GitHub alerts, free checks, or an agent scan without one). */
+export async function lookFinding(sec: Security, id: string, model?: string): Promise<SecurityFinding> {
+  const f = sec.finding(id);
+  const p = sec.project(f.projectId);
+  const opts = await scanOptions(sec, p.id);
+  const fallback = opts.defaults.reader.kind === "own" ? opts.defaults.reader.agent : opts.defaults.reader.model;
+  const ref = (model?.trim() || opts.defaults.secondLook || fallback)?.replace(/^@/, "");
+  if (!ref) throw new Error("No model is ready for a second look. Sign in to a tool first.");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), LOOK_MS);
+  let out = "";
+  let error: string | undefined;
+  try {
+    out = await sec.host.runtime.quiet(`look-${f.id}`, ref, p.path, lookPrompt(p.name, f.source, [f]), ctl.signal, "second look", LOOK_MS);
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  } finally {
+    clearTimeout(timer);
+  }
+  const v = parseLook(out, [f.id]);
+  const r = v.results.get(f.id) ?? { state: "unconfirmed" as const, why: error };
+  const at = Date.now();
+  const words = error ? `Couldn't confirm: the second look didn't finish (${error}).` : r.why && maskText(r.why);
+  const next = sec.update(f.id, (x) => ({ ...x, look: { state: r.state, by: ref, ...(words ? { words } : {}), at }, activity: [...x.activity, { at, kind: "looked", text: r.state === "confirmed" ? "Confirmed by a second look" : "A second look couldn't confirm it", by: ref }] }));
+  return next;
+}
+
 /* ---------- Fix it, and ask about it ---------- */
 
 /** What a model is told of text from a finding, a report or the code: it is quoted, to be checked, never followed. */

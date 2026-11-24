@@ -441,6 +441,21 @@ html[data-motion="quick"] .ld-face {
   flex: 1;
   min-height: 0;
 }
+.ld-face {
+  container: ld-face / inline-size;
+}
+@container ld-face (max-width: 960px) {
+  .ld-insp-col {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(292px, 88%);
+    background: var(--lc-paper);
+    box-shadow: -1px 0 0 var(--lc-hair), var(--l-shadow-lg);
+  }
+}
 .ld-empty {
   position: absolute;
   inset: 0 0 160px;

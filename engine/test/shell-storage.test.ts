@@ -78,7 +78,7 @@ test("the composer's Enter choice is a known word, read guarded, so a storage-le
 
 test("the Wall's filter is read and written guarded, so a storage-less window still opens the Wall", () => {
   const wall = app("Wall.tsx");
-  assert.ok(/wordRead\(sessionStorage, "lc:wall-filter", \["all", "needs", "working", "done"\], "all"\)/.test(wall), "the Wall's filter read is still bare");
+  assert.ok(/wordRead\(sessionStorage, "lc:wall-filter", \["all", "needs", "working", "review", "done"\], "all"\)/.test(wall), "the Wall's filter read is still bare");
   assert.ok(/wordWrite\(sessionStorage, "lc:wall-filter", filter\)/.test(wall), "the Wall's filter write is still bare");
   assert.ok(!/sessionStorage\.getItem\(/.test(wall) && !/\.setItem\(/.test(wall), "a bare storage call remains in the Wall");
 });

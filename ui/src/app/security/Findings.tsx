@@ -11,7 +11,7 @@
   here from one list, so a dismissed finding moves tab without asking twice.
 */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { FindingSource, FindingState, SecondLookState, SecurityFinding, Severity } from "@contracts";
+import type { DismissReason, FindingSource, FindingState, SecondLookState, SecurityFinding, Severity } from "@contracts";
 import { DISMISS_LABEL, SEVERITIES, SEVERITY_LABEL, SOURCE_LABEL } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
@@ -19,11 +19,67 @@ import { ago } from "../model";
 import { I } from "../icons";
 import { Pop, Row } from "../ui";
 import { FindingPanel } from "./FindingPanel";
-import { MOCK, useFindings } from "./findings-data";
+import { act, MOCK, useFindings } from "./findings-data";
 import { PageTop, SevMark } from "./parts";
-import { goSecurity, setSecurityScope, useScan, useSecurity, useSecurityPage, useSecurityProjects, useSecurityScope } from "./store";
+import { goSecurity, setFindingsFilter, setSecurityScope, useFindingsFilter, useScan, useSecurity, useSecurityPage, useSecurityProjects, useSecurityScope } from "./store";
 import { fixedAt, when } from "./when";
 import "./findings.css";
+
+/** Builds a SARIF 2.1.0 JSON report from the visible findings. */
+function findingsToSarif(items: SecurityFinding[]): string {
+  const level = (s: Severity) => (s === "critical" || s === "high" ? "error" : s === "medium" ? "warning" : "note");
+  const sarif = {
+    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: { driver: { name: "Liner Security", informationUri: "https://github.com/lynnarize/liner-code" } },
+        results: items.map((f) => ({
+          ruleId: f.rule || f.id,
+          level: level(f.severity),
+          message: { text: [f.title, f.explain?.lead, f.explain?.wrong].filter(Boolean).join("\n\n") },
+          ...(f.file
+            ? {
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: f.file },
+                      ...(f.line ? { region: { startLine: f.line, ...(f.endLine ? { endLine: f.endLine } : {}) } } : {}),
+                    },
+                  },
+                ],
+              }
+            : {}),
+          properties: { id: f.id, severity: f.severity, state: f.state, source: f.source, secondLook: f.look.state },
+        })),
+      },
+    ],
+  };
+  return `${JSON.stringify(sarif, null, 2)}\n`;
+}
+
+/** Builds a clean Markdown summary of the visible findings. */
+function findingsToMarkdown(items: SecurityFinding[]): string {
+  const lines = [`# Liner Security Findings (${items.length})`, ""];
+  for (const f of items) {
+    lines.push(`## [${SEVERITY_LABEL[f.severity]}] ${f.title}`);
+    lines.push(`- State: ${f.state} · Source: ${SOURCE_LABEL[f.source]}${f.file ? ` · Where: \`${f.file}${f.line ? `:${f.line}` : ""}\`` : ""}`);
+    if (f.explain?.lead) lines.push("", f.explain.lead);
+    if (f.explain?.wrong) lines.push("", f.explain.wrong);
+    lines.push("");
+  }
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function downloadBlob(name: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 type Sort = "worst" | "newest" | "file";
 type FixPick = "fixing" | "not";
@@ -112,8 +168,15 @@ function MultiChip<T extends string>({ label, value, options, onChange }: { labe
 }
 
 /** Bring in, when the list is narrowed to GitHub's alerts or to report files: read them in now. */
-function BringIn({ source, projectId }: { source: "github" | "sarif"; projectId?: string }) {
+function BringIn({ source, projectId, projects }: { source: "github" | "sarif"; projectId?: string; projects: { id: string; name: string }[] }) {
   const [busy, setBusy] = useState(false);
+  const [localProject, setLocalProject] = useState<string | undefined>(projectId ?? projects[0]?.id);
+  useEffect(() => {
+    if (projectId) setLocalProject(projectId);
+    else if (!localProject && projects[0]) setLocalProject(projects[0].id);
+  }, [projectId, projects]);
+  const targetId = projectId ?? localProject;
+  const targetName = projects.find((p) => p.id === targetId)?.name;
   const file = useRef<HTMLInputElement>(null);
   const done = (r: { added: number; already: number; leftOut: number; note?: string }) => toast(r.note ?? `${r.added} new, ${r.already} already here${r.leftOut ? `, ${r.leftOut} you dismissed before left out` : ""}`);
   const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -121,16 +184,33 @@ function BringIn({ source, projectId }: { source: "github" | "sarif"; projectId?
   // gh on this Mac, as the sidebar reads it: with none, or not signed in, say so here rather than fail on the press.
   const reach = useSecurity("security.side", {}, ["projects"]).data?.github.reach;
   const noGh = source === "github" && reach && !(reach.installed && reach.signedIn);
-  const off = !projectId || MOCK || Boolean(noGh);
+  const off = !targetId || MOCK || Boolean(noGh);
   return (
     <div className="lf-bring">
       {source === "github" ? <I.branch size={16} /> : <I.file size={16} />}
       <span className="ls-tl2">
         <b>{source === "github" ? "GitHub alerts" : "A report file"}</b>
-        <small>{!projectId ? "Pick a project above to bring them in." : noGh ? (reach.installed ? "gh isn't signed in: run gh auth login in Terminal, then try again." : "Needs gh, GitHub's tool: brew install gh, then gh auth login.") : source === "github" ? "Dependabot and code scanning, read through gh" : "A SARIF file from another scanner"}</small>
+        <small>{!targetId ? "Add a project first to bring them in." : noGh ? (reach.installed ? "gh isn't signed in: run gh auth login in Terminal, then try again." : "Needs gh, GitHub's tool: brew install gh, then gh auth login.") : source === "github" ? "Dependabot and code scanning, read through gh" : "A SARIF file from another scanner"}</small>
       </span>
+      {!projectId && projects.length > 0 && (
+        <Pop
+          label={`Target project: ${targetName ?? "Pick a project"}`}
+          menu
+          align="end"
+          width={220}
+          triggerClass="ls-chip l-focus"
+          trigger={
+            <>
+              <span>{targetName ?? "Pick project"}</span>
+              <I.chevD size={12} />
+            </>
+          }
+        >
+          {(close) => projects.map((p) => <Row key={p.id} title={p.name} on={p.id === targetId} onPick={() => (close(), setLocalProject(p.id))} />)}
+        </Pop>
+      )}
       {source === "github" ? (
-        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={off || busy} onClick={() => go(() => rpc("security.bringin.github", { projectId: projectId! }).then(done))}>
+        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={off || busy} onClick={() => go(() => rpc("security.bringin.github", { projectId: targetId! }).then(done))}>
           Bring them in
         </button>
       ) : (
@@ -143,7 +223,7 @@ function BringIn({ source, projectId }: { source: "github" | "sarif"; projectId?
             onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
-              if (f) go(() => f.text().then((text) => rpc("security.bringin.sarif", { projectId: projectId!, text })).then(done));
+              if (f) go(() => f.text().then((text) => rpc("security.bringin.sarif", { projectId: targetId!, text })).then(done));
             }}
           />
           <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={off || busy} onClick={() => file.current?.click()}>
@@ -165,23 +245,48 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
   const page = useSecurityPage();
   const scan = page.kind === "findings" ? page.scan : undefined;
   const scanRec = useScan(scan);
-  // The dev mock (?ls-mock) puts its sample findings in the first project.
-  const { list: all, error } = useFindings(scan ? undefined : scope.projectId, projects[0]?.id ?? "mock-sample");
+  // The dev mock (?ls-mock) puts its sample findings in the first project. When a single scan is selected, scope to its project rather than fetching every project.
+  const { list: all, error } = useFindings(scan ? (scanRec?.projectId ?? undefined) : scope.projectId, projects[0]?.id ?? "mock-sample");
   const list = useMemo(() => {
     const mine = all?.filter((f) => !hidden(f.projectId)) ?? null;
     return scan && mine ? mine.filter((f) => f.scan === scan || f.activity.some((e) => e.kind === "raised-again" && e.scan === scan)) : mine;
   }, [all, scan, hidden]);
   const projectOf = (id: string) => projects.find((p) => p.id === id);
 
-  const [tab, setTab] = useState<FindingState>(state ?? "open");
-  const [sources, setSources] = useState<FindingSource[]>(source ? [source] : []);
-  const [sevs, setSevs] = useState<Severity[]>([]);
-  const [looks, setLooks] = useState<SecondLookState[]>([]);
-  const [fixes, setFixes] = useState<FixPick[]>([]);
-  const [sort, setSort] = useState<Sort>("worst");
-  const [query, setQuery] = useState<string | null>(null);
+  const filt = useFindingsFilter();
+  const { tab, sources, sevs, looks, fixes, sort, query } = filt;
+  const setTab = (next: FindingState) => setFindingsFilter({ tab: next });
+  const setSources = (next: FindingSource[]) => setFindingsFilter({ sources: next });
+  const setSevs = (next: Severity[]) => setFindingsFilter({ sevs: next });
+  const setLooks = (next: SecondLookState[]) => setFindingsFilter({ looks: next });
+  const setFixes = (next: FixPick[]) => setFindingsFilter({ fixes: next });
+  const setSort = (next: Sort) => setFindingsFilter({ sort: next });
+  const setQuery = (next: string | null) => setFindingsFilter({ query: next });
+  const [pickedIds, setPickedIds] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   useEffect(() => void (state && setTab(state)), [state]);
-  useEffect(() => void (source && setSources([source])), [source]);
+  useEffect(() => {
+    if (source) setSources([source]);
+  }, [source]);
+  useEffect(() => setPickedIds(new Set()), [tab, scope.projectId, scan]);
+
+  const bulkAction = async (kind: "dismiss" | "reopen", reason?: DismissReason) => {
+    const ids = [...pickedIds];
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      for (const id of ids) {
+        if (kind === "dismiss" && reason) await act.dismiss(id, reason);
+        else if (kind === "reopen") await act.reopen(id);
+      }
+      setPickedIds(new Set());
+      toast.success(kind === "dismiss" ? `Dismissed ${ids.length} findings` : `Reopened ${ids.length} findings`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const counts = useMemo(() => {
     const c: Record<FindingState, number> = { open: 0, fixed: 0, dismissed: 0 };
@@ -341,10 +446,72 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                 >
                   {(close) => SORTS.map((s) => <Row key={s.value} title={s.label} on={s.value === sort} onPick={() => (close(), setSort(s.value))} />)}
                 </Pop>
+                <Pop
+                  label="Export visible findings"
+                  menu
+                  align="end"
+                  width={210}
+                  triggerClass="lc-tb lf-tb l-focus"
+                  triggerAttrs={{ title: "Export findings" }}
+                  trigger={<I.download size={16} />}
+                >
+                  {(close) => (
+                    <>
+                      <Row
+                        title="Export SARIF 2.1.0…"
+                        disabled={!shown.length}
+                        onPick={() => {
+                          close();
+                          downloadBlob("liner-security-findings.sarif.json", findingsToSarif(shown), "application/sarif+json;charset=utf-8");
+                          toast.success(`Exported ${shown.length} findings as SARIF`);
+                        }}
+                      />
+                      <Row
+                        title="Export Markdown…"
+                        disabled={!shown.length}
+                        onPick={() => {
+                          close();
+                          downloadBlob("liner-security-findings.md", findingsToMarkdown(shown), "text/markdown;charset=utf-8");
+                          toast.success(`Exported ${shown.length} findings as Markdown`);
+                        }}
+                      />
+                    </>
+                  )}
+                </Pop>
               </span>
             </div>
 
-            {bring && <BringIn source={bring} projectId={scope.projectId} />}
+            {pickedIds.size > 0 && (
+              <div className="lf-filt" role="region" aria-label="Bulk actions" style={{ alignItems: "center", gap: 8 }}>
+                <span className="lc-quiet">{pickedIds.size} selected</span>
+                <span className="lc-grow" />
+                {tab === "open" ? (
+                  <Pop label="Dismiss selected findings" menu align="end" width={220} triggerClass="lc-btn l-focus" triggerAttrs={{ "data-kind": "plain", "data-size": "sm" }} trigger="Dismiss selected">
+                    {(close) =>
+                      (Object.keys(DISMISS_LABEL) as DismissReason[]).map((reason) => (
+                        <Row
+                          key={reason}
+                          title={DISMISS_LABEL[reason]}
+                          onPick={() => {
+                            close();
+                            void bulkAction("dismiss", reason);
+                          }}
+                        />
+                      ))
+                    }
+                  </Pop>
+                ) : (
+                  <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" disabled={bulkBusy} onClick={() => void bulkAction("reopen")}>
+                    Reopen selected
+                  </button>
+                )}
+                <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setPickedIds(new Set())}>
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {bring && <BringIn source={bring} projectId={scope.projectId} projects={projects} />}
 
             {!list ? (
               error ? (
@@ -361,8 +528,42 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
             ) : shown.length ? (
               <div className="lf-list" role="list" aria-label={`${TABS.find((t) => t.value === tab)!.label} findings`} ref={listRef} onKeyDown={onListKey}>
                 {shown.map((f) => (
-                  <div role="listitem" key={f.id} className="lf-li">
-                    <button type="button" className="lf-rw l-focus" data-id={f.id} data-on={f.id === open?.id || undefined} aria-current={f.id === open?.id || undefined} tabIndex={f.id === (at >= 0 ? open!.id : shown[0].id) ? 0 : -1} onClick={() => show(f.id === open?.id ? undefined : f.id)}>
+                  <div role="listitem" key={f.id} className="lf-li" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      className="l-focus"
+                      aria-label={`Select ${f.title}`}
+                      checked={pickedIds.has(f.id)}
+                      onChange={(e) =>
+                        setPickedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(f.id);
+                          else next.delete(f.id);
+                          return next;
+                        })
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="lf-rw l-focus"
+                      style={{ flex: 1, minWidth: 0 }}
+                      data-id={f.id}
+                      data-on={f.id === open?.id || undefined}
+                      aria-current={f.id === open?.id || undefined}
+                      tabIndex={f.id === (at >= 0 ? open!.id : shown[0].id) ? 0 : -1}
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey) {
+                          setPickedIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(f.id)) next.delete(f.id);
+                            else next.add(f.id);
+                            return next;
+                          });
+                          return;
+                        }
+                        show(f.id === open?.id ? undefined : f.id);
+                      }}
+                    >
                       <SevMark severity={f.severity} />
                       <span className="lf-tl2">
                         {/* The time it last changed at the title's end, as a row in the sidebar has it. */}

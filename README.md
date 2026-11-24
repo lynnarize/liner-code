@@ -196,7 +196,14 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   and reaches GitHub through your `gh` sign-in for pull requests: when you open one, and once a
   minute in the background for a session's open pull request while its checks run (two hours at
   most), while Settings has sessions settle when it merges, or while a snoozed session waits on it.
-  Hermes's own update check runs a `git fetch`.
+  It also lists a project's open pull requests through `gh` when you type `#` in the message box
+  (at most once every 30 seconds), and runs `git fetch` and `git pull` against your remote when you
+  press Fetch & pull. Hermes's own update check runs a `git fetch`.
+- **OpenCode runs as a local server.** Liner Code starts `opencode serve` on 127.0.0.1 and talks
+  to it over HTTP; the sessions in Liner Code share that one process, which stops a minute after the
+  last one closes. Its model traffic goes to its providers as before.
+- **Links into the app.** Liner Code opens `liner-code://` links: one that names a session opens
+  it, and one that names a folder asks you before adding it as a project.
 - **Changes are checked by another maker.** By default the Reviewer reads each change, and it's a
   model of another maker than the ones that wrote it whenever one is ready. So with Claude Code and
   Codex both here, diffs Claude writes also go to OpenAI through Codex, billed to that account. A

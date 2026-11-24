@@ -36,9 +36,10 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
                                           │
                                           ├─ Claude Code   (Claude Agent SDK → your `claude`)
                                           ├─ Codex CLI     (`codex exec --json`, one process a turn)
-                                          ├─ Hermes, OpenCode (ACP: JSON-RPC over stdio)
+                                          ├─ Hermes        (ACP: JSON-RPC over stdio)
+                                          ├─ OpenCode      (`opencode serve` on 127.0.0.1, HTTP + SSE, one process shared; ACP on older versions)
                                           ├─ git           (snapshots under refs/liner/, worktrees)
-                                          ├─ gh            (pull requests, checks; the watch reads a session's open one each minute while its checks run, for two hours at most, or it waits on it; routines poll it)
+                                          ├─ gh            (pull requests, checks; the watch reads a session's open one each minute while its checks run, for two hours at most, or it waits on it; routines poll it; `#` in the message box lists open ones)
                                           ├─ python3 pty   (the Terminal surface)
                                           ├─ xcrun simctl  (the Device surface)
                                         POST /hooks/r/<id>?key=…  a routine's webhook (its own secret)

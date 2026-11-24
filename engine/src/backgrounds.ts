@@ -5,9 +5,9 @@
   `sips` and kept under <home>/backgrounds. A dynamic wallpaper's small copy shows day and night
   split down a diagonal, so its Light or Dark copy is used instead, matching the app's theme.
 */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { run } from "./exec.ts";
+import { run, which } from "./exec.ts";
 
 const APPLE = "/System/Library/Desktop Pictures";
 // Photographs only: the graphic, colour and gradient ones would fight the work on top.
@@ -78,6 +78,25 @@ export class Backgrounds {
       const r = await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { env: { ...process.env, LINER_FROM: from, LINER_TO: to }, timeout: 30000 });
       if (r.code !== 0 || !existsSync(to)) throw new Error("Liner Code couldn't read that picture. Try a JPEG or PNG.");
       return;
+    }
+    if (process.platform !== "darwin") {
+      // Linux has no macOS sips: prefer ImageMagick or ffmpeg, else pass an existing JPEG through directly.
+      const magick = which("magick") ?? which("convert");
+      if (magick) {
+        const r = await run(magick, [from, "-auto-orient", "-resize", `${max}x${max}>`, "-quality", "84", `jpeg:${to}`], { timeout: 30000 });
+        if (r.code === 0 && existsSync(to)) return;
+      }
+      const ffmpeg = which("ffmpeg");
+      if (ffmpeg) {
+        const r = await run(ffmpeg, ["-y", "-i", from, "-vf", `scale='min(${max},iw)':'min(${max},ih)':force_original_aspect_ratio=decrease`, "-q:v", "4", to], { timeout: 30000 });
+        if (r.code === 0 && existsSync(to)) return;
+      }
+      const head = readFileSync(from).subarray(0, 3);
+      if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) {
+        copyFileSync(from, to);
+        return;
+      }
+      throw new Error("Liner Code couldn't convert that picture on Linux without ImageMagick or ffmpeg. Try a JPEG image.");
     }
     const size = await run("sips",["-g", "pixelWidth", "-g", "pixelHeight", from], { timeout: 15000 });
     const long = Math.max(...[...size.stdout.matchAll(/pixel(?:Width|Height): (\d+)/g)].map((m) => Number(m[1])), 0);

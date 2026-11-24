@@ -1221,4 +1221,8 @@ export class CodexServerSession implements ProviderSession {
     }
     throw new Unknown(`Liner Code doesn't answer ${method} yet.`);
   }
+
+  canCompact() {
+    return true;
+  }
 }

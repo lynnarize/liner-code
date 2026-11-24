@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { FRAME_CHANGED } from "../../contracts/src/index.ts";
+import { CodedError, FRAME_CHANGED } from "../../contracts/src/index.ts";
 import type { DesignFile, DesignSelection, DesignSkill, Lean, LeanTokens } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
 import { writeAtomic } from "./atomic.ts";
@@ -316,7 +316,7 @@ export function writeLean(cwd: string, text: string, base?: string, file?: Pick<
   if (text.length > LEAN_MAX) throw new Error("That DESIGN.md is too long; keep the lean under 200 KB.");
   const at = leanTarget(cwd, file);
   // Written over what was read, or not at all: someone (an agent, another window) changed it meanwhile.
-  if (base !== undefined && base !== revOf(cwd, at)) throw new Error(`${FRAME_CHANGED} ${at} changed since it was read, so nothing was written. Read it again and make the change on what's there now.`);
+  if (base !== undefined && base !== revOf(cwd, at)) throw new CodedError("FRAME_CHANGED", `${FRAME_CHANGED} ${at} changed since it was read, so nothing was written. Read it again and make the change on what's there now.`);
   atomic(safePath(cwd, join(cwd, at)), text);
   return readLean(cwd, file);
 }

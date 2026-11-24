@@ -14,14 +14,16 @@
   later: until then it counts wherever agents at work do, whichever message is the latest.
 */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
-import { agentState, isPair, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type Thread } from "@contracts";
-import { rpc, useEngine, useItemsWhere } from "./engine";
+import { agentState, isPair, isSwarm, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type SwarmMember, type SwarmPost, type SwarmSnapshot, type Thread } from "@contracts";
+import { rpc, useEngine, useItemsWhere, useSwarm } from "./engine";
 import { I, ModelMark, StateMark, StepMark, type StepState } from "./icons";
 import { useLaunch } from "./launch";
 import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, planEnd, planStatus, plural, sumLines, type PlanEnd } from "./model";
+import { ModelPop } from "./Models";
 import { openSurface } from "./TopBar";
-import { Lines, Num, Pop } from "./ui";
+import { Lines, Num, Pop, Row, Sep } from "./ui";
 import { SendBox } from "./Composer";
 import "./crew.css";
 
@@ -50,8 +52,8 @@ const linesSaid = ({ added, removed }: { added: number; removed: number }) => [a
 const FILE_WORD: Record<string, string> = { added: "Added", deleted: "Deleted", renamed: "Renamed" };
 /** A pair's sidekick on a brief: the lead's call to Liner Code's sidekick tool, by any tool's name for it (mcp__liner__sidekick, liner.sidekick, liner_sidekick). */
 export const isSidekick = (t: Tool) => /(?:^|[._])sidekick$/.test(t.tool);
-/** A brief stopped while it waited its turn: the sidekick never started on it. */
-const unstarted = (t: Tool) => isSidekick(t) && stateOf(t) === "stopped" && !t.agent?.tools && !t.agent?.steps?.length;
+/** A brief or subagent stopped while it waited its turn: it never started. */
+const unstarted = (t: Tool) => (isSidekick(t) || /(?:^|[._])subagent$/.test(t.tool)) && stateOf(t) === "stopped" && !t.agent?.tools && !t.agent?.steps?.length;
 /** Who an agent is, by name: a sidekick by its model ("GPT-6.1 Sol"), the rest by their kind ("Explore"). */
 export const whoIs = (t: Tool, providers: ProviderInfo[]) => (isSidekick(t) ? (t.agent?.model ? modelLabel(t.agent.model, providers) : "Sidekick") : agentName(t));
 /**
@@ -263,6 +265,9 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
 */
 export function CrewChip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
+  const swarmOn = isSwarm(thread);
+  const swarm = useSwarm(thread.id, swarmOn);
+  if (swarmOn && swarm) return <SwarmChip thread={thread} swarm={swarm} />;
   if (!crew) return null;
   const working = atWork(crew);
   if ((thread.status === "running" ? 1 : 0) + working.length < 2) return null;
@@ -467,6 +472,12 @@ function PairShares({ thread }: { thread: Thread }) {
       })}
       <div className="lc-crp-sep" />
       {sent > 0 && <div className="lc-crp-l">{`${plural(sent, "brief")} · ${kept} kept · ${tookBack} taken back`}</div>}
+      {thread.spendLimit !== undefined && thread.spendLimit > 0 && (
+        <div className="lc-crp-l">
+          Spend cap: ${thread.spendLimit.toFixed(2)}
+          {thread.usage?.costUsd ? ` ($${thread.usage.costUsd.toFixed(2)} used)` : ""}
+        </div>
+      )}
       <div className="lc-crp-l lc-quiet">
         {live ? "Through the last finished turn. " : ""}
         {shares.estimated ? "Tokens are counted. Cost is an estimate from list prices, and your plan may differ." : "Tokens and cost are as each tool reported them."}
@@ -569,6 +580,7 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
               <Mark state={st} />
               {side && <Face t={t} size={12} />}
               <b>{whoIs(t, providers)}</b>
+              {n.kids.length > 0 && <span className="lc-quiet">({plural(n.kids.length, "subagent")})</span>}
               {side && <span className="lc-fan-tag">Sidekick</span>}
               <span className="lc-fan-task">{on ? task : agentNow(t)}</span>
               {on ? !side && model && <span className="lc-fan-m">{model}</span> : <span className="lc-fan-m l-num">{duration(secsOf(t, now))}</span>}
@@ -661,7 +673,13 @@ function Peek({ threadId, t }: { threadId: string; t: Tool }) {
 */
 export function CrewStrip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
+  const swarmOn = isSwarm(thread);
+  const swarm = useSwarm(thread.id, swarmOn);
   const providers = useEngine((s) => s.providers);
+  if (swarmOn && swarm) {
+    const active = swarm.members.filter((m) => m.name !== "coordinator" && (m.state === "working" || m.state === "queued"));
+    if (active.length) return <SwarmStrip thread={thread} swarm={swarm} active={active} />;
+  }
   const working = crew ? atWork(crew) : [];
   // One agent while the turn runs is the live line's to say (its newest step, and LoneStop at its end), as the crew chip shows only for two or more.
   if (!crew || !working.length || lone(thread, working)) return null;
@@ -728,8 +746,14 @@ export function AgentsSurface({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
   const items = useItemsWhere(thread.id, isCrewItem);
   const picked = useShownAgent(thread.id);
+  const swarmOn = isSwarm(thread);
+  const swarm = useSwarm(thread.id, swarmOn);
   const agent = picked ? items.find((x): x is Tool => x.id === picked && isAgent(x)) : undefined;
-  return <div className="lc-agents-panel lc-cr">{agent ? <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} /> : <CrewView thread={thread} crew={crew} />}</div>;
+  return (
+    <div className="lc-agents-panel lc-cr">
+      {agent ? <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} /> : swarmOn && swarm ? <SwarmSurface thread={thread} swarm={swarm} /> : <CrewView thread={thread} crew={crew} />}
+    </div>
+  );
 }
 
 function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
@@ -787,6 +811,23 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
           <p className="lc-cr-empty">Nobody has worked here yet. When a model takes your message, and when it sends agents off, they show here with who sent whom.</p>
         )}
         <SessionUse thread={thread} />
+        {!thread.sideOf && !thread.security && (
+          <div className="lc-sw-opt">
+            <div className="lc-cr-h">
+              Multi-agent<span className="lc-cr-rule" />
+              <span>0 MB parked</span>
+            </div>
+            <p className="lc-cr-none">Run a structured Teamwork tree or a peer-to-peer Swarm board across any CLI or API. Parked workers hibernate to 0 MB RAM.</p>
+            <div className="lc-sw-addbar">
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "teamwork" }).catch(fail)}>
+                Start Teamwork
+              </button>
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "swarm" }).catch(fail)}>
+                Start Swarm
+              </button>
+            </div>
+          </div>
+        )}
       </>
     );
   const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length;
@@ -936,6 +977,23 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
       )}
 
       <SessionUse thread={thread} />
+      {!thread.sideOf && !thread.security && (
+        <div className="lc-sw-opt">
+          <div className="lc-cr-h">
+            Multi-agent<span className="lc-cr-rule" />
+            <span>0 MB parked</span>
+          </div>
+          <p className="lc-cr-none">Run a structured Teamwork tree or a peer-to-peer Swarm board across any CLI or API. Parked workers hibernate to 0 MB RAM.</p>
+          <div className="lc-sw-addbar">
+            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "teamwork" }).catch(fail)}>
+              Start Teamwork
+            </button>
+            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "swarm" }).catch(fail)}>
+              Start Swarm
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1013,6 +1071,16 @@ const LaneRow = ({ label, children }: { label: string; children: ReactNode }) =>
   </>
 );
 
+/** Strips a redundant leading `cd "<cwd>" && ` from shell step titles so narrow agent panels show the real command. */
+function cleanStepTitle(title: string, cwd: string): string {
+  if (!title.startsWith("Run ")) return title;
+  const m = title.slice(4).trimStart().match(/^cd\s+(?:"([^"]+)"|'([^']+)'|((?:\\.|[^\s;&])+))\s*(?:&&|;)\s*([\s\S]+)$/);
+  if (!m) return title;
+  const rawDir = m[1] ?? m[2] ?? (m[3] ?? "").replace(/\\ /g, " ");
+  const norm = (p: string) => p.replace(/\/+$/, "");
+  return norm(rawDir) === norm(cwd) ? `Run ${m[4].trimStart()}` : title;
+}
+
 /**
   One agent: who sent it, what it was asked, its steps, what it sent back; stop it, or tell the
   model that sent it. A pair's sidekick, by its model, with the files its brief changed as Liner
@@ -1021,6 +1089,7 @@ const LaneRow = ({ label, children }: { label: string; children: ReactNode }) =>
 function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | null; it: Tool; items: Item[] }) {
   const providers = useEngine((s) => s.providers);
   const profiles = useEngine((s) => s.agents);
+  const cwd = useEngine((s) => s.projects.find((p) => p.id === thread.projectId)?.path ?? "");
   const st = stateOf(it);
   const now = useNow(st === "running");
   const [say, setSay] = useState("");
@@ -1151,13 +1220,16 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
       {steps.length ? (
         // role="list": WebKit drops a list's role once its bullets are styled away, and VoiceOver stops saying "list, 4 items".
         <ul className="lc-cr-steps" role="list">
-          {steps.map((s, i) => (
-            <li key={i} ref={i === steps.length - 1 ? end : undefined} data-state={s.status} data-think={s.toolKind === "think" || undefined}>
-              {s.toolKind === "think" ? null : <Mark state={s.status === "running" ? "running" : s.status === "failed" ? "failed" : "done"} />}
-              <span>{s.title}</span>
-              {s.at !== undefined && <time className="lc-cr-at" dateTime={new Date(s.at).toISOString()}>{s.status === "running" && i === steps.length - 1 ? "now" : stepAt(s.at)}</time>}
-            </li>
-          ))}
+          {steps.map((s, i) => {
+            const label = cleanStepTitle(s.title, cwd);
+            return (
+              <li key={i} ref={i === steps.length - 1 ? end : undefined} data-state={s.status} data-think={s.toolKind === "think" || undefined}>
+                {s.toolKind === "think" ? null : <Mark state={s.status === "running" ? "running" : s.status === "failed" ? "failed" : "done"} />}
+                <span title={s.title}>{label}</span>
+                {s.at !== undefined && <time className="lc-cr-at" dateTime={new Date(s.at).toISOString()}>{s.status === "running" && i === steps.length - 1 ? "now" : stepAt(s.at)}</time>}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="lc-cr-none">{st === "running" ? "None yet." : unstarted(it) ? "None: the brief was stopped while it waited its turn." : "Its tool doesn't say what it did, step by step."}</p>
@@ -1309,6 +1381,575 @@ function SessionUse({ thread }: { thread: Thread }) {
           </dd>
         </div>
       </dl>
+    </>
+  );
+}
+
+/* ---------- Liner-native Swarm & Teamwork (reuses Crew's marks, tree, popover and fields) ---------- */
+
+const SWARM_STATE_WORD: Record<SwarmMember["state"], string> = {
+  working: "Working",
+  queued: "Queued (0 MB)",
+  waiting: "Waiting",
+  hibernated: "Hibernated (0 MB)",
+  skipped: "Skipped",
+  stopped: "Stopped",
+  killed: "Ended",
+};
+
+function swarmMark(s: SwarmMember["state"]): { state: State; waiting?: boolean } {
+  if (s === "working") return { state: "running" };
+  if (s === "queued" || s === "waiting") return { state: "running", waiting: true };
+  if (s === "hibernated") return { state: "done" };
+  return { state: "stopped" };
+}
+
+/** Header chip for a Teamwork or Swarm session: stacked model marks, active/hibernated summary and RAM estimate. */
+function SwarmChip({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot }) {
+  const providers = useEngine((s) => s.providers);
+  const live = swarm.members.filter((m) => m.state !== "killed");
+  const workers = live.filter((m) => m.name !== "coordinator");
+  const active = swarm.activeSlots;
+  const label = swarm.mode === "swarm" ? "Swarm" : "Teamwork";
+  return (
+    <Pop
+      label={`${label} roster and RAM pool`}
+      width={400}
+      className="lc-crew-pop"
+      triggerClass="lc-crew l-focus"
+      trigger={
+        <>
+          <StateMark state={active > 0 ? "working" : "done"} size={12} />
+          <span className="lc-cr-faces" aria-hidden>
+            {live.slice(0, 3).map((m) => (
+              <span key={m.name}>
+                <ModelMark kind={markOf(m.model)} size={12} />
+              </span>
+            ))}
+          </span>
+          <span className="lc-crew-t">
+            {label}
+            <span className="lc-quiet">
+              {" "}
+              · {active > 0 ? `${active} active` : workers.length ? `${workers.length} parked` : "ready"}
+              {swarm.rssMb > 0 ? ` · ~${swarm.rssMb} MB` : " · 0 MB"}
+            </span>
+          </span>
+          <I.chevD size={12} />
+        </>
+      }
+    >
+      {(close) => (
+        <div className="lc-crp">
+          <div className="lc-crp-h">
+            <b>{swarm.title || label}</b>
+            <span className="lc-quiet">
+              · {swarm.activeSlots}/{swarm.maxActive} active slots · {swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : "0 MB"}
+            </span>
+          </div>
+          {live.map((m) => {
+            const mk = swarmMark(m.state);
+            return (
+              <div key={m.name} className="lc-crp-r">
+                <Mark state={mk.state} waiting={mk.waiting} />
+                <b>@{m.name}</b>
+                <span className="lc-crp-role">{m.role}</span>
+                <span className="lc-crp-t">{m.now || SWARM_STATE_WORD[m.state]}</span>
+                <span className="lc-crp-n">{m.state === "working" && m.rssMb ? `~${m.rssMb} MB` : shortModel(modelLabel(m.model, providers))}</span>
+              </div>
+            );
+          })}
+          <div className="lc-crp-sep" />
+          <div className="lc-crp-foot">
+            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
+              Show in the panel
+            </button>
+            <span className="lc-grow" />
+            {workers.some((m) => m.state === "working" || m.state === "waiting") && (
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
+                Hibernate all
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </Pop>
+  );
+}
+
+/** Composer strip while swarm workers are running or queued for an active RAM slot. */
+function SwarmStrip({ thread, swarm, active }: { thread: Thread; swarm: SwarmSnapshot; active: SwarmMember[] }) {
+  const working = active.filter((m) => m.state === "working");
+  const lead = working[0] ?? active[0];
+  const names = working.map((m) => `@${m.name}`).join(" and ");
+  const line = working.length ? `${names} working (${swarm.activeSlots}/${swarm.maxActive} slots)` : `${plural(active.length, "worker")} queued`;
+  return (
+    <div className="lc-crs">
+      <span className="lc-cr-faces lc-crs-faces" aria-hidden>
+        {active.slice(0, 3).map((m) => (
+          <span key={m.name}>
+            <ModelMark kind={markOf(m.model)} size={12} />
+          </span>
+        ))}
+      </span>
+      <span className="lc-crs-t">
+        <span>{line}</span>
+        <span className="lc-quiet">
+          {swarm.hibernatedCount > 0 ? ` · ${swarm.hibernatedCount} hibernated (0 MB)` : ""}
+          {lead?.now ? ` · ${lead.now}` : ""}
+        </span>
+      </span>
+      <button type="button" className="lc-ib l-focus" aria-label="Open Swarm panel" title="Open Swarm panel" onClick={() => (showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
+        <I.info size={14} />
+      </button>
+      <button type="button" className="lc-crs-stop l-focus" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
+        Pause swarm
+      </button>
+    </div>
+  );
+}
+
+/** Native Liner Code Agents surface in Teamwork (hierarchy tree) or Swarm (peer board + Overview) mode. */
+function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot }) {
+  const providers = useEngine((s) => s.providers);
+  const isSwarmMode = swarm.mode === "swarm";
+  const [tab, setTab] = useState<"overview" | "board" | "worktrees">("overview");
+  const [channel, setChannel] = useState("all");
+  const [draft, setDraft] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleFold = (key: string) =>
+    setFolded((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  const [wName, setWName] = useState("");
+  const [wRole, setWRole] = useState("Writer");
+  const [wWs, setWWs] = useState<"share" | "inherit">("share");
+  const [wFork, setWFork] = useState("");
+  const [wBrief, setWBrief] = useState("");
+
+  const live = swarm.members.filter((m) => m.state !== "killed");
+  const coordinator = live.find((m) => m.name === "coordinator");
+  const workers = live.filter((m) => m.name !== "coordinator");
+  const kidsOf = (parentName: string) => workers.filter((m) => (m.parent ?? "coordinator") === parentName);
+  const topWorkers = kidsOf("coordinator");
+  const worktrees = workers.filter((m) => m.workspace === "share");
+  const channels = useMemo(() => [...new Set(["main", ...swarm.posts.map((p) => p.channel)])], [swarm.posts]);
+  const posts = useMemo(() => (channel === "all" ? swarm.posts : swarm.posts.filter((p) => p.channel === channel)), [swarm.posts, channel]);
+  const timelineShots = useMemo(
+    () =>
+      swarm.posts.flatMap((p) =>
+        (p.screenshots ?? []).map((s, idx) => ({ key: `${p.seq}-${idx}`, seq: p.seq, from: p.from, path: s.path, caption: s.caption })),
+      ),
+    [swarm.posts],
+  );
+  const effectiveTab = !isSwarmMode && tab === "board" ? "overview" : tab;
+
+  const renderBranch = (nodes: SwarmMember[], peerLabel = false): ReactNode =>
+    nodes.map((m, i) => {
+      const mk = swarmMark(m.state);
+      const kids = kidsOf(m.name);
+      const isFolded = folded.has(m.name);
+      const isActive = m.state === "working" || m.state === "queued" || kids.some((k) => k.state === "working" || k.state === "queued");
+      const openDetails = () => m.itemId && showAgent(thread.id, m.itemId);
+      return (
+        <div key={m.name} className="lc-cr-kid" data-last={i === nodes.length - 1 || undefined}>
+          <div className="lc-sw-node">
+            <button type="button" className="lc-cr-row l-focus lc-sw-mrow" onClick={openDetails} disabled={!m.itemId} title={m.itemId ? `Inspect ${m.role}` : m.now || SWARM_STATE_WORD[m.state]}>
+              <Mark state={isActive ? "running" : mk.state} waiting={!isActive && mk.waiting} />
+              <span className="lc-cr-t">
+                <b>
+                  {peerLabel ? `@${m.name}` : m.role}
+                  {peerLabel && m.role ? <span> · {m.role}</span> : null}
+                  {kids.length > 0 && <span> ({plural(kids.length, peerLabel ? "helper" : "subagent")})</span>}
+                </b>
+                <small>
+                  <span>
+                    {m.now || SWARM_STATE_WORD[m.state]}
+                    {m.workspace === "share" && m.branch ? ` · ${m.branch}` : ""}
+                  </span>
+                </small>
+              </span>
+              <span className="lc-cr-n l-num">{m.state === "working" && m.rssMb ? `~${m.rssMb} MB` : shortModel(modelLabel(m.model, providers))}</span>
+            </button>
+            {kids.length > 0 && (
+              <button type="button" className="lc-ib l-focus lc-sw-fold" aria-label={isFolded ? `Expand ${m.role}` : `Collapse ${m.role}`} aria-expanded={!isFolded} onClick={() => toggleFold(m.name)}>
+                {isFolded ? <I.chevR size={12} /> : <I.chevD size={12} />}
+              </button>
+            )}
+            {m.state !== "skipped" && (
+              <Pop
+                menu
+                align="end"
+                width={230}
+                label={`Actions for ${m.role}`}
+                triggerClass="lc-ib l-focus lc-sw-more"
+                trigger={<I.more size={14} />}
+              >
+                {(close) => (
+                  <>
+                    <div className="lc-sw-popm">
+                      <ModelPop label={`Model for @${m.name}`} value={m.model} onPick={(ref) => (void rpc("swarm.swapModel", { threadId: thread.id, name: m.name, model: ref }).catch(fail), close())} />
+                    </div>
+                    <Sep />
+                    {m.itemId && <Row title="Open steps and report" onPick={() => (close(), openDetails())} />}
+                    {m.state === "working" || m.state === "waiting" ? (
+                      <Row title="Hibernate (0 MB RAM)" onPick={() => (close(), void rpc("swarm.hibernate", { threadId: thread.id, name: m.name }).catch(fail))} />
+                    ) : (
+                      <Row title="Wake worker" onPick={() => (close(), void rpc("swarm.wake", { threadId: thread.id, name: m.name }).catch(fail))} />
+                    )}
+                    <Row title="End worker" onPick={() => (close(), void rpc("swarm.killWorker", { threadId: thread.id, name: m.name }).catch(fail))} />
+                  </>
+                )}
+              </Pop>
+            )}
+          </div>
+          {kids.length > 0 && !isFolded && <div className="lc-cr-kids">{renderBranch(kids, peerLabel)}</div>}
+        </div>
+      );
+    });
+
+  const sendPost = () => {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    void rpc("swarm.post", { threadId: thread.id, text, ...(channel !== "all" ? { channel } : {}) }).catch(fail);
+  };
+
+  const addWorker = () => {
+    const name = wName.trim();
+    const brief = wBrief.trim();
+    if (!name || !brief) return toast.error("Give the worker a short name and a brief.");
+    void rpc("swarm.addWorker", { threadId: thread.id, name, role: wRole.trim() || "Writer", workspace: wWs, mode: wWs === "share" ? "write" : "read", brief, ...(wFork ? { fork: wFork } : {}) })
+      .then(() => {
+        setWName("");
+        setWBrief("");
+        setWFork("");
+        setAdding(false);
+      })
+      .catch(fail);
+  };
+
+  const workstreamMeta = (taskNames: string[]) => {
+    const owners = taskNames.map((n) => workers.find((w) => w.name === n)).filter(Boolean) as SwarmMember[];
+    const anyWorking = owners.some((o) => o.state === "working" || o.state === "queued");
+    const allDone = owners.length > 0 && owners.every((o) => o.state === "hibernated" || o.state === "waiting" || o.landed);
+    const lastPost = swarm.posts.findLast((p) => taskNames.includes(p.from) || p.to.some((t) => taskNames.includes(t)));
+    const state: State = anyWorking ? "running" : allDone ? "done" : "running";
+    return { state, waiting: !anyWorking && !allDone, statusWord: anyWorking ? "working" : allDone ? "ready" : "pending", lastPost };
+  };
+
+  return (
+    <>
+      <div className="lc-sw-top">
+        {isSwarmMode ? (
+          <Segmented
+            size="sm"
+            value={effectiveTab}
+            onValueChange={(v) => setTab(v as "overview" | "board" | "worktrees")}
+            options={[
+              { value: "overview", label: "Overview" },
+              { value: "board", label: swarm.posts.length ? `Board (${swarm.posts.length})` : "Board" },
+              { value: "worktrees", label: worktrees.length ? `Worktrees (${worktrees.length})` : "Worktrees" },
+            ]}
+            aria-label="Swarm views"
+          />
+        ) : worktrees.length > 0 ? (
+          <Segmented
+            size="sm"
+            value={effectiveTab}
+            onValueChange={(v) => setTab(v as "overview" | "worktrees")}
+            options={[
+              { value: "overview", label: "Subagents" },
+              { value: "worktrees", label: `Worktrees (${worktrees.length})` },
+            ]}
+            aria-label="Teamwork views"
+          />
+        ) : (
+          <span className="lc-cr-pill">Teamwork</span>
+        )}
+        <span className="lc-grow" />
+        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail)}>
+          Turn off
+        </button>
+      </div>
+
+      {effectiveTab === "overview" && (
+        <>
+          {isSwarmMode && swarm.plan && (
+            <>
+              <div className="lc-cr-h">
+                Goal<span className="lc-cr-rule" />
+                <span>{swarm.stallMonitor ? "Stall monitor on" : "Manual"}</span>
+              </div>
+              <div className="lc-cr-brief">
+                <b>{swarm.plan.goal.title}</b>
+                {swarm.plan.goal.line && <div className="lc-quiet">{swarm.plan.goal.line}</div>}
+              </div>
+              {swarm.plan.threads.length > 0 && (
+                <>
+                  <div className="lc-cr-h">
+                    Workstreams<span className="lc-cr-rule" />
+                    <span>{plural(swarm.plan.threads.length, "outcome")}</span>
+                  </div>
+                  <div className="lc-sw-wslist">
+                    {swarm.plan.threads.map((th) => {
+                      const meta = workstreamMeta(th.tasks);
+                      return (
+                        <div key={th.id} className="lc-sw-ws">
+                          <div className="lc-sw-wsh">
+                            <Mark state={meta.state} waiting={meta.waiting} />
+                            <b>{th.title}</b>
+                            <span className="lc-cr-own">{meta.statusWord}</span>
+                          </div>
+                          {th.goal && <div className="lc-sw-wsg">{th.goal}</div>}
+                          <div className="lc-sw-wsf">
+                            {th.tasks.map((k) => (
+                              <span key={k} className="lc-cr-own">@{k}</span>
+                            ))}
+                            <span className="lc-grow" />
+                            {meta.lastPost && <span className="lc-mono lc-quiet">#{meta.lastPost.seq}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {isSwarmMode && timelineShots.length > 0 && (
+            <>
+              <div className="lc-cr-h">
+                Visual timeline<span className="lc-cr-rule" />
+                <span>{plural(timelineShots.length, "screenshot")}</span>
+              </div>
+              <div className="lc-sw-shots">
+                {timelineShots.map((sh) => (
+                  <div key={sh.key} className="lc-sw-shot" title={sh.path}>
+                    <div className="lc-sw-shoth">
+                      <span className="lc-mono">#{sh.seq}</span>
+                      <span>@{sh.from}</span>
+                    </div>
+                    <div className="lc-sw-shotc">{sh.caption}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="lc-cr-h">
+            {isSwarmMode ? "Roster" : "Subagents"}
+            <span className="lc-cr-rule" />
+            <span>
+              {swarm.activeSlots}/{swarm.maxActive} active · {swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : "0 MB"}
+            </span>
+          </div>
+
+          <div className="lc-cr-tree">
+            {coordinator && (
+              <div className="lc-sw-node">
+                <div className="lc-cr-row lc-sw-mrow" data-root>
+                  <Mark state={coordinator.state === "working" || swarm.activeSlots > 0 ? "running" : "done"} waiting={coordinator.state === "waiting" && swarm.activeSlots === 0 && workers.length === 0} />
+                  <span className="lc-cr-t">
+                    <b>
+                      {isSwarmMode ? "@coordinator" : "Teamwork Coordinator"}
+                      {isSwarmMode && <span> · Coordinator</span>}
+                      {!isSwarmMode && topWorkers.length > 0 && <span> ({plural(topWorkers.length, "subagent")})</span>}
+                    </b>
+                    <small>
+                      <span>{modelLabel(coordinator.model, providers)} · {coordinator.state === "working" || swarm.activeSlots > 0 ? "Coordinating" : "Ready"}</span>
+                    </small>
+                  </span>
+                </div>
+                {!isSwarmMode && topWorkers.length > 0 && (
+                  <button type="button" className="lc-ib l-focus lc-sw-fold" aria-label={folded.has("coordinator") ? "Expand Teamwork Coordinator" : "Collapse Teamwork Coordinator"} aria-expanded={!folded.has("coordinator")} onClick={() => toggleFold("coordinator")}>
+                    {folded.has("coordinator") ? <I.chevR size={12} /> : <I.chevD size={12} />}
+                  </button>
+                )}
+              </div>
+            )}
+            {isSwarmMode ? (
+              topWorkers.length === 0 ? (
+                <p className="lc-cr-none">No peers yet. Send a task in chat and @coordinator will spawn peers automatically, or add one manually below.</p>
+              ) : (
+                renderBranch(topWorkers, true)
+              )
+            ) : (
+              !folded.has("coordinator") && (
+                <div className="lc-cr-kids">
+                  {topWorkers.length === 0 ? (
+                    <div className="lc-cr-kid" data-last>
+                      <p className="lc-cr-none">No subagents yet. Describe the task in chat with /teamwork.</p>
+                    </div>
+                  ) : (
+                    renderBranch(topWorkers, false)
+                  )}
+                </div>
+              )
+            )}
+          </div>
+
+          <div className="lc-sw-addbar">
+            {isSwarmMode && (
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setAdding((a) => !a)}>
+                {adding ? "Cancel" : "Add worker"}
+              </button>
+            )}
+            {workers.some((m) => m.state === "working" || m.state === "waiting") && (
+              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
+                Hibernate all
+              </button>
+            )}
+          </div>
+
+          {isSwarmMode && adding && (
+            <div className="lc-sw-form">
+              <div className="lc-sw-fgrid">
+                <input type="text" className="lc-sw-in l-focus" placeholder="Name (backend, tester…)" value={wName} onChange={(e) => setWName(e.target.value)} />
+                <input type="text" className="lc-sw-in l-focus" placeholder="Role (Writer, Verifier…)" value={wRole} onChange={(e) => setWRole(e.target.value)} />
+              </div>
+              <Segmented size="sm" value={wWs} onValueChange={(v) => setWWs(v as "share" | "inherit")} options={[{ value: "share", label: "Worktree (write)" }, { value: "inherit", label: "Shared (read-only)" }]} aria-label="Worker workspace" />
+              {live.length > 0 && (
+                <select className="lc-sw-in l-focus" value={wFork} onChange={(e) => setWFork(e.target.value)} aria-label="Fork context from member">
+                  <option value="">Start fresh (no fork)</option>
+                  {live.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      Fork context from @{m.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <textarea rows={2} className="lc-sw-in l-focus" placeholder="Brief: what this worker owns and what done looks like…" value={wBrief} onChange={(e) => setWBrief(e.target.value)} />
+              <button type="button" className="lc-btn l-focus" data-kind="primary" data-size="sm" onClick={addWorker}>
+                Add to swarm
+              </button>
+            </div>
+          )}
+
+          <div className="lc-cr-h">
+            RAM pool<span className="lc-cr-rule" />
+            <span className="l-num">{swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : "0 MB"}</span>
+          </div>
+          <dl className="lc-fields lc-fields-quiet">
+            <div>
+              <dt>Active slots</dt>
+              <dd className="lc-sw-slots">
+                <Segmented size="sm" value={String(swarm.maxActive)} onValueChange={(v) => void rpc("swarm.config", { threadId: thread.id, maxActive: Number(v) }).catch(fail)} options={[1, 2, 3, 4].map((v) => ({ value: String(v), label: String(v) }))} aria-label="Active worker slots" />
+              </dd>
+            </div>
+            <div>
+              <dt>Hibernated</dt>
+              <dd>
+                <Num value={swarm.hibernatedCount} /> (0 MB)
+              </dd>
+            </div>
+            <div>
+              <dt>Auto-hibernate</dt>
+              <dd>{swarm.hibernateSec === 0 ? "Immediately" : `${swarm.hibernateSec} s`}</dd>
+            </div>
+          </dl>
+          <SessionUse thread={thread} />
+        </>
+      )}
+
+      {effectiveTab === "board" && (
+        <>
+          {channels.length > 1 && (
+            <div className="lc-sw-chans">
+              <Segmented size="sm" value={channel} onValueChange={setChannel} options={[{ value: "all", label: "All" }, ...channels.map((c) => ({ value: c, label: `#${c}` }))]} aria-label="Board channels" />
+            </div>
+          )}
+          <div className="lc-cr-h">
+            Board<span className="lc-cr-rule" />
+            <span>{plural(posts.length, "post")}</span>
+          </div>
+          {posts.length === 0 ? (
+            <p className="lc-cr-none">No board posts yet. Briefs, @mentions and worker reports land here.</p>
+          ) : (
+            <ul className="lc-sw-posts" role="list">
+              {posts.map((p: SwarmPost) => (
+                <li key={p.seq} className="lc-sw-post" data-kind={p.kind}>
+                  <div className="lc-sw-ph">
+                    <span className="lc-mono lc-quiet">#{p.seq}</span>
+                    <b>@{p.from}</b>
+                    {p.channel !== "main" && <span className="lc-crp-role">#{p.channel}</span>}
+                    {p.autoPosted && <span className="lc-crp-role">auto</span>}
+                    {p.kind === "stall" && <span className="lc-crp-role">stall</span>}
+                    <span className="lc-grow" />
+                    <time className="lc-cr-at" dateTime={new Date(p.at).toISOString()}>
+                      {stepAt(p.at)}
+                    </time>
+                  </div>
+                  <div className="lc-sw-pb">{p.text}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <SendBox className="lc-cr-steer" value={draft} onChange={setDraft} label="Post to swarm board" placeholder="Post to the board (@name wakes a hibernated worker)…" onSend={sendPost} />
+          <p className="lc-cr-hint">Mention @name to wake a parked worker, or @all to notify the roster.</p>
+        </>
+      )}
+
+      {effectiveTab === "worktrees" && (
+        <>
+          <div className="lc-cr-h">
+            Isolated worktrees<span className="lc-cr-rule" />
+            <span>{worktrees.length}</span>
+          </div>
+          {worktrees.length === 0 ? (
+            <p className="lc-cr-none">No worktree writers yet. Writers added with workspace "share" get their own git branch and worktree here.</p>
+          ) : (
+            worktrees.map((m) => (
+              <div key={m.name} className="lc-sw-wt">
+                <div className="lc-sw-wth">
+                  <b>@{m.name}</b>
+                  <span className="lc-mono lc-quiet">{m.branch}</span>
+                  {m.portOffset ? <span className="lc-quiet l-num">+{m.portOffset}</span> : null}
+                  <span className="lc-grow" />
+                  {m.landed ? (
+                    <span className="lc-crp-role">Landed</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="lc-btn l-focus"
+                      data-kind="ghost"
+                      data-size="sm"
+                      disabled={m.state === "working"}
+                      onClick={() =>
+                        void rpc("swarm.land", { threadId: thread.id, name: m.name })
+                          .then((r) => toast.success(r.summary))
+                          .catch(fail)
+                      }
+                    >
+                      Land into checkout
+                    </button>
+                  )}
+                </div>
+                {m.worktreePath && <div className="lc-mono lc-quiet lc-sw-wtp">{m.worktreePath}</div>}
+                {m.files && m.files.length > 0 && (
+                  <ul className="lc-cr-files" role="list">
+                    {m.files.map((f) => (
+                      <li key={f.path}>
+                        <span className="lc-cr-file" title={f.path}>
+                          <span className="lc-cr-fs" data-s={f.status}>
+                            {f.status === "added" ? "A" : f.status === "deleted" ? "D" : f.status === "renamed" ? "R" : "M"}
+                          </span>
+                          <span className="lc-cr-fp lc-mono">{f.path}</span>
+                          <Lines added={f.added} removed={f.removed} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))
+          )}
+        </>
+      )}
     </>
   );
 }

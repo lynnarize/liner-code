@@ -73,7 +73,7 @@
 }
 .lf-filt > .lc-pop:last-child .lf-tb,
 .lf-filt > .lf-tb:last-child {
-  margin-right: -6px;
+  margin-right: 0;
 }
 .lf-search {
   display: inline-flex;
@@ -578,11 +578,24 @@
   gap: 4px;
 }
 
-/* A narrow page with a finding open: the panel gives the list more room, and the filter row wraps (above) so sort and
-   search stay on screen, at the row's right end. */
+/* A narrow page with a finding open: the panel gives the list more room, and below 920px overlays as a drawer so the list stays usable. */
 @container lf-page (max-width: 1228px) {
   .lf-x {
     width: clamp(320px, 44%, 560px);
+  }
+}
+@container lf-page (max-width: 920px) {
+  .lf {
+    position: relative;
+  }
+  .lf-x {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(440px, 92%);
+    box-shadow: -1px 0 0 var(--ls-line), var(--l-shadow-lg);
   }
 }
 .lf-filt > .lc-grow {
@@ -597,7 +610,7 @@
   margin-left: auto;
 }
 .lf-tools > .lc-pop:last-child .lf-tb {
-  margin-right: -6px;
+  margin-right: 0;
 }
 
 /* A row's text sits on the column's edge; its fill reaches 6px past, inside the paper. Its focus ring is the app's

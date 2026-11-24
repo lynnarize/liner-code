@@ -20,19 +20,20 @@
 */
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, SessionMode, SidekickClass, Thread } from "@contracts";
-import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, shortlistOf, splitModel, waysOf } from "@contracts";
+import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, picturesOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
-import { isPrompt, rpc, useEngine, useItemsWhere } from "./engine";
+import { isPrompt, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { Glyph, I, ModelMark, StateMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortIn, effortsFor, isModelAgent, levelName, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, wayOf, whoOf, type AccessLevel, type Way } from "./model";
 import { onComposerInsert, toComposer } from "./Find";
+import { loadDraftFiles, saveDraftFiles } from "./draftFiles";
 import { BackRow, EffortPart, FindField, ModelPicker, ModelSearch, tabOfRef, usePickerWide, type EffortHook, type OwnCard } from "./Models";
 import { PICKER_NARROW, PICKER_WIDE } from "./picker";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
-import { HoverNote, Pop, Row, Sep, SendButton } from "./ui";
+import { HoverNote, Pop, Sep, SendButton } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
@@ -275,7 +276,7 @@ function useTrayFit(tray: RefObject<HTMLDivElement | null>) {
   }, [tray]);
 }
 
-type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$"; hint?: string; note?: string; path?: string; liner?: boolean; tag?: string; pick?: () => void };
+type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$" | "#"; hint?: string; note?: string; path?: string; liner?: boolean; tag?: string; pick?: () => void };
 const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
 const commandsFor = (projectId: string, agent: string, threadId?: string) => {
   const key = `${projectId}|${agent}`;
@@ -336,7 +337,7 @@ export function seedComposer(key: string, text: string) {
   else addToDraft(key, text);
 }
 
-/** Files waiting to go, by draft, while the app runs: a File can't be stored, but it lasts a move to another session and back. */
+/** Files waiting to go, by draft: kept in memory, and in IndexedDB so a reload doesn't lose them (draftFiles.ts). */
 const draftFiles = new Map<string, File[]>();
 const MAX_FILES = 10;
 
@@ -402,7 +403,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   const [files, setFiles] = useState<File[]>(() => draftFiles.get(draftKey) ?? []);
   // Read guarded: a window whose storage throws would otherwise fail here and take the whole session view with it.
   const [mode, setMode] = useState<"queue" | "steer">(() => wordRead(localStorage, "lc:enter", ["queue", "steer"], "queue") as "queue" | "steer");
-  const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" } | null>(null);
+  const [mention, setMention] = useState<{ start: number; query: string; kind: "@" | "/" | "$" | "#" } | null>(null);
   const [found, setFound] = useState<Choice[]>([]);
   const [tools, setTools] = useState<{ commands: CommandInfo[]; skills: SkillInfo[] } | null>(null);
   const [hl, setHl] = useState(0);
@@ -466,6 +467,19 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     window.addEventListener("beforeunload", flushDraft);
     return () => window.removeEventListener("beforeunload", flushDraft);
   }, []);
+  // Hydrate persisted draft attachments from IndexedDB after a window reload.
+  useEffect(() => {
+    if (draftFiles.has(draftKey)) return;
+    let live = true;
+    void loadDraftFiles(draftKey).then((restored) => {
+      if (!live || !restored.length) return;
+      draftFiles.set(draftKey, restored);
+      setFiles((cur) => (cur.length ? cur : restored));
+    });
+    return () => {
+      live = false;
+    };
+  }, [draftKey]);
   useEffect(() => {
     if (files.length) {
       // Newest last, and at most MAX_DRAFTS drafts' files, as the drafts themselves are kept: a session left with files long ago lets them go.
@@ -473,6 +487,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       draftFiles.set(draftKey, files);
       for (const k of draftFiles.keys()) if (draftFiles.size > MAX_DRAFTS) draftFiles.delete(k);
     } else draftFiles.delete(draftKey);
+    void saveDraftFiles(draftKey, files, MAX_DRAFTS);
   }, [files, draftKey]);
   useEffect(() => {
     try {
@@ -557,6 +572,31 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     if (autoFocus) field.current?.focus();
   }, [autoFocus, thread?.id]);
 
+  // Invalidate cached slash commands when providers refresh or the engine reconnects.
+  const connected = useEngine((s) => s.connected);
+  const appSettings = useEngine((s) => s.settings);
+  const prevConnected = useRef(connected);
+  useEffect(() => {
+    if (connected && !prevConnected.current) {
+      commandCache.clear();
+      setTools(null);
+    }
+    prevConnected.current = connected;
+  }, [connected]);
+  useEffect(() => {
+    commandCache.clear();
+    setTools(null);
+  }, [providers]);
+  // Invalidate slash-command cache immediately when an active ACP session pushes AvailableCommandsUpdate.
+  useEffect(
+    () =>
+      onStream((e) => {
+        if (e.type !== "commands") return;
+        commandCache.clear();
+        setTools(null);
+      }),
+    [],
+  );
   // What / and $ offer: the tool's own commands and skills, asked once per tool and folder.
   const who = settings.agent;
   useEffect(() => {
@@ -581,6 +621,21 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     let live = true;
     const q = mention.query.toLowerCase();
     const rank = (name: string) => (name.toLowerCase().startsWith(q) ? 0 : 1);
+    if (mention.kind === "#") {
+      const t = window.setTimeout(
+        () =>
+          void rpc("git.prs", { projectId: project.id, query: mention.query }).then((prs) => {
+            if (!live) return;
+            setFound(prs.map((p) => ({ key: `pr-${p.number}`, insert: `#${p.number}`, label: `#${p.number}`, hint: p.branch || undefined, note: p.title, kind: "#" })));
+            setHl(0);
+          }, () => live && setFound([])),
+        100,
+      );
+      return () => {
+        live = false;
+        clearTimeout(t);
+      };
+    }
     if (mention.kind === "@") {
       // Asked once you pause (80 ms), not on every key: the rows found last stay meanwhile. / and $ filter here, at once.
       const t = window.setTimeout(
@@ -634,10 +689,10 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     // Changed by hand, it's yours: ↑ on the first line no longer swaps it for an older message.
     recall.current = -1;
     const before = v.slice(0, caret);
-    // A command only at the very start; a file or a skill anywhere after a space.
+    // A command only at the very start; a file, skill, or #PR anywhere after a space.
     const slash = /^\/([\w:.-]*)$/.exec(before);
-    const at = /(^|\s)([@$])([\w./:-]*)$/.exec(before);
-    setMention(slash ? { start: 0, query: slash[1], kind: "/" } : at ? { start: caret - at[3].length - 1, query: at[3], kind: at[2] as "@" | "$" } : null);
+    const at = /(^|\s)([@$#])([\w./:-]*)$/.exec(before);
+    setMention(slash ? { start: 0, query: slash[1], kind: "/" } : at ? { start: caret - at[3].length - 1, query: at[3], kind: at[2] as "@" | "$" | "#" } : null);
   };
   const skillsUsed = useRef(new Map<string, string | undefined>());
   const pickFile = (c: Choice) => {
@@ -672,11 +727,21 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   box.current = { text, files };
   const send = async (how = mode, way: SendHow = {}) => {
     if ((!text.trim() && !files.length) || sending.current) return;
+    // OpenClaw-style `/steer <message>` forces mid-turn steering without switching the sticky mode.
+    const steerCmd = /^\/steer\s+([\s\S]+)$/i.exec(text.trim());
+    if (steerCmd) {
+      how = "steer";
+    }
     // Read by the check first unless one of its own actions sends it; Send pressed while it reads goes past it.
     if (!way.checked && !editing && !(await check.beforeSend())) return;
     // The check can hold the send for seconds: a file attached meanwhile goes with it, and only the files sent leave the box.
     const { text: said, files: sent } = box.current;
     let t = said.trim();
+    const steerBody = /^\/steer\s+([\s\S]+)$/i.exec(t);
+    if (steerBody) {
+      how = "steer";
+      t = steerBody[1].trim();
+    }
     if ((!t && !sent.length) || sending.current) return;
     // An edited queued message goes back in its place (T3 Code: chat/useQueuedRunEdit.ts). If the
     // turn ended and took it meanwhile, or files came along (a queued message holds only text), it
@@ -730,6 +795,16 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     // Read now: the file picker's list empties as its field is cleared, before an update waiting its turn runs.
     const added = Array.from(list ?? []);
     if (!added.length) return;
+    const hasImages = added.some((f) => f.type.startsWith("image/") || /\.(?:png|jpe?g|gif|webp|avif|bmp)$/i.test(f.name));
+    if (hasImages) {
+      const ref = (settings.model || (settings.agent.startsWith("@") ? settings.agent.slice(1) : "")).trim();
+      if (ref.includes(":")) {
+        const { provider, model } = splitModel(ref);
+        if (!picturesOf(provider, model, appSettings)) {
+          toast("This model is marked text-only", { description: "Attached images may be ignored by this endpoint." });
+        }
+      }
+    }
     if (files.length + added.length > MAX_FILES) toast(`A message takes ${MAX_FILES} files at most`, { description: `${plural(files.length + added.length - MAX_FILES, "file")} left out.` });
     setFiles((f) => [...f, ...added].slice(0, MAX_FILES));
   };
@@ -904,6 +979,9 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     }
   };
   const [stashOpen, setStashOpen] = useState(false);
+  const [stashHl, setStashHl] = useState(0);
+  const [dragQueueIdx, setDragQueueIdx] = useState<number | null>(null);
+  const [overQueueIdx, setOverQueueIdx] = useState<number | null>(null);
   const stash = () => {
     const list = readStash();
     if (text.trim()) {
@@ -1006,30 +1084,28 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   const sendSay = editing ? "Save it in its place" : comparing ? `Send to ${compare.length + 1} models` : "Send";
   const sendTitle = editing || comparing || !turning ? `${sendSay} (Enter)` : mode === "queue" ? "Send: it waits for this turn to end (Enter)" : "Send: read at the turn's next step (Enter)";
   const sendButton = <SendButton ready={ready} disabled={Boolean(editing) && !ready} stop={turning && !editing ? { title: "Stop (Esc)", onStop: () => (onStop?.(), field.current?.focus()) } : undefined} label={sendSay} title={sendTitle} onSend={() => void send()} />;
-  // What Enter does while a turn runs: a note left of who works, as the box's other notes are.
+  // Primary Queue vs Steer segmented toggle while a turn is active, replacing a hidden-only menu.
   const steerNote = !editing && turning && (
-    <Pop
-      label="Queue or steer"
-      side="top"
-      align="end"
-      width={300}
-      triggerClass="lc-tray-note"
-      trigger={
-        <>
-          <I.keyboard size={14} />
-          <span className="lc-note-long">{mode === "queue" ? `Enter queues · ${os.mod}Enter steers` : "Enter steers"}</span>
-          <span className="lc-note-short">{mode === "queue" ? "Enter queues" : "Enter steers"}</span>
-        </>
-      }
-    >
-      {(close) => (
-        <>
-          <Row title="Queue it" note="Sent when this turn ends. You can still edit it." on={mode === "queue"} end={<kbd className="lc-kbd">Enter</kbd>} onPick={() => (setMode("queue"), close())} />
-          <Row title="Steer now" note="Read at its next step, without stopping." on={mode === "steer"} end={<kbd className="lc-kbd">{os.keys("mod+enter", " ")}</kbd>} onPick={() => (setMode("steer"), close())} />
-          <div className="lc-pop-foot">Your pick becomes what Enter does. {os.mod}{os.shift}Enter sends the first queued message now.</div>
-        </>
-      )}
-    </Pop>
+    <span className="lc-seg" role="group" aria-label="Mid-turn delivery">
+      <button
+        type="button"
+        className="lc-seg-b l-focus"
+        aria-pressed={mode === "queue"}
+        title={`Queue for next turn (Enter) · ${os.mod}Enter steers`}
+        onClick={() => setMode("queue")}
+      >
+        Queue
+      </button>
+      <button
+        type="button"
+        className="lc-seg-b l-focus"
+        aria-pressed={mode === "steer"}
+        title="Steer active turn mid-flight (or type /steer <message>)"
+        onClick={() => setMode("steer")}
+      >
+        Steer
+      </button>
+    </span>
   );
   /**
     What the + menu's `/`, `$` and `@` rows do: the key typed into the box as if pressed there, its
@@ -1064,8 +1140,42 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     <div className="lc-queued">
       <div className="lc-queued-h">Queued for the next turn · {queue.length}</div>
       {queue.map((q, i) => (
-        <div key={q.id} className="lc-queued-row" data-editing={editing?.id === q.id || undefined}>
-          <span className="lc-queued-handle" aria-hidden>
+        <div
+          key={q.id}
+          className="lc-queued-row"
+          data-editing={editing?.id === q.id || undefined}
+          data-over={overQueueIdx === i && dragQueueIdx !== null && dragQueueIdx !== i ? "" : undefined}
+          draggable={queue.length > 1}
+          onDragStart={(e) => {
+            setDragQueueIdx(i);
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", q.id);
+          }}
+          onDragOver={(e) => {
+            if (dragQueueIdx === null) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (overQueueIdx !== i) setOverQueueIdx(i);
+          }}
+          onDragEnd={() => {
+            setDragQueueIdx(null);
+            setOverQueueIdx(null);
+          }}
+          onDrop={(e) => {
+            if (dragQueueIdx === null) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (dragQueueIdx !== i && dragQueueIdx >= 0 && dragQueueIdx < queue.length) {
+              const next = [...queue];
+              const [moved] = next.splice(dragQueueIdx, 1);
+              next.splice(i, 0, moved);
+              setQueue(next);
+            }
+            setDragQueueIdx(null);
+            setOverQueueIdx(null);
+          }}
+        >
+          <span className="lc-queued-handle" aria-hidden title={queue.length > 1 ? "Drag to reorder" : undefined}>
             <I.drag size={14} />
           </span>
           {/* A line Liner wrote for you: the whole of what the agent will be told is its tooltip (a fold has no room in the row). */}
@@ -1082,6 +1192,11 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
           {i > 0 && (
             <button type="button" className="lc-ib l-focus" aria-label="Move up" onClick={() => setQueue([...queue.slice(0, i - 1), q, queue[i - 1], ...queue.slice(i + 1)])}>
               <I.chevU size={14} />
+            </button>
+          )}
+          {i < queue.length - 1 && (
+            <button type="button" className="lc-ib l-focus" aria-label="Move down" onClick={() => setQueue([...queue.slice(0, i), queue[i + 1], q, ...queue.slice(i + 2)])}>
+              <I.chevD size={14} />
             </button>
           )}
           <button type="button" className="lc-ib l-focus" aria-label="Edit" aria-pressed={editing?.id === q.id} title="Edit it in place" onClick={() => (editing?.id === q.id ? stopEditing() : editQueued(q))}>
@@ -1234,6 +1349,21 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
                   return;
                 }
               }
+              if (stashOpen) {
+                const stashed = readStash();
+                if (stashed.length) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setStashHl((h) => (h + (e.key === "ArrowDown" ? 1 : stashed.length - 1)) % stashed.length);
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    unstash(Math.min(stashHl, stashed.length - 1));
+                    return;
+                  }
+                }
+              }
               // A list still showing (commands on their way, nothing matching, stashed drafts) closes first; Escape stops the turn only after.
               if (e.key === "Escape" && ((mention && mention.kind !== "@") || stashOpen)) {
                 e.preventDefault();
@@ -1291,7 +1421,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
             <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
               <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
               {readStash().map((x, i) => (
-                <button key={x.at} type="button" role="option" aria-selected={false} className="lc-mention-row l-focus" onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
+                <button key={x.at} type="button" role="option" aria-selected={i === stashHl} className="lc-mention-row l-focus" onMouseEnter={() => setStashHl(i)} onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
                   <I.edit size={12} />
                   <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
                   <span className="lc-quiet">{ago(x.at)}</span>
@@ -1299,12 +1429,12 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
               ))}
             </div>
           )}
-          {mention && (found.length > 0 || (mention.kind !== "@" && !tools)) && (
-            <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
-              {mention.kind !== "@" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
+          {mention && (found.length > 0 || (mention.kind !== "@" && mention.kind !== "#" && !tools)) && (
+            <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "#" ? "Pull requests" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
+              {mention.kind !== "@" && mention.kind !== "#" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
               {found.map((f, i) => (
                 <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
-                  {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : null}
+                  {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : f.kind === "#" ? <I.branch size={14} /> : null}
                   <span className="lc-mono lc-mention-n">
                     {f.label}
                     {f.hint && <span className="lc-quiet"> {f.hint}</span>}

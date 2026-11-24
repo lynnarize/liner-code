@@ -5,7 +5,14 @@
   falls back to what the web can do, or does nothing.
 */
 type Handler = { postMessage(m: unknown): void };
-type Shell = { platform: string; clear?: boolean; call(method: string, params?: Record<string, unknown>): Promise<unknown>; onCommand(fn: (name: string) => void): void };
+export type WindowState = { maximized: boolean; fullScreen: boolean; focused: boolean };
+type Shell = {
+  platform: string;
+  clear?: boolean;
+  call(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  onCommand(fn: (name: string) => void): (() => void) | void;
+  onWindowState?(fn: (state: WindowState) => void): () => void;
+};
 declare global {
   interface Window {
     linerShell?: Shell;
@@ -142,7 +149,15 @@ export const bridge = {
 };
 
 // Electron's preload hands menu commands over; they go out as the same events the Swift shell sent.
-window.linerShell?.onCommand((name) => window.dispatchEvent(new CustomEvent("liner:command", { detail: name })));
+// Keep one active subscription across hot module reloads so commands never fire twice.
+const prevOff = (window as { __linerCmdOff?: (() => void) | void }).__linerCmdOff;
+prevOff?.();
+(window as { __linerCmdOff?: (() => void) | void }).__linerCmdOff = window.linerShell?.onCommand((name) => window.dispatchEvent(new CustomEvent("liner:command", { detail: name })));
+
+/** Subscribes to native window maximize/fullscreen/focus transitions when running inside Electron. */
+export function onWindowState(fn: (state: WindowState) => void) {
+  return window.linerShell?.onWindowState?.(fn) ?? (() => {});
+}
 
 /** Menu-bar commands from the shell, like ⌘N or ⌘K, arrive as liner:command events. */
 export function onCommand(fn: (name: string) => void) {

@@ -1000,7 +1000,7 @@ export const design = {
     as it is; one that holds another page is never written over: the page comes in as a new frame
     beside it ("… 2"), and the toast says so. Adding is a step to undo. Returns the design file's id.
   */
-  async adopt(cwd: string, d: { title: string; html: string; size: DesignSize }) {
+  async adopt(cwd: string, d: { title: string; html: string; size: DesignSize; threadId?: string }) {
     if (state.mock) {
       await openMock(cwd);
       return state.file?.id;
@@ -1008,6 +1008,15 @@ export const design = {
     const files = await rpc("canvas.list", { cwd });
     const was = files.find((f) => f.title === d.title);
     const df = was ? (await rpc("canvas.open", { cwd, file: was.id })).file : await rpc("canvas.create", { cwd, title: d.title });
+    if (d.threadId) {
+      try {
+        const all = readAdopted();
+        all[`${cwd}::${df.id}`] = { threadId: d.threadId, title: d.title };
+        sessionStorage.setItem(ADOPTED_KEY, JSON.stringify(all));
+      } catch {
+        // sessionStorage unavailable
+      }
+    }
     // Opened first, so the step below belongs to this file's undo.
     await design.open(cwd, df.id);
     const base = `${d.size[0].toUpperCase()}${d.size.slice(1)} / ${d.title}`;
@@ -1054,6 +1063,40 @@ export const design = {
     const pages = [...s.file.pages, { id, name }];
     setNow({ file: { ...s.file, pages }, page: id, sel: [], node: undefined });
     if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+  },
+  /** Renames a page in the open design file and persists via canvas.save. */
+  renamePage(id: string, name: string) {
+    const s = state;
+    const trimmed = name.trim();
+    if (!s.file || !trimmed || s.scrub !== undefined) return;
+    const pages = s.file.pages.map((p) => (p.id === id ? { ...p, name: trimmed } : p));
+    setNow({ file: { ...s.file, pages } });
+    if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+  },
+  /** Deletes a page (when at least two pages exist), moving its frames to the remaining fallback page first. */
+  removePage(id: string) {
+    const s = state;
+    if (!s.file || s.file.pages.length <= 1 || s.scrub !== undefined) return;
+    const pages = s.file.pages.filter((p) => p.id !== id);
+    const fallback = pages[0].id;
+    const moved = s.file.frames.filter((f) => f.page === id);
+    const frames = s.file.frames.map((f) => (f.page === id ? { ...f, page: fallback } : f));
+    const nextPage = s.page === id ? fallback : s.page;
+    setNow({ file: { ...s.file, pages, frames }, page: nextPage, sel: [], node: undefined });
+    if (!s.mock && s.cwd) {
+      const patch: { pages: typeof pages; frames?: { id: string; page: string }[] } = { pages, ...(moved.length ? { frames: moved.map((f) => ({ id: f.id, page: fallback })) } : {}) };
+      void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+    }
+  },
+  /** Moves one or more frames to another page in the same design file. */
+  moveFramePage(frameIds: string[], pageId: string) {
+    const s = state;
+    if (!s.file || !frameIds.length || s.scrub !== undefined) return;
+    if (!s.file.pages.some((p) => p.id === pageId)) return;
+    const ids = new Set(frameIds);
+    patchFrames((f) => (ids.has(f.id) ? { ...f, page: pageId } : f));
+    saveFrames([...ids].map((id) => ({ id, page: pageId })));
+    if (s.page !== pageId) setNow({ sel: [], node: undefined });
   },
   rename(frame: string, name: string) {
     if (state.scrub !== undefined) return;
@@ -1249,6 +1292,47 @@ async function openMock(cwd: string, listOnly = false) {
   undos.length = 0;
   redos.length = 0;
   setNow({ cwd, files, file, base: "", html, rev: {}, tree: {}, page: "screens", sel: [], node: undefined, loading: false, canUndo: false, canRedo: false, presence: { "phone-week": { agent: "lead", name: "Claude", label: "Drawing", lead: true }, "dark-today": { agent: "sidekick", name: "Haiku", label: "Drawing", lead: false } } });
+}
+
+/** Strips Liner Design's internal data-l stamps so exported or copied HTML is clean. */
+export const cleanFrameHtml = (html: string) => html.replace(/\sdata-l="[^"]*"/g, "");
+
+/** Tracks designs adopted from a Code timeline card (`<cwd>::<fileId>` -> originating threadId & title). */
+const ADOPTED_KEY = "lc:design-adopted:v1";
+const readAdopted = (): Record<string, { threadId: string; title: string }> => {
+  try {
+    return JSON.parse(sessionStorage.getItem(ADOPTED_KEY) || "{}") as Record<string, { threadId: string; title: string }>;
+  } catch {
+    return {};
+  }
+};
+export const adoptedOriginOf = (cwd?: string, fileId?: string) => (cwd && fileId ? readAdopted()[`${cwd}::${fileId}`] : undefined);
+
+/** Copies a drawn frame's clean HTML to the clipboard or triggers a download. */
+export async function exportFrameHtml(frameId: string, mode: "copy" | "download") {
+  const s = state;
+  const frame = s.file?.frames.find((f) => f.id === frameId);
+  if (!frame || !s.file) return;
+  let raw = s.html[frameId];
+  if (!raw && !s.mock && s.cwd) {
+    raw = (await rpc("canvas.frame.read", { cwd: s.cwd, file: s.file.id, frame: frameId, peek: true })).html;
+  }
+  if (!raw) return void toast.error("This frame has no HTML yet.");
+  const html = cleanFrameHtml(raw);
+  if (mode === "copy") {
+    await navigator.clipboard.writeText(html);
+    toast.success(`Copied ${frame.name} HTML`);
+    return;
+  }
+  const slug = frame.name.replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "") || frame.id;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${slug}.html`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast.success(`Exported ${slug}.html`);
 }
 
 // In dev, the store is reachable from the console (and the check scripts) as window.__ld.

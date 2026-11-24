@@ -285,7 +285,7 @@ export const codex: Provider = {
   async detect(env): Promise<ProviderInfo> {
     const path = which("codex", env);
     const configured = configuredModel(env);
-    const base = { id: "codex" as const, label: "Codex CLI", adapter: true, login: "codex login", supports: { approvals: false, resume: true, effort: true, plan: true } };
+    const base = { id: "codex" as const, label: "Codex CLI", adapter: true, login: "codex login", supports: { approvals: false, resume: true, effort: true, plan: true, compact: false } };
     if (!path) return { ...base, models: [], available: false, detail: "Codex isn't installed.", install: "npm install -g @openai/codex && codex login" };
     const [version, listed, server, status] = await Promise.all([versionOf(path, env), catalog(path, env), run(path, ["app-server", "--help"], { env, timeout: 15000 }), run(path, ["login", "status"], { env, timeout: 15000 })]);
     // "Logged in using ChatGPT" / "Not logged in"; an OpenAI key in the environment works too.
@@ -305,7 +305,7 @@ export const codex: Provider = {
     if (models[0]) models[0].isDefault = true;
     const detail = usable ? "Uses your Codex sign-in. Runs in Codex's sandbox; it can't stop to ask." : `Your config.toml picks ${configured}, which this sign-in can't use. Liner Code uses ${models[0].label} instead.`;
     const said = appServer ? detail.replace(" Runs in Codex's sandbox; it can't stop to ask.", " Asks before it acts, through its app server.") : detail;
-    return { ...base, supports: { ...base.supports, approvals: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run codex login, or add an OpenAI key" : said };
+    return { ...base, supports: { ...base.supports, approvals: appServer, compact: appServer }, models, modelsFrom: listed.length ? ("cli" as const) : ("builtin" as const), modelsAt: Date.now(), available: true, version, signedIn, detail: signedIn === false ? "Not signed in: run codex login, or add an OpenAI key" : said };
   },
   // Only the app server has a start to do ahead (CodexServerSession.warm); exec starts a process per turn.
   warms: (env) => appServerFor(env),

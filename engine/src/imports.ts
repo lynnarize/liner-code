@@ -5,8 +5,9 @@
   Claude Code keeps them in <config>/projects/<folder with every other character as ->/<id>.jsonl;
   Codex in <home>/sessions/YYYY/MM/DD/rollout-*.jsonl, each starting with its id and folder.
 */
-import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, createReadStream, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import type { ImportableSession, Item, RecentSession, ToolKind } from "../../contracts/src/index.ts";
@@ -19,6 +20,8 @@ const LATEST = 60;
 
 const claudeDir = (env: NodeJS.ProcessEnv, cwd: string) => join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
 const codexDir = (env: NodeJS.ProcessEnv) => join(env.CODEX_HOME || join(homedir(), ".codex"), "sessions");
+const hermesDir = (env: NodeJS.ProcessEnv) => join(env.HERMES_HOME || join(homedir(), ".hermes"), "sessions");
+const opencodeDir = (env: NodeJS.ProcessEnv) => env.OPENCODE_DATA_DIR ? join(env.OPENCODE_DATA_DIR, "storage", "session") : join(env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "opencode", "storage", "session");
 /** A folder as the disk has it, links followed and each name in its own case (~/code/app is ~/code/App there), as api.ts's onDisk: the tools name their folders by the path they were started in, which is the disk's. */
 const real = (p: string) => {
   try {
@@ -260,14 +263,106 @@ function codexOf(files: Dated[], heres: Set<string>, have: Set<string>): (Import
   return out;
 }
 
-/** The sessions either tool has for this folder, newest first, leaving out ones already here. */
+/** Extracts plain text from an OpenCode or Hermes message entry. */
+function genericText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map((p) => (typeof p === "string" ? p : typeof (p as Json)?.text === "string" ? String((p as Json).text) : "")).filter(Boolean).join("\n");
+  if (v && typeof v === "object") {
+    const o = v as Json;
+    if (typeof o.text === "string") return o.text;
+    if (typeof o.content === "string" || Array.isArray(o.content)) return genericText(o.content);
+  }
+  return "";
+}
+
+/** Past Hermes sessions saved as JSONL or JSON files under HERMES_HOME/sessions. */
+function hermesSessions(heres: Set<string>, env: NodeJS.ProcessEnv, have: Set<string>, limit = LATEST): (ImportableSession & { cwd: string })[] {
+  const dir = hermesDir(env);
+  if (!existsSync(dir)) return [];
+  const files = newest(rollouts(dir, (n) => n.endsWith(".jsonl") || n.endsWith(".json"))).slice(0, limit);
+  const seen = new Map<string, string>();
+  const onDisk = (p: string) => seen.get(p) ?? seen.set(p, real(p)).get(p)!;
+  const out: (ImportableSession & { cwd: string })[] = [];
+  for (const d of files) {
+    const h = cachedHead(d, () => {
+      const lines = head(d.f).map(parse).filter((x): x is Json => Boolean(x));
+      let id = basename(d.f).replace(/\.(jsonl|json)$/i, "");
+      let cwd = "";
+      let first = "";
+      for (const o of lines) {
+        if (typeof o.session_id === "string" && o.session_id) id = o.session_id;
+        else if (typeof o.id === "string" && o.id && !cwd) id = o.id;
+        if (!cwd && typeof o.cwd === "string") cwd = o.cwd;
+        else if (!cwd && typeof o.directory === "string") cwd = o.directory;
+        if (!first && o.role === "user") {
+          const t = genericText(o.content ?? o.text);
+          if (yours(t)) first = t;
+        }
+        if (!first && Array.isArray(o.messages)) {
+          for (const m of o.messages as Json[]) {
+            if (m?.role === "user") {
+              const t = genericText(m.content ?? m.text);
+              if (yours(t)) { first = t; break; }
+            }
+          }
+        }
+      }
+      return { id, cwd, first };
+    });
+    const cwd = h.cwd ? onDisk(h.cwd) : "";
+    if (!h.id || !heres.has(cwd) || have.has(`hermes:${h.id}`)) continue;
+    if (h.first && !linerOwn(h.first)) out.push({ tool: "hermes", id: h.id, title: titleOf(h.first), at: d.at, cwd });
+  }
+  return out;
+}
+
+/** Past OpenCode sessions saved as JSON metadata files under OPENCODE_DATA_DIR/storage/session. */
+function opencodeSessions(heres: Set<string>, env: NodeJS.ProcessEnv, have: Set<string>, limit = LATEST): (ImportableSession & { cwd: string })[] {
+  const dir = opencodeDir(env);
+  if (!existsSync(dir)) return [];
+  const files = newest(rollouts(dir, (n) => n.endsWith(".json"))).slice(0, limit);
+  const seen = new Map<string, string>();
+  const onDisk = (p: string) => seen.get(p) ?? seen.set(p, real(p)).get(p)!;
+  const out: (ImportableSession & { cwd: string })[] = [];
+  for (const d of files) {
+    const h = cachedHead(d, () => {
+      const o = parse(head(d.f).join("\n"));
+      const id = typeof o?.id === "string" ? o.id : basename(d.f, ".json");
+      const cwd = typeof o?.directory === "string" ? o.directory : typeof o?.cwd === "string" ? o.cwd : "";
+      // Only what the file itself says is read: OpenCode keeps a session's messages apart from its info file (storage/message,
+      // and opencode.db since OpenCode 2), so an info file with no messages of its own would come in as an empty session.
+      let first = "";
+      if (Array.isArray(o?.messages)) {
+        for (const m of o.messages as Json[]) {
+          if (m?.role === "user") {
+            const t = genericText(m.content ?? m.parts ?? m.text);
+            if (yours(t)) { first = t; break; }
+          }
+        }
+      }
+      return { id, cwd, first };
+    });
+    const cwd = h.cwd ? onDisk(h.cwd) : "";
+    if (!h.id || !heres.has(cwd) || have.has(`opencode:${h.id}`)) continue;
+    if (h.first && !linerOwn(h.first)) out.push({ tool: "opencode", id: h.id, title: titleOf(h.first), at: d.at, cwd });
+  }
+  return out;
+}
+
+/** The sessions any supported tool has for this folder, newest first, leaving out ones already here. */
 export function importable(cwd: string, env: NodeJS.ProcessEnv, have: Set<string>): ImportableSession[] {
   const here = real(cwd);
-  return [...claudeSessions(here, env, have), ...codexSessions(new Set([here]), env, have).map(({ cwd: _, ...x }) => x)].sort((a, b) => b.at - a.at);
+  const heres = new Set([here]);
+  return [
+    ...claudeSessions(here, env, have),
+    ...codexSessions(heres, env, have).map(({ cwd: _, ...x }) => x),
+    ...opencodeSessions(heres, env, have).map(({ cwd: _, ...x }) => x),
+    ...hermesSessions(heres, env, have).map(({ cwd: _, ...x }) => x),
+  ].sort((a, b) => b.at - a.at);
 }
 
 /**
-  The newest sessions either tool has across these projects, `n` at most, each with its project:
+  The newest sessions any supported tool has across these projects, `n` at most, each with its project:
   Claude Code's folder of each project read for its newest `n`, and Codex's tree walked once for
   them all, off the engine's thread (newestRollouts). Ones already here are left out. For the
   sidebar's Recent, which asks again each time the window comes back.
@@ -278,11 +373,14 @@ export async function recentSessions(projects: { id: string; path: string }[], e
     const here = real(p.path);
     if (!byPath.has(here)) byPath.set(here, p.id);
   }
+  const heres = new Set(byPath.keys());
   const out: RecentSession[] = [];
   for (const [here, projectId] of byPath) for (const x of claudeSessions(here, env, have, n)) out.push({ ...x, projectId });
   const sessions = codexDir(env);
-  const codex = byPath.size && existsSync(sessions) ? codexOf(await newestRollouts(sessions, ROLLOUT), new Set(byPath.keys()), have) : [];
+  const codex = byPath.size && existsSync(sessions) ? codexOf(await newestRollouts(sessions, ROLLOUT), heres, have) : [];
   for (const { cwd, ...x } of codex) out.push({ ...x, projectId: byPath.get(cwd)! });
+  for (const { cwd, ...x } of opencodeSessions(heres, env, have, n)) out.push({ ...x, projectId: byPath.get(cwd)! });
+  for (const { cwd, ...x } of hermesSessions(heres, env, have, n)) out.push({ ...x, projectId: byPath.get(cwd)! });
   return out.sort((a, b) => b.at - a.at).slice(0, n);
 }
 
@@ -316,25 +414,35 @@ function claudeTool(name: string, input: Json, cwd: string): { title: string; ki
   }
 }
 
-/** A session's timeline as Liner Code keeps one, with how many turns it had and its model. */
-export function transcript(tool: "claude" | "codex", id: string, cwd: string, env: NodeJS.ProcessEnv) {
+function findTranscriptFile(tool: ImportableSession["tool"], id: string, cwd: string, env: NodeJS.ProcessEnv) {
   // A plain session id only: it names a file, and an empty one would match any rollout.
   if (!/^[\w-]{1,128}$/.test(id)) throw new Error("That session isn't there any more.");
   let file = "";
   if (tool === "claude") file = join(claudeDir(env, real(cwd)), `${id}.jsonl`);
-  else {
+  else if (tool === "codex") {
     const sessions = codexDir(env);
     file = rollouts(sessions, (n) => n.endsWith(".jsonl") && n.includes(id))[0] ?? "";
+  } else if (tool === "hermes") {
+    const dir = hermesDir(env);
+    file = rollouts(dir, (n) => (n.endsWith(".jsonl") || n.endsWith(".json")) && n.includes(id))[0] ?? "";
+  } else {
+    const dir = opencodeDir(env);
+    file = rollouts(dir, (n) => n.endsWith(".json") && n.includes(id))[0] ?? "";
   }
   // A plain file only: a folder can't be read, and a pipe would never answer.
   if (!file || !statSync(file, { throwIfNoEntry: false })?.isFile()) throw new Error("That session isn't there any more.");
+  return file;
+}
+
+function makeParser(tool: ImportableSession["tool"], cwd: string) {
+  const realCwd = real(cwd);
   const items: Item[] = [];
   let turn = 0;
   let model = "";
   let title = "";
   let started = 0;
   let inTurn = false;
-  const at = (o: Json) => (typeof o.timestamp === "string" ? Date.parse(o.timestamp) : 0) || started || Date.now();
+  const at = (o: Json) => (typeof o.timestamp === "string" ? Date.parse(o.timestamp) : typeof o.timestamp === "number" ? o.timestamp : typeof o.createdAt === "number" ? o.createdAt : 0) || started || Date.now();
   const you = (text: string, when: number) => {
     turn++;
     inTurn = false;
@@ -346,13 +454,12 @@ export function transcript(tool: "claude" | "codex", id: string, cwd: string, en
     inTurn = true;
     items.push({ kind: "turn", id: uid("it"), turn, at: when, agent: `@${tool}:${model || "default"}`, model: model || "default", status: "done" });
   };
-
-  for (const o of readFileSync(file, "utf8").split("\n").map(parse)) {
-    if (!o) continue;
-    if (!started && typeof o.timestamp === "string") started = Date.parse(o.timestamp) || 0;
+  const consume = (o: Json | null) => {
+    if (!o) return;
+    if (!started && (typeof o.timestamp === "string" || typeof o.timestamp === "number")) started = typeof o.timestamp === "number" ? o.timestamp : Date.parse(o.timestamp) || 0;
     if (tool === "claude") {
       if (o.type === "custom-title" && typeof o.customTitle === "string") title = o.customTitle;
-      if (o.isSidechain || o.isMeta || o.isCompactSummary || o.isVisibleInTranscriptOnly) continue;
+      if (o.isSidechain || o.isMeta || o.isCompactSummary || o.isVisibleInTranscriptOnly) return;
       const m = o.message as Json | undefined;
       if (o.type === "user") {
         const text = claudeText(m);
@@ -365,15 +472,15 @@ export function transcript(tool: "claude" | "codex", id: string, cwd: string, en
             items.push({ kind: "text", id: uid("it"), turn, at: at(o), text: b.text, streaming: false });
           } else if (b.type === "tool_use" && typeof b.name === "string") {
             agentSays(at(o));
-            const { title: what, kind } = claudeTool(b.name, (b.input as Json) ?? {}, real(cwd));
+            const { title: what, kind } = claudeTool(b.name, (b.input as Json) ?? {}, realCwd);
             items.push({ kind: "tool", id: uid("it"), turn, at: at(o), tool: b.name, toolKind: kind, title: what, status: "done" });
           }
         }
       }
-    } else {
+    } else if (tool === "codex") {
       const p = (o.payload as Json | undefined) ?? {};
       if (o.type === "turn_context" && typeof p.model === "string") model = p.model;
-      if (o.type !== "response_item") continue;
+      if (o.type !== "response_item") return;
       if (p.type === "message" && p.role === "user" && yours(codexText(p))) you(codexText(p), at(o));
       else if (p.type === "message" && p.role === "assistant" && codexText(p).trim()) {
         agentSays(at(o));
@@ -385,7 +492,51 @@ export function transcript(tool: "claude" | "codex", id: string, cwd: string, en
         const name = typeof p.name === "string" ? p.name : "shell";
         items.push({ kind: "tool", id: uid("it"), turn, at: at(o), tool: name, toolKind: name === "apply_patch" ? "edit" : cmd ? "exec" : "other", title: name === "apply_patch" ? "Edit files" : cmd ? `Run ${cmd.split("\n")[0].slice(0, 120)}` : name, status: "done" });
       }
+    } else {
+      if (typeof o.title === "string" && o.title.trim() && !title) title = o.title.trim();
+      if (typeof o.model === "string" && o.model.trim()) model = o.model.trim();
+      const entries = Array.isArray(o.messages) ? (o.messages as Json[]) : [o];
+      for (const m of entries) {
+        if (!m || typeof m !== "object") continue;
+        if (typeof m.model === "string" && m.model.trim()) model = m.model.trim();
+        const text = genericText(m.content ?? m.parts ?? m.text);
+        if (m.role === "user" && yours(text)) you(text, at(m));
+        else if (m.role === "assistant" && text.trim()) {
+          agentSays(at(m));
+          items.push({ kind: "text", id: uid("it"), turn, at: at(m), text, streaming: false });
+        }
+      }
     }
+  };
+  return { consume, result: () => ({ items, turns: turn, model, title, started }) };
+}
+
+/** Streams a session transcript line-by-line so large JSONL files never block the engine's event loop. */
+export async function streamTranscript(tool: ImportableSession["tool"], id: string, cwd: string, env: NodeJS.ProcessEnv) {
+  const file = findTranscriptFile(tool, id, cwd, env);
+  const p = makeParser(tool, cwd);
+  if (file.endsWith(".json")) {
+    const raw = await new Promise<string>((resolveRaw, rejectRaw) => {
+      const chunks: string[] = [];
+      const rs = createReadStream(file, { encoding: "utf8" });
+      rs.on("data", (d) => chunks.push(String(d)));
+      rs.on("end", () => resolveRaw(chunks.join("")));
+      rs.on("error", rejectRaw);
+    });
+    p.consume(parse(raw));
+    return p.result();
   }
-  return { items, turns: turn, model, title, started };
+  const rl = createInterface({ input: createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
+  for await (const line of rl) p.consume(parse(line));
+  return p.result();
+}
+
+/** A session's timeline as Liner Code keeps one, with how many turns it had and its model. */
+export function transcript(tool: ImportableSession["tool"], id: string, cwd: string, env: NodeJS.ProcessEnv) {
+  const file = findTranscriptFile(tool, id, cwd, env);
+  const p = makeParser(tool, cwd);
+  const raw = readFileSync(file, "utf8");
+  if (file.endsWith(".json")) p.consume(parse(raw));
+  else for (const line of raw.split("\n")) p.consume(parse(line));
+  return p.result();
 }

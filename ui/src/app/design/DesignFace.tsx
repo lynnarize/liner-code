@@ -22,7 +22,7 @@ import { Pop, Row, Sep } from "../ui";
 import { bridge } from "../bridge";
 import { ProjectChooser } from "../Projects";
 import * as os from "../os";
-import { patchTab, tabKey, type DesignTab } from "../face";
+import { patchTab, setFace, tabKey, type DesignTab } from "../face";
 import { buildIn, close as closeTabHere, ownPlace, TabTitle } from "./Tabs";
 import { editText, frames, hearFrameKeys } from "./bridge";
 import { Canvas, fit, parentIn } from "./Canvas";
@@ -31,7 +31,7 @@ import { ChatColumn, DockFloat, DockHosts, useHosts, useShownSize } from "./Chat
 import { Inspector } from "./Inspector";
 import { reorder } from "./Layers";
 import { insert, Rail } from "./Rail";
-import { design, getDesign, isBlank, takeVanished, useDesign } from "./store";
+import { adoptedOriginOf, design, exportFrameHtml, getDesign, isBlank, takeVanished, useDesign } from "./store";
 import { useLiveServer } from "./Live";
 import { Versions } from "./Versions";
 import "./design-face.css";
@@ -254,6 +254,17 @@ function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
                 </>
               )}
               <Row title={`Show in ${os.fileManager}`} note={own ? ownPlace(project) : undefined} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folder))} />
+              {(() => {
+                const s = getDesign();
+                const targetFrame = s.sel[0]?.frame ?? s.file?.frames.find((f) => f.page === (s.page ?? s.file?.pages[0]?.id) && f.kind === "drawn")?.id;
+                if (!targetFrame) return null;
+                return (
+                  <>
+                    <Row title="Copy frame HTML" icon={<I.code size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "copy"))} />
+                    <Row title="Export frame HTML…" icon={<I.download size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "download"))} />
+                  </>
+                );
+              })()}
               {own && <Row title={BUILD_IN} note="It moves into the project, conversation and all" icon={<I.link size={16} />} onPick={() => setChoosing(true)} />}
             </>
           )}
@@ -265,9 +276,12 @@ function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
   );
 }
 
-function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; onSidebar: () => void; cv: React.RefObject<HTMLDivElement | null>; tab: DesignTab; project: Project }) {
+function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }: { sidebar: boolean; onSidebar: () => void; cv: React.RefObject<HTMLDivElement | null>; tab: DesignTab; project: Project; inspOpen: boolean; onToggleInsp: () => void }) {
   const zoom = useDesign((s) => s.zoom);
   const play = useDesign((s) => s.tool === "play");
+  const cwd = useDesign((s) => s.cwd);
+  const fileId = useDesign((s) => s.file?.id);
+  const adopted = adoptedOriginOf(cwd, fileId);
   return (
     <header className="ld-bar" data-drag>
       {!sidebar && (
@@ -276,6 +290,22 @@ function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; on
         </button>
       )}
       <TabTitle />
+      {adopted && (
+        <button
+          type="button"
+          className="lc-btn l-focus"
+          data-kind="ghost"
+          data-size="sm"
+          title={`Adopted from Code session “${adopted.title}” — jump back`}
+          onClick={() => {
+            setFace("code");
+            window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id: adopted.threadId } }));
+          }}
+        >
+          <I.code size={12} />
+          From Code
+        </button>
+      )}
       <span className="lc-grow" data-drag />
       <Versions />
       <Pop label={`Zoom, ${Math.round(zoom * 100)}%`} width={220} align="end" triggerClass="ld-zoom" trigger={<><span className="ld-num">{Math.round(zoom * 100)}%</span><I.chevD size={12} /></>} menu>
@@ -292,6 +322,11 @@ function TopRow({ sidebar, onSidebar, cv, tab, project }: { sidebar: boolean; on
       <button type="button" className="lc-tb l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
         <I.play size={16} />
       </button>
+      {!inspOpen && (
+        <button type="button" className="lc-tb l-focus" aria-label="Show inspector" title={`Show inspector (${os.keys("mod+alt+i")})`} onClick={onToggleInsp}>
+          <I.sliders size={16} />
+        </button>
+      )}
       <TopMore tab={tab} project={project} />
     </header>
   );
@@ -325,6 +360,23 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
   const error = useDesign((s) => s.error);
   const cv = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
+  const [inspOpen, setInspOpen] = useState(() => {
+    try {
+      return localStorage.getItem("liner.ld.insp") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleInsp = () =>
+    setInspOpen((was) => {
+      const next = !was;
+      try {
+        localStorage.setItem("liner.ld.insp", next ? "1" : "0");
+      } catch {
+        // storage off
+      }
+      return next;
+    });
   // The chat: its size as shown (a narrow window shows a pinned chat open), and the hosts its one composer and conversation go in.
   const row = useRef<HTMLDivElement>(null);
   const { size, minimise } = useShownSize(row, thread?.id);
@@ -371,6 +423,7 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
       if (matches(e, "mod+d")) return done(), void duplicate();
       if (matches(e, "mod+[")) return done(), void reorder(-1);
       if (matches(e, "mod+]")) return done(), void reorder(1);
+      if (matches(e, "mod+alt+i")) return done(), toggleInsp();
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       // Delete, Enter, Esc and the tool letters pressed on a chat control are that control's, never the canvas's.
       if (inChat(e.target)) return;
@@ -403,9 +456,9 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
   }, []);
 
   return (
-    <div className="ld-face">
+    <div className="ld-face" data-insp={inspOpen || undefined}>
       <section className="ld-main" aria-label="Canvas">
-        <TopRow sidebar={sidebar} onSidebar={onSidebar} cv={cv} tab={tab} project={project} />
+        <TopRow sidebar={sidebar} onSidebar={onSidebar} cv={cv} tab={tab} project={project} inspOpen={inspOpen} onToggleInsp={toggleInsp} />
         {/* The chat pinned is a column before the canvas (Chat.tsx); the split is always there, so pinning never draws the canvas anew. */}
         <DockHosts.Provider value={hosts}>
           <div ref={row} className="ldc-split">
@@ -441,11 +494,19 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
           </FaceBoundary>
         </DockHosts.Provider>
       </section>
-      <div className="ld-insp-col">
-        <FaceBoundary what="inspector">
-          <InspectorPart />
-        </FaceBoundary>
-      </div>
+      {inspOpen && (
+        <div className="ld-insp-col">
+          <FaceBoundary what="inspector">
+            <InspectorPart
+              end={
+                <button type="button" className="lc-tb l-focus" aria-label="Hide inspector" title={`Hide inspector (${os.keys("mod+alt+i")})`} onClick={toggleInsp}>
+                  <I.close size={14} />
+                </button>
+              }
+            />
+          </FaceBoundary>
+        </div>
+      )}
       <LeanPart thread={thread} project={project} sidebar={sidebar} onSidebar={onSidebar} />
     </div>
   );

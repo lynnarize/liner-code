@@ -56,6 +56,8 @@ export type Opener = {
   isWin: boolean;
   /** The editors to try on a Mac, by bundle id, first found first. */
   editors: readonly string[];
+  /** Optional CLI editors to probe on Windows and Linux (e.g. code, cursor, zed) before falling back. */
+  cliEditors?: readonly string[];
   isFile: (path: string) => boolean;
   /** The path with every link followed (realpath); throws when it can't be (a dangling link, nothing there). */
   real: (path: string) => string;
@@ -77,6 +79,8 @@ export async function openAsText(o: Opener, file: string) {
   if (o.isMac) {
     for (const id of o.editors) if (await o.opens(["-b", id, file])) return;
     if (await o.opens(["-t", file])) return;
+  } else {
+    for (const bin of o.cliEditors ?? []) if (await o.started(bin, [file])) return;
   }
   if (o.isWin && (await o.started("notepad.exe", [file]))) return;
   o.showInFolder(file);
@@ -104,6 +108,7 @@ export async function openIn(o: Opener, given: string, where: string, comSpec = 
   if (o.isMac && bundle(path)) return o.showInFolder(path);
   if (o.isMac && where === "terminal" && (await o.opens(["-a", "Terminal", path]))) return;
   if (o.isMac && where === "editor") for (const id of o.editors) if (await o.opens(["-b", id, path])) return;
+  if (!o.isMac && where === "editor") for (const bin of o.cliEditors ?? []) if (await o.started(bin, [path])) return;
   // On Windows: Windows Terminal in the folder, else a Command Prompt there (Explorer would only show it).
   // The folder goes as the working directory, not through cmd.exe, which would run what follows an & in its name.
   if (o.isWin && where === "terminal" && ((await o.started("wt.exe", ["-d", path])) || (await o.started(comSpec, ["/c", "start", "", "cmd.exe"], true, path)))) return;

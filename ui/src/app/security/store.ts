@@ -5,7 +5,7 @@
   page stays true without polling. Kept per window, like the face itself (sessionStorage).
 */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { FindingSource, FindingState, RpcMethod, RpcParams, RpcResult, ScanRecord, SecurityChange } from "@contracts";
+import type { FindingSource, FindingState, RpcMethod, RpcParams, RpcResult, ScanRecord, SecondLookState, SecurityChange, Severity } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
 import { onStream, rpc, useEngine } from "../engine";
@@ -31,8 +31,38 @@ let page: SecurityPage = (() => {
 })();
 const pageListeners = new Set<() => void>();
 export const getSecurityPage = () => page;
+/** Persisted Findings list filter/sort/search state so opening a scan session or finding preserves filters, while navigating cleanly to Findings clears sticky source filters. */
+export type FindingsFilter = {
+  tab: FindingState;
+  sources: FindingSource[];
+  sevs: Severity[];
+  looks: SecondLookState[];
+  fixes: ("fixing" | "not")[];
+  sort: "worst" | "newest" | "file";
+  query: string | null;
+};
+let findingsFilter: FindingsFilter = { tab: "open", sources: [], sevs: [], looks: [], fixes: [], sort: "worst", query: null };
+const filterListeners = new Set<() => void>();
+export const getFindingsFilter = () => findingsFilter;
+export function setFindingsFilter(next: Partial<FindingsFilter>) {
+  findingsFilter = { ...findingsFilter, ...next };
+  for (const l of filterListeners) l();
+}
+export const useFindingsFilter = () =>
+  useSyncExternalStore((fn) => {
+    filterListeners.add(fn);
+    return () => void filterListeners.delete(fn);
+  }, getFindingsFilter);
+
 /** Shows a page of the Security face. */
 export function goSecurity(next: SecurityPage) {
+  if (next.kind === "findings") {
+    const patch: Partial<FindingsFilter> = {};
+    if (next.state) patch.tab = next.state;
+    if (next.source) patch.sources = [next.source];
+    else if (!next.finding && !next.scan) patch.sources = [];
+    if (Object.keys(patch).length) setFindingsFilter(patch);
+  }
   page = next;
   try {
     sessionStorage.setItem(PAGE_KEY, JSON.stringify(next));
@@ -40,6 +70,7 @@ export function goSecurity(next: SecurityPage) {
     // a window without storage keeps the page until it closes
   }
   for (const l of pageListeners) l();
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("lc:face-nav", { detail: { securityThreadId: next.kind === "scan" ? next.threadId : undefined } }));
 }
 const subscribePage = (fn: () => void) => {
   pageListeners.add(fn);

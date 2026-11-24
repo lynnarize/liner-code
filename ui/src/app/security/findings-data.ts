@@ -50,6 +50,10 @@ export const act = {
     MOCK ? mockPatch(id, (f) => ({ ...f, state: "dismissed", dismissed: { reason, note, at: Date.now() }, activity: [...f.activity, { at: Date.now(), kind: "dismissed", text: `Dismissed${note ? `: ${note}` : ""}`, by: "you" }] })) : rpc("security.finding.dismiss", { id, reason, note }),
   reopen: async (id: string): Promise<SecurityFinding> =>
     MOCK ? mockPatch(id, (f) => ({ ...f, state: "open", dismissed: undefined, fix: undefined, activity: [...f.activity, { at: Date.now(), kind: "reopened", text: "Opened again", by: "you" }] })) : rpc("security.finding.reopen", { id }),
+  note: async (id: string, text: string): Promise<SecurityFinding> =>
+    MOCK ? mockPatch(id, (f) => ({ ...f, activity: [...f.activity, { at: Date.now(), kind: "note", text, by: "you" }] })) : rpc("security.finding.note", { id, text }),
+  look: async (id: string): Promise<SecurityFinding> =>
+    MOCK ? mockPatch(id, (f) => ({ ...f, look: { state: "confirmed", by: "mock", words: "Confirmed in mock mode.", at: Date.now() }, activity: [...f.activity, { at: Date.now(), kind: "looked", text: "Confirmed by a second look", by: "mock" }] })) : rpc("security.finding.look", { id }),
   /** Starts a session in its own worktree with the finding as its brief. The mock marks it being fixed and makes no session (null). */
   fix: async (id: string): Promise<Thread | null> => {
     if (!MOCK) return rpc("security.finding.fix", { id });

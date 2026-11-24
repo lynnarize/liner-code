@@ -698,6 +698,23 @@ test("restart: what's in the queue stays held when nothing carries on; an edit o
   }
 });
 
+test("restart: carrying on after a restart doesn't send a queue that was held, from a Stop or a message that didn't start", async () => {
+  const { texts: sent, restore } = fake(async () => {});
+  try {
+    const home = mkdtempSync(join(tmpdir(), "lc-audit-"));
+    const a = session({ turns: 1, queue: [{ id: "q1", text: "one", at: 1 }] }, home);
+    a.store.putItem("t", { kind: "turn", id: "m", turn: 1, at: 1, agent: "forge", model: "claude:claude-opus-5-5", status: "done" });
+    a.store.flush();
+    const { store, runtime } = session({}, home);
+    assert.deepEqual(runtime.continueAfterRestart(), []);
+    await tick(30);
+    assert.equal(sent.length, 0, "nothing went to the agent");
+    assert.deepEqual(store.thread("t").queue?.map((q) => q.text), ["one"], "the message still waits in the queue");
+  } finally {
+    restore();
+  }
+});
+
 test("limits: a window that reopened more than a day ago doesn't start a turn by itself", async () => {
   const { texts: sent, restore } = fake(async () => {});
   try {

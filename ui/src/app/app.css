@@ -753,7 +753,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-wide]:not(.
 /* Panels sit in the layer above the window: placed by script, so nothing they open from clips them. */
 .l-pop.lc-layer {
   position: fixed;
-  z-index: 90;
+  z-index: 110;
   right: auto;
   bottom: auto;
   translate: none;
@@ -6833,6 +6833,12 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+}
+@media (max-width: 1080px) {
+  .lc-besides {
+    grid-template-columns: minmax(440px, 1fr) minmax(440px, 1fr);
+    overflow-x: auto;
+  }
 }
 .lc-beside {
   display: flex;

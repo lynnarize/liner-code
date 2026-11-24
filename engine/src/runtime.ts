@@ -18,12 +18,13 @@ import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, F
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { ACCESS_NAMES, agentState, castOf, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, agentState, castOf, clampSubagentMax, clampSwarmMax, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, isSwarm, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { closesOnExit, holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
 import { claudeTeam, fixPrompt, parseFindings, parseStep, quickOf, reviewPrompt, stepPrompt, TOO_LONG, tooLongToReview } from "./review.ts";
 import { antigravity, cursor, gitInside, grok, hermes, opencode } from "./providers/acp.ts";
+import { shutdownOpenCodeDaemons } from "./providers/opencode-server.ts";
 import { effortOf, ULTRACODE, ULTRATHINK } from "./providers/models.ts";
 import { accountProvider, addedProvider } from "./providers/added.ts";
 import { claude } from "./providers/claude.ts";
@@ -40,11 +41,14 @@ import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
 import { frameRevs, framesChanged, lookFile } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
-import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
+import { loadLayeredPatch } from "./patches.ts";
+import { commandRisk, evaluatePermissionMatrix, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { EDITS_MS, editsNote, editsSince, type Beside } from "./edits.ts";
 import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./precheck.ts";
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
+import { isSubagentTool, needsSubagentTool, SUBAGENT_MS, subagentLeadNote, subagentPrompt, subagentResult, subagentRules, subagentTask, subagentTitle, type SubagentOutcome } from "./subagent.ts";
+import { SwarmManager, pickSwarmWorkerModel, swarmCoordinatorDirective, swarmCoordinatorRules } from "./swarm.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
 
@@ -101,6 +105,8 @@ type Grant = { kind: GrantKind; label: string; parts: string[]; tool?: boolean }
 /** A sidekick's brief at work in a thread: how to stop it, its session (for a steer), and the row it shows on. */
 /** by: who stopped it, when it was stopped: you from its row, the cap, or Liner Code when it tried to send an agent of its own. */
 type Brief = { abort: AbortController; row: string; taskId: string; session?: ProviderSession; by?: "row" | "cap" | "agent" | "replaced" };
+/** One ephemeral subagent at work in a thread (subagent.ts): how to stop or steer it, and its mode. */
+type SubagentRun = { abort: AbortController; row: string; taskId: string; mode: "read" | "write"; session?: ProviderSession; by?: "row" | "cap" | "agent" };
 /** An answer to a request; `scope` is where an add-on goes, from its install card. */
 type Answer = { allow: boolean; reason?: string; scope?: "all" | "project"; level?: boolean };
 /** How long a turn may say nothing before the watchdog says so: longer while one of its commands runs (a build, the tests). */
@@ -311,14 +317,24 @@ export class Runtime {
   private reopened = new Set<string>();
   /** The lead's `sidekick` calls its tool showed as rows this turn, by thread, for the briefs to take on (sidekickRow). */
   private sideRows = new Map<string, { id: string; input?: string; taken?: boolean }[]>();
+  /** The lead's `subagent` calls its tool showed as rows this turn, by thread, for subagents to take on (subagentRow). */
+  private subagentRows = new Map<string, { id: string; input?: string; title?: string; taken?: boolean }[]>();
   /** The brief a sidekick works now, by thread. */
   private briefs = new Map<string, Brief>();
+  /** Ephemeral subagents at work now, by thread and then taskId (multiple read-only subagents may run in parallel). */
+  private subagents = new Map<string, Map<string, SubagentRun>>();
+  /** Concurrency slots for parallel read-only subagents, per thread. */
+  private subagentSlots = new Map<string, { active: number; waiters: (() => void)[] }>();
   /** The briefs of a thread in line, one after another: the last one's end. */
   private briefLine = new Map<string, Promise<void>>();
   /** Every brief from its call to its end, waiting in line or at work, by its row's taskId: Stop on a waiting one's row cancels it alone. */
   private lined = new Map<string, { threadId: string; stop: AbortController }>();
   /** How long one brief may run (SIDEKICK_MS), here so a test can shorten it. */
   sidekickMs = SIDEKICK_MS;
+  /** How long one subagent call may run (SUBAGENT_MS), here so a test can shorten it. */
+  subagentMs = SUBAGENT_MS;
+  /** Optional override for parallel read-only subagents per thread (otherwise Settings.subagentMax, default 4). */
+  subagentMaxConcurrent?: number;
   /** The least time a brief is started with (BRIEF_MIN_MS), here so a test can shorten it. */
   briefMinMs = BRIEF_MIN_MS;
   /** How long a lead's tool waits on a call to Liner Code's tools unless it says less (LINER_WAIT_SEC), here so a test can shorten it. */
@@ -348,13 +364,99 @@ export class Runtime {
     and then finds its session live, rather than starting a second tool beside it.
   */
   private opening = new Map<string, Promise<unknown>>();
+  /** Liner-native Teamwork & Swarm orchestrator (shared board + hibernating worker pool across all CLIs and APIs). */
+  readonly swarm: SwarmManager;
 
   constructor(store: Store, env: NodeJS.ProcessEnv, tools?: AgentTools) {
     this.store = store;
     this.env = env;
     this.tools = tools;
+    this.swarm = new SwarmManager({
+      home: store.home,
+      thread: (id) => this.store.thread(id),
+      projectPath: (projectId) => this.store.project(projectId).path,
+      settings: () => this.store.settings,
+      emit: (e) => this.store.emit(e),
+      patchThread: (id, patch) => this.store.patchThread(id, patch),
+      resolveCoordinator: (threadId) => {
+        const r = this.resolve(this.store.thread(threadId));
+        const ref = `${r.provider}:${r.model}`;
+        return { provider: r.provider, model: r.model, label: this.labelOf(ref), ref };
+      },
+      resolveModel: (modelRef) => {
+        const clean = modelRef.replace(/^@/, "");
+        const { provider, model } = splitModel(clean);
+        if (!providers[provider]) throw new Error(`Provider "${provider}" is not available.`);
+        const ref = `${provider}:${model || "default"}`;
+        return { provider, model: model || "default", label: this.labelOf(ref), ref };
+      },
+      defaultWorkerModel: (threadId) => {
+        const t = this.store.thread(threadId);
+        const lead = this.resolve(t);
+        const leadRef = `${lead.provider}:${lead.model}`;
+        return pickSwarmWorkerModel(leadRef, this.store.settings.swarmWorkerModel, (ref) => {
+          const { provider } = splitModel(ref);
+          const info = this.providerInfo.find((p) => p.id === provider);
+          return Boolean(providers[provider] && info?.available && info.signedIn !== false);
+        });
+      },
+      openWorkerSession: ({ threadId, member, cwd, soul, resume, portOffset }) => {
+        const t = this.store.thread(threadId);
+        const { provider, model } = splitModel(member.model);
+        const p = providers[provider];
+        if (!p) throw new Error(`Provider "${provider}" is not available for @${member.name}.`);
+        const access: Access = member.mode === "read" ? "read" : t.access;
+        const workerEnv: NodeJS.ProcessEnv = { ...this.envFor(provider), [THREAD_ENV]: threadId, ...(portOffset ? { LINER_WORKTREE_PORT_OFFSET: String(portOffset) } : {}) };
+        return p.open({
+          cwd,
+          model: model || "default",
+          effort: t.effort ?? "",
+          access,
+          soul: [soul, memoryNote(this.store.home, t.projectId, cwd)].filter(Boolean).join("\n\n"),
+          resume,
+          sidekick: true,
+          swarm: true,
+          guard: this.store.settings.guardDestructive,
+          env: workerEnv,
+          mcp: this.tools?.serverFor(threadId, { swarm: member.canDelegate ? "orchestrator" : "worker", swarmWorker: member.name }) ?? undefined,
+        });
+      },
+      isCoordinatorBusy: (threadId) => this.isRunning(threadId),
+      wakeCoordinator: (threadId, text) => this.send(threadId, text, "queue"),
+      logUsage: (rec) => this.store.logUsage(rec),
+      approve: (threadId, memberName, req, signal) => {
+        const t = this.store.thread(threadId);
+        const turn = this.turns.get(threadId)?.turn ?? t.turns;
+        const cards = this.sink(threadId, turn, signal, t.agent, true);
+        const tagged = { ...req, title: `@${memberName}: ${req.title}` };
+        return cards.api.approve(tagged, signal).finally(() => cards.end());
+      },
+      putItem: (threadId, item) => this.store.putItem(threadId, item),
+      turnOf: (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns,
+      forgetWorkerKey: (threadId, worker) => this.tools?.forgetSwarmWorker(threadId, worker),
+      resetCoordinatorSession: (threadId) => {
+        const cur = this.store.threads.find((x) => x.id === threadId);
+        if (!cur) return;
+        this.drop(liveKeyOf(threadId, cur.agent));
+        if (cur.providerSession || cur.sessions?.[cur.agent]) {
+          const nextSessions = cur.sessions ? { ...cur.sessions } : undefined;
+          if (nextSessions) delete nextSessions[cur.agent];
+          this.store.patchThread(threadId, {
+            providerSession: undefined,
+            forkSession: undefined,
+            sessions: nextSessions && Object.keys(nextSessions).length ? nextSessions : undefined,
+          });
+        }
+      },
+      listModels: () =>
+        this.providerInfo
+          .filter((p) => p.available && p.signedIn !== false && p.id !== "demo")
+          .flatMap((p) => p.models.slice(0, 12).map((m) => ({ ref: `${p.id}:${m.id}`, label: m.label, provider: p.label }))),
+    });
     // A queue found on starting up is held, as one Stop kept: a thread that doesn't carry on doesn't send it on an edit.
     for (const t of store.threads) if (t.queue?.length) this.kept.add(t.id);
+    // Restore "this session" approval grants saved on threads so engine restarts don't drop them.
+    for (const t of store.threads) if (t.grants?.length) this.grants.set(t.id, t.grants);
     // A "Use <fast model>" message the last run of the engine didn't see to its end: the session's own model comes back.
     for (const t of store.threads) if (t.onceFrom) this.putBackOnce(t.id);
     if (tools) tools.turnOf = (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns;
@@ -362,7 +464,7 @@ export class Runtime {
       this.watchQuiet();
       this.resumeLimited();
       // Timelines nobody has used in a while go from memory (read again from their logs when asked for): never one at work.
-      this.store.letGoTimelines((id) => this.isRunning(id) || this.prTests.has(id) || this.briefs.has(id) || this.wakes.has(id));
+      this.store.letGoTimelines((id) => this.isRunning(id) || this.prTests.has(id) || this.briefs.has(id) || Boolean(this.subagents.get(id)?.size) || this.wakes.has(id));
     }, 30_000);
     this.watchdog.unref?.();
     // A session deleted (its log gone too) leaves nothing of it here.
@@ -398,6 +500,7 @@ export class Runtime {
       this.released.delete(threadId);
     }
     this.busy.set(threadId, n + 1);
+    if (!n) this.swarm.onCoordinatorTurn(threadId, "working");
     try {
       return await work();
     } finally {
@@ -408,10 +511,14 @@ export class Runtime {
         // The work it held (a turn, its review, a wake, a rewind) is something happening: the idle clock starts again from here.
         this.touch(threadId);
         this.tellDone(threadId);
-        if (!this.halted.delete(threadId)) this.drain(threadId);
+        if (!this.halted.delete(threadId)) {
+          this.swarm.onCoordinatorTurn(threadId, "waiting");
+          this.drain(threadId);
+        }
         // You pressed Stop: a turn the tool began by itself meanwhile stops too, like the rest of the work.
         // What you sent after it releases the queue (T3 Code: SteeringCompletion.integration.test.ts, a plain send behind the stopped queue).
         else {
+          this.swarm.onCoordinatorTurn(threadId, "waiting", true);
           this.dropWake(threadId);
           if (this.released.delete(threadId)) this.drain(threadId);
           else this.kept.add(threadId);
@@ -694,23 +801,29 @@ export class Runtime {
     // A Claude Code writer (an agent or a bare model) brings its subagents. A side chat or a sidekick brings none.
     // A sealed session (a Specialist scan) loads none of your skills, plugins, hooks, servers or add-ons, and brings no subagents.
     const sealed = Boolean(t.security?.sealed);
-    const team = familyOf(r.provider) === "claude" && !t.sideOf && !sidekick && !sealed ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
+    // Liner-native Swarm coordinator tools and rules when Teamwork / Swarm is enabled on this thread.
+    const swarmOn = !sidekick && !sealed && !readsOnlyTag(t) && agentId === t.agent && isSwarm(t);
+    const team = familyOf(r.provider) === "claude" && !t.sideOf && !sidekick && !sealed && !swarmOn ? claudeTeam(r.agent, r.model) : { model: r.model, agents: {} };
     const liveKey = sidekick ? `${liveKeyOf(t.id, agentId)}#sidekick` : liveKeyOf(t.id, agentId);
     // A scan (and its side chats), and a question about a finding, read the project and nothing else: the tool's own outreach
     // is off (OpenOptions.scan). Both read a repository that may be hostile, beside what a scan or a report wrote.
     const scan = readsOnlyTag(t);
-    const key = `${r.provider}|${team.model}|${r.effort}|${access}|${Object.keys(team.agents).join(",")}${sealed ? "|sealed" : ""}${scan ? "|scan" : ""}`;
+    const key = `${r.provider}|${team.model}|${r.effort}|${access}|${Object.keys(team.agents).join(",")}${sealed ? "|sealed" : ""}${scan ? "|scan" : ""}${swarmOn ? "|swarm" : ""}`;
     const connections = this.connectionsOf(t);
     const links = fingerprint(connections);
     // The lead of a pair gets the sidekick tool and its words; the sidekick gets its own words and no such tool.
     const pair = !sidekick && agentId === t.agent && this.pairOf(t);
+    // Providers without working native subagents get Liner Code's `subagent` tool, except side chats, sidekicks, sealed scans and Swarm sessions.
+    const subagent = !swarmOn && agentId === t.agent && this.subagentOn(t, r.provider, sidekick);
+    const swarmCap = clampSwarmMax(t.swarm?.maxActive ?? this.store.settings.swarmMaxActive);
     // How the pair works, for both sides' words: in the kit, so a change to it (the session's own, a class or hand-over in
     // Settings, another lead) reopens the session, resuming, by its next turn, as another sidekick does.
     const ways = (pair || sidekick) && t.sidekick ? this.pairWays(t) : undefined;
     const how = ways ? `:${ways.brief}.${ways.explore}.${ways.review}.${ways.takeBack}.${ways.handOver}${ways.firm ? ".firm" : ""}` : "";
     // An endpoint's model that takes pictures or not is declared to OpenCode when it opens: a change in Settings reopens it (resuming).
     // The sidekick hears only how far it may look around, so only that reopens it.
-    const kit = `${sidekick ? `sidekick${ways ? `:${ways.explore}` : ""}` : pair ? `pair:${t.sidekick}${how}` : ""}${picturesOf(r.provider, r.model, this.store.settings) ? "" : "|text"}`;
+    const swarmMode = t.swarm?.mode ?? "teamwork";
+    const kit = `${sidekick ? `sidekick${ways ? `:${ways.explore}` : ""}` : pair ? `pair:${t.sidekick}${how}` : ""}${subagent ? `|subagent:${this.subagentMax(t.id)}` : ""}${swarmOn ? `|swarm:${swarmMode}:${t.swarm?.preset ?? "squad"}:${swarmCap}` : ""}${picturesOf(r.provider, r.model, this.store.settings) ? "" : "|text"}`;
     const forking = !sidekick && this.realFork(t) && agentId === t.agent;
     // A provider session id is kept as "<provider>:<id>" per part (the lead, the sidekick), so it only resumes into the one that made it.
     const saved = (sidekick ? t.sessions?.[agentId] : savedSession(t, agentId)) ?? "";
@@ -735,14 +848,17 @@ export class Runtime {
             : briefOf(r.agent, cwd),
         this.tools ? toolsNote(n, family) : "",
         pair && ways ? leadRules(this.labelOf(t.sidekick!), ways, n) : "",
+        subagent ? subagentLeadNote(n, this.subagentMax(t.id)) : "",
+        swarmOn ? swarmCoordinatorRules(n, t.swarm?.preset ?? "squad", swarmCap, swarmMode) : "",
         // A session's mode (Workshop, a custom one) is the lead's way of working, not the sidekick's.
         sidekick || sealed ? "" : modeNote(t, this.store.agents, cwd, n, Boolean(this.tools)),
-        memoryNote(this.store.home, t.projectId),
+        memoryNote(this.store.home, t.projectId, cwd),
       ]
         .filter(Boolean)
         .join("\n\n"),
       side: Boolean(t.sideOf),
       ...(sidekick ? { sidekick: true } : {}),
+      ...(swarmOn ? { swarm: true } : {}),
       ...(sealed ? { sealed: true } : {}),
       ...(scan ? { scan: true } : {}),
       ...(this.store.projects.find((p) => p.id === t.projectId)?.kind === "design" && !t.worktree ? { designOnItsOwn: true } : {}),
@@ -754,8 +870,10 @@ export class Runtime {
       // Tagged with the session, so a dev server the agent starts shows in this session's Browser.
       env: { ...this.envFor(r.provider), [THREAD_ENV]: t.id },
       // The session's Browser and Device, and pages shown in it, as tools.
-      mcp: this.tools?.serverFor(t.id, { pair, sidekick }) ?? undefined,
+      mcp: this.tools?.serverFor(t.id, { pair, sidekick, subagent, ...(swarmOn ? { swarm: "coordinator" as const } : {}) }) ?? undefined,
       connections,
+      ...(t.hermesCounted ? { hermesCounted: t.hermesCounted } : {}),
+      onHermesCounted: (c) => void (this.store.threads.some((x) => x.id === t.id) && this.store.patchThread(t.id, { hermesCounted: c })),
     });
     return { r, team, access, liveKey, key, connections, links, kit, forking, saved, resume, open };
   }
@@ -1069,7 +1187,7 @@ export class Runtime {
     const agentId = key.slice(threadId.length + 1, sidekick ? -"#sidekick".length : undefined);
     const t = this.store.threads.find((x) => x.id === threadId);
     if (!t || this.quitting || this.live.get(key) !== l || !l.idle || l.unused || Date.now() - l.idle.at < this.idleMs || l.provider === "demo") return false;
-    if (this.isRunning(threadId) || this.opening.has(key) || this.closing.has(threadId) || this.wakes.has(threadId) || this.briefs.has(threadId) || this.briefLine.has(threadId) || this.prTests.has(threadId) || this.settingUp?.(threadId)) return false;
+    if (this.isRunning(threadId) || this.opening.has(key) || this.closing.has(threadId) || this.wakes.has(threadId) || this.briefs.has(threadId) || this.briefLine.has(threadId) || Boolean(this.subagents.get(threadId)?.size) || this.prTests.has(threadId) || this.settingUp?.(threadId)) return false;
     if (t.archived || t.queue?.length || t.status === "running" || t.status === "waiting" || t.goal?.status === "active" || t.forkSession !== undefined) return false;
     if (this.store.threads.some((x) => x.sideOf === threadId && this.isRunning(x.id))) return false;
     if (this.asking(threadId)) return false;
@@ -1086,8 +1204,11 @@ export class Runtime {
     A fork is a session of its own, with its own switches: it starts with its parent's (draftThread) and goes its own way.
   */
   private connectionsOf(t: Thread): Connection[] {
-    // A sealed session (a Specialist scan) is handed no add-ons at all.
+    // A sealed session (a Specialist scan) or a Lean tool preset omits external MCP add-ons.
     if (t.security?.sealed) return [];
+    const projPath = this.store.projects.find((p) => p.id === t.projectId)?.path;
+    const preset = t.toolPreset ?? loadLayeredPatch(this.store.home, projPath).toolPreset;
+    if (preset === "lean") return [];
     const all = this.addons?.connections(t.projectId, this.keys) ?? [];
     const parent = t.sideOf ? this.store.threads.find((x) => x.id === t.sideOf) : undefined;
     const off = [...(t.connectionsOff ?? []), ...(parent?.connectionsOff ?? [])];
@@ -1694,6 +1815,23 @@ export class Runtime {
         } else prompt = `${handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart")}\n\n${prompt}`;
         // Said when you moved the session to another tool.
         if (switched && show && !blank) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.` });
+      } else if (compact && r.provider !== "demo" && !(session.canCompact ? session.canCompact() : this.providerInfo.find((p) => p.id === r.provider)?.supports.compact ?? familyOf(r.provider) === "claude")) {
+        // Providers without native /compact would treat literal "/compact" as chat text; reset the live provider session instead so the next turn starts fresh with Liner's handoff summary.
+        const tool = this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider;
+        this.drop(liveKeyOf(threadId, agentId));
+        if (earlier.some((x) => x.kind === "user" || x.kind === "text")) {
+          const cur = store.thread(threadId);
+          if (agentId === cur.agent) store.patchThread(threadId, { providerSession: undefined, forkSession: undefined });
+          else if (cur.sessions?.[agentId]) {
+            const nextSessions = { ...cur.sessions };
+            delete nextSessions[agentId];
+            store.patchThread(threadId, { sessions: Object.keys(nextSessions).length ? nextSessions : undefined });
+          }
+          store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Compacted in Liner Code: ${tool} doesn't have a built-in /compact command, so your next message starts a fresh ${tool} session with a summary of the conversation so far.` });
+        } else {
+          store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Nothing to compact yet: ${tool} doesn't have a built-in /compact command.` });
+        }
+        blank = true;
       }
       // What the Reviewer said about the last change that no model has heard (notes on a change it
       // passed, findings left after its last round) comes before your message, once, so "fix the
@@ -1703,6 +1841,15 @@ export class Runtime {
         if (word) {
           prompt = `${word.text}\n\n${prompt}`;
           for (const it of word.reviews) store.putItem(threadId, { ...it, heard: true });
+        }
+      }
+      // When Swarm or Teamwork is enabled and 0 workers have been spawned yet, remind the Coordinator directly on this turn so it delegates via swarm_manage instead of coding solo.
+      if (show && !o.wake && !compact && r.provider !== "demo" && agentId === t.agent && isSwarm(t) && !t.security?.sealed && !readsOnlyTag(t)) {
+        const snap = this.swarm.snapshot(threadId);
+        const hasWorkers = Boolean(snap?.members.some((m) => m.name !== "coordinator" && m.state !== "killed"));
+        if (!hasWorkers && !text.startsWith("[Swarm board")) {
+          const directive = swarmCoordinatorDirective(snap?.mode ?? t.swarm?.mode ?? "teamwork", linerName(familyOf(r.provider)));
+          prompt = `${directive}\n\n${prompt}`;
         }
       }
       // A tool that hasn't ended its turn stopGraceMs after Stop is given up (untilStopped): its live session closes, and the turn ends as stopped.
@@ -1747,6 +1894,7 @@ export class Runtime {
         clearTimeout(cap);
       }
       this.sideRows.delete(threadId);
+      this.subagentRows.delete(threadId);
       this.turns.delete(threadId);
       // However the turn ended, even when its sink's end threw.
       this.doneDoing(threadId);
@@ -2329,6 +2477,12 @@ export class Runtime {
     if (this.busy.has(threadId)) this.halted.add(threadId);
     this.turns.get(threadId)?.abort.abort();
     this.prStops.get(threadId)?.abort();
+    this.swarm.stopAllWorkers(threadId, false);
+  }
+
+  /** Answers Liner-native Swarm MCP tool calls (AddonHost.swarmTool). */
+  swarmTool(threadId: string, worker: string | undefined, tool: string, args: Record<string, unknown>) {
+    return this.swarm.handleTool(threadId, worker, tool, args);
   }
 
   /**
@@ -2344,6 +2498,20 @@ export class Runtime {
     if (brief?.taskId === it.agent.taskId) {
       brief.by ??= "row";
       brief.abort.abort();
+      return true;
+    }
+    // An ephemeral subagent, from its row: it alone stops, and the parent hears how far it got.
+    const sub = this.subagents.get(threadId)?.get(it.agent.taskId);
+    if (sub) {
+      sub.by ??= "row";
+      sub.abort.abort();
+      return true;
+    }
+    // A Liner-native Swarm worker (or the root Teamwork Coordinator): stop it directly.
+    if (it.agent.taskId.startsWith("swarm:")) {
+      const who = it.agent.taskId.slice("swarm:".length);
+      if (who === "coordinator") this.swarm.stopAllWorkers(threadId, false);
+      else this.swarm.stopWorker(threadId, who);
       return true;
     }
     // One waiting in line behind it: it's cancelled alone, and never starts.
@@ -2364,6 +2532,8 @@ export class Runtime {
     // A word for the sidekick goes to its own session, where its tool takes one.
     const brief = this.briefs.get(threadId);
     if (brief?.taskId === it.agent.taskId) return Boolean(await brief.session?.steer?.(text.trim()));
+    const sub = this.subagents.get(threadId)?.get(it.agent.taskId);
+    if (sub) return Boolean(await sub.session?.steer?.(text.trim()));
     const sessions = new Set([this.turns.get(threadId)?.session, ...[...this.live].filter(([k]) => k.startsWith(`${threadId}:`)).map(([, l]) => l.session)]);
     for (const s of sessions) if (s?.steerAgent && (await s.steerAgent(it.agent.taskId, text.trim()))) return true;
     return false;
@@ -2372,6 +2542,19 @@ export class Runtime {
   /** A pair: a session with a sidekick, and Liner Code's tools to hand it work through. Never a side chat, which only reads. */
   pairOf(t: Thread) {
     return isPair(t) && Boolean(this.tools);
+  }
+
+  /** Whether this thread's provider gets Liner Code's `subagent` MCP tool: only where the provider lacks working native subagents. */
+  subagentOn(t: Thread, provider: ProviderId, sidekick = false) {
+    return !sidekick && !t.sideOf && !t.security?.sealed && t.security?.kind !== "scan" && Boolean(this.tools) && needsSubagentTool(familyOf(provider), this.envFor(provider));
+  }
+
+  /** How many read-only subagents may run side by side per session: test override, else patch.json, else Settings.maxActiveSubagents (default 4). */
+  subagentMax(threadId?: string) {
+    if (this.subagentMaxConcurrent !== undefined) return clampSubagentMax(this.subagentMaxConcurrent);
+    const projPath = threadId ? this.store.projects.find((p) => p.id === this.store.threads.find((x) => x.id === threadId)?.projectId)?.path : undefined;
+    const patchCap = loadLayeredPatch(this.store.home, projPath).maxActiveSubagents;
+    return clampSubagentMax(patchCap ?? this.store.settings.maxActiveSubagents);
   }
 
   /**
@@ -2669,7 +2852,11 @@ export class Runtime {
       brief.session = session;
       run.steerable = Boolean(session.steer);
       if (abort.signal.aborted) throw new Error("stopped");
-      const prompt = briefPrompt(b.brief, b.doneWhen);
+      const basePrompt = briefPrompt(b.brief, b.doneWhen);
+      const patch = loadLayeredPatch(store.home, store.projects.find((p) => p.id === t.projectId)?.path);
+      const ctxMode = t.sidekickContext ?? patch.sidekickContext ?? "isolated";
+      const parentItems = ctxMode === "fork" ? store.timeline(threadId) : [];
+      const prompt = ctxMode === "fork" && parentItems.some((x) => x.kind === "user" || x.kind === "text") ? `${handoff(parentItems, "fork", 12000)}\n\n${basePrompt}` : basePrompt;
       began = true;
       // A tool that doesn't hear Stop or its cap is given up as a turn's is (untilStopped), or the brief would hold this session's
       // line of briefs for good. No notice: the brief's row and what the lead is told say how it ended.
@@ -2721,6 +2908,349 @@ export class Runtime {
     const state = how === "done" ? "done" : how === "failed" || how === "limited" ? "failed" : "stopped";
     row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? UNSTARTED : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a sidekick may not send agents of its own." : limited) || undefined, files: files ?? undefined, ...(frames.length ? { frames } : {}) }, true, how === "done" ? "done" : "failed");
     return { how, who, seconds, report, files: files ?? null, ...(frames.length ? { frames } : {}), problem: how === "limited" ? limited : problem, ...(b.capMs === undefined ? {} : { capMs: b.capMs }), ...(unstarted ? { unstarted: true } : {}), ...(sentAgent ? { agent: sentAgent } : {}) };
+  }
+
+  /**
+    The lead's `subagent` call (agent-tools.ts): spawns an ephemeral child session on the session's
+    own provider for providers without working native subagents (OpenCode, Cursor, Grok, added ACP).
+    Read-only calls run in parallel (up to subagentMaxConcurrent); write calls serialize through
+    briefLine so two writers never race on the same working tree.
+  */
+  async spawnSubagent(threadId: string, args: Record<string, unknown>, gone?: AbortSignal): Promise<{ text: string; isError?: boolean }> {
+    const t = this.store.threads.find((x) => x.id === threadId);
+    if (!t) return { text: "This session is gone.", isError: true };
+    const r = this.resolve(t);
+    if (!this.subagentOn(t, r.provider)) return { text: "Subagents aren't enabled in this session.", isError: true };
+    const lead = this.turns.get(threadId);
+    if (!lead || lead.agentId !== t.agent || lead.abort.signal.aborted) return { text: "A subagent can only be started while your turn is running.", isError: true };
+    const prompt = String(args.prompt ?? "").trim();
+    if (!prompt) return { text: "Write the prompt: the goal, scope, and what the subagent should report.", isError: true };
+    const title = String(args.title ?? "").trim() || undefined;
+    const mode: "read" | "write" = args.mode === "write" ? "write" : "read";
+    const doneWhen = String(args.done_when ?? "").trim() || undefined;
+    if (mode === "write" && this.readOnly(threadId)) return { text: 'This session is Read only, so a subagent cannot run in write mode. Use mode: "read" instead.', isError: true };
+    const wait = providers[r.provider]?.toolWait?.(this.envFor(r.provider));
+    const by = Date.now() + briefCap(wait && wait > 0 ? wait : this.linerWaitMs, Infinity);
+    const modelRef = `${r.provider}:${r.model}`;
+    const row = await this.subagentRow(threadId, lead, title, prompt, modelRef);
+    const stop = new AbortController();
+    this.lined.set(row.taskId, { threadId, stop });
+    const end = () => stop.abort();
+    lead.abort.signal.addEventListener("abort", end, { once: true });
+    if (gone?.aborted) stop.abort();
+    else gone?.addEventListener("abort", end, { once: true });
+    (lead.ends ??= new Set()).add(end);
+    let wound = () => {};
+    const winding = new Promise<void>((resolve) => (wound = resolve));
+    (lead.winding ??= new Set()).add(winding);
+    let releaseRead: (() => void) | null = null;
+    let releaseWrite = () => {};
+    let writeLine: Promise<void> | undefined;
+    let late: NodeJS.Timeout | undefined;
+    try {
+      if (mode === "read") {
+        releaseRead = await this.acquireSubagentSlot(threadId, stop.signal, by - this.briefMinMs, () => row.paint({ state: "running", now: "Waiting for a subagent slot" }, true));
+        if (!releaseRead) {
+          if (stop.signal.aborted) {
+            row.paint({ name: "Subagent", task: subagentTask(title, prompt), brief: prompt, model: modelRef, state: "stopped", now: undefined, report: UNSTARTED }, true, "failed");
+            return { text: subagentResult({ how: "stopped", who: this.labelOf(modelRef), mode, seconds: 0, report: "", unstarted: true }), isError: false };
+          }
+          row.paint({ name: "Subagent", task: subagentTask(title, prompt), brief: prompt, model: modelRef, state: "stopped", now: undefined, report: "No time was left for it." }, true, "failed");
+          return { text: "No time was left for this subagent call after waiting for a slot: nothing was done.", isError: true };
+        }
+      } else {
+        const waits = this.briefLine.has(threadId);
+        const before = this.briefLine.get(threadId) ?? Promise.resolve();
+        const mine = new Promise<void>((resolve) => (releaseWrite = resolve));
+        writeLine = before.then(() => mine);
+        this.briefLine.set(threadId, writeLine);
+        if (waits) row.paint({ state: "running", now: "Waiting for the current writer to finish" }, true);
+        if (!stop.signal.aborted) await Promise.race([before, new Promise((resolve) => stop.signal.addEventListener("abort", resolve, { once: true })), new Promise((resolve) => (late = setTimeout(resolve, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+      }
+      const left = by - Date.now();
+      if (left < this.briefMinMs && !stop.signal.aborted) {
+        row.paint({ name: "Subagent", task: subagentTask(title, prompt), brief: prompt, model: modelRef, state: "stopped", now: undefined, report: "No time was left for it.", ...(mode === "write" ? { files: [] } : {}) }, true, "failed");
+        return { text: "Your tool gives up on a call to Liner Code's tools sooner than this subagent could run, so it didn't start: nothing was done.", isError: true };
+      }
+      const capMs = left < this.subagentMs ? left : undefined;
+      const out = await this.runSubagent(threadId, lead.turn, row, { title, prompt, mode, doneWhen, ...(capMs === undefined ? {} : { capMs }) }, stop.signal);
+      return { text: subagentResult(out), isError: out.how === "failed" };
+    } finally {
+      clearTimeout(late);
+      gone?.removeEventListener("abort", end);
+      lead.abort.signal.removeEventListener("abort", end);
+      lead.ends?.delete(end);
+      lead.winding?.delete(winding);
+      wound();
+      this.lined.delete(row.taskId);
+      releaseRead?.();
+      if (writeLine) {
+        releaseWrite();
+        if (this.briefLine.get(threadId) === writeLine) this.briefLine.delete(threadId);
+      }
+    }
+  }
+
+  /** Acquires one parallel read-only subagent slot for a thread, or returns null if stopped/timed out before one opened. */
+  private async acquireSubagentSlot(threadId: string, signal: AbortSignal, deadlineMs: number, onWait?: () => void): Promise<(() => void) | null> {
+    let slot = this.subagentSlots.get(threadId);
+    if (!slot) this.subagentSlots.set(threadId, (slot = { active: 0, waiters: [] }));
+    const release = () => {
+      const s = this.subagentSlots.get(threadId);
+      if (!s) return;
+      const next = s.waiters.shift();
+      if (next) next();
+      else {
+        s.active = Math.max(0, s.active - 1);
+        if (s.active === 0) this.subagentSlots.delete(threadId);
+      }
+    };
+    const maxConcurrent = this.subagentMax(threadId);
+    if (slot.active < maxConcurrent) {
+      slot.active++;
+      return release;
+    }
+    if (signal.aborted) return null;
+    const waitMs = Math.max(0, deadlineMs - Date.now());
+    if (waitMs <= 0) return null;
+    onWait?.();
+    const got = await new Promise<boolean>((resolve) => {
+      let done = false;
+      const finish = (ok: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        if (!ok) {
+          const idx = slot!.waiters.indexOf(wake);
+          if (idx >= 0) slot!.waiters.splice(idx, 1);
+          if (slot!.active === 0 && slot!.waiters.length === 0) this.subagentSlots.delete(threadId);
+        }
+        resolve(ok);
+      };
+      const wake = () => finish(true);
+      const onAbort = () => finish(false);
+      const timer = setTimeout(() => finish(false), waitMs);
+      signal.addEventListener("abort", onAbort, { once: true });
+      slot!.waiters.push(wake);
+    });
+    return got ? release : null;
+  }
+
+  /** Matches a `subagent` call to the row its tool showed on the timeline, or creates a row of Liner Code's own. */
+  private async subagentRow(threadId: string, lead: Turn, title: string | undefined, prompt: string, modelRef: string) {
+    const store = this.store;
+    let id: string | undefined;
+    for (const end = Date.now() + 3000; !id; ) {
+      const ended = (rowId: string) => store.timeline(threadId).some((x) => x.id === rowId && x.kind === "tool" && x.status !== "running");
+      const free = (this.subagentRows.get(threadId) ?? []).filter((r) => !r.taken && !ended(r.id));
+      const r = free.find((x) => x.input === prompt) ?? (title ? free.find((x) => x.title === title) : undefined) ?? free.find((x) => !x.input) ?? free[0];
+      if (r) {
+        r.taken = true;
+        id = r.id;
+      } else if (Date.now() > end || lead.abort.signal.aborted) break;
+      else await new Promise((ok) => setTimeout(ok, 50));
+    }
+    const own = !id;
+    const rowId = id ?? uid("it");
+    const taskId = `subagent:${rowId}`;
+    const task = subagentTask(title, prompt);
+    const started = Date.now();
+    if (own) store.putItem(threadId, { kind: "tool", id: rowId, turn: lead.turn, at: started, tool: "liner.subagent", toolKind: "task", title: subagentTitle(title, prompt), input: prompt, status: "running", agent: { name: "Subagent", task, brief: prompt, model: modelRef, taskId } });
+    const paint = (a: Partial<AgentRun>, save: boolean, end?: "done" | "failed") => {
+      const it = store.timeline(threadId).find((x) => x.id === rowId);
+      if (it?.kind !== "tool") return;
+      const next: Extract<Item, { kind: "tool" }> = { ...it, toolKind: "task", agent: { ...it.agent, name: "Subagent", ...a, taskId }, ...(own && end ? { status: end, seconds: (Date.now() - started) / 1000 } : {}) };
+      store.putItem(threadId, next, save);
+      if (agentState(it) !== agentState(next)) this.countAgents(threadId);
+    };
+    return { id: rowId, taskId, paint };
+  }
+
+  /**
+    Runs one ephemeral subagent turn on the session's provider: no Liner MCP server (so no extra
+    process per parallel worker and no recursion), strict read-only refusal when mode is "read",
+    measured git diff when mode is "write", and full approval + spending-cap enforcement.
+  */
+  private async runSubagent(
+    threadId: string,
+    turn: number,
+    row: { id: string; taskId: string; paint: (a: Partial<AgentRun>, save: boolean, end?: "done" | "failed") => void },
+    b: { title?: string; prompt: string; mode: "read" | "write"; doneWhen?: string; capMs?: number },
+    stop: AbortSignal,
+  ): Promise<SubagentOutcome> {
+    const store = this.store;
+    const t = store.thread(threadId);
+    const r = this.resolve(t);
+    const modelRef = `${r.provider}:${r.model}`;
+    const who = this.labelOf(modelRef);
+    const cwd = t.worktree?.path ?? store.project(t.projectId).path;
+    const started = Date.now();
+    const task = subagentTask(b.title, b.prompt);
+    if (stop.aborted) {
+      row.paint({ name: "Subagent", task, brief: b.prompt, model: modelRef, state: "stopped", now: undefined, report: UNSTARTED, ...(b.mode === "write" ? { files: [] } : {}) }, true, "failed");
+      return { how: "stopped", who, mode: b.mode, seconds: 0, report: "", ...(b.mode === "write" ? { files: [] } : {}), unstarted: true };
+    }
+    const abort = new AbortController();
+    const sub: SubagentRun = { abort, row: row.id, taskId: row.taskId, mode: b.mode };
+    const onStop = () => abort.abort();
+    if (stop.aborted) abort.abort();
+    else stop.addEventListener("abort", onStop, { once: true });
+    const cap = setTimeout(() => ((sub.by ??= "cap"), abort.abort()), b.capMs ?? this.subagentMs);
+    let active = this.subagents.get(threadId);
+    if (!active) this.subagents.set(threadId, (active = new Map()));
+    active.set(row.taskId, sub);
+    const run: AgentRun = { name: "Subagent", task, brief: b.prompt, model: modelRef, steps: [], tools: 0, tokens: 0, state: "running", now: "Starting" };
+    row.paint(run, true);
+    const steps: AgentStep[] = [];
+    const keys = new Map<string, number>();
+    const said: string[] = [""];
+    const spent = emptyUsage();
+    let problem: string | undefined;
+    let limited: string | undefined;
+    let from: string | null = null;
+    let git = false;
+    let files: FileChange[] | null | undefined;
+    let began = false;
+    let sentAgent: string | undefined;
+    const cards = this.sink(threadId, turn, abort.signal, t.agent, true);
+    let session: ProviderSession | undefined;
+    const heard = () => {
+      const live = this.turns.get(threadId);
+      if (live) Object.assign(live, { heard: Date.now(), quiet: false });
+    };
+    const show = (save = false) => row.paint({ ...run, steps: steps.slice(-40) }, save);
+    const sink: TurnSink = {
+      text: (d) => {
+        heard();
+        if (!said[said.length - 1] && d.trim() && steps.length) {
+          run.now = "Writing its report";
+          show();
+        }
+        said[said.length - 1] += d;
+      },
+      reasoning: () => heard(),
+      tool: (u) => {
+        heard();
+        if (u.agent) {
+          if (sub.by || abort.signal.aborted) return;
+          sub.by = "agent";
+          sentAgent = u.agent.task || u.agent.name;
+          steps.push({ title: `Stopped: it tried to spawn another agent (${sentAgent})`, toolKind: "task", status: "failed" });
+          run.now = undefined;
+          show(true);
+          abort.abort();
+          return;
+        }
+        const step: AgentStep = { title: u.title || u.tool, toolKind: u.toolKind, status: u.status === "stopped" ? "failed" : u.status, ...(u.path ? { path: u.path } : {}) };
+        const at = keys.get(u.key);
+        if (at === undefined) {
+          keys.set(u.key, steps.length);
+          steps.push(step);
+          run.tools = (run.tools ?? 0) + 1;
+          if (said[said.length - 1].trim()) said.push("");
+        } else steps[at] = step;
+        if (u.status === "running") run.now = step.title;
+        show();
+      },
+      plan: () => heard(),
+      approve: (req, sig) => {
+        if (b.mode === "read" && readForbids(req)) {
+          const cmd = req.fields.some((f) => f.label === "Command");
+          return Promise.resolve({ allow: false, level: true, reason: `This subagent is read-only, so Liner Code refused this ${cmd ? "command" : "change"}. Only read and search files, then report back.` });
+        }
+        return cards.api.approve(req, sig);
+      },
+      ask: async (questions) => {
+        heard();
+        for (const q of questions) steps.push({ title: `Asked: ${q.question.slice(0, 80)} (nobody could answer)`, toolKind: "think", status: "done" });
+        show();
+        return Object.fromEntries(questions.map((q) => [q.question, NOBODY]));
+      },
+      propose: async () => ({ approve: false, note: "Nobody approves plans in a subagent: complete the task and report back." }),
+      usage: (u, total) => {
+        heard();
+        const seen = (total && session && this.totals.get(session)) || {};
+        if (total && session) this.totals.set(session, { ...seen, ...u });
+        this.addUsage(threadId, u, total, seen, spent);
+        run.tokens = spent.inputTokens + spent.outputTokens;
+        show();
+      },
+      session: () => {},
+      notice: () => heard(),
+      heard,
+      error: (m) => void (problem = m),
+      window: (w) => store.onWindow?.(r.provider, w),
+      limited: (m, until) => {
+        limited = m;
+        this.limitedUntil.set(r.provider, until ?? Date.now() + LIMIT_UNKNOWN_MS);
+      },
+    };
+    try {
+      if (abort.signal.aborted) throw new Error("stopped");
+      const p = providers[r.provider];
+      if (!p) throw new Error(toolGone(who, "Pick another model for this session."));
+      if (!existsSync(cwd)) throw new Error(`this session's folder isn't there any more: ${cwd}`);
+      const tag = `${threadId}/${turn}-${uid("sa")}`;
+      if (b.mode === "write") {
+        git = !readsOnlyTag(t) && (await isRepo(cwd));
+        from = git ? await capture(cwd, `${tag}-before`) : null;
+      }
+      if (abort.signal.aborted) throw new Error("stopped");
+      const childAccess: Access = b.mode === "read" ? "read" : r.access;
+      const soul = [subagentRules(this.whoIs(threadId), b.mode), memoryNote(this.store.home, t.projectId)].filter(Boolean).join("\n\n");
+      session = p.open({
+        cwd,
+        model: r.model,
+        effort: r.effort,
+        access: childAccess,
+        soul,
+        sidekick: true,
+        ephemeral: true,
+        guard: this.store.settings.guardDestructive,
+        env: { ...this.envFor(r.provider), [THREAD_ENV]: threadId },
+      });
+      sub.session = session;
+      run.steerable = Boolean(session.steer);
+      if (run.steerable) show(false);
+      if (abort.signal.aborted) throw new Error("stopped");
+      began = true;
+      await this.untilStopped(threadId, turn, session, session.turn(subagentPrompt(b.prompt, b.doneWhen), sink, abort.signal), abort.signal, false);
+      if (b.mode === "write" && git && from) {
+        const to = await capture(cwd, `${tag}-after`);
+        files = to ? await changes(cwd, from, to, { turn: true }) : null;
+      }
+    } catch (e) {
+      if (!abort.signal.aborted) problem = e instanceof Error ? e.message : String(e);
+    } finally {
+      clearTimeout(cap);
+      stop.removeEventListener("abort", onStop);
+      const map = this.subagents.get(threadId);
+      if (map?.get(row.taskId) === sub) {
+        map.delete(row.taskId);
+        if (map.size === 0) this.subagents.delete(threadId);
+      }
+      cards.end();
+      try {
+        session?.close();
+      } catch {}
+    }
+    const unstarted = !began && abort.signal.aborted;
+    if (b.mode === "write") {
+      if (unstarted) files = [];
+      else if (files === undefined && git && from) {
+        const to = await capture(cwd, `${threadId}/${turn}-${uid("sa")}-after`).catch(() => null);
+        files = to ? await changes(cwd, from, to, { turn: true }).catch(() => null) : null;
+      }
+    }
+    const seconds = (Date.now() - started) / 1000;
+    const how: SubagentOutcome["how"] = sub.by === "cap" ? "capped" : sub.by === "agent" ? "agent" : abort.signal.aborted ? "stopped" : limited ? "limited" : problem ? "failed" : "done";
+    const report = said.filter((x) => x.trim()).at(-1)?.trim() ?? "";
+    store.logUsage({ at: Date.now(), threadId, projectId: t.projectId, agent: "subagent", provider: r.provider, model: r.model, inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, cacheReadTokens: spent.cacheReadTokens, costUsd: spent.costUsd, seconds });
+    for (const s of steps) if (s.status === "running") s.status = how === "done" ? "done" : "failed";
+    const state = how === "done" ? "done" : how === "failed" || how === "limited" ? "failed" : "stopped";
+    row.paint({ ...run, steps: steps.slice(-40), state, now: undefined, report: unstarted ? UNSTARTED : report || (how === "failed" ? problem : how === "agent" ? "Stopped: a subagent may not spawn another agent." : limited) || undefined, ...(b.mode === "write" ? { files: files ?? undefined } : {}) }, true, how === "done" ? "done" : "failed");
+    return { how, who, mode: b.mode, seconds, report, ...(b.mode === "write" ? { files: files ?? null } : {}), problem: how === "limited" ? limited : problem, ...(b.capMs === undefined ? {} : { capMs: b.capMs }), ...(unstarted ? { unstarted: true } : {}), ...(sentAgent ? { agent: sentAgent } : {}) };
   }
 
   /**
@@ -2860,8 +3390,9 @@ export class Runtime {
       if (skill && skill.label === offered.label) next = { kind, label: offered.label, parts: [skill.folder] };
     }
     if (!next) return;
-    const all = (this.grants.get(threadId) ?? []).filter((g) => !(g.kind === next.kind && g.label === next.label));
-    this.grants.set(threadId, [...all, next]);
+    const updated = [...(this.grants.get(threadId) ?? []).filter((g) => !(g.kind === next.kind && g.label === next.label)), next];
+    this.grants.set(threadId, updated);
+    this.store.patchThread(threadId, { grants: updated });
     return { kind: next.kind, label: next.label };
   }
 
@@ -2874,7 +3405,10 @@ export class Runtime {
   /** Takes a grant back (approval.forget); `turn` ends the turn's. */
   forget(threadId: string, kind: GrantKind | "turn", label: string) {
     if (kind === "turn") return void this.turnGrants.delete(threadId);
-    this.grants.set(threadId, (this.grants.get(threadId) ?? []).filter((g) => !(g.kind === kind && g.label === label)));
+    const next = (this.grants.get(threadId) ?? []).filter((g) => !(g.kind === kind && g.label === label));
+    if (next.length) this.grants.set(threadId, next);
+    else this.grants.delete(threadId);
+    if (this.store.threads.some((x) => x.id === threadId)) this.store.patchThread(threadId, { grants: next.length ? next : undefined });
   }
 
   /**
@@ -3074,7 +3608,6 @@ export class Runtime {
       sessions.push(unwarmed(l));
       this.live.delete(key);
     }
-    this.grants.delete(threadId);
     this.turnGrants.delete(threadId);
     this.toldOnce.delete(threadId);
     return this.ending(threadId, sessions);
@@ -3085,6 +3618,7 @@ export class Runtime {
     archived session may come back. Its surface key goes too, so a late call from its tool reaches nothing.
   */
   private forgetThread(threadId: string) {
+    this.grants.delete(threadId);
     this.linerWrites.delete(threadId);
     this.leftQueue.delete(threadId);
     this.dropWake(threadId);
@@ -3094,6 +3628,7 @@ export class Runtime {
     const queued = new Set([...this.store.threads.flatMap((t) => (t.queue ?? []).map((q) => q.id)), ...[...this.leftQueue.values()].flatMap((m) => [...m.keys()])]);
     for (const id of this.queuedDesign.keys()) if (!queued.has(id)) this.queuedDesign.delete(id);
     this.tools?.forget(threadId);
+    this.swarm.forgetThread(threadId);
   }
 
   /** The closes under way in each thread: none of its sessions opens until they're done (session). */
@@ -3282,11 +3817,15 @@ export class Runtime {
       const tool = this.providerInfo.find((p) => p.id === t.limit?.provider)?.label ?? t.limit?.provider ?? "The tool";
       this.store.patchThread(t.id, { status: "idle", limit: undefined });
       this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: t.turns, at: now, text: `${tool}'s usage window reopened, so this session carries on by itself.` });
-      // The lead carries on, as with a message from you.
-      void this.hold(t.id, async () => {
-        await this.worktreeBack?.(t.id).catch(() => {});
-        await this.dispatch(t.id, CONTINUE);
-      }).catch(() => {});
+      // If queued messages are waiting, drain them; otherwise carry on where the turn paused.
+      if (t.queue?.length) {
+        this.drain(t.id);
+      } else {
+        void this.hold(t.id, async () => {
+          await this.worktreeBack?.(t.id).catch(() => {});
+          await this.dispatch(t.id, CONTINUE);
+        }).catch(() => {});
+      }
     }
   }
 
@@ -3328,6 +3867,8 @@ export class Runtime {
       }).catch(() => {});
       went.push(t.id);
     }
+    // What waits in a queue on starting up stays there (the constructor keeps it, as a Stop does): you send it, edit it or
+    // drop it. A session that carries on above sends its queue once that turn ends, as any turn's end does.
     return went;
   }
 
@@ -3374,14 +3915,15 @@ export class Runtime {
   shutdown(): Promise<void> {
     this.quitting = true;
     clearInterval(this.watchdog);
+    this.swarm.dispose();
     for (const id of this.turns.keys()) this.stop(id);
     // A pull request's test suite runs outside any turn, in a process group of its own.
     for (const s of this.prStops.values()) s.abort();
     const closing = [...this.live.values()].map((l) => unwarmed(l).close());
     // Those opened ahead of a thread not made yet (warmNew) go too.
     for (const id of [...this.ahead.keys()]) closing.push(this.dropAhead(id));
-    // And the closes already under way (a session another tool took over from).
-    return Promise.allSettled([...closing, ...this.closing.values()]).then(() => undefined);
+    // And the closes already under way (a session another tool took over from), plus any shared OpenCode HTTP daemons.
+    return Promise.allSettled([...closing, ...this.closing.values(), shutdownOpenCodeDaemons()]).then(() => undefined);
   }
 
   /**
@@ -3545,10 +4087,17 @@ export class Runtime {
         }
         // The lead handing its sidekick a brief: an agent's row from the start, which the brief takes on (delegate) and fills.
         const side = isSidekickTool(u.tool);
+        const sub = !side && isSubagentTool(u.tool);
         if (side && !base) {
           const brief = briefIn(u.input);
           agent = { name: "Sidekick", ...(brief ? { task: taskOf(brief), brief } : {}), ...(store.thread(threadId).sidekick ? { model: store.thread(threadId).sidekick } : {}) };
           this.sideRows.set(threadId, [...(this.sideRows.get(threadId) ?? []), { id: rec.id, input: brief }]);
+        } else if (sub && !base) {
+          const parsed = subagentIn(u.input);
+          const task = subagentTask(parsed.title, parsed.prompt);
+          const { provider, model } = this.resolve(store.thread(threadId));
+          agent = { name: "Subagent", ...(task ? { task } : {}), ...(parsed.prompt ? { brief: parsed.prompt } : {}), model: `${provider}:${model}` };
+          this.subagentRows.set(threadId, [...(this.subagentRows.get(threadId) ?? []), { id: rec.id, input: parsed.prompt, title: parsed.title }]);
         }
         const item: Extract<Item, { kind: "tool" }> = {
           kind: "tool",
@@ -3556,7 +4105,7 @@ export class Runtime {
           turn,
           at: base?.at ?? Date.now(),
           tool: u.tool,
-          toolKind: side ? "task" : u.toolKind,
+          toolKind: side || sub ? "task" : u.toolKind,
           title: u.title || base?.title || u.tool,
           input: u.input ?? base?.input,
           output: u.output ?? base?.output,
@@ -3615,13 +4164,24 @@ export class Runtime {
           return Promise.resolve({ allow: false, level: true, reason: READ_REFUSED(command !== undefined) });
         }
         const held = writes && (now.access === "read" || Boolean(now.sideOf));
+        // Last-match-wins glob permission matrix (Settings + layered patches): `deny` blocks what Auto or a session grant would let through.
+        // Only steps that come here meet it: at Full access, or where a tool's own Auto passes a step, the tool never asks.
+        const fileField = req.fields.find((f) => f.label === "File" || f.label === "Path")?.value;
+        const projPath = store.projects.find((p) => p.id === now.projectId)?.path;
+        const matrixRules = [...(store.settings.permissionRules ?? []), ...(loadLayeredPatch(store.home, projPath).permissionRules ?? [])];
+        const matrix = matrixRules.length ? evaluatePermissionMatrix(matrixRules, { command, path: fileField }) : null;
+        if (matrix?.action === "deny") {
+          store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Denied “${req.title}” by permission rule (${matrix.rule.kind}: ${matrix.rule.pattern}).` });
+          return Promise.resolve({ allow: false, reason: `Denied by permission rule (${matrix.rule.kind}: ${matrix.rule.pattern}).` });
+        }
         // A command that names a .env file: what it prints goes to the model (risk.ts, namesSecret). Neither a rule nor
         // Auto lets one through as a plain read, and neither does "don't ask again this turn".
         const secret = command !== undefined && namesSecret(command);
+        if (matrix?.action === "allow" && !held && req.risk !== "high" && !secret && !this.unattended.has(threadId)) return Promise.resolve({ allow: true });
         // Allowed for the rest of the session already. Not what can't be undone (a rule from `rm a.txt` is `rm`, and `rm -rf ~` is `rm` too),
         // nor in a routine's step, whose limits are its own whatever you said in its session. A command only when every
         // rule it needs was granted (risk.ts, ruleParts), so nothing chained after an allowed command rides on it.
-        if (!held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule, req.fields)) return Promise.resolve({ allow: true });
+        if (matrix?.action !== "ask" && !held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule, req.fields)) return Promise.resolve({ allow: true });
         // Nobody's there to ask.
         if (held && this.unattended.has(threadId)) return Promise.resolve({ allow: false, reason: "This turn only reads. Leave the change for the person." });
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
@@ -3645,7 +4205,7 @@ export class Runtime {
         // A tool with no such mode hands over every command, so a routine one goes ahead too: rated low, inside its
         // folder (or a skill's you allowed), sending none of your work out (risk.ts, routine, leavesMac); an install from the
         // project's lists still reaches the registry. The rest still comes to you.
-        if (!held && access === "auto" && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
+        if (matrix?.action !== "ask" && !held && access === "auto" && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
         /**
           Why it comes to you, most important first, each from the check that decided it: what can't be undone (risk.ts's
           table), what the tool said of its ask (outside the project, a host Codex asks to reach), then what made this level ask. A check that
@@ -4034,6 +4594,19 @@ function briefIn(input?: string) {
     return typeof b === "string" && b.trim() ? b.trim() : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/** The title and prompt in a subagent call's input, as its tool showed it (JSON, or nothing yet). */
+function subagentIn(input?: string): { title?: string; prompt?: string } {
+  try {
+    const j = JSON.parse(input ?? "") as { title?: unknown; prompt?: unknown };
+    return {
+      title: typeof j?.title === "string" && j.title.trim() ? j.title.trim() : undefined,
+      prompt: typeof j?.prompt === "string" && j.prompt.trim() ? j.prompt.trim() : undefined,
+    };
+  } catch {
+    return {};
   }
 }
 

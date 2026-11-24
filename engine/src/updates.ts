@@ -83,15 +83,20 @@ export function repoName(v: unknown): string | undefined {
   return m?.[1];
 }
 
-/** The zip in a release for this Mac: "Liner-Code-0.2.0-mac-arm64.zip". */
-export function pickAsset<T extends { name: string }>(assets: T[], arch = process.arch): T | undefined {
-  const macs = assets.filter((a) => /\.zip$/i.test(a.name) && /mac|darwin|osx/i.test(a.name));
+/** The release archive for this machine (macOS zip, Windows installer/zip, or Linux AppImage/tar). */
+export function pickAsset<T extends { name: string }>(assets: T[], arch = process.arch, platform: NodeJS.Platform = process.platform): T | undefined {
+  const plat =
+    platform === "darwin"
+      ? assets.filter((a) => /\.zip$/i.test(a.name) && /mac|darwin|osx/i.test(a.name))
+      : platform === "win32"
+        ? assets.filter((a) => /\.(exe|msi|zip)$/i.test(a.name) && /win|windows/i.test(a.name))
+        : assets.filter((a) => /\.(AppImage|deb|rpm|tar\.gz|zip)$/i.test(a.name) && /linux/i.test(a.name));
   // A release may carry other zips (tools, symbols): the app's own name first.
-  const ours = macs.filter((a) => /liner/i.test(a.name));
-  const zips = ours.length ? ours : macs;
-  const mine = arch === "arm64" ? /arm64|aarch64|apple-?silicon/i : /x64|x86[-_]?64|intel/i;
-  // A zip that names no architecture runs anywhere; one built for the other kind of Mac isn't taken.
-  return zips.find((a) => mine.test(a.name)) ?? zips.find((a) => /universal/i.test(a.name)) ?? zips.find((a) => !/arm64|aarch64|x64|x86|intel/i.test(a.name));
+  const ours = plat.filter((a) => /liner/i.test(a.name));
+  const pool = ours.length ? ours : plat;
+  const mine = arch === "arm64" ? /arm64|aarch64|apple-?silicon/i : /x64|x86[-_]?64|intel|amd64/i;
+  // An archive that names no architecture runs anywhere; one built for the other architecture isn't taken.
+  return pool.find((a) => mine.test(a.name)) ?? pool.find((a) => /universal/i.test(a.name)) ?? pool.find((a) => !/arm64|aarch64|x64|x86|intel|amd64/i.test(a.name));
 }
 
 /** What a look found, kept in state.json so a launch soon after shows it without looking again. */
@@ -162,6 +167,8 @@ export const TOOLS: ToolSpec[] = [
     },
     latest: npm("@xai-official/grok"),
   },
+  // Cursor Agent has no row: its one update command is `cursor-agent update`, which installs, and no way to only look
+  // has been seen on the real tool. A look that ran the updater would replace the tool under a session working on it.
 ];
 
 const writable = (p: string) => {
@@ -226,7 +233,7 @@ export class Updater {
       current: env.LINER_APP_VERSION || pkg.version || "0.0.0",
       repo: repoName(env.LINER_UPDATE_REPO) ?? repoName(pkg.liner?.releases) ?? repoName(pkg.repository),
       state: "idle",
-      can: !bundle ? (env.LINER_APP_PACKAGED ? "manual" : "source") : process.platform !== "darwin" ? "source" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
+      can: !bundle ? (env.LINER_APP_PACKAGED ? "manual" : "source") : process.platform !== "darwin" ? "manual" : bundle.includes("/AppTranslocation/") ? "translocated" : writable(dirname(bundle)) && writable(bundle) ? "install" : "readonly",
     };
     try {
       const s = JSON.parse(readFileSync(join(this.dir, "state.json"), "utf8")) as { dismissed?: Record<string, string>; checkedAt?: number; stuck?: Updater["stuck"]; found?: Found };
@@ -705,6 +712,20 @@ export class Updater {
     if (id && !asked.length) throw new Error("There's nothing newer to update to.");
     for (const t of asked) this.wanted.add(t.id);
     void this.next();
+    return this.state;
+  }
+
+  /** Cancels a queued tool update (all queued updates without an id) before it starts running. */
+  cancelTool(id?: BuiltinProvider) {
+    const ids = id ? [id] : [...this.wanted];
+    let changed = false;
+    for (const key of ids) if (this.wanted.delete(key)) changed = true;
+    this.tools = this.tools.map((t) => {
+      if ((id && t.id !== id) || t.state !== "waiting") return t;
+      changed = true;
+      return { ...t, state: newer(t.latest, t.current) ? "available" : "current", busy: undefined };
+    });
+    if (changed) this.emit();
     return this.state;
   }
 

@@ -42,6 +42,8 @@ export const SERVER_TOOL = /^(?:mcp__liner__|liner\.)server_(\w+)/;
 export const CANVAS_TOOL = /^(?:mcp__liner__|mcp_liner_|liner\.|liner_)?design_(files|frame|tree|node|selection|shot|picture|built)$/;
 /** A lead's brief to its sidekick (Liner's sidekick tool, under any tool's name for it). */
 export const SIDEKICK_TOOL = /(?:^|[._])sidekick$/;
+/** A lead's call to Liner Code's ephemeral subagent tool, under any tool's name for it. */
+export const SUBAGENT_TOOL = /(?:^|[._])subagent$/;
 /** A frame's file in a design file: .liner/designs/<file>/frames/<id>.html. */
 export const FRAME_FILE = /\.liner\/designs\/([^/]+)\/frames\/([^/]+)\.html$/;
 /** A title that is only a tool's kind, or nothing. */
@@ -402,7 +404,7 @@ export function stepKind(c: DoingCall): StepKind {
   if (CANVAS_TOOL.test(c.tool)) return "canvas";
   if (BROWSER_TOOL.test(c.tool)) return "web";
   if (SERVER_TOOL.test(c.tool)) return "command";
-  if (SIDEKICK_TOOL.test(c.tool) || c.toolKind === "task") return "agent";
+  if (SIDEKICK_TOOL.test(c.tool) || SUBAGENT_TOOL.test(c.tool) || c.toolKind === "task") return "agent";
   if (c.toolKind === "edit" || c.toolKind === "write") return FRAME_FILE.test(slashed(c.path ?? str(inputOf(c).file_path) ?? "")) ? "canvas" : "file";
   if (c.toolKind === "read") return "file";
   if (c.toolKind === "search") return "search";

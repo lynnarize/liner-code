@@ -222,9 +222,18 @@ type Term = {
   ctl: NodeJS.WritableStream | null;
   backlog: Backlog;
   exited?: number;
-  /** On Windows, what you type goes through winterm.ts's line editing rather than straight to the shell. */
+  /** On Windows, what you type goes through winterm.ts's line editing or ConPTY rather than straight to a child pipe. */
   input?: (data: string) => void;
+  resize?: (cols: number, rows: number) => void;
+  close?: () => void;
 };
+
+/** Clamps terminal dimensions to safe positive integers before sending to the PTY helper. */
+export function clampTermSize(cols: number, rows: number): { cols: number; rows: number } {
+  const c = Number.isFinite(cols) && cols > 0 ? Math.max(20, Math.min(500, Math.round(cols))) : 80;
+  const r = Number.isFinite(rows) && rows > 0 ? Math.max(5, Math.min(200, Math.round(rows))) : 24;
+  return { cols: c, rows: r };
+}
 
 /**
   Each terminal outlives the Terminal that shows it: switching sessions or shutting the panel
@@ -244,37 +253,19 @@ export class Terminals {
   open(cwd: string, cols: number, rows: number, command?: string, threadId?: string, title?: string) {
     // Refused here, where the app can say so (T3 Code: terminal/Manager.ts assertValidCwd).
     if (!existsSync(cwd)) throw new Error("This session's folder isn't there any more.");
+    const size = clampTermSize(cols, rows);
     const id = uid("tm");
     const env = { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", LINER_CODE: "1", ...(threadId ? { [THREAD_ENV]: threadId } : {}) };
-    // Windows has no pty a script can open: PowerShell on pipes, with the line editing done here.
-    const win = process.platform === "win32" ? winShell(cwd, cols, env, (s) => push(s)) : null;
-    // Its shell holds the session's marker (after the helper's four pipes: it talks on 3) as well as naming it: what it starts is the session's where the
-    // environment can't be read (exec.ts Mark).
-    const { stdio, done } = marking(["pipe", "pipe", "pipe", "pipe"], threadId && !win ? [threadMark(threadId)] : []);
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child =
-        win?.child ??
-        (spawn(which("python3", this.env) ?? "/usr/bin/python3", ["-I", "-c", PTY, String(Math.max(20, cols || 80)), String(Math.max(5, rows || 24))], {
-          cwd,
-          env,
-          stdio: stdio as ["pipe", "pipe", "pipe", "pipe"],
-        }) as unknown as ChildProcessWithoutNullStreams);
-    } finally {
-      done();
-    }
-    const ctl = win ? null : (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
-    const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog: new Backlog(), input: win?.input };
-    this.terms.set(id, t);
     // Output goes out in small batches, so a noisy command doesn't send an event per byte. Each
     // batch goes into the backlog as it goes out, with where it starts, so the two always agree.
     let pending = "";
     let timer: NodeJS.Timeout | null = null;
+    const backlog = new Backlog();
     const flush = () => {
       timer = null;
       if (!pending) return;
-      const at = t.backlog.end;
-      t.backlog.push(pending);
+      const at = backlog.end;
+      backlog.push(pending);
       this.store.emit({ type: "term", id, data: pending, at });
       pending = "";
     };
@@ -282,26 +273,77 @@ export class Terminals {
       pending += d;
       timer ??= setTimeout(flush, 16);
     };
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (d: string) => push(win ? win.output(d) : d));
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (d: string) => push(win ? win.output(d) : d));
-    child.on("close", (code) => {
-      if (timer) clearTimeout(timer);
-      flush();
-      t.child = null;
-      t.ctl = null;
-      if (this.terms.get(id) === t) t.exited = code ?? 0;
-      this.store.emit({ type: "term.exit", id, code: code ?? 0 });
-    });
-    // Nothing listening, either of these takes the engine's uncaught path: a shell that couldn't
-    // start shows nothing, and a write to one that has just gone (EPIPE) is no one's to answer.
-    child.on("error", (e) => push(`The terminal didn't start: ${e.message}\r\n`));
-    child.stdin.on("error", () => {});
-    (ctl as unknown as NodeJS.EventEmitter | null)?.on("error", () => {});
+    // Windows prefers ConPTY when available, else PowerShell on pipes with line editing.
+    const win = process.platform === "win32" ? winShell(cwd, size.cols, env, (s) => push(s), size.rows) : null;
+    let child: ChildProcessWithoutNullStreams | null = win?.child ?? null;
+    let ctl: NodeJS.WritableStream | null = null;
+    if (!win) {
+      const py = which("python3", this.env) ?? (existsSync("/usr/bin/python3") ? "/usr/bin/python3" : null);
+      const scriptBin = !py ? which("script", this.env) : null;
+      if (!py && !scriptBin) {
+        const hint = process.platform === "darwin" ? "Install Xcode Command Line Tools (`xcode-select --install`) or Python 3 to use the Terminal." : "Install `python3` (or `util-linux` `script`) to use the Terminal.";
+        throw new Error(`Python 3 isn't installed on this machine. ${hint}`);
+      }
+      // Its shell holds the session's marker (after the helper's pipes) as well as naming it: what it starts is the session's where the environment can't be read.
+      const baseStdio: ("pipe")[] = py ? ["pipe", "pipe", "pipe", "pipe"] : ["pipe", "pipe", "pipe"];
+      const { stdio, done } = marking(baseStdio, threadId ? [threadMark(threadId)] : []);
+      try {
+        if (py) {
+          child = spawn(py, ["-I", "-c", PTY, String(size.cols), String(size.rows)], { cwd, env, stdio: stdio as ["pipe", "pipe", "pipe", "pipe"] }) as unknown as ChildProcessWithoutNullStreams;
+          ctl = (child as unknown as { stdio: NodeJS.WritableStream[] }).stdio[3];
+        } else {
+          const sh = this.env.SHELL || "/bin/sh";
+          const args = process.platform === "darwin" ? ["-q", "/dev/null", sh, "-i"] : ["-q", "-c", sh, "/dev/null"];
+          child = spawn(scriptBin!, args, { cwd, env, stdio: stdio as ["pipe", "pipe", "pipe"] }) as unknown as ChildProcessWithoutNullStreams;
+        }
+      } finally {
+        done();
+      }
+    }
+    const t: Term = { id, threadId, title: title?.trim() || (command ? command : "Shell"), command, cwd, at: Date.now(), child, ctl, backlog, input: win?.input, resize: win?.resize, close: win?.close };
+    this.terms.set(id, t);
+    if (win?.onData && win?.onExit) {
+      win.onData((d) => push(d));
+      win.onExit((code) => {
+        if (timer) clearTimeout(timer);
+        flush();
+        t.child = null;
+        t.ctl = null;
+        t.input = undefined;
+        t.resize = undefined;
+        t.close = undefined;
+        if (this.terms.get(id) === t) t.exited = code ?? 0;
+        this.store.emit({ type: "term.exit", id, code: code ?? 0 });
+      });
+    } else if (child) {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (d: string) => push(win ? win.output(d) : d));
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (d: string) => push(win ? win.output(d) : d));
+      child.on("close", (code) => {
+        if (timer) clearTimeout(timer);
+        flush();
+        t.child = null;
+        t.ctl = null;
+        if (this.terms.get(id) === t) t.exited = code ?? 0;
+        this.store.emit({ type: "term.exit", id, code: code ?? 0 });
+      });
+      // Nothing listening, either of these takes the engine's uncaught path: a shell that couldn't
+      // start shows nothing, and a write to one that has just gone (EPIPE) is no one's to answer.
+      child.on("error", (e) => push(`The terminal didn't start: ${e.message}\r\n`));
+      child.stdin.on("error", () => {});
+      (ctl as unknown as NodeJS.EventEmitter | null)?.on("error", () => {});
+    }
     // A script to run: typed into the shell once it's up, so it stays after the command ends
     // (through write, so on Windows it's echoed and sent as a line like anything you type).
-    if (command) setTimeout(() => this.write(id, `${command}\r`), 350);
+    if (command) {
+      setTimeout(() => {
+        if (this.terms.get(id) !== t || t.exited !== undefined) return;
+        try {
+          this.write(id, `${command}\r`);
+        } catch {}
+      }, 350).unref();
+    }
     return { id, cwd };
   }
 
@@ -320,12 +362,19 @@ export class Terminals {
   }
 
   write(id: string, data: string) {
+    // A key pressed in one that has ended goes nowhere, quietly: its end was already said (term.exit, and "didn't start"
+    // in its text), and an error per keystroke would only say it again.
     const t = this.terms.get(id);
-    if (t?.child && t.input) t.input(data);
-    else t?.child?.stdin.write(data);
+    if (!t || t.exited !== undefined) return;
+    if (t.input) t.input(data);
+    else if (t.child?.stdin.writable) t.child.stdin.write(data);
   }
   resize(id: string, cols: number, rows: number) {
-    this.terms.get(id)?.ctl?.write(`${cols} ${rows}\n`);
+    const t = this.terms.get(id);
+    if (!t) return;
+    const size = clampTermSize(cols, rows);
+    if (t.resize) t.resize(size.cols, size.rows);
+    else t.ctl?.write(`${size.cols} ${size.rows}\n`);
   }
   /** Cleared in the Terminal stays cleared when it comes back. */
   clear(id: string) {
@@ -335,6 +384,7 @@ export class Terminals {
     const t = this.terms.get(id);
     if (!t) return;
     this.terms.delete(id);
+    if (t.close) return t.close();
     if (!t.child) return;
     // Windows has no SIGHUP (kill would throw): the shell's tree goes with taskkill.
     if (process.platform === "win32") return endShell(t.child);
@@ -429,10 +479,13 @@ export async function prList(cwd: string, env: NodeJS.ProcessEnv): Promise<PrInf
 }
 
 /** Pushes the branch and opens a pull request for it. */
-export async function prCreate(cwd: string, branch: string, o: { title: string; body: string; draft: boolean }, env: NodeJS.ProcessEnv) {
+export async function prCreate(cwd: string, branch: string, o: { title: string; body: string; draft: boolean; base?: string; reviewers?: string[]; labels?: string[] }, env: NodeJS.ProcessEnv) {
   const push = await run("git", ["push", "-u", "origin", branch], { cwd, env, timeout: 120000 });
   if (push.code !== 0) throw new Error(push.stderr.trim().split("\n").pop() || "The push failed.");
   const args = ["pr", "create", "--head", branch, "--title", o.title, "--body", o.body || " "];
+  if (o.base?.trim()) args.push("--base", o.base.trim());
+  for (const r of o.reviewers ?? []) if (r.trim()) args.push("--reviewer", r.trim());
+  for (const l of o.labels ?? []) if (l.trim()) args.push("--label", l.trim());
   if (o.draft) args.push("--draft");
   const r = await run("gh", args, { cwd, env, timeout: 60000 });
   if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "gh pr create failed.");
@@ -441,8 +494,9 @@ export async function prCreate(cwd: string, branch: string, o: { title: string; 
   return pr;
 }
 
-export async function prMerge(cwd: string, n: number, env: NodeJS.ProcessEnv) {
-  const r = await run("gh", ["pr", "merge", String(n), "--squash", "--delete-branch=false"], { cwd, env, timeout: 120000 });
+export async function prMerge(cwd: string, n: number, env: NodeJS.ProcessEnv, o: { method?: "squash" | "merge" | "rebase"; deleteBranch?: boolean } = {}) {
+  const method = o.method === "merge" || o.method === "rebase" ? o.method : "squash";
+  const r = await run("gh", ["pr", "merge", String(n), `--${method}`, `--delete-branch=${o.deleteBranch ? "true" : "false"}`], { cwd, env, timeout: 120000 });
   if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "The merge failed.");
 }
 
@@ -727,7 +781,10 @@ export class DeviceLogs {
     this.live.delete(udid);
     if (!on) return;
     const args = ["simctl", "spawn", udid, "log", "stream", "--style", "compact", "--level", "info"];
-    if (filter) args.push("--predicate", `eventMessage CONTAINS[c] "${filter.replace(/"/g, "")}" OR process CONTAINS[c] "${filter.replace(/"/g, "")}"`);
+    if (filter) {
+      const clean = filter.replace(/[\\"]/g, "");
+      if (clean) args.push("--predicate", `eventMessage CONTAINS[c] "${clean}" OR process CONTAINS[c] "${clean}"`);
+    }
     const child = spawn(this.tool, args, { env: this.env }) as ChildProcessWithoutNullStreams;
     this.live.set(udid, child);
     // No simulator tools on this machine: the log just stays empty.

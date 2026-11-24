@@ -5,6 +5,7 @@
 */
 import { useEffect, useState } from "react";
 import type { UsageSummary } from "@contracts";
+import { READS_GO_KEY } from "@contracts";
 import { BarChart } from "@liner/components/bar-chart/bar-chart";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
@@ -268,6 +269,10 @@ function Budget({ spent, budget, editing, onEdit }: { spent: number | null; budg
 /** Each plan's windows, as the tool reports them: how much is used, and when it resets. */
 function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
   const tools = useEngine((s) => s.limits);
+  // OpenCode's and Hermes's saved Go key is another tool's sign-in: read only once you say so here or in Settings.
+  const providers = useEngine((s) => s.providers);
+  const goTools = providers.filter((p) => p.available && (READS_GO_KEY as readonly string[]).includes(p.id)).map((p) => p.label);
+  const readGoKey = useEngine((s) => s.settings.readGoKey === true);
   const [asking, setAsking] = useState(true);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -313,6 +318,14 @@ function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
               </div>
             ))}
           </div>
+        )}
+        {goTools.length > 0 && !readGoKey && (
+          <p className="lc-quiet lc-limits-none">
+            OpenCode Go's limits: Liner Code can read the Go key {goTools.join(" or ")} saved, and send it to opencode.ai only, to ask what's left. It doesn't read that sign-in until you agree.{" "}
+            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void rpc("settings.save", { readGoKey: true })}>
+              Read the Go key
+            </button>
+          </p>
         )}
       </div>
     </section>

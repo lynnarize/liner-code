@@ -190,8 +190,12 @@ Found something? **Help › Report a Problem…** makes a zip with the log and v
   your account. Liner Code has no server in between and never sends your work anywhere. Once a day
   it sends an anonymous count to linercode.dev: a random install id, the app's version, your OS and
   chip, the day, and how many tokens your agents read and wrote. Never prompts, files, folders,
-  projects, models, tools, sessions or errors. Settings › General › Share anonymous usage counts
-  turns it off, and so does LINER_NO_USAGE=1. Besides its own releases from GitHub and the tools'
+  projects, models, tools, sessions or errors. Like any request it reaches the site's host
+  (Cloudflare) from your IP address, which the site doesn't keep. It is on until you turn it off in
+  Settings › General › Share anonymous usage counts, and LINER_NO_USAGE=1 turns it off too. Liner
+  Code doesn't read the Claude Code or Codex sign-ins. It reads the OpenCode Go key OpenCode or
+  Hermes saved, and sends it to opencode.ai only to show Go's limits, once you agree to that in
+  Usage or in Settings › General (Read OpenCode Go's key for its limits). Besides its own releases from GitHub and the tools'
   versions on npm, it fetches the Agent Client Protocol registry when you look for agents to add,
   and reaches GitHub through your `gh` sign-in for pull requests: when you open one, and once a
   minute in the background for a session's open pull request while its checks run (two hours at

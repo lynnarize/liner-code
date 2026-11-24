@@ -2860,8 +2860,10 @@ export const hermes: Provider = {
   ...acpProvider("hermes", { label: "Hermes", cmd: ["hermes", "acp"], install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", login: "hermes model", detaches: true }),
   // Its limits are in your own config, which Liner Code doesn't change: a sidekick's brief is cut to fit them instead.
   toolWait: (env) => hermesWait(env),
-  // OpenCode Go's windows, when Hermes has a Go key: they count for its opencode-go models only.
-  async limits(env) {
+  // OpenCode Go's windows, when Hermes has a Go key: they count for its opencode-go models only. Its .env is
+  // another tool's sign-in, so it isn't opened until you agree (Settings.readGoKey).
+  async limits(env, _scratch, o) {
+    if (!o?.readGoKey) return null;
     const key = hermesGoKey(env);
     const windows = key ? await goUsage([key]) : null;
     return windows && { plan: "OpenCode Go", windows, models: "opencode-go" };
@@ -2872,8 +2874,10 @@ export const opencode: Provider = {
   ...opencodeAcp,
   // Runs on a shared `opencode serve` V2 HTTP/SSE daemon (opencode-server.ts) so sessions and native subagents share one process; falls back to ACP on older binaries.
   open: (o) => openOpenCodeServer(o, opencodeAcp.open),
-  // OpenCode Go's windows, when it signed in with a Go key; Zen and the rest have none to show.
-  async limits(env) {
+  // OpenCode Go's windows, when it signed in with a Go key; Zen and the rest have none to show. Its auth.json and
+  // database are another tool's sign-in, so neither is opened until you agree (Settings.readGoKey).
+  async limits(env, _scratch, o) {
+    if (!o?.readGoKey) return null;
     const keys = goKeys(env);
     const windows = keys.length ? await goUsage(keys) : null;
     return windows && { plan: "Go", windows, models: "opencode-go" };

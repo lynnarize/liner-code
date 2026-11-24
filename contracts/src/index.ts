@@ -1226,8 +1226,13 @@ export type Settings = {
 
 export type UpdateMode = "auto" | "notify" | "off";
 
+  /** Liner Code may read the OpenCode Go key OpenCode or Hermes saved (READS_GO_KEY), to ask opencode.ai for Go's limits with it. Off unless true: another tool's sign-in is read only once you agree. */
+  readGoKey?: boolean;
 /**
   A project's rules for agents, at its root: CLAUDE.md for Claude Code, AGENTS.md for Codex,
+/** The tools whose saved sign-in Liner Code reads for OpenCode Go's limits, and only with Settings.readGoKey. */
+export const READS_GO_KEY = ["opencode", "hermes"] as const;
+
   OpenCode, Cursor and the rest. `linked`: CLAUDE.md only imports AGENTS.md (`@AGENTS.md`), so
   the two say the same.
 */

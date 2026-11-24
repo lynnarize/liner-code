@@ -270,8 +270,8 @@ export interface Provider {
   detect(env: NodeJS.ProcessEnv): Promise<ProviderInfo>;
   /** The tool's slash commands and skills in this folder. */
   commands?(env: NodeJS.ProcessEnv, cwd: string): Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>;
-  /** The signed-in plan's usage windows, when the tool can say. */
-  limits?(env: NodeJS.ProcessEnv, scratch: string): Promise<Omit<ToolLimits, "provider" | "label" | "at"> | null>;
+  /** The signed-in plan's usage windows, when the tool can say. `readGoKey`: the person agreed to Liner Code reading the tool's saved OpenCode Go key (Settings.readGoKey). */
+  limits?(env: NodeJS.ProcessEnv, scratch: string, o?: { readGoKey?: boolean }): Promise<Omit<ToolLimits, "provider" | "label" | "at"> | null>;
   /** Asks the tool which models it runs, in a scratch folder. Slower than detect; the engine caches it. `signal`: give up, and end what was started for it. */
   models?(env: NodeJS.ProcessEnv, scratch: string, signal?: AbortSignal): Promise<ModelInfo[]>;
   /**

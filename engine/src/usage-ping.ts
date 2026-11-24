@@ -3,7 +3,8 @@
   Once a day at most, one small POST to linercode.dev/api/usage (site/worker/index.ts) with a
   random install id, the app's version, the OS and chip, the day, and the tokens counted since the
   last one went: nothing else, ever. No prompts, files, folders, projects, models, tools, sessions or
-  errors, and the Worker keeps no address.
+  errors. The request reaches Cloudflare from the machine's IP address like any other; the Worker
+  doesn't keep it.
 
   The install id is a random UUID made once and kept in <LINER_HOME>/usage.json (yours alone to
   read, 0600), beside the tokens counted so far; nothing about the machine, its user or an account

@@ -7,7 +7,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, CodedError, endpointKey, isPair, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import { castOf, CodedError, endpointKey, isPair, READS_GO_KEY, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage, keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
@@ -403,7 +403,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     if (going) return going;
     const ask = (async () => {
       try {
-        const r = await providers[id].limits!(env, join(store.home, "probe"));
+        const r = await providers[id].limits!(env, join(store.home, "probe"), { readGoKey: store.settings.readGoKey === true });
         // A tool with nothing to say this time (Claude Code before it has fetched them) keeps the windows its turns reported.
         const kept = r && !r.windows.length && had?.windows.length && had.plan === r.plan ? { windows: had.windows, detail: undefined } : {};
         if (r) limits.set(id, { provider: id, label: d.label, at: Date.now(), ...r, ...kept });
@@ -419,6 +419,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return ask;
   };
   store.onUsage = (r) => void askLimits(r.provider, true);
+  // Agreeing to (or taking back) reading OpenCode's and Hermes's Go key asks them again at once, past the minute's answer.
+  let readGoKey = store.settings.readGoKey === true;
+  store.on((e) => {
+    if (e.type !== "settings" || (store.settings.readGoKey === true) === readGoKey) return;
+    readGoKey = store.settings.readGoKey === true;
+    for (const id of READS_GO_KEY) if (limits.delete(id) || readGoKey) void askLimits(id, true);
+    store.emit({ type: "limits", tools: [...limits.values()] });
+  });
   const ORDER = { session: 0, weekly: 1, monthly: 2 };
   store.onWindow = (id, w) => {
     const had = limits.get(id);

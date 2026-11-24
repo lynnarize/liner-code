@@ -3,7 +3,8 @@
   reports them for a Go key (T3 Code: provider-opencode's usageLimits.ts). The key is the one
   OpenCode signed in with (its auth.json, its own database, OPENCODE_API_KEY), the one Hermes
   runs Go's models with (its .env), or an API endpoint's you added for Go. It goes to
-  opencode.ai only, and never follows a redirect.
+  opencode.ai only, and never follows a redirect. OpenCode's and Hermes's are another tool's
+  sign-in, so their limits() read nothing until you agree (Settings.readGoKey).
 */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";

@@ -348,7 +348,23 @@ export function DesignSide({ cwd }: { cwd: string }) {
             }
           />
           {file.pages.map((p) => (
-            <div key={p.id} className="ld-tr" data-on={p.id === page || undefined} onClick={() => design.setPage(p.id)} onDoubleClick={() => !old && setRenamingPage(p.id)}>
+            // A row that holds its own ··· and rename field, so not a button itself; it takes the focus and Enter or Space as
+            // the page's button did before, and F2 renames it as a design's row does.
+            <div
+              key={p.id}
+              className="ld-tr l-focus"
+              role="button"
+              tabIndex={0}
+              aria-current={p.id === page ? "page" : undefined}
+              data-on={p.id === page || undefined}
+              onClick={() => design.setPage(p.id)}
+              onDoubleClick={() => !old && setRenamingPage(p.id)}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") (e.preventDefault(), design.setPage(p.id));
+                else if (e.key === "F2" && !old) (e.preventDefault(), setRenamingPage(p.id));
+              }}
+            >
               <I.file size={14} />
               {renamingPage === p.id ? (
                 <input

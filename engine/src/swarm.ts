@@ -384,11 +384,17 @@ export type SwarmHost = {
   openWorkerSession(args: { threadId: string; member: SwarmMember; cwd: string; soul: string; resume?: string; portOffset?: number; effort?: string }): ProviderSession;
   /** The effort levels a model's tool reports for it, lowest first, and its default; undefined while its tool's list doesn't hold it. */
   modelEfforts?(modelRef: string): { efforts?: { id: string; extra?: boolean }[]; defaultEffort?: string } | undefined;
+  /** The effort of the agent the session names, which a session with no level of its own runs at (and so its workers). */
+  agentEffort?(threadId: string): string | undefined;
   isCoordinatorBusy(threadId: string): boolean;
   /** `shown`: what the person reads of the wake in the session (UserShown); the agent is sent `text`. */
   wakeCoordinator(threadId: string, text: string, shown?: UserShown): Promise<void>;
   logUsage(rec: { at: number; threadId: string; projectId: string; agent: string; provider: ProviderId; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number; seconds: number }): void;
-  approve(threadId: string, memberName: string, req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string; level?: boolean }>;
+  /**
+    `reads`: the worker only reads (SwarmMember.mode), so what would change anything is refused whatever the session's level.
+    `apart`: the folder the worker works in when it isn't the session's (its own worktree), which its asks are judged against.
+  */
+  approve(threadId: string, memberName: string, req: ApprovalRequest, signal: AbortSignal, reads?: boolean, apart?: string): Promise<{ allow: boolean; reason?: string; level?: boolean }>;
   /** Writes a native `task` item onto the thread's timeline so Fanout and AgentsSurface render the live Teamwork tree. */
   putItem?(threadId: string, item: Item): void;
   /** Current turn number for attaching Teamwork tree rows to the active turn. */
@@ -411,6 +417,8 @@ const pausedNow = (p: SwarmPause) => (p.reason === "limit" ? "Paused at the turn
 /** How long a worker's turn may run, in words: minutes, or seconds when under a minute. */
 const spanOf = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Number((ms / 1000).toFixed(2))} s`);
 
+/** Git's options for a command that must run no hook and no fsmonitor command a worker may have put in its worktree. */
+const NO_HOOKS = ["-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`, "-c", "core.fsmonitor=false"];
 const git = (cwd: string, args: string[], timeout = 60_000) => run("git", args, { cwd, timeout, input: "", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
 const clip = (s: string, max = POST_MAX) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
@@ -440,6 +448,8 @@ export class SwarmManager {
   private auditing = new Map<string, { threadId: string; writer: string }>();
   /** After dispose (the engine shutting down) a turn that ends late writes nothing and starts nothing: what is on disk stays as the engine left it. */
   private disposed = false;
+  /** Threads whose coordinator session is owed a reset at the end of the turn running when Teamwork was switched: what Teamwork was when that session was opened. */
+  private resetOwed = new Map<string, { enabled: boolean; mode: SwarmMode }>();
 
   constructor(host: SwarmHost) {
     this.host = host;
@@ -475,8 +485,9 @@ export class SwarmManager {
     try {
       const data = JSON.parse(readFileSync(sf, "utf8")) as PersistedSwarm;
       // Work found on starting up is held, never sent by itself (as the runtime holds a queue it finds): a team that was
-      // mid-work pauses until the person carries on. A pause already on disk was told before, so it is not told again.
-      const interrupted = data.active && !data.paused && data.members.some((m) => m.name !== "coordinator" && (m.state === "working" || m.state === "queued"));
+      // mid-work pauses until the person carries on. A pause already on disk was told before, so it is not told again. A
+      // coordinator cut mid-turn counts too: else the posts it was given then wait unread and the stall check wakes it alone.
+      const interrupted = data.active && !data.paused && data.members.some((m) => (m.name === "coordinator" ? m.state === "working" : m.state === "working" || m.state === "queued"));
       if (interrupted) data.paused = { reason: "restart", at: Date.now() };
       // After an engine restart, no worker process is alive in RAM: any working/queued worker becomes hibernated.
       for (const m of data.members) {
@@ -763,7 +774,7 @@ export class SwarmManager {
         this.publish(r);
       }
       this.host.patchThread(threadId, { swarm: undefined });
-      if (wasEnabled) this.host.resetCoordinatorSession?.(threadId);
+      if (wasEnabled) this.resetCoordinator(threadId, { enabled: wasEnabled, mode: wasMode });
       return null;
     }
     const swarmMode: SwarmMode = o.mode ?? t.swarm?.mode ?? "teamwork";
@@ -777,7 +788,7 @@ export class SwarmManager {
       stallMonitor: t.swarm?.stallMonitor ?? s.swarmStallMonitor !== false,
     };
     this.host.patchThread(threadId, { swarm: cfg });
-    if (!wasEnabled || wasMode !== swarmMode) this.host.resetCoordinatorSession?.(threadId);
+    if (!wasEnabled || wasMode !== swarmMode) this.resetCoordinator(threadId, { enabled: wasEnabled, mode: wasMode });
     const r = this.ensure(threadId);
     r.data.mode = swarmMode;
     r.data.active = true;
@@ -789,6 +800,30 @@ export class SwarmManager {
     if (coord) coord.model = this.host.resolveCoordinator(threadId).ref;
     this.ensureStallTimer();
     return this.publish(r);
+  }
+
+  /**
+    Resets the coordinator's session so its next turn opens with Teamwork's tools and rules as they are now. Closing the session
+    of a turn that is running would cut that turn off, so the reset waits for the turn to end (settleReset), and what Teamwork
+    was when that session opened is kept: switches made back and forth during one turn reset it once, or not at all.
+  */
+  private resetCoordinator(threadId: string, was: { enabled: boolean; mode: SwarmMode }) {
+    if (this.host.isCoordinatorBusy(threadId)) {
+      if (!this.resetOwed.has(threadId)) this.resetOwed.set(threadId, was);
+      return;
+    }
+    this.resetOwed.delete(threadId);
+    this.host.resetCoordinatorSession?.(threadId);
+  }
+
+  /** Gives the reset a switch during the turn left owed, once the thread holds no turn, if Teamwork now differs from what the session was opened with. */
+  private settleReset(threadId: string) {
+    const was = this.resetOwed.get(threadId);
+    if (!was || this.disposed || this.host.isCoordinatorBusy(threadId)) return;
+    this.resetOwed.delete(threadId);
+    const now = this.host.thread(threadId).swarm;
+    const enabled = Boolean(now?.enabled);
+    if (enabled !== was.enabled || (enabled && (now?.mode ?? "teamwork") !== was.mode)) this.host.resetCoordinatorSession?.(threadId);
   }
 
   /** Updates live RAM pool / hibernation / stall monitor settings for an active swarm. */
@@ -817,6 +852,8 @@ export class SwarmManager {
 
   /** Marks the coordinator as working or waiting and updates its read cursor. */
   onCoordinatorTurn(threadId: string, state: "working" | "waiting", skipWake = false) {
+    // Before anything below can wake the coordinator again, so the next turn opens a session with Teamwork as it now is.
+    if (state === "waiting") this.settleReset(threadId);
     const r = this.load(threadId);
     if (!r) return;
     const coord = r.data.members.find((m) => m.name === "coordinator");
@@ -1076,6 +1113,17 @@ export class SwarmManager {
     this.host.putItem(threadId, { kind: "notice", id: `sw_unlanded_${threadId}_${at}`, turn, at, text });
   }
 
+  /**
+    Forgets what the person was told once a worker named in it is landed or ended. After [done] or a Stop no check runs to
+    clear it, and a worker added again under the same name works on the same branch, so its new work would go untold. The
+    whole mark goes, so the next check at rest names whatever is still left, as it does after a land.
+  */
+  private forgetUnlanded(r: SwarmRun, name: string) {
+    if (!r.data.unlandedTold?.split(", ").some((x) => x.startsWith(`@${name} (`))) return;
+    r.data.unlandedTold = undefined;
+    this.save(r);
+  }
+
   /** Records an optional role (such as Task Interviewer) as skipped in the Teamwork tree without starting any process. */
   skipWorker(threadId: string, args: { name: string; role?: string; reason?: string; parent?: string }): { snapshot: SwarmSnapshot; member: SwarmMember } {
     const r = this.ensure(threadId);
@@ -1176,7 +1224,8 @@ export class SwarmManager {
   private effortOf(threadId: string, m: PersistedMember): string {
     const lower = this.host.settings().swarmReaderEffort === "lower" && m.mode === "read" && !m.audit && !m.lead;
     const info = this.host.modelEfforts?.(m.model);
-    return swarmWorkerEffort(this.host.thread(threadId).effort, info?.efforts, info?.defaultEffort, lower);
+    // As the runtime resolves the session's own: its level, else its named agent's.
+    return swarmWorkerEffort(this.host.thread(threadId).effort || this.host.agentEffort?.(threadId), info?.efforts, info?.defaultEffort, lower);
   }
 
   /** Live workers on the roster: the coordinator, killed and skipped members don't count. */
@@ -1197,7 +1246,6 @@ export class SwarmManager {
     args: { name: string; role?: string; model?: string; workspace?: SwarmWorkspace; mode?: "read" | "write"; channels?: string[]; brief: string; parent?: string; canDelegate?: boolean; fork?: string; audit?: boolean; of?: string },
   ): Promise<{ snapshot: SwarmSnapshot; member: SwarmMember; note?: string }> {
     const r = this.ensure(threadId);
-    r.data.active = true;
     const name = validWorkerName(args.name);
     if (!name) throw new Error("Worker name must be 1–24 lowercase letters, digits, - or _, and cannot be reserved (all, coordinator, you, monitor, system).");
     const existing = r.data.members.find((m) => m.name === name);
@@ -1238,9 +1286,12 @@ export class SwarmManager {
     let worktreePath: string | undefined;
     let portOffset: number | undefined;
     let note: string | undefined;
+    // What this add made itself, and so takes away again if the team is gone by the time it is made.
+    let madeWorktree = false;
+    let madeBranch = false;
+    const repo = this.cwdOf(threadId);
 
     if (workspace === "share") {
-      const repo = this.cwdOf(threadId);
       if (await isRepo(repo)) {
         const short = threadId.replace(/[^a-zA-Z0-9]/g, "").slice(-6) || "s";
         branch = `swarm/${short}-${name}`;
@@ -1258,6 +1309,8 @@ export class SwarmManager {
             await submodules(wtPath).catch(() => null);
             worktreePath = wtPath;
             portOffset = portOffsetFor(`${threadId}:${name}`);
+            madeWorktree = true;
+            madeBranch = !hasBranch;
           }
         } else {
           worktreePath = wtPath;
@@ -1268,6 +1321,14 @@ export class SwarmManager {
         note = "Folder is not a git repository; running on shared folder with serialized writes.";
       }
     }
+
+    // Teamwork turned off while the worktree was being made (or before this add's turn came) leaves no team for the worker:
+    // added now, its brief would set the team active again and run it in a session that has Teamwork off.
+    if (this.disposed || this.runs.get(threadId) !== r || !this.host.thread(threadId).swarm?.enabled) {
+      if (madeWorktree && worktreePath && !(await removeWorktree(repo, worktreePath).catch(() => "kept")) && branch && madeBranch) await git(repo, ["branch", "-d", "--", branch]);
+      throw new Error(`Teamwork was turned off while @${name} was being added, so it wasn't added.`);
+    }
+    r.data.active = true;
 
     const member: PersistedMember = {
       name,
@@ -1561,6 +1622,7 @@ export class SwarmManager {
     m.state = "killed";
     m.rssMb = 0;
     m.now = undefined;
+    this.forgetUnlanded(r, name);
     this.post(threadId, { from: "system", to: [], channel: "main", kind: "system", text: `Ended @${name}${keptNote}.` });
     this.pumpQueue(threadId);
     return this.publish(r);
@@ -1583,20 +1645,23 @@ export class SwarmManager {
     if (!existsSync(wt)) throw new Error(`Worktree for @${name} is no longer on disk (${wt}).`);
 
     // Stage and commit any remaining uncommitted edits inside the worker's own branch so nothing is lost on merge.
-    const st = await git(wt, ["status", "--porcelain"]);
+    // With no hooks: a repository's hooks folder can be one in its tree (husky's core.hooksPath), which the worker could edit in
+    // its worktree, and landing would then run what it wrote, outside its tool's sandbox and level, as the person pressed Land.
+    const st = await git(wt, [...NO_HOOKS, "status", "--porcelain"]);
     if (st.code === 0 && st.stdout.trim()) {
-      await git(wt, ["add", "-A"]);
-      const commit = await git(wt, ["commit", "-m", `Swarm @${name}: ${m.role}`]);
+      await git(wt, [...NO_HOOKS, "add", "-A"]);
+      const commit = await git(wt, [...NO_HOOKS, "commit", "--no-verify", "-m", `Swarm @${name}: ${m.role}`]);
       if (commit.code !== 0) throw new Error(`Could not commit @${name}'s worktree changes: ${(commit.stderr || commit.stdout).trim()}`);
     }
 
-    const merged = await git(repo, ["merge", "--no-edit", m.branch]);
+    const merged = await git(repo, [...NO_HOOKS, "merge", "--no-edit", "--no-verify", m.branch]);
     if (merged.code !== 0) {
       await git(repo, ["merge", "--abort"]).catch(() => {});
       throw new Error(`Merge conflict landing ${m.branch} into the session checkout. Resolve or inspect ${wt} directly: ${(merged.stderr || merged.stdout).trim()}`);
     }
 
     m.landed = true;
+    this.forgetUnlanded(r, name);
     const pruned = await removeWorktree(repo, wt).catch(() => null);
     if (!pruned) m.worktreePath = undefined;
     const summary = `Landed ${m.branch} into the session checkout${pruned ? ` (worktree kept: ${pruned})` : " and pruned its worktree"}.`;
@@ -2002,8 +2067,17 @@ export class SwarmManager {
       },
       reasoning: () => {},
       tool: (u) => {
+        // A turn already cut (the cap, a Stop, a swap) whose tool carries on regardless writes no new steps and no line: the next
+        // turn's are the ones shown. A step it already showed may still settle, or it would spin as running for good.
         const step: AgentStep = { title: u.title || u.tool, toolKind: u.toolKind, status: u.status === "stopped" ? "failed" : u.status, at: Date.now(), ...(u.path ? { path: u.path } : {}) };
         const idx = stepKeys.get(u.key);
+        if (abort.signal.aborted) {
+          if (idx === undefined || idx >= m.steps!.length || step.status === "running") return;
+          m.steps![idx] = { ...m.steps![idx], status: step.status };
+          this.syncMemberItem(r, m);
+          this.host.emit({ type: "swarm.changed", threadId, snapshot: this.snapshotOf(r) });
+          return;
+        }
         if (idx === undefined) {
           stepKeys.set(u.key, m.steps!.length);
           m.steps!.push(step);
@@ -2017,7 +2091,8 @@ export class SwarmManager {
         this.host.emit({ type: "swarm.changed", threadId, snapshot: this.snapshotOf(r) });
       },
       plan: () => {},
-      approve: (req, sig) => this.host.approve(threadId, m.name, req, sig),
+      // A worker in its own worktree has its asks judged there: a write into the person's checkout is outside its folder.
+      approve: (req, sig) => this.host.approve(threadId, m.name, req, sig, m.mode === "read", cwd === this.cwdOf(threadId) ? undefined : cwd),
       ask: async (qs) => Object.fromEntries(qs.map((q) => [q.question, NOBODY])),
       propose: async () => ({ approve: false, note: "Swarm workers do not propose interactive plans: post to @coordinator via swarm_post." }),
       usage: (u, total) => {
@@ -2167,7 +2242,9 @@ export class SwarmManager {
     const curLive = this.live.get(k) === lw ? lw : undefined;
     if (curLive) curLive.working = false;
     if (stateNow() === "working") {
-      const shouldHibernateNow = r.data.hibernateSec <= 0 || r.queue.length > 0;
+      // A turn cut at the cap may still be inside its tool, which didn't heed the abort: its session is closed rather than
+      // kept warm, so a mention can't start a second turn on it while the first runs.
+      const shouldHibernateNow = r.data.hibernateSec <= 0 || r.queue.length > 0 || timedOut;
       if (shouldHibernateNow) {
         if (curLive) this.closeLiveWorker(threadId, name, false);
         m.state = "hibernated";
@@ -2351,26 +2428,30 @@ export class SwarmManager {
   }
 
   /** Cleans up all active swarm processes and timers when the engine shuts down. */
-  dispose() {
+  /** Closes every worker's tool; settles once they have all closed, for an engine that quits and must leave none running. */
+  dispose(): Promise<void> {
     this.disposed = true;
     if (this.stallTimer) {
       clearInterval(this.stallTimer);
       this.stallTimer = undefined;
     }
+    const closing: Promise<unknown>[] = [];
     for (const lw of [...this.live.values()]) {
       if (lw.hibernateTimer) clearTimeout(lw.hibernateTimer);
       lw.abort?.abort();
       try {
-        void lw.session.close();
+        closing.push(Promise.resolve(lw.session.close()));
       } catch {}
     }
     this.live.clear();
+    return Promise.allSettled(closing).then(() => undefined);
   }
 
   /** Deletes persisted swarm files when a thread is permanently removed. */
   forgetThread(threadId: string) {
     this.stopAllWorkers(threadId, true);
     this.runs.delete(threadId);
+    this.resetOwed.delete(threadId);
     rmSync(this.dirOf(threadId), { recursive: true, force: true });
   }
 }

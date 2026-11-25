@@ -5,7 +5,7 @@
 */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -1043,6 +1043,29 @@ describe("Swarm pauses, restarts and failures", () => {
     }
   });
 
+  it("After a restart with only the coordinator mid-turn and a question unread, the team pauses and the coordinator isn't woken by itself.", async () => {
+    const first = makeHarness({ onWorkerTurn: async ({ name, swarm }) => void swarm.post(TID, { from: name, text: "@coordinator report from a" }) });
+    await first.swarm.addWorker(TID, { name: "a", workspace: "inherit", mode: "read", brief: "Audit" });
+    await waitFor(() => memberOf(first.swarm, "a")?.state === "hibernated");
+    await sleep(30);
+    first.swarm.onCoordinatorTurn(TID, "working");
+    first.setCoordBusy(true);
+    first.swarm.post(TID, { from: "a", text: "[question] @coordinator which file?" });
+    first.swarm.dispose();
+
+    const second = makeHarness({ home: first.home, enable: false, onWorkerTurn: async () => {} });
+    try {
+      assert.equal(second.swarm.snapshot(TID)!.paused?.reason, "restart");
+      assert.equal(second.swarm.checkStall(TID), null, "the stall check doesn't ping a paused team");
+      await sleep(30);
+      assert.deepEqual(second.coordWakes, [], "the coordinator isn't woken by itself");
+      second.swarm.resume(TID);
+      await waitFor(() => second.coordWakes.length === 1);
+    } finally {
+      second.swarm.dispose();
+    }
+  });
+
   it("A worker cut off at the turn cap tells its parent it ran out of time, quoting what it had said.", async () => {
     const h = makeHarness({
       onWorkerTurn: async ({ sink, signal }) => {
@@ -1062,6 +1085,41 @@ describe("Swarm pauses, restarts and failures", () => {
       await sleep(150);
       assert.equal(h.swarm.snapshot(TID)!.posts.filter((p) => p.from === "a").length, 1, "it doesn't wake itself");
     } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A worker cut at the turn cap by a tool that ignores the abort is closed, not kept warm, and the cut turn's late steps don't change its line.", async () => {
+    let n = 0;
+    let release!: () => void;
+    const hung = new Promise<void>((r) => (release = r));
+    const h = makeHarness({
+      hibernateSec: 30,
+      onWorkerTurn: async ({ sink }) => {
+        n++;
+        if (n > 1) return;
+        sink.tool({ key: "t1", tool: "bash", toolKind: "exec", title: "Running first command", status: "running" });
+        await hung;
+        sink.tool({ key: "t1", tool: "bash", toolKind: "exec", title: "Running first command", status: "done" });
+        sink.tool({ key: "t2", tool: "bash", toolKind: "exec", title: "Late step from the cut turn", status: "running" });
+      },
+    });
+    h.swarm.turnMs = 60;
+    h.swarm.abortGraceMs = 20;
+    try {
+      await h.swarm.addWorker(TID, { name: "w", workspace: "inherit", mode: "read", brief: "Do it" });
+      await waitFor(() => memberOf(h.swarm, "w")?.state === "hibernated" || memberOf(h.swarm, "w")?.state === "waiting");
+      assert.equal(memberOf(h.swarm, "w")?.state, "hibernated", "a hung session isn't left warm for the next mention");
+      assert.equal(h.getOpenCount(), 0, "its tool's process is closed");
+      release();
+      await sleep(20);
+      assert.notEqual(memberOf(h.swarm, "w")?.now, "Late step from the cut turn");
+      const item = h.items.get(memberOf(h.swarm, "w")!.itemId!);
+      assert.ok(item?.kind === "tool" && !item.agent?.steps?.some((s) => s.title === "Late step from the cut turn"), "no step is added by a turn already cut");
+      const settled = h.items.get(memberOf(h.swarm, "w")!.itemId!);
+      assert.equal(settled?.kind === "tool" ? settled.agent?.steps?.find((s) => s.title === "Running first command")?.status : undefined, "done", "a step the cut turn had running stays running for good");
+    } finally {
+      release();
       h.swarm.dispose();
     }
   });
@@ -1992,6 +2050,18 @@ describe("Swarm reader model and effort", () => {
     }
   });
 
+  it("A worker in a session with no effort of its own runs at its named agent's, as the session does.", async () => {
+    const h = readerHarness();
+    h.thread.effort = undefined;
+    (h.swarm as unknown as { host: SwarmHost }).host.agentEffort = () => "high";
+    try {
+      await h.swarm.addWorker(TID, { name: "w", workspace: "inherit", mode: "write", brief: "Write" });
+      assert.equal(memberOf(h.swarm, "w")?.effort, "high");
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
   it("A reader takes the worker default when the reader model's tool is not ready.", async () => {
     const h = readerHarness({ notReady: ["codex:gpt-6.1-mini"] });
     try {
@@ -2592,6 +2662,199 @@ describe("Swarm work not in the checkout yet", () => {
       assert.deepEqual(unlandedNotices(second), []);
     } finally {
       second.swarm.dispose();
+    }
+  });
+
+  for (const how of ["landed", "ended"] as const) {
+    it(`A worker ${how} after [done] and added again under its name on the same branch is told of when it leaves work there again.`, async () => {
+      // Each turn writes something new, so the second @w1 leaves work its branch doesn't hold yet.
+      let turns = 0;
+      const h = makeHarness({
+        gitRepo: true,
+        onCoordinatorWake: (swarm) => coordinatorTurn(swarm),
+        onWorkerTurn: async ({ name, cwd, swarm }) => {
+          writeFileSync(join(cwd, `${name}.txt`), `work ${++turns} of ${name}\n`);
+          swarm.post(TID, { from: name, text: `@coordinator Finished ${name}.` });
+        },
+      });
+      h.settings.swarmAutoPost = false;
+      try {
+        await writer(h, "w1");
+        await settled(h);
+        assert.equal(unlandedNotices(h).length, 1);
+        h.swarm.onCoordinatorTurn(TID, "working");
+        h.swarm.post(TID, { from: "coordinator", text: "[done] w1 ready to land" });
+        h.swarm.onCoordinatorTurn(TID, "waiting", true);
+        await settled(h);
+        if (how === "landed") await h.swarm.landWorker(TID, "w1");
+        h.swarm.onCoordinatorTurn(TID, "working");
+        await h.swarm.killWorker(TID, "w1");
+        const again = await writer(h, "w1");
+        h.swarm.onCoordinatorTurn(TID, "waiting", true);
+        await settled(h);
+        assert.deepEqual(unlandedNotices(h).slice(1), [`@w1's work is on branch ${again.branch}, not in your checkout yet. Land it from the Agents panel (Worktrees).`]);
+      } finally {
+        h.swarm.dispose();
+      }
+    });
+  }
+});
+
+describe("Swarm switched while it is at work", () => {
+  const withResets = (h: ReturnType<typeof makeHarness>) => {
+    const resets: string[] = [];
+    (h.swarm as unknown as { host: SwarmHost }).host.resetCoordinatorSession = (tid) => resets.push(tid);
+    return resets;
+  };
+
+  it("Turning Teamwork off while the coordinator's turn runs leaves that turn's session open and resets it once, when the turn ends.", () => {
+    const h = makeHarness({ onWorkerTurn: async () => {} });
+    const resets = withResets(h);
+    try {
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: false });
+      assert.equal(h.thread.swarm, undefined);
+      assert.deepEqual(resets, []);
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.deepEqual(resets, [TID]);
+      h.swarm.onCoordinatorTurn(TID, "working");
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.deepEqual(resets, [TID]);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("Turning Teamwork on or switching its mode while the coordinator's turn runs takes effect from the next turn, with one reset each.", () => {
+    const h = makeHarness({ onWorkerTurn: async () => {} });
+    const resets = withResets(h);
+    try {
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: true, mode: "swarm" });
+      assert.equal(h.thread.swarm?.mode, "swarm");
+      assert.deepEqual(resets, []);
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.deepEqual(resets, [TID]);
+
+      h.swarm.enable(TID, { enabled: false });
+      assert.equal(resets.length, 2);
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: true, mode: "teamwork" });
+      assert.equal(h.thread.swarm?.enabled, true);
+      assert.equal(resets.length, 2);
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.equal(resets.length, 3);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("Turning Teamwork on and off again in one turn ends off with no reset, and off and on again in another mode ends on in that mode with one.", () => {
+    const h = makeHarness({ onWorkerTurn: async () => {} });
+    h.swarm.enable(TID, { enabled: false });
+    const resets = withResets(h);
+    try {
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: true });
+      h.swarm.enable(TID, { enabled: false });
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.equal(h.thread.swarm, undefined);
+      assert.deepEqual(resets, []);
+
+      h.swarm.enable(TID, { enabled: true, mode: "teamwork" });
+      assert.equal(resets.length, 1);
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: false });
+      h.swarm.enable(TID, { enabled: true, mode: "swarm" });
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      // TypeScript keeps it narrowed to undefined from the check above, not seeing enable change it.
+      assert.equal((h.thread as Thread).swarm?.mode, "swarm");
+      assert.equal(resets.length, 2);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A turn that ends while another hold of the thread still runs keeps the reset owed until the thread is free.", () => {
+    const h = makeHarness({ onWorkerTurn: async () => {} });
+    const resets = withResets(h);
+    try {
+      h.setCoordBusy(true);
+      h.swarm.enable(TID, { enabled: false });
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.deepEqual(resets, []);
+      h.setCoordBusy(false);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      assert.deepEqual(resets, [TID]);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  const addWhileTurnedOff = async (delayMs: number | null) => {
+    let turns = 0;
+    const h = makeHarness({ gitRepo: true, onWorkerTurn: async () => void turns++ });
+    try {
+      const adding = h.swarm.addWorker(TID, { name: "w1", workspace: "share", mode: "write", brief: "Write the parser." });
+      if (delayMs !== null) await sleep(delayMs);
+      h.swarm.enable(TID, { enabled: false });
+      await assert.rejects(adding, /Teamwork was turned off/);
+      await sleep(150);
+      assert.equal(turns, 0);
+      assert.equal(memberOf(h.swarm, "w1"), undefined);
+      assert.equal(h.swarm.snapshot(TID)!.active, false);
+      assert.equal(git(h.project, ["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).length, 1);
+      assert.equal(git(h.project, ["branch", "--list", "swarm/*"]), "");
+    } finally {
+      h.swarm.dispose();
+    }
+  };
+
+  it("A worker added while Teamwork is being turned off is not added, never runs, and leaves no worktree or branch behind.", () => addWhileTurnedOff(3));
+
+  it("A worker whose add was waiting its turn when Teamwork was turned off is not added and never runs.", () => addWhileTurnedOff(null));
+});
+
+describe("Landing a worker's worktree", () => {
+  it("Landing runs none of the git hooks a worker could have written in its worktree, as a repository's own hooks folder (husky's core.hooksPath) would.", async () => {
+    const project = tempDir("liner-swarm-hooks-");
+    const ran = tempDir("liner-swarm-hooks-ran-");
+    git(project, ["init", "-b", "main"]);
+    git(project, ["config", "user.email", "test@liner.local"]);
+    git(project, ["config", "user.name", "Liner Test"]);
+    git(project, ["config", "core.hooksPath", ".hooks"]);
+    mkdirSync(join(project, ".hooks"));
+    writeFileSync(join(project, ".hooks", "pre-commit"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(project, ".hooks", "post-merge"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(join(project, "README.md"), "# Demo\n");
+    git(project, ["add", "."]);
+    git(project, ["commit", "-m", "Initial commit"]);
+    const h = makeHarness({
+      project,
+      maxActive: 2,
+      hibernateSec: 0,
+      onWorkerTurn: async ({ name, cwd, swarm }) => {
+        // Edits inside its own worktree, which its tool lets it make: the hooks folder is just files there.
+        writeFileSync(join(cwd, ".hooks", "pre-commit"), `#!/bin/sh\ntouch ${JSON.stringify(join(ran, "pre-commit"))}\n`, { mode: 0o755 });
+        writeFileSync(join(cwd, ".hooks", "post-merge"), `#!/bin/sh\ntouch ${JSON.stringify(join(ran, "post-merge"))}\n`, { mode: 0o755 });
+        writeFileSync(join(cwd, "feature.txt"), "hello\n");
+        swarm.post("th_swarm_1", { from: name, text: "@coordinator Done." });
+      },
+    });
+    try {
+      await h.swarm.addWorker("th_swarm_1", { name: "writer", workspace: "share", mode: "write", brief: "Add feature.txt" });
+      await waitFor(() => h.swarm.snapshot("th_swarm_1")!.members.find((m) => m.name === "writer")?.state === "hibernated");
+      await h.swarm.landWorker("th_swarm_1", "writer");
+      assert.equal(readFileSync(join(project, "feature.txt"), "utf8"), "hello\n", "the work landed");
+      assert.equal(existsSync(join(ran, "pre-commit")), false, "the worker's pre-commit didn't run at the commit landing makes");
+      assert.equal(existsSync(join(ran, "post-merge")), false, "nor its post-merge at the merge into the checkout");
+    } finally {
+      h.swarm.dispose();
     }
   });
 });

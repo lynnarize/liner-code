@@ -16,3 +16,11 @@ export function moreFilesSaid(n: number, turn: boolean, pick: string | null) {
 
 /** The lines a question is on, as its chip says them: "Line 6", "Lines 6–8". A range of one line is that line. */
 export const linesSaid = (a: { line: number; endLine?: number }) => (a.endLine && a.endLine !== a.line ? `Lines ${a.line}–${a.endLine}` : `Line ${a.line}`);
+
+/** Where split view's changes are, for Previous and Next: CodeDiff draws each change as pairs of lines, the first pair of a change carrying its index. */
+export const SPLIT_CHANGE = ".l-cdiff__pair[data-change]";
+/**
+  The line number pressed in split view to ask about that line: the new file's, on the right of each pair, as the
+  unified view asks only by the new file's lines. The left holds the old file's numbers, which would anchor the wrong line.
+*/
+export const SPLIT_LINE = ".l-cdiff__pair > .l-cdiff__line:last-child > .l-cdiff__n";

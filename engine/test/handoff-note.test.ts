@@ -83,6 +83,34 @@ test("The first ask, the plan left open and the files changed outlive the turns 
   assert.doesNotMatch(out, /not undone: [^\n]*undone\.ts/, "a change since undone isn't said to stand");
 });
 
+test("A sidekick's copy keeps the newest turn, cut to fit, when the first ask, plan and files take most of its budget, and the note stays in that budget", () => {
+  const items: Item[] = [
+    { kind: "user", id: "u1", turn: 1, at: 1, text: "F".repeat(1700) },
+    { kind: "text", id: "x1", turn: 1, at: 1, text: "a".repeat(500), streaming: false },
+    { kind: "plan", id: "p1", turn: 1, at: 1, entries: Array.from({ length: 40 }, (_, i) => ({ title: `step number ${i} do the thing well`, status: "pending" as const })) },
+    { kind: "checkpoint", id: "c1", turn: 1, at: 1, files: Array.from({ length: 40 }, (_, i) => ({ path: `src/${i}/`.padEnd(70, "x"), status: "added" as const, added: 1, removed: 0, rel: true })), from: "f", to: "t" },
+    ...[2, 3].flatMap((turn): Item[] => [
+      { kind: "user", id: `u${turn}`, turn, at: turn, text: `q${turn}` },
+      { kind: "text", id: `x${turn}`, turn, at: turn, text: `short answer ${turn}`, streaming: false },
+    ]),
+    { kind: "user", id: "u4", turn: 4, at: 4, text: "N".repeat(8000) },
+    { kind: "text", id: "x4", turn: 4, at: 4, text: "newest answer", streaming: false },
+  ];
+  const out = handoff(items, "fork", 12000);
+  assert.match(out, /You were asked: NNNN/, "the newest ask is carried over");
+  assert.match(out, /cut here: it was too long to carry over/);
+  const body = out.slice(out.indexOf("<earlier>\n") + 10, out.indexOf("\n</earlier>")).replace(/^\(\d+ older turns? left out\)\n\n/m, "");
+  assert.ok(body.length <= 12000, `the note is ${body.length} long, over its budget`);
+  // Hundreds of short turns: the blank line between each is counted too.
+  const many: Item[] = Array.from({ length: 2000 }, (_, i): Item[] => [
+    { kind: "user", id: `mu${i}`, turn: i + 1, at: i, text: `q${i}` },
+    { kind: "text", id: `mx${i}`, turn: i + 1, at: i, text: `a${i}`, streaming: false },
+  ]).flat();
+  const note = handoff(many, "fork", 24000);
+  const inner = note.slice(note.indexOf("<earlier>\n") + 10, note.indexOf("\n</earlier>")).replace(/\(\d+ older turns? left out\)\n\n/, "").replace(/The first ask, which started it: q0\n\n/, "");
+  assert.ok(inner.length <= 24000 - "The first ask, which started it: q0".length - 2, `the turns run to ${inner.length}, past the room left for them`);
+});
+
 test("A failed command hands on its last lines, and a turn you stopped says so", () => {
   const items: Item[] = [
     { kind: "user", id: "u1", turn: 1, at: 1, text: "run the tests" },
@@ -92,4 +120,103 @@ test("A failed command hands on its last lines, and a turn you stopped says so",
   const out = handoff(items, "switch");
   assert.match(out, /Run npm test, failed: …1 passing\nError: tide\.test\.ts expected 4 to equal 5\)/);
   assert.match(out, /The person stopped this turn before it finished/);
+});
+
+/** Stands in for a tool whose turns can fail before it keeps a session, as one not signed in does; the rest keep `id`. */
+function fakeTool(id: "codex" | "claude", fails: number[] = []) {
+  const texts: string[] = [];
+  const p: Provider = {
+    id,
+    detect: async () => ready[id === "claude" ? 0 : 1],
+    open: () =>
+      ({
+        close: () => {},
+        turn: async (text: string, sink: { session: (s: string) => void }) => {
+          texts.push(text);
+          if (fails.includes(texts.length)) throw new Error("Not signed in.");
+          sink.session(`${id}-sess`);
+        },
+      }) as unknown as ProviderSession,
+  };
+  const saved = providers[id];
+  providers[id] = p;
+  return { texts, restore: () => (providers[id] = saved) };
+}
+
+async function settle(store: Store) {
+  for (let i = 0; i < 200 && store.thread("t").status === "running"; i++) await new Promise((r) => setTimeout(r, 5));
+}
+
+function opusAnswered(store: Store) {
+  store.putItem("t", { kind: "turn", id: "m1", turn: 1, at: 1, agent: "forge", model: "claude:claude-opus-5-5", status: "done" });
+  store.putItem("t", { kind: "user", id: "u1", turn: 1, at: 1, text: "make the tide chart scroll" });
+  store.putItem("t", { kind: "text", id: "x1", turn: 1, at: 1, text: "It scrolls now, the axis stays pinned.", streaming: false });
+}
+
+const switches = (store: Store) => store.timeline("t").flatMap((x) => (x.kind === "notice" && x.handoff ? [x.handoff] : []));
+
+test("A switch whose first turn fails before the new tool keeps a session still says it came from Opus on the next turn, and shows the switch once", async () => {
+  const { texts, restore } = fakeTool("codex", [1]);
+  try {
+    const { store, runtime } = session({ model: "codex:gpt-6.1-sol", effort: "medium", providerSession: "claude:old" });
+    opusAnswered(store);
+    await runtime.send("t", "match the colours too");
+    await settle(store);
+    assert.equal(store.thread("t").providerSession, "claude:old", "the failed turn kept no session");
+    await runtime.send("t", "try again");
+    await settle(store);
+    assert.equal(texts.length, 2);
+    assert.match(texts[1], /taking over this conversation from Opus 5\.5/, "not from GPT, which never answered");
+    assert.doesNotMatch(texts[1], /from GPT-6\.1-Sol/);
+    const rows = switches(store);
+    assert.equal(rows.length, 1, "one switch, one row");
+    assert.equal(rows[0].from, "claude:claude-opus-5-5");
+    assert.equal(rows[0].to, "codex:gpt-6.1-sol");
+    assert.ok(texts[1].startsWith(rows[0].note), "the note shown is the note last sent");
+  } finally {
+    restore();
+  }
+});
+
+test("A /compact sent right after a switch leaves the next turn's switch from Opus, not from the model it moved to", async () => {
+  const { texts, restore } = fakeTool("codex");
+  try {
+    const { store, runtime } = session({ model: "codex:gpt-6.1-sol", effort: "medium", providerSession: "claude:old" });
+    opusAnswered(store);
+    await runtime.send("t", "/compact");
+    await settle(store);
+    await runtime.send("t", "match the colours too");
+    await settle(store);
+    assert.match(texts.at(-1)!, /taking over this conversation from Opus 5\.5/);
+    const rows = switches(store);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].from, "claude:claude-opus-5-5");
+  } finally {
+    restore();
+  }
+});
+
+test("Switching again after the session went back to its first tool shows the new switch as a row of its own", async () => {
+  const codex = fakeTool("codex", [1]);
+  const claude = fakeTool("claude");
+  try {
+    const { store, runtime } = session({ model: "codex:gpt-6.1-sol", effort: "medium", providerSession: "claude:old" });
+    opusAnswered(store);
+    await runtime.send("t", "match the colours too");
+    await settle(store);
+    store.patchThread("t", { model: "claude:claude-opus-5-5" });
+    await runtime.send("t", "you do it then");
+    await settle(store);
+    store.patchThread("t", { model: "codex:gpt-6.1-sol" });
+    await runtime.send("t", "now GPT again");
+    await settle(store);
+    assert.equal(codex.texts.length, 2);
+    assert.match(codex.texts[1], /taking over this conversation from Opus 5\.5/);
+    const rows = switches(store);
+    assert.equal(rows.length, 2, "the switch made again is a switch of its own");
+    assert.equal(rows[1].from, "claude:claude-opus-5-5");
+  } finally {
+    claude.restore();
+    codex.restore();
+  }
 });

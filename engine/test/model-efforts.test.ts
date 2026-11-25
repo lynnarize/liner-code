@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileS
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ModelInfo, ProviderInfo, Thread } from "../../contracts/src/index.ts";
+import { emptyUsage } from "../../contracts/src/index.ts";
 import { createApi } from "../src/api.ts";
 import { opencode } from "../src/providers/acp.ts";
 import { claude, sdk } from "../src/providers/claude.ts";
@@ -510,4 +511,20 @@ test("An OpenCode model list is ended, with its children, when the look that ask
   assert.equal(pids.length, 2);
   await gone(pids);
   assert.deepEqual(pids.filter(alive), [], "both ended");
+});
+
+test("A Teamwork worker in a session that names an agent and sets no effort runs at the agent's effort", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lc-efforts-agent-"));
+  const store = new Store(join(dir, "home"));
+  store.setAgents([{ id: "forge", name: "Forge", role: "Builder", glyph: "spark", specialty: "custom", model: "codex:gpt", effort: "high", soul: "" }]);
+  store.putProject({ id: "p", name: "p", path: dir, git: false, createdAt: Date.now() });
+  store.putThread({ id: "t", projectId: "p", title: "Work", agent: "forge", status: "idle", access: "full", turns: 1, usage: emptyUsage(), createdAt: Date.now(), updatedAt: Date.now() });
+  const runtime = new Runtime(store, { PATH: "/nonexistent", HOME: dir } as NodeJS.ProcessEnv);
+  try {
+    runtime.providerInfo = [tool("codex", [{ id: "gpt", label: "GPT", description: "", efforts: ["low", "high"].map((x) => effortOf(x)) }])];
+    const swarm = runtime.swarm as unknown as { effortOf(threadId: string, m: { model: string; mode: string }): string };
+    assert.equal(swarm.effortOf("t", { model: "codex:gpt", mode: "write" }), "high");
+  } finally {
+    runtime.shutdown();
+  }
 });

@@ -78,7 +78,7 @@ test("A menu's foot line after a rule takes that rule rather than drawing a seco
 
 test("The keyboard settings name what the keys open now", () => {
   const keys = src("keymap.ts");
-  assert.match(keys, /session: "Open the Session popup"/);
+  assert.match(keys, /session: "Show or hide the Session card"/);
   assert.match(keys, /"Pin, snooze, settle"/);
   assert.match(keys, /"Find in the session, or in Changes"/);
   assert.ok(!/mark done|in the diff/.test(keys), "an old name is left in the keyboard settings");

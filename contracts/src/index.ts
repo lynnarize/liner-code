@@ -893,6 +893,17 @@ export type PersistedGrant = { kind: GrantKind; label: string; parts: string[]; 
 type Base = { id: string; turn: number; at: number };
 /** A move to another tool, as the timeline shows it (the notice that carries it). */
 export type Handoff = { from?: string; to: string; effort?: Effort; note: string };
+/**
+  The model a session moves off as it switches to tool `to`: the newest turn on the tool its saved session is from (`held`,
+  a providerSession such as "codex:th-1"), else the newest on any tool but `to`. Not just the newest turn: a first turn on the
+  new tool that failed, or was a /compact, before that tool kept a session leaves the switch still to make, and that turn is
+  the new model's own.
+*/
+export function switchedFrom(items: Item[], to: string, held?: string) {
+  const tool = held ? held.slice(0, held.indexOf(":") + 1) : "";
+  const turns = items.filter((x): x is Extract<Item, { kind: "turn" }> => x.kind === "turn" && !x.model.startsWith(`${to}:`));
+  return (tool && turns.findLast((x) => x.model.startsWith(tool))?.model) || turns.at(-1)?.model;
+}
 export type Item =
   | (Base & {
       kind: "turn";
@@ -1851,7 +1862,7 @@ export type Rpc = {
   /** Each signed-in plan's windows: how much is used and when it resets. */
   "usage.limits": [{ fresh?: boolean }, { tools: ToolLimits[] }];
   /** What `/` and `$` offer in the composer, for the tool an agent runs on in a project. */
-  "agent.commands": [{ projectId: string; agent: string; threadId?: string }, { commands: CommandInfo[]; skills: SkillInfo[] }];
+  "agent.commands": [{ projectId: string; agent: string; threadId?: string; /** False from a box that never takes a team (a side chat before its first turn has no thread to say so). */ team?: boolean }, { commands: CommandInfo[]; skills: SkillInfo[] }];
   /** The skill.md files an agent can be given: yours (Claude Code's and Codex's skills folders) and, with a project, its own. */
   "skills.list": [{ projectId?: string }, { yours: SkillInfo[]; project: SkillInfo[] }];
   "keys.set": [{ provider: string; key: string | null }, string[]];

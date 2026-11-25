@@ -72,7 +72,7 @@ function useItemsShown(threadId: string, visible: boolean) {
   return items;
 }
 const NO_ITEMS: Item[] = [];
-/** The Session popup's inside (Switcher.tsx, from Session.tsx): what it reads of the timeline, as the surfaces here read theirs. */
+/** The Session card's inside (Switcher.tsx, from Session.tsx): what it reads of the timeline, as the surfaces here read theirs. */
 export const SessionTab = memo(function SessionTab({ thread, visible, onShowChange }: { thread: Thread; visible: boolean; onShowChange: (path: string) => void }) {
   const items = useItemsShown(thread.id, visible);
   return (

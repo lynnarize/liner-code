@@ -21,6 +21,7 @@ import { PaneCheck, PaneField, PaneNote, PANE_TOOL } from "../Pane";
 import { MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "../ui";
 import { FindingPanel } from "./FindingPanel";
 import { act, MOCK, useFindings } from "./findings-data";
+import { pickedToAct } from "./picks";
 import { PageTop, SevMark } from "./parts";
 import { goSecurity, setFindingsFilter, setSecurityScope, useFindingsFilter, useScan, useSecurity, useSecurityPage, useSecurityProjects, useSecurityScope } from "./store";
 import { fixedAt, when } from "./when";
@@ -272,7 +273,9 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
   useEffect(() => setPickedIds(new Set()), [tab, scope.projectId, scan]);
 
   const bulkAction = async (kind: "dismiss" | "reopen", reason?: DismissReason) => {
-    const ids = [...pickedIds];
+    // Only the picked findings still shown: a pick made before the find field or a filter narrowed the list, or one whose
+    // finding left the tab since, is not acted on out of sight (picks.ts).
+    const ids = pickedToAct(pickedIds, shown);
     if (!ids.length) return;
     setBulkBusy(true);
     try {
@@ -309,6 +312,8 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
     const newest = (a: SecurityFinding, b: SecurityFinding) => b.foundAt - a.foundAt;
     return out.sort(sort === "newest" ? newest : sort === "file" ? (a, b) => (a.file ?? "~").localeCompare(b.file ?? "~") || (a.line ?? 0) - (b.line ?? 0) : (a, b) => rank(a.severity) - rank(b.severity) || newest(a, b));
   }, [list, tab, sources, sevs, looks, fixes, q, sort]);
+  // What the bulk bar counts and acts on: the picks still shown.
+  const pickedShown = pickedToAct(pickedIds, shown).length;
 
   const open = finding ? list?.find((f) => f.id === finding) : undefined;
   const at = open ? shown.findIndex((f) => f.id === open.id) : -1;
@@ -365,7 +370,7 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
   const note = list && tab === "open" && counts.open > 0 ? cameFrom(list.filter((f) => f.state === "open")) : "";
 
   return (
-    <div className="lf" data-panel={open ? "open" : undefined} data-picking={pickedIds.size > 0 || undefined}>
+    <div className="lf" data-panel={open ? "open" : undefined} data-picking={pickedShown > 0 || undefined}>
       <div className="ls-page lf-main">
         <PageTop title="Findings" sidebar={sidebar} onSidebar={onSidebar}>
           <Pop
@@ -461,9 +466,9 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
             </div>
 
             {/* Several picked: one bar for them all, drawn as the sidebar's own (lc-sb-bulk), its one action in ink. */}
-            {pickedIds.size > 0 && (
-              <div className="lc-sb-bulk l-glass lf-bulk" role="toolbar" aria-label={`${pickedIds.size} findings picked`}>
-                <span className="lc-sb-bulk-n">{pickedIds.size} picked</span>
+            {pickedShown > 0 && (
+              <div className="lc-sb-bulk l-glass lf-bulk" role="toolbar" aria-label={`${pickedShown} findings picked`}>
+                <span className="lc-sb-bulk-n">{pickedShown} picked</span>
                 <span className="lc-grow" />
                 {tab === "open" ? (
                   <Pop label="Dismiss the picked findings, and say why" menu align="end" width={240} triggerClass="lc-btn l-focus" triggerAttrs={{ "data-kind": "ink", "data-size": "sm" }} disabled={bulkBusy} trigger="Dismiss them">

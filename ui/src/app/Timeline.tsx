@@ -10,7 +10,7 @@
 */
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, PR_TEST_TOOL, BROWSER_TOOL as BROWSER, BROWSER_WORDS, bareTitle as bare, callCommand, callInput as inputOf, callPath, CANVAS_TOOL as CANVAS_STEP, canvasFrame, canvasWords, CARD_TOOLS, DESIGN_TOOLS, FRAME_FILE, frameFileName, isStepCall, KIND_WORDS, SERVER_TOOL as SERVER, serverOf, SIDEKICK_WORDS, STEP_KINDS, stepFileName, stepKind, toolNameOf, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type StepKind, type TurnPart, type PlanEntry, type Handoff, splitModel } from "@contracts";
+import { addonKey, PR_TEST_TOOL, BROWSER_TOOL as BROWSER, BROWSER_WORDS, bareTitle as bare, callCommand, callInput as inputOf, callPath, CANVAS_TOOL as CANVAS_STEP, canvasFrame, canvasWords, CARD_TOOLS, DESIGN_TOOLS, FRAME_FILE, frameFileName, isStepCall, KIND_WORDS, SERVER_TOOL as SERVER, serverOf, SIDEKICK_WORDS, STEP_KINDS, stepFileName, stepKind, toolNameOf, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type StepKind, type TurnPart, type PlanEntry, type Handoff, splitModel, switchedFrom } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -34,6 +34,7 @@ import { bridge, isNative } from "./bridge";
 import * as os from "./os";
 import { thoughtLine } from "./live-thought";
 import { levelName } from "./picker";
+import { answerOf as answerIn, OTHER, seedOf, selectedOf as selectedIn } from "./question-seed";
 import "./timeline.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -894,6 +895,7 @@ function Thought({ it }: { it: Extract<Item, { kind: "reasoning" }> }) {
   Before you send: the session's model was changed to another tool's, so your next message hands that tool the conversation
   as a note (T3 Code's "Context handoff pending", client-runtime handoff.ts resolvePendingHandoff). As the engine decides it
   (runtime.ts openSession `switched`): a saved session of another tool's. Not while a turn runs, when the row it puts says it.
+  From the model the engine names too (switchedFrom), not the newest turn, which is the new model's own when it failed.
 */
 function Ahead({ threadId, items, providers }: { threadId: string; items: Item[]; providers: ProviderInfo[] }) {
   const t = useEngine((s) => threadOf(s, threadId));
@@ -902,12 +904,13 @@ function Ahead({ threadId, items, providers }: { threadId: string; items: Item[]
   const to = threadModel(t, agents, providers);
   const { provider } = splitModel(to);
   if (provider === "demo" || t.providerSession.startsWith(`${provider}:`) || !items.some((x) => x.kind === "user" || x.kind === "text")) return null;
-  const from = items.findLast((x) => x.kind === "turn")?.model;
+  const from = switchedFrom(items, provider, t.providerSession);
   return (
     <p className="lc-notice lc-switched-ahead">
       <span>Your next message hands off</span>
       {from && <ModelTag kind={markOf(from)} label={modelLabel(from, providers)} size={14} />}
-      <span>→</span>
+      <span aria-hidden="true">→</span>
+      <span className="l-sr-only">to</span>
       <ModelTag kind={markOf(to)} label={modelLabel(to, providers)} size={14} />
       <span>with a note of everything so far</span>
     </p>
@@ -930,7 +933,8 @@ function Switched({ h, providers }: { h: Handoff; providers: ProviderInfo[] }) {
         {h.from && (
           <>
             <ModelTag kind={markOf(h.from)} label={modelLabel(h.from, providers)} size={14} />
-            <span className="lc-switched-to" aria-label="to">→</span>
+            <span className="lc-switched-to" aria-hidden="true">→</span>
+            <span className="l-sr-only">to</span>
           </>
         )}
         <ModelTag kind={markOf(h.to)} label={to} size={14} />
@@ -1828,40 +1832,12 @@ function PanelAddonCard({ threadId, it, who }: { threadId: string; it: Ask; who:
 
 /** The agent asks you to choose, one question at a time. */
 function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Item, { kind: "question" }>; who: string }) {
-  const OTHER = "Something else";
   const [at, setAt] = useState(0);
-  // Seed from persisted partial answers so reloads don't lose selections in progress.
-  const [picks, setPicks] = useState<Record<string, string[]>>(() => {
-    const init: Record<string, string[]> = {};
-    for (const q of it.questions) {
-      const saved = it.partial?.[q.question];
-      if (!saved) continue;
-      if (q.multiSelect) {
-        const known = new Set(q.options.map((o) => o.label));
-        const parts = saved.split(", ").map((s) => s.trim()).filter(Boolean);
-        init[q.question] = parts.map((p) => (known.has(p) ? p : OTHER));
-      } else {
-        const known = q.options.some((o) => o.label === saved);
-        init[q.question] = [known ? saved : OTHER];
-      }
-    }
-    return init;
-  });
-  const [other, setOther] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const q of it.questions) {
-      const saved = it.partial?.[q.question];
-      if (!saved) continue;
-      const known = new Set(q.options.map((o) => o.label));
-      if (q.multiSelect) {
-        const custom = saved.split(", ").map((s) => s.trim()).filter((p) => p && !known.has(p));
-        if (custom.length) init[q.question] = custom.join(", ");
-      } else if (!known.has(saved)) {
-        init[q.question] = saved;
-      }
-    }
-    return init;
-  });
+  // Seed from persisted partial answers so reloads don't lose selections in progress (question-seed.ts, where your own
+  // words in a multiple choice come back once, not once for each comma in them).
+  const [seed] = useState(() => seedOf(it.questions, it.partial));
+  const [picks, setPicks] = useState<Record<string, string[]>>(seed.picks);
+  const [other, setOther] = useState<Record<string, string>>(seed.other);
   if (it.state !== "asking")
     return (
       <div className="lc-answered" data-state={it.state === "answered" ? "approved" : "denied"}>
@@ -1895,16 +1871,8 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
       </div>
     );
   // A question with no predefined options defaults to free-text; otherwise require an explicit pick instead of silently choosing option 0.
-  const selectedOf = (x: (typeof it.questions)[number], map = picks): string[] => {
-    const cur = map[x.question];
-    if (cur !== undefined) return cur;
-    return x.options.length === 0 ? [OTHER] : [];
-  };
-  const answerOf = (x: (typeof it.questions)[number], map = picks, custom = other): string => {
-    const list = selectedOf(x, map);
-    const resolved = list.map((v) => (v === OTHER ? custom[x.question]?.trim() ?? "" : v)).filter(Boolean);
-    return x.multiSelect ? resolved.join(", ") : (resolved[0] ?? "");
-  };
+  const selectedOf = (x: (typeof it.questions)[number], map = picks): string[] => selectedIn(x, map);
+  const answerOf = (x: (typeof it.questions)[number], map = picks, custom = other): string => answerIn(x, map, custom);
   const persistPartial = (nextPicks: Record<string, string[]>, nextOther: Record<string, string>) => {
     const partial: Record<string, string> = {};
     for (const x of it.questions) {

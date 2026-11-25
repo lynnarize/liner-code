@@ -114,7 +114,7 @@ const OPENCODE_UNASKED = ["opencode?worktree_*", "opencode?worktree_create", "op
 /** What a Liner Security scan doesn't get of OpenCode's own (OpenOptions.scan): what reaches past the project, or spawns. */
 const OPENCODE_SCAN_DENIED = ["webfetch", "websearch", "codesearch", "task"];
 /** OpenCode 2's names for 1.x's tools, both ways: your deny under either holds under both. */
-const RENAMED: Record<string, string> = { bash: "shell", shell: "bash", task: "subagent", subagent: "task" };
+export const RENAMED: Record<string, string> = { bash: "shell", shell: "bash", task: "subagent", subagent: "task" };
 /** Liner Code's tools as OpenCode names them, its server's name and the tool's joined with _. */
 const OPENCODE_LINER = TOOLS.map((t) => `liner_${t.name}`);
 const isRules = (rule: unknown): rule is Json => typeof rule === "object" && rule !== null;
@@ -334,7 +334,7 @@ const REFUSALS = 10;
 const REFUSED = `OpenCode kept trying steps that were refused, ${REFUSALS} in this turn, so Liner Code stopped it.`;
 
 /** JSON as OpenCode's own files may write it, with comments and trailing commas; null when it won't parse. */
-function jsonc(text: string) {
+export function jsonc(text: string) {
   // Strings go first and stay whole, so a // in a URL or a comma before a } in one is left alone.
   const STRING = String.raw`"(?:[^"\\]|\\.)*"`;
   const bare = text.replace(new RegExp(`${STRING}|//[^\\n]*|/\\*[\\s\\S]*?\\*/`, "g"), (m) => (m[0] === '"' ? m : "")).replace(new RegExp(`(${STRING})|,(\\s*[}\\]])`, "g"), (_, kept?: string, end?: string) => kept ?? end ?? "");
@@ -373,7 +373,7 @@ function overlay(under: Json, over: Json) {
   counts too, under whatever `permission` says of the same name. A file that won't parse counts for
   nothing.
 */
-function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
+export function opencodeOwn(cwd: string, env: NodeJS.ProcessEnv, content: Json) {
   const { global, walk, dots } = opencodeFolders(cwd, env);
   const names = ["opencode.json", "opencode.jsonc"];
   const files = [join(global, "config.json"), ...names.map((n) => join(global, n)), ...(env.OPENCODE_CONFIG ? [env.OPENCODE_CONFIG] : []), ...walk.flatMap((d) => names.map((n) => join(d, n))), ...dots.flatMap((d) => names.map((n) => join(d, n)))];

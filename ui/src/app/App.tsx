@@ -67,7 +67,8 @@ const SecurityShell = lazyAgain(() => import("./security/Shell").then((m) => m.S
 const SecuritySide = lazyAgain(() => import("./security/Side").then((m) => m.SecuritySide));
 const DesignIntro = lazyAgain(() => import("./design/Intro").then((m) => m.DesignIntro));
 import * as os from "./os";
-import { stopShows, unreadRow } from "./row-menu";
+import { markUnread, stopShows, unreadRow } from "./row-menu";
+import { anyModal, MODAL } from "./menu-keys";
 import { toastRight } from "./toast-place";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
@@ -106,7 +107,7 @@ const AREAS: { root: string; first: string[] }[] = [
 const lastIn = new Map<number, HTMLElement>();
 const shows = (el: Element | null | undefined): el is HTMLElement => el instanceof HTMLElement && el.isConnected && el.checkVisibility();
 const focusable = (el: Element | null | undefined): el is HTMLElement => shows(el) && el.tabIndex >= 0 && !el.matches(":disabled, [aria-disabled='true']") && !el.closest("[inert]");
-const hasOpenModal = () => Boolean(document.querySelector("dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog']:not([hidden])"));
+const hasOpenModal = () => anyModal(document.querySelectorAll(MODAL));
 const areaOf = (el: Element | null) => {
   if (!el) return -1;
   let best = -1;
@@ -846,12 +847,12 @@ export function App() {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Open the Session popup" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Show the Session card" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
         { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, icon: <I.copy size={16} />, onSelect: () => copy(here.id, "the session id") },
         // A session's own rows in the words and order of its row menu in the sidebar (board RowMenu, row-menu.ts): Pin, Mark unread, Settle; Open beside, Export as Markdown; Stop it while it works, Archive.
         { id: "pin", label: here.pinned ? "Unpin" : "Pin", group: "This session", icon: <I.pin size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
-        { id: "unread", label: unreadRow(here).title, group: "This session", icon: <I.bell size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, unread: unreadRow(here).unread }) },
+        { id: "unread", label: unreadRow(here).title, group: "This session", icon: <I.bell size={16} />, onSelect: () => (markUnread(here.id, unreadRow(here).unread), void rpc("thread.update", { id: here.id, unread: unreadRow(here).unread })) },
         { id: "settle", label: "Settle", group: "This session", keywords: ["done"], icon: <I.settle size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
         { id: "beside", label: "Open beside", group: "This session", keywords: ["split", "two sessions"], icon: <I.split size={16} />, keepOpen: true, onSelect: () => setBesideOf(1) },
         {

@@ -38,8 +38,8 @@ import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
-import { wordRead } from "./kept";
-import { commandIconOf, stashKeyOf, steersHere } from "./composer-rules";
+import { draftRead, draftSaves, wordRead } from "./kept";
+import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -273,9 +273,9 @@ function CommandIcon({ name }: { name: string }) {
 
 type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$" | "#"; hint?: string; note?: string; path?: string; tag?: string; pick?: () => void };
 const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
-const commandsFor = (projectId: string, agent: string, threadId?: string) => {
-  const key = `${projectId}|${agent}`;
-  if (!commandCache.has(key)) commandCache.set(key, rpc("agent.commands", { projectId, agent, threadId }).catch(() => ({ commands: [], skills: [] })));
+const commandsFor = (projectId: string, agent: string, threadId: string | undefined, aside: boolean) => {
+  const { key, ask } = commandsAsk(projectId, agent, threadId, aside);
+  if (!commandCache.has(key)) commandCache.set(key, rpc("agent.commands", ask).catch(() => ({ commands: [], skills: [] })));
   return commandCache.get(key)!;
 };
 
@@ -334,6 +334,8 @@ export function seedComposer(key: string, text: string) {
 
 /** Files waiting to go, by draft: kept in memory, and in IndexedDB so a reload doesn't lose them (draftFiles.ts). */
 const draftFiles = new Map<string, File[]>();
+/** What a queued message carries while it's dragged to a new place: a type of its own, as text it would drop its id into the message box. */
+const QUEUED_DRAG = "application/x-liner-queued";
 const MAX_FILES = 10;
 
 /**
@@ -464,11 +466,13 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   }, []);
   // Hydrate persisted draft attachments from IndexedDB after a window reload.
   useEffect(() => {
-    if (draftFiles.has(draftKey)) return;
+    if (draftFiles.has(draftKey)) return void draftRead(draftKey);
     let live = true;
     void loadDraftFiles(draftKey).then((restored) => {
+      draftRead(draftKey);
+      // Kept in memory even when this box has gone meanwhile, so the next one to open the draft has them.
+      if (restored.length && !draftFiles.has(draftKey)) draftFiles.set(draftKey, restored);
       if (!live || !restored.length) return;
-      draftFiles.set(draftKey, restored);
       setFiles((cur) => (cur.length ? cur : restored));
     });
     return () => {
@@ -482,7 +486,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       draftFiles.set(draftKey, files);
       for (const k of draftFiles.keys()) if (draftFiles.size > MAX_DRAFTS) draftFiles.delete(k);
     } else draftFiles.delete(draftKey);
-    void saveDraftFiles(draftKey, files, MAX_DRAFTS);
+    if (draftSaves(draftKey, files)) void saveDraftFiles(draftKey, files, MAX_DRAFTS);
   }, [files, draftKey]);
   useEffect(() => {
     try {
@@ -592,18 +596,18 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       }),
     [],
   );
-  // What / and $ offer: the tool's own commands and skills, asked once per tool and folder.
+  // What / and $ offer: the tool's own commands and skills, asked once per tool, folder and thread (composer-rules.ts commandsAsk). Asked again once the list is let go, so a thread changing under an open / doesn't leave it asking.
   const who = settings.agent;
   useEffect(() => {
     if (mention?.kind !== "/" && mention?.kind !== "$") return;
     if (tools) return;
     let live = true;
-    void commandsFor(project.id, who, thread?.id).then((r) => live && setTools(r));
+    void commandsFor(project.id, who, thread?.id, aside).then((r) => live && setTools(r));
     return () => {
       live = false;
     };
-  }, [mention?.kind, project.id, who]);
-  useEffect(() => setTools(null), [project.id, who]);
+  }, [mention?.kind, project.id, who, thread?.id, aside, !tools]);
+  useEffect(() => setTools(null), [project.id, who, thread?.id, aside]);
 
   // @ looks up files as you type; / and $ filter the tool's commands and skills.
   useEffect(() => {
@@ -1145,7 +1149,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
           onDragStart={(e) => {
             setDragQueueIdx(i);
             e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", q.id);
+            e.dataTransfer.setData(QUEUED_DRAG, q.id);
           }}
           onDragOver={(e) => {
             if (dragQueueIdx === null) return;
@@ -1242,7 +1246,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
         <div className="lc-cold" role="status">
           <I.clock size={14} />
           <span className="lc-cold-t">The cache has expired: this message re-reads {compact(usage?.contextTokens ?? 0)} tokens</span>
-          {/* The Session popup's own words for the same act. */}
+          {/* The Session card's own words for the same act. */}
           <button type="button" className="lc-cold-go l-focus" onClick={compactNow}>
             Compact now
           </button>
@@ -1436,11 +1440,12 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
               )}
               {found.map((f, i) =>
                 f.kind === "/" ? (
-                  // A command as Antigravity's list has it: its icon, its name without the slash, what it does in grey; Liner Code's own read as the tools' do, no tag.
+                  // A command as Antigravity's list has it: its icon, its name without the slash, what it does in grey; Liner Code's own read as the tools' do, no tag. A row that does something else when picked keeps its tag (a design skill's Load for this design).
                   <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind="/" title={f.hint ? `${f.label} ${f.hint}` : f.label} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
                     <CommandIcon name={f.label.slice(1)} />
                     <span className="lc-mention-n">{f.label.slice(1)}</span>
                     {f.note && <span className="lc-mention-d">{f.note}</span>}
+                    {f.tag && <span className="lc-mp-def">{f.tag}</span>}
                   </button>
                 ) : (
                   <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>

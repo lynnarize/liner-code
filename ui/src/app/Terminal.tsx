@@ -17,7 +17,7 @@ import type { Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { browseTo } from "./agentBrowser";
 import { bridge } from "./bridge";
-import { onStream, rpc, useEngine } from "./engine";
+import { EngineAway, onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { cssVar, hexOf, takeScripts, onScript } from "./Surfaces";
 import { FindBar, toComposer, type FindSearch } from "./Find";
@@ -274,10 +274,15 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
       })
       .catch((e) => live && setSt({ error: e instanceof Error ? e.message : String(e) }));
     const selection = t.onSelectionChange(() => setPicked(t.getSelection().trim().slice(0, 8000)));
+    let toldAt = 0;
     const input = t.onData((d) => {
       if (idRef.current)
         void rpc("term.write", { id: idRef.current, data: d }).catch((e) => {
-          if (live) setSt((s) => ({ ...s, error: e instanceof Error ? e.message : "The terminal stopped answering." }));
+          // A key the engine didn't take is said once in a while, never taken for a shell that couldn't start: that hid the
+          // running shell and its scrollback for good. While the engine is away its Reconnecting pill says so already.
+          if (!live || e instanceof EngineAway || Date.now() - toldAt < 5000) return;
+          toldAt = Date.now();
+          toast.error(e instanceof Error ? e.message : "The terminal stopped answering.");
         });
     });
     /*

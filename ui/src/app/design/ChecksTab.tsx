@@ -12,7 +12,7 @@ import type { DesignFrame } from "@contracts";
 import { I, StepMark } from "../icons";
 import { plural } from "../model";
 import { PaneButton, PaneFoot, PaneNote, PaneRow, PaneSection } from "../Pane";
-import { Row } from "../ui";
+import { MenuList, Row } from "../ui";
 import { srcDocOf } from "./Frame";
 import { fixAll, fixerName, fixOne, KIND_NAME, notAScreen, show, toFix, useChecks, watchChecks, type Finding } from "./checks";
 import { design, getDesign, useDesign } from "./store";
@@ -257,11 +257,11 @@ export function CheckMarks({ frames, boxOf }: { frames: DesignFrame[]; boxOf: (f
               {rest.length > 0 && <small>+{rest.length}</small>}
             </button>
             {open === p.key && rest.length > 0 && (
-              <div className="ld-ck-spot-list" role="menu" aria-label="The findings here">
+              <MenuList className="ld-ck-spot-list" label="The findings here">
                 {p.items.map((x) => (
                   <Row key={x.f.key} title={x.f.text} icon={<span className="ld-ck-n">{x.n}</span>} onPick={() => (show(x.f), setOpen(null))} />
                 ))}
-              </div>
+              </MenuList>
             )}
           </div>
         );

@@ -20,3 +20,11 @@ export function afterCrash(gone: readonly number[], now: number, asking: boolean
   if (recent.length < 3) return { gone: [...recent, now], then: "reload" };
   return { gone: recent, then: asking ? "nothing" : "ask" };
 }
+
+/**
+  What closing a window does. The last one open keeps the app as a single window did: on a Mac it's hidden (the app and its
+  sessions go on, and the Dock shows it again), elsewhere closing it quits, so the person is asked first while sessions work.
+  Decided by how many are open, not by which was made first: with that, the first closed beside a New Window went for good,
+  and the New Window, closed last, went too, leaving a Mac app no window to show and quitting elsewhere unasked.
+*/
+export const closeOf = (o: { open: number; quitting: boolean; mac: boolean }): "close" | "hide" | "ask" => (o.quitting || o.open > 1 ? "close" : o.mac ? "hide" : "ask");

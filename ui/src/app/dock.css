@@ -34,7 +34,7 @@
 
 /* ---------- The session header's row of surfaces (Switcher.tsx) ----------
    At the header's right end, after the Reviewer: 20px navigation icons in 32px buttons, as the sidebar's
-   own top icons; the lit one (the surface showing, the bottom panel up, the Session popup or ··· open) on
+   own top icons; the lit one (the surface showing, the bottom panel up, the Session card pinned or ··· open) on
    a wash in ink. */
 .lc-sw {
   display: flex;

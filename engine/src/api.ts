@@ -212,6 +212,11 @@ const TEAM_COMMANDS = new Set(["teamwork", "swarm"]);
 export function commandsWith(tool: CommandInfo[], team = true): CommandInfo[] {
   return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && !tool.some((x) => x.name === c.name)), ...tool];
 }
+/**
+  Whether the "/" list offers /teamwork and /swarm: not in a side chat or a scan, and not when the box says it takes no
+  team (a side chat asks before its first turn, with no thread yet). The box's word can only take them away.
+*/
+export const takesTeam = (t: Pick<Thread, "sideOf" | "security"> | undefined, team?: boolean) => team !== false && !t?.sideOf && !t?.security;
 
 /** A project's CLAUDE.md and AGENTS.md, as they are at its root. */
 function rulesOf(root: string) {
@@ -374,7 +379,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     return run;
   };
   // Publish live ACP slash-command updates so Composer's `/` menu refreshes immediately.
-  onAcpCommands((provider, _cwd, commands) => {
+  // The list kept for agent.commands (commandsCache) takes the new one first: the app asks again on the event, and the
+  // kept list from before would otherwise come back for up to five minutes.
+  onAcpCommands((provider, cwd, commands) => {
+    const key = `${provider}|${cwd}`;
+    commandsCache.set(key, { at: Date.now(), commands, skills: commandsCache.get(key)?.skills ?? [] });
     store.emit({ type: "commands", provider, commands });
   });
   // When an ACP session switches to a non-default model and reports thought_level options, cache them in models.json so the picker knows that model's effort levels.
@@ -424,20 +433,29 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     if (had && Date.now() - had.at < (fresh ? 15_000 : 60_000)) return Promise.resolve();
     const going = askingLimits.get(id);
     if (going) return going;
+    // An answer read with the Go key after the person took their consent back (or without it after they gave it) is
+    // dropped and the tool asked again, so the Go windows never outlive the consent they were read under.
+    const withKey = store.settings.readGoKey === true;
+    const moved = () => (READS_GO_KEY as readonly ProviderId[]).includes(id) && (store.settings.readGoKey === true) !== withKey;
     const ask = (async () => {
       try {
-        const r = await providers[id].limits!(env, join(store.home, "probe"), { readGoKey: store.settings.readGoKey === true });
+        const r = await providers[id].limits!(env, join(store.home, "probe"), { readGoKey: withKey });
+        if (moved()) return;
         // A tool with nothing to say this time (Claude Code before it has fetched them) keeps the windows its turns reported.
         const kept = r && !r.windows.length && had?.windows.length && had.plan === r.plan ? { windows: had.windows, detail: undefined } : {};
         if (r) limits.set(id, { provider: id, label: d.label, at: Date.now(), ...r, ...kept });
         else limits.delete(id);
       } catch (e) {
+        if (moved()) return;
         // A tool that didn't answer this time keeps what it said last; one that never did says why.
         if (had?.windows.length) limits.set(id, { ...had, at: Date.now() - 45_000 });
         else limits.set(id, { provider: id, label: d.label, at: Date.now(), windows: [], detail: e instanceof Error ? e.message : String(e) });
       }
       store.emit({ type: "limits", tools: [...limits.values()] });
-    })().finally(() => askingLimits.delete(id));
+    })().finally(() => {
+      askingLimits.delete(id);
+      if (moved()) return askLimits(id, true);
+    });
     askingLimits.set(id, ask);
     return ask;
   };
@@ -905,14 +923,14 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       await detect();
       return settings;
     },
-    "agent.commands": async ({ projectId, agent, threadId }) => {
+    "agent.commands": async ({ projectId, agent, threadId, team: hint }) => {
       const cwd = threadId ? cwdOf(threadId) : store.project(projectId).path;
       const ref = agent.startsWith("@") ? agent.slice(1) : store.agent(agent).model;
       const { provider } = splitModel(ref);
       const key = `${provider}|${cwd}`;
       const had = commandsCache.get(key);
       const t = threadId ? store.threads.find((x) => x.id === threadId) : undefined;
-      const team = !t?.sideOf && !t?.security;
+      const team = takesTeam(t, hint);
       const own = { commands: commandsWith([], team), skills: [] as SkillInfo[] };
       if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team), skills: had.skills };
       const p = providers[provider];

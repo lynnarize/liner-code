@@ -132,6 +132,8 @@ export function useDesign<T>(pick: (s: DesignState) => T): T {
   return useSyncExternalStore(subscribeDesign, () => pick(state));
 }
 
+/** A saved design's reply, taken only while that design is still the one open: another one opened meanwhile keeps its own file. */
+const keepIfOpen = (id: string) => (file: DesignFile) => void (state.file?.id === id && setNow({ file }));
 export const frameOf = (s: DesignState, id: string | undefined): DesignFrame | undefined => (id ? s.file?.frames.find((f) => f.id === id) : undefined);
 /** A page with nothing in its body yet (no element; scripts aside). */
 export const blankHtml = (html?: string) => html !== undefined && !/<body[^>]*>[\s\S]*?<[a-z]/i.test(html.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
@@ -1062,7 +1064,7 @@ export const design = {
     const id = `p${Date.now().toString(36)}`;
     const pages = [...s.file.pages, { id, name }];
     setNow({ file: { ...s.file, pages }, page: id, sel: [], node: undefined });
-    if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+    if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then(keepIfOpen(s.file.id)).catch((e: Error) => setNow({ error: e.message }));
   },
   /** Renames a page in the open design file and persists via canvas.save. */
   renamePage(id: string, name: string) {
@@ -1071,7 +1073,7 @@ export const design = {
     if (!s.file || !trimmed || s.scrub !== undefined) return;
     const pages = s.file.pages.map((p) => (p.id === id ? { ...p, name: trimmed } : p));
     setNow({ file: { ...s.file, pages } });
-    if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+    if (!s.mock && s.cwd) void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch: { pages } }).then(keepIfOpen(s.file.id)).catch((e: Error) => setNow({ error: e.message }));
   },
   /** Deletes a page (when at least two pages exist), moving its frames to the remaining fallback page first. */
   removePage(id: string) {
@@ -1085,7 +1087,7 @@ export const design = {
     setNow({ file: { ...s.file, pages, frames }, page: nextPage, sel: [], node: undefined });
     if (!s.mock && s.cwd) {
       const patch: { pages: typeof pages; frames?: { id: string; page: string }[] } = { pages, ...(moved.length ? { frames: moved.map((f) => ({ id: f.id, page: fallback })) } : {}) };
-      void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch }).then((file) => setNow({ file })).catch((e: Error) => setNow({ error: e.message }));
+      void rpc("canvas.save", { cwd: s.cwd, file: s.file.id, patch }).then(keepIfOpen(s.file.id)).catch((e: Error) => setNow({ error: e.message }));
     }
   },
   /** Moves one or more frames to another page in the same design file. */

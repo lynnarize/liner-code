@@ -9,8 +9,14 @@
 */
 export const CONFIRM_SETTLE = 500;
 
-/** What a press on a two-step confirm does: the first asks, one inside the settle is still the same double-click and waits, a later one acts. */
-export function confirmPress(askedAt: number | null, now: number, settle = CONFIRM_SETTLE): "ask" | "wait" | "do" {
-  if (askedAt === null) return "ask";
+/**
+  How long a confirm stays armed. A confirm that stays on screen (the team card's Turn it off) would otherwise wait in red
+  for ever, and a press minutes later, meant for something else, would act; past this the press asks again.
+*/
+export const CONFIRM_LAPSE = 4000;
+
+/** What a press on a two-step confirm does: the first asks, one inside the settle is still the same double-click and waits, a later one acts, and one past the lapse asks afresh. */
+export function confirmPress(askedAt: number | null, now: number, settle = CONFIRM_SETTLE, lapse = CONFIRM_LAPSE): "ask" | "wait" | "do" {
+  if (askedAt === null || now - askedAt >= lapse) return "ask";
   return now - askedAt < settle ? "wait" : "do";
 }

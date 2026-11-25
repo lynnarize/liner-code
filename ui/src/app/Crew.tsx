@@ -265,7 +265,7 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
 
 /* ---------- the header's chip and the agents popup ---------- */
 
-/** The agents popup, open or not, by session: its chip in the header holds it, and the Session popup and the cards in the chat open it. */
+/** The agents popup, open or not, by session: its chip in the header holds it, and the Session card and the cards in the chat open it. */
 const popOpen = new Map<string, boolean>();
 const popWatchers = new Set<() => void>();
 /** The sessions whose chip is on screen now, so a row that opens the popup opens the Agents surface where there is none. */
@@ -1187,7 +1187,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
           </>
         ) : (
           <PaneNote icon={<I.agents size={20} />} title="No agents yet">
-            When a model takes your message and sends agents off, they show here with who sent whom. Teamwork and Swarm start from the Session popup's Multi-agent row.
+            When a model takes your message and sends agents off, they show here with who sent whom. Teamwork and Swarm start from the Session card's Multi-agent row.
           </PaneNote>
         )}
         <SessionUse thread={thread} />
@@ -1826,7 +1826,8 @@ function SwarmSurface({ thread, swarm, view, onView }: { thread: Thread; swarm: 
                     ) : (
                       <Row title="Wake worker" onPick={() => (close(), void rpc("swarm.wake", { threadId: thread.id, name: m.name }).catch(fail))} />
                     )}
-                    <Row title="End worker" onPick={() => (close(), void rpc("swarm.killWorker", { threadId: thread.id, name: m.name }).catch(fail))} />
+                    {/* It can't be woken again, so it asks once more, as Turn it off does. */}
+                    <ConfirmRow title="End worker" sure={`End @${m.name}: it stops for good`} red onConfirm={() => (close(), void rpc("swarm.killWorker", { threadId: thread.id, name: m.name }).catch(fail))} />
                   </>
                 )}
               </Pop>

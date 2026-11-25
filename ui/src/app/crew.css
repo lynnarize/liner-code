@@ -1080,7 +1080,7 @@ button.lc-cr-bg:hover {
   color: inherit;
 }
 
-/* ---------- the Session popup (board Session) ---------- */
+/* ---------- the Session card (board Session) ---------- */
 .lc-spop {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -487,10 +487,15 @@ const PROBE = `(() => {
   addEventListener("error", (e) => { if (/^ResizeObserver loop/.test(e.message || "")) return; post({ kind: "console", level: "error", text: e.message + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""), at: Date.now() }); });
   addEventListener("unhandledrejection", (e) => post({ kind: "console", level: "error", text: "Unhandled: " + text([e.reason]), at: Date.now() }));
   // How it landed, so the panel's Back and Forward know a step through history from a new place (ui/src/app/browser-trail.ts).
-  const nav = (how) => post({ kind: "nav", how, path: location.pathname + location.search + location.hash, title: document.title });
+  const nav = (how, step) => post({ kind: "nav", how, step, path: location.pathname + location.search + location.hash, title: document.title });
   for (const k of ["pushState", "replaceState"]) { const o = history[k].bind(history); history[k] = (...a) => { const r = o(...a); nav(k === "pushState" ? "push" : "replace"); return r; }; }
-  addEventListener("popstate", () => nav("pop"));
-  addEventListener("hashchange", () => nav("pop"));
+  // A link to #x fires popstate and hashchange just as a Back does. The Navigation API (Chromium, so the app's window)
+  // tells them apart before either fires, and says which way a step went, so a Back onto a place that is also ahead isn't
+  // read as a Forward. Without it both read as a step, as before.
+  let went = null;
+  if (window.navigation) navigation.addEventListener("navigate", (e) => { const t = e.navigationType; went = t === "traverse" ? { how: "pop", step: navigation.currentEntry ? Math.sign(e.destination.index - navigation.currentEntry.index) : 0 } : t === "push" || t === "replace" ? { how: t } : null; });
+  addEventListener("popstate", () => (went ? nav(went.how, went.step) : nav("pop")));
+  addEventListener("hashchange", () => (went ? nav(went.how, went.step) : nav("pop")));
   addEventListener("DOMContentLoaded", () => nav("load"));
 
   // Offline, as the page sees it: requests fail and navigator.onLine says so.

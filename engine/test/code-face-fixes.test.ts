@@ -116,9 +116,9 @@ test("The Browser keeps Back after a link back to the page before, and a replace
   assert.equal(landing(undefined, false), "pop");
   const proxy = readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
   assert.match(proxy, /nav\(k === "pushState" \? "push" : "replace"\)/, "the page no longer says how it landed");
-  assert.match(proxy, /addEventListener\("popstate", \(\) => nav\("pop"\)\);/);
+  assert.match(proxy, /addEventListener\("popstate", \(\) => \(went \? nav\(went\.how, went\.step\) : nav\("pop"\)\)\);/);
   assert.match(proxy, /addEventListener\("DOMContentLoaded", \(\) => nav\("load"\)\);/);
-  assert.match(src("Browser.tsx"), /setTrail\(\(t\) => landed\(t, path, how\)\);/);
+  assert.match(src("Browser.tsx"), /setTrail\(\(t\) => landed\(t, path, how, step\)\);/);
 });
 
 test("A commit asked for from the title menu that nobody takes in time does not open the form later", () => {

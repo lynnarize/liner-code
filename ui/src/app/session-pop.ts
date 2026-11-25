@@ -1,5 +1,5 @@
 /*
-  What the Session popup (SessionInfo.tsx) says in its rows, kept apart from React so engine/test/session-pop.test.ts
+  What the Session card (SessionInfo.tsx) says in its rows, kept apart from React so engine/test/session-pop.test.ts
   can read it (no React and no alias imports): how many agents worked in the session and for how long, and the Spend limit's value.
 */
 import type { Item } from "../../../contracts/src/index.ts";

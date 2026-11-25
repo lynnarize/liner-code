@@ -16,6 +16,16 @@ export const steersHere = (focus: BoxFocus, aside: boolean) => focus === "mine" 
 export const stashKeyOf = (projectId: string, aside: boolean) => (aside ? `lc:stash-side:${projectId}` : `lc:stash:${projectId}`);
 
 /**
+  How a box asks the engine for its "/" and "$" lists, and the key the answer is kept under. The engine answers per thread
+  (a side chat or a scan has no /teamwork or /swarm), and a session's box and its side chat are up at once on one tool, so
+  the key holds the thread and the side; a side chat says it takes no team, since before its first turn it has no thread.
+*/
+export const commandsAsk = (projectId: string, agent: string, threadId: string | undefined, aside: boolean) => ({
+  key: `${projectId}|${agent}|${threadId ?? ""}|${aside ? "side" : ""}`,
+  ask: aside ? { projectId, agent, threadId, team: false } : { projectId, agent, threadId },
+});
+
+/**
   The icon a command's row carries in the "/" list, as Antigravity's list has one on each row: Liner Code's own by what
   they do, the tools' common ones by their names, and the slash for any other (a command a tool or you added).
   Names of icons in icons.tsx `I`.

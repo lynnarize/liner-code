@@ -562,7 +562,7 @@ function ModelLine({ row, effort, onEffort }: { row: Offered<ModelChoice>; effor
         </button>
       )}
       <button type="button" className="lc-pk-ib l-focus" data-rove aria-pressed={fav} aria-label={fav ? "Starred" : "Star this model"} title={fav ? "Starred" : "Star this model"} onClick={() => star(row.offers.map((x) => x.ref))}>
-        <I.star size={16} />
+        <I.star size={14} />
       </button>
     </>
   );
@@ -773,7 +773,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
         <div role="radiogroup" aria-label="Where a model comes from">
           {[null, ...sources].map((s) => (
             <button key={s ?? "\u0000all"} type="button" role="radio" aria-checked={source === s} className="lc-who-row l-focus" data-rove data-on={source === s || undefined} onClick={() => (setSource(s), leave())}>
-              {s === null ? <I.layers size={16} /> : <ModelMark kind={sourceMarkOf(s)} size={14} />}
+              {s === null ? <I.layers size={14} /> : <ModelMark kind={sourceMarkOf(s)} size={14} />}
               <span className="lc-who-row-t">{s === null ? `Every source ${tool.label} has` : sourceName(s)}</span>
               {source === s && <I.check size={14} className="lc-who-tick" />}
             </button>

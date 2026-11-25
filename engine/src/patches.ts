@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PermissionRule } from "../../contracts/src/index.ts";
+import { evaluatePermissionMatrix } from "./risk.ts";
 
 export type LayeredPatch = {
   toolPreset?: "standard" | "lean";
@@ -61,4 +62,22 @@ export function loadLayeredPatch(home: string, projectPath?: string): LayeredPat
     ...proj,
     ...(rules.length ? { permissionRules: rules } : {}),
   };
+}
+
+const STRICT: Record<PermissionRule["action"], number> = { allow: 0, ask: 1, deny: 2 };
+
+/**
+  The rule a step meets: the person's (Settings, then `<home>/patch.json`, last match winning) and the repository's
+  (`.liner/patch.json`, its allow rules dropped) each decide on their own, and the stricter holds. Read as one list, a
+  repository's `ask` placed after the person's `deny` won, and a command the person refused outright came to a card instead.
+*/
+export function permissionFor(settingsRules: readonly PermissionRule[], home: string, projectPath: string | undefined, target: { command?: string; path?: string }) {
+  const user = readPatchFile(join(home, "patch.json"));
+  const proj = projectPath ? readPatchFile(join(projectPath, ".liner", "patch.json")) : {};
+  const person = [...settingsRules, ...(user.permissionRules ?? [])];
+  const repo = (proj.permissionRules ?? []).filter((r) => r.action !== "allow");
+  const mine = person.length ? evaluatePermissionMatrix(person, target) : null;
+  const theirs = repo.length ? evaluatePermissionMatrix(repo, target) : null;
+  if (!mine || !theirs) return mine ?? theirs;
+  return STRICT[theirs.action] > STRICT[mine.action] ? theirs : mine;
 }

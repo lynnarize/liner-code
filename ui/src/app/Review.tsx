@@ -35,7 +35,7 @@ import { FindBar } from "./Find";
 import { MoreFiles, SurfaceNote, TurnPicker } from "./Surfaces";
 import { SideKeys } from "./TopBar";
 import { PANE_PICK, PANE_TOOL, PaneButton, PaneCheck, PaneFile, PaneFoot, PaneHead, PaneStatus, PaneTool, PaneWords } from "./Pane";
-import { linesSaid, moreFilesSaid, viewedSaid } from "./review-words.ts";
+import { linesSaid, moreFilesSaid, SPLIT_CHANGE, SPLIT_LINE, viewedSaid } from "./review-words.ts";
 import { undoTurn } from "./undo";
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
@@ -316,7 +316,7 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
 
   const goChange = (i: number) => {
     if (view === "split") {
-      const hunks = box.current?.querySelectorAll<HTMLElement>(".l-cdiff__hunk, .l-cdiff__row--add, .l-cdiff__row--del") ?? [];
+      const hunks = box.current?.querySelectorAll<HTMLElement>(SPLIT_CHANGE) ?? [];
       if (!hunks.length) return;
       const n = ((i % hunks.length) + hunks.length) % hunks.length;
       setAt(n);
@@ -616,8 +616,8 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
                 className="lc-diff"
                 onClick={(e) => {
                   const target = e.target as HTMLElement | null;
-                  const numCell = target?.closest<HTMLElement>("[data-line], .l-cdiff__ln, td:first-child, td:nth-child(3)");
-                  const lineNo = Number(numCell?.dataset.line || numCell?.textContent?.trim());
+                  const numCell = target?.closest<HTMLElement>(SPLIT_LINE);
+                  const lineNo = Number(numCell?.textContent?.trim());
                   if (!Number.isInteger(lineNo) || lineNo <= 0) return;
                   const fileEl = target?.closest<HTMLElement>(".l-cdiff__file");
                   const idx = fileEl ? Array.from(box.current?.querySelectorAll(".l-cdiff__file") ?? []).indexOf(fileEl) : -1;

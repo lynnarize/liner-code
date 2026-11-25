@@ -2798,6 +2798,10 @@
   margin-left: -2px;
   font-size: 13px;
 }
+/* A design skill's tag (Load for this design) at the row's end, also when it has no note to fill the room. */
+.lc-mention-row[data-kind="/"] .lc-mp-def {
+  margin-left: auto;
+}
 .lc-mention-row {
   flex: none;
   min-width: 0;

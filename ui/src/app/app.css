@@ -2069,6 +2069,10 @@ html[data-native="mac"] .lc-sb-head {
       inset 0 0 0 1px var(--l-line),
       0 4px 12px -4px oklch(0.3 0.04 265 / 0.12);
   }
+  /* The message box stands over the column's foot here, so its end scrolls up clear of it, as the chat's does. */
+  .lc-pin {
+    padding-bottom: calc(var(--lc-dock-h, 132px) + 12px);
+  }
 }
 @container lc-thread (min-width: 1000px) {
   /* The chat's own box narrows, not its inside: padded, its scrollbar ran down under the cards. */
@@ -4232,7 +4236,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   max-width: calc(100% - 32px);
   box-sizing: border-box;
   padding: 0 3px 0 10px;
-  border-radius: 9px;
+  border-radius: var(--lc-r-field);
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
   font-size: 12px;

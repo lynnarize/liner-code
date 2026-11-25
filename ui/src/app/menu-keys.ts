@@ -21,3 +21,12 @@ export const backFromSide = (key: string, typing: boolean) => key === "Escape" |
 
 /** What a side menu focuses as it opens: its text field when it has one (the chooser's find field), else its first row. A switch is not a text field. */
 export const FIRST_FOCUS = "input:not([type='checkbox']):not([type='radio']):not([type='range']):not(:disabled), textarea:not(:disabled), [data-autofocus]";
+
+/** What hasOpenModal (App.tsx) looks for: a dialog, a popup layer, a sheet, or a part that says it is a dialog. */
+export const MODAL = "dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog']";
+/**
+  Whether any of the elements found for MODAL holds the app's keys: one that shows, and is not one of the ask cards left
+  over a page (the Browser's, the Device's, a design's comment), which stay up while you work round them. `hidden` on
+  the element alone missed a card in a surface the panel had hidden, and the app's keys stayed off until you went back.
+*/
+export const anyModal = (found: Iterable<{ closest: (selector: string) => unknown; checkVisibility?: () => boolean }>) => [...found].some((el) => !el.closest(".lc-br-ask") && el.checkVisibility?.() !== false);

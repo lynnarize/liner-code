@@ -72,6 +72,8 @@ export const statusKind = (t: Thread, now = Date.now()): WallKind => (needsYou(t
 
 /** Where a session stands on the Wall, from the session alone: the order and the counts need no timelines. One whose turn is over while agents it sent still work is working, not done. */
 export const wallKind = (t: Thread): WallKind => (t.status === "running" ? "working" : (t.status === "waiting" && !reviewHeld(t)) || t.status === "error" || t.status === "limited" ? "needs" : t.agentsAtWork ? "working" : "done");
+/** Sessions waiting for review, the Wall's Review queue: Reviewer-blocked, finished with unreviewed files, or with an open pull request (gh says "OPEN", as markStateOf reads it). */
+export const needsReview = (t: Thread) => !t.archived && !t.routine && !t.security && !t.done && (reviewHeld(t) || (t.toReview ?? 0) > 0 || t.pr?.state.toUpperCase() === "OPEN");
 
 /** The mark a session's row shows. `busy`: it works now (its turn runs, or agents it sent still do). A session not started yet is "new". */
 export const sideStateOf = (t: Thread, busy = t.status === "running"): SideState =>

@@ -82,7 +82,7 @@ export function panelLeft(align: "start" | "end" | "center", r: { left: number; 
 /**
   Where a side menu `w` wide starts, beside the menu `m` it opened from in a window `vw` wide: to the menu's right
   while it fits there, as menus open in the direction a person reads; to its left when the right has no room (the
-  switcher's ··· and the Session popup sit at the window's right edge); with room on neither side, inside the window's
+  switcher's ··· and the pinned Session card sit at the window's right edge); with room on neither side, inside the window's
   right edge.
 */
 export function sideMenuLeft(m: { left: number; right: number }, w: number, vw: number): number {

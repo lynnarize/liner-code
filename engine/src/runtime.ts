@@ -18,7 +18,7 @@ import type { Access, AgentRun, AgentStep, ApprovalGrant, ApprovalWhy, Effort, F
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { ACCESS_NAMES, agentState, castOf, clampSubagentMax, clampSwarmMax, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, isSwarm, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, VOUCHER, waysOf } from "../../contracts/src/index.ts";
+import { ACCESS_NAMES, agentState, castOf, clampSubagentMax, clampSwarmMax, doingOf, type DoingCall, nearestEffort, rank, emptyUsage, ENDPOINT_TOOL, endpointKey, familyOf, isGoModel, isPair, isSwarm, picturesOf, plainWay, reviewerOf, reviewOn, PR_TEST_TOOL, smallChange, splitModel, switchedFrom, VOUCHER, waysOf } from "../../contracts/src/index.ts";
 import { capture, changedPaths, changes, isRepo, PATCH } from "./checkpoints.ts";
 import { closesOnExit, holders, killTree, markFile, run, shellOf, spawn, THREAD_ENV } from "./exec.ts";
 import { testCommand, testSummary } from "./prflow.ts";
@@ -41,8 +41,8 @@ import { modeNote } from "./creator.ts";
 import { designNote, type DesignMark } from "./lean.ts";
 import { frameRevs, framesChanged, lookFile } from "./canvas.ts";
 import { memoryNote, titleFrom } from "./memory.ts";
-import { loadLayeredPatch } from "./patches.ts";
-import { commandRisk, evaluatePermissionMatrix, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
+import { loadLayeredPatch, permissionFor } from "./patches.ts";
+import { commandRisk, hazardOf, judge, leavesMac, namesSecret, outwardOf, readsOnly, riskOf, routine, ruleFor, ruleParts, skillOffer } from "./risk.ts";
 import { uid, type Store } from "./store.ts";
 import { EDITS_MS, editsNote, editsSince, type Beside } from "./edits.ts";
 import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./precheck.ts";
@@ -167,6 +167,8 @@ const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit", "apply
   and Auto runs that. Such an edit is never Auto's, nor a rule's: it comes to you below Full.
 */
 const editsGit = (fields: { label: string; value: string }[], cwd: string) => fields.some((f) => f.label === "File" && gitInside(cwd, f.value));
+/** Whether an ask's edit names a file outside `cwd`: a swarm worker's worktree keeps its changes apart only while it edits inside it. */
+const editsOutside = (fields: { label: string; value: string }[], cwd: string) => fields.some((f) => (f.label === "File" || f.label === "Path") && f.value && !(resolve(cwd, f.value) === resolve(cwd) || resolve(cwd, f.value).startsWith(resolve(cwd) + sep)));
 /**
   What Read only forbids of what a tool asks to do, by the ask itself: a command that changes things (one that only reads is
   allowed), a file edit (Claude Code's Edit and Write, Codex's apply_patch, an ACP agent's edit, delete or move), and more access
@@ -428,13 +430,19 @@ export class Runtime {
           mcp: this.tools?.serverFor(threadId, { swarm: member.canDelegate ? "orchestrator" : "worker", swarmWorker: member.name }) ?? undefined,
         });
       },
+      agentEffort: (threadId) => this.store.agent(this.store.thread(threadId).agent).effort,
       isCoordinatorBusy: (threadId) => this.isRunning(threadId),
       wakeCoordinator: (threadId, text, shown) => this.send(threadId, text, "queue", undefined, undefined, undefined, shown),
       logUsage: (rec) => this.store.logUsage(rec),
-      approve: (threadId, memberName, req, signal) => {
+      approve: (threadId, memberName, req, signal, reads, apart) => {
+        // A worker that only reads works in the session's own folder, with no worktree to keep its changes apart: what its
+        // tool hands over is held to Read only whatever the session's level, or Auto would let it edit the person's checkout.
+        if (reads && readForbids(req)) return Promise.resolve({ allow: false, level: true, reason: READ_REFUSED(req.fields.some((f) => f.label === "Command")) });
         const t = this.store.thread(threadId);
         const turn = this.turns.get(threadId)?.turn ?? t.turns;
-        const cards = this.sink(threadId, turn, signal, t.agent, true);
+        // A writer in its own worktree is judged there (apart), not in the session's folder: else a write into the person's
+        // checkout reads as in-folder work and goes ahead at Auto.
+        const cards = this.sink(threadId, turn, signal, t.agent, true, apart);
         const tagged = { ...req, title: `@${memberName}: ${req.title}` };
         return cards.api.approve(tagged, signal).finally(() => cards.end());
       },
@@ -1820,12 +1828,18 @@ export class Runtime {
           store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "Nothing to compact yet: this session starts again from the conversation so far on your next message." });
           blank = true;
         } else {
-          // A switch names who said what, so the tool taking over doesn't read another model's answers as its own.
-          const note = handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart", undefined, switched ? (ref) => this.labelOf(ref) : undefined);
+          // A switch names who said what, so the tool taking over doesn't read another model's answers as its own. Who it takes
+          // over from is the model on the tool it moves off, not the newest turn, which may be its own that failed (switchedFrom).
+          const from = switched ? switchedFrom(earlier, r.provider, t.providerSession) : undefined;
+          const note = handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart", undefined, switched ? (ref) => this.labelOf(ref) : undefined, from);
           prompt = `${note}\n\n${prompt}`;
-          // Said when you moved the session to another tool: from which model to which, and the note it was sent, to read.
-          const from = earlier.findLast((x) => x.kind === "turn")?.model;
-          if (switched && show) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.`, handoff: { ...(from ? { from } : {}), to: `${r.provider}:${r.model}`, ...(r.effort ? { effort: r.effort } : {}), note } });
+          // Said when you moved the session to another tool: from which model to which, and the note it was sent, to read. A switch
+          // whose first turn on the new tool kept no session is still the same switch, made again: its row takes the newer note
+          // instead of a second row, unless a turn ran on another tool since.
+          const to = `${r.provider}:${r.model}`;
+          const shown = earlier.findLast((x) => x.kind === "notice" && Boolean(x.handoff));
+          const again = shown?.kind === "notice" && shown.handoff?.to === to && !earlier.slice(earlier.indexOf(shown)).some((x) => x.kind === "turn" && !x.model.startsWith(`${r.provider}:`)) ? shown : undefined;
+          if (switched && show) store.putItem(threadId, { kind: "notice", ...(again ? { id: again.id, turn: again.turn, at: again.at } : { id: uid("it"), turn, at: Date.now() }), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.`, handoff: { ...(from ? { from } : {}), to, ...(r.effort ? { effort: r.effort } : {}), note } });
         }
       } else if (compact && r.provider !== "demo" && !(session.canCompact ? session.canCompact() : this.providerInfo.find((p) => p.id === r.provider)?.supports.compact ?? familyOf(r.provider) === "claude")) {
         // Providers without native /compact would treat literal "/compact" as chat text; reset the live provider session instead so the next turn starts fresh with Liner's handoff summary.
@@ -2120,13 +2134,13 @@ export class Runtime {
     Reviewer decides, for one step: the Reviewer's quickest model reads it with the ask and says
     ALLOW or ASK. Null when there's no Reviewer, or it gave no call within 40 seconds; you decide then.
   */
-  private async stepCall(threadId: string, req: { title: string; fields: { label: string; value: string }[]; risk: Risk }, signal: AbortSignal) {
+  private async stepCall(threadId: string, req: { title: string; fields: { label: string; value: string }[]; risk: Risk }, signal: AbortSignal, at?: string) {
     const t = this.store.thread(threadId);
     const reviewer = this.reviewerFor(t, true);
     if (!reviewer) return null;
     const model = quickOf(reviewer, this.providerInfo);
     const ask = this.store.timeline(threadId).findLast((x) => x.kind === "user");
-    const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+    const cwd = at ?? t.worktree?.path ?? this.store.project(t.projectId).path;
     const out = await this.quiet(threadId, model, cwd, stepPrompt(ask?.kind === "user" ? ask.text : "", req, cwd), AbortSignal.any([signal, AbortSignal.timeout(40_000)]), "reviewer").catch(() => "");
     const call = parseStep(out);
     return call && { ...call, model };
@@ -3433,10 +3447,10 @@ export class Runtime {
     Whether a command, or a tool by its rule, was allowed for the session: a command when every rule it needs was
     granted (ruleParts), a tool by its own name only, so a program named like a tool (`Edit`) never rides on it.
   */
-  private ruleAllows(threadId: string, command: string | undefined, rule?: string, fields: { label: string; value: string }[] = []) {
+  private ruleAllows(threadId: string, command: string | undefined, rule?: string, fields: { label: string; value: string }[] = [], at?: string) {
     const rules = (this.grants.get(threadId) ?? []).filter((g) => g.kind === "rule");
     const t = this.store.thread(threadId);
-    const cwd = t.worktree?.path ?? this.store.project(t.projectId).path;
+    const cwd = at ?? t.worktree?.path ?? this.store.project(t.projectId).path;
     // An Edit rule never writes into git's own folder (editsGit).
     if (command === undefined) return Boolean(rule && rules.some((g) => g.tool && g.parts[0] === rule)) && !editsGit(fields, cwd);
     const needs = ruleParts(command);
@@ -3933,7 +3947,8 @@ export class Runtime {
   shutdown(): Promise<void> {
     this.quitting = true;
     clearInterval(this.watchdog);
-    this.swarm.dispose();
+    // A team's workers are tools too: the quit waits for their closes as for the sessions' own.
+    const workers = this.swarm.dispose();
     for (const id of this.turns.keys()) this.stop(id);
     // A pull request's test suite runs outside any turn, in a process group of its own.
     for (const s of this.prStops.values()) s.abort();
@@ -3941,14 +3956,15 @@ export class Runtime {
     // Those opened ahead of a thread not made yet (warmNew) go too.
     for (const id of [...this.ahead.keys()]) closing.push(this.dropAhead(id));
     // And the closes already under way (a session another tool took over from), plus any shared OpenCode HTTP daemons.
-    return Promise.allSettled([...closing, ...this.closing.values(), shutdownOpenCodeDaemons()]).then(() => undefined);
+    return Promise.allSettled([...closing, workers, ...this.closing.values(), shutdownOpenCodeDaemons()]).then(() => undefined);
   }
 
   /**
     The sink a provider writes one turn into, and what it built. `cards`: only a brief's, to put its asks through the lead's cards
-    (runBrief): the lead's turn still runs when it ends, so what the lead is doing stays said.
+    (runBrief): the lead's turn still runs when it ends, so what the lead is doing stays said. `apart`: the folder a swarm worker
+    works in apart from the session's (its own worktree), which its asks are judged against instead.
   */
-  private sink(threadId: string, turn: number, signal: AbortSignal, agentId: string, cards = false) {
+  private sink(threadId: string, turn: number, signal: AbortSignal, agentId: string, cards = false, apart?: string) {
     const store = this.store;
     const blocks = new Map<string, string>(); // provider block → item id
     const tools = new Map<string, { id: string; started: number }>();
@@ -4186,8 +4202,8 @@ export class Runtime {
         // Only steps that come here meet it: at Full access, or where a tool's own Auto passes a step, the tool never asks.
         const fileField = req.fields.find((f) => f.label === "File" || f.label === "Path")?.value;
         const projPath = store.projects.find((p) => p.id === now.projectId)?.path;
-        const matrixRules = [...(store.settings.permissionRules ?? []), ...(loadLayeredPatch(store.home, projPath).permissionRules ?? [])];
-        const matrix = matrixRules.length ? evaluatePermissionMatrix(matrixRules, { command, path: fileField }) : null;
+        // The person's rules and the repository's each decide, and the stricter holds (patches.ts permissionFor).
+        const matrix = permissionFor(store.settings.permissionRules ?? [], store.home, projPath, { command, path: fileField });
         if (matrix?.action === "deny") {
           store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Denied “${req.title}” by permission rule (${matrix.rule.kind}: ${matrix.rule.pattern}).` });
           return Promise.resolve({ allow: false, reason: `Denied by permission rule (${matrix.rule.kind}: ${matrix.rule.pattern}).` });
@@ -4199,7 +4215,9 @@ export class Runtime {
         // Allowed for the rest of the session already. Not what can't be undone (a rule from `rm a.txt` is `rm`, and `rm -rf ~` is `rm` too),
         // nor in a routine's step, whose limits are its own whatever you said in its session. A command only when every
         // rule it needs was granted (risk.ts, ruleParts), so nothing chained after an allowed command rides on it.
-        if (matrix?.action !== "ask" && !held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && this.ruleAllows(threadId, command, req.rule, req.fields)) return Promise.resolve({ allow: true });
+        // A worker in its own worktree that edits outside it (the person's checkout) rides on no grant and no Auto: it comes to you.
+        const strayed = apart !== undefined && command === undefined && editsOutside(req.fields, apart);
+        if (matrix?.action !== "ask" && !held && req.risk !== "high" && !this.unattended.has(threadId) && req.rule && !secret && !strayed && this.ruleAllows(threadId, command, req.rule, req.fields, apart)) return Promise.resolve({ allow: true });
         // Nobody's there to ask.
         if (held && this.unattended.has(threadId)) return Promise.resolve({ allow: false, reason: "This turn only reads. Leave the change for the person." });
         // A routine runs with nobody watching: it may do what can be undone, never what can't, and
@@ -4207,7 +4225,7 @@ export class Runtime {
         if (this.unattended.has(threadId)) {
           return Promise.resolve(req.risk === "high" || leavesMac(command ?? "") ? { allow: false, reason: "Routines don't run commands that can't be undone or that reach outside this Mac. Leave it for the person." } : { allow: true });
         }
-        const cwd = now.worktree?.path ?? store.project(now.projectId).path;
+        const cwd = apart ?? now.worktree?.path ?? store.project(now.projectId).path;
         // The skill folders you let Auto reach this session (the skill grants).
         const reach = this.reach(threadId);
         // "Don't ask again this turn": until it ends, an ask goes ahead only when Auto's own rule would run it (autoLets,
@@ -4223,7 +4241,7 @@ export class Runtime {
         // A tool with no such mode hands over every command, so a routine one goes ahead too: rated low, inside its
         // folder (or a skill's you allowed), sending none of your work out (risk.ts, routine, leavesMac); an install from the
         // project's lists still reaches the registry. The rest still comes to you.
-        if (matrix?.action !== "ask" && !held && access === "auto" && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
+        if (matrix?.action !== "ask" && !held && access === "auto" && !strayed && this.autoLets(req, command, cwd, reach.skills, Boolean(req.unjudged))) return Promise.resolve({ allow: true });
         /**
           Why it comes to you, most important first, each from the check that decided it: what can't be undone (risk.ts's
           table), what the tool said of its ask (outside the project, a host Codex asks to reach), then what made this level ask. A check that
@@ -4236,6 +4254,7 @@ export class Runtime {
           why.push(...(req.why ?? []));
           const level = (text: string) => why.push({ kind: "level", text });
           if (held) level(`${now.sideOf ? "A side chat" : ACCESS_NAMES.read} asks before anything that changes files`);
+          else if (strayed) level("A worker in its own worktree asks before editing outside it");
           else if (access === "ask" || access === "edits") {
             if (command !== undefined) level(`${ACCESS_NAMES[access]} asks before running commands`);
             else if (access === "ask" && EDIT_TOOLS.has(req.tool)) level(`${ACCESS_NAMES.ask} asks before every edit`);
@@ -4291,7 +4310,7 @@ export class Runtime {
           if (command !== undefined && readsOnly(command) && !secret) return Promise.resolve({ allow: true });
           // The Reviewer is shown only the start of a long step, and can't judge what it wasn't shown: you decide.
           if (tooLongToReview(req)) return ask(TOO_LONG);
-          return this.stepCall(threadId, req, AbortSignal.any([sig, signal])).then((call) => {
+          return this.stepCall(threadId, req, AbortSignal.any([sig, signal]), apart).then((call) => {
             // Its word is no good once you've stopped the turn it was for.
             if (sig.aborted || signal.aborted || over) return { allow: false };
             if (!call?.allow) return ask(call ? `${this.labelOf(call.model)}, reviewing: ${call.reason}` : undefined);
@@ -4550,9 +4569,10 @@ export { titleFrom };
   comes first in the budget: older answers shrink, then drop, before your requests do. The first ask, the plan as it stands
   and the files changed outlive a turn that's left out, as T3 Code keeps the first request whatever else drops
   (packages/provider-core/src/server/handoffBudget.ts, selectHistory). `label` names a model by its ref ("Opus 5.5"): given
-  for a switch, so the tool taking over reads who said what instead of being told it said it itself.
+  for a switch, so the tool taking over reads who said what instead of being told it said it itself. `from` is the model it
+  takes over from (switchedFrom), else the newest turn's.
 */
-export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "switch", budget = 24000, label?: (ref: string) => string) {
+export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "switch", budget = 24000, label?: (ref: string) => string, from?: string) {
   const switching = why === "switch";
   // Who worked each turn, by the turn's first mark: what a switch says answered it.
   const model = new Map<number, string>();
@@ -4593,23 +4613,27 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "swi
   const kept: { turn: number; text: string }[] = [];
   let used = 0;
   let dropped = 0;
+  const cutLine = "\n(cut here: it was too long to carry over)";
   for (let i = blocks.length - 1; i >= 0; i--) {
     const { whole, asks } = blocks[i];
+    // The blank line between turns counts too, or hundreds of short turns run past the budget.
+    const gap = kept.length ? 2 : 0;
     let b = whole;
-    if (used + b.length > room) b = asks;
-    // The newest turn always goes, cut to half the budget if it must be, so one huge paste leaves room for the work before it.
-    if (!kept.length && (!b || b.length > room)) b = `${(b || whole).slice(0, budget >> 1)}\n(cut here: it was too long to carry over)`;
-    if (!b || used + b.length > room) {
+    if (used + gap + b.length > room) b = asks;
+    // The newest turn always goes, cut to half the budget if it must be, so one huge paste leaves room for the work before it,
+    // and cut to the room left when the notes apart take more than half, so it isn't dropped for being cut too long.
+    if (!kept.length && (!b || b.length > room)) b = `${(b || whole).slice(0, Math.min(budget >> 1, Math.max(0, room - cutLine.length)))}${cutLine}`;
+    if (!b || used + gap + b.length > room) {
       dropped = i + 1;
       break;
     }
     kept.unshift({ turn: blocks[i].turn, text: b });
-    used += b.length;
+    used += gap + b.length;
   }
   // The first ask goes on its own only when its turn was left out.
   const firstKept = firstAsk && kept.some((k) => k.turn === firstAsk.turn && k.text.includes(firstAsk.text.slice(0, 200)));
   const apart = [firstKept ? "" : firstNote, planNote, filesNote].filter(Boolean);
-  const fromWho = switching && label ? [...model.entries()].sort((a, b) => b[0] - a[0])[0]?.[1] : undefined;
+  const fromWho = switching && label ? (from ?? [...model.entries()].sort((a, b) => b[0] - a[0])[0]?.[1]) : undefined;
   const lead =
     why === "switch"
       ? `You're taking over this conversation from ${fromWho ? label!(fromWho) : "another model"}. Here is a handoff note with everything so far: what the person asked, what was answered and done, and where it was left. It's context, not a new request: what to do now is the person's message after it`

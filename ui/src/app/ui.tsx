@@ -10,7 +10,7 @@ import type { AgentProfile, LimitWindow } from "@contracts";
 import { Glyph, I, ModelMark, N, StateMark, type MarkKind, type MarkState } from "./icons";
 import { clock } from "./model";
 import { stopIgnored } from "./stop-guard";
-import { confirmPress } from "./confirm";
+import { CONFIRM_LAPSE, confirmPress } from "./confirm";
 import { shortcutOf } from "./keymap";
 import { panelLeft, panelSide, placeMenu, sideMenuLeft, TOP_ROW, type Box } from "./menu-place";
 import { backFromSide, FIRST_FOCUS, inText, movesRows } from "./menu-keys";
@@ -184,7 +184,7 @@ export function Pop({
   bare?: boolean;
   /** How far it hangs out past the trigger's edge it is aligned on, in px: the model picker's side card past its chip (picker.ts pickerOut). */
   out?: number;
-  /** Open or shut from outside, as a key opens the Session popup; leave both unset and the trigger alone opens it. */
+  /** Open or shut from outside, as a key opens the agents popup; leave both unset and the trigger alone opens it. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -327,6 +327,32 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
 }
 
 /**
+  A menu that a part draws in place rather than in a Pop (the findings at one spot on the design canvas): its rows are
+  the menu's items, so a reader hears them as such, and ↑ ↓ Home End walk them as they do in every other menu.
+*/
+export function MenuList({ className, label, children }: { className?: string; label: string; children: ReactNode }) {
+  const list = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={list}
+      className={className}
+      role="menu"
+      aria-label={label}
+      onKeyDown={(e) => {
+        if (!movesRows(e.key, inText(e.target as HTMLElement))) return;
+        const rows = [...(list.current?.querySelectorAll<HTMLElement>("[role^='menuitem']:not(:disabled)") ?? [])];
+        const i = rows.indexOf(document.activeElement as HTMLElement);
+        const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+        rows[to]?.focus();
+        e.preventDefault();
+      }}
+    >
+      <InMenu.Provider value>{children}</InMenu.Provider>
+    </div>
+  );
+}
+
+/**
   The app's one menu row, in every menu and picker of Code, Liner Design and Liner Security (board Menus,
   2026-11-25): one line 28px high, set 4px in from the menu's edge with a 6px corner, a 14px icon in the
   fourth ink (never the accent), the title in ink at 13px, and at the far right, in 12.5px fourth ink, its
@@ -347,7 +373,7 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
   `danger`: the confirm's look, a row about to do what can't be undone (ConfirmRow). `forGood`: a row
   that deletes for good is red from the start; one that can be undone (Archive) never is.
 */
-export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, end, opens, chevron, disabled, keepIcon: _keepIcon, danger, forGood, red, label, back, onPick }: { title: ReactNode; note?: ReactNode; keepNote?: boolean; which?: string; whichPath?: boolean; rove?: boolean; on?: boolean; icon?: ReactNode; end?: ReactNode; opens?: string; chevron?: boolean; disabled?: boolean; keepIcon?: boolean; danger?: boolean; forGood?: boolean; red?: boolean; label?: string; back?: boolean; onPick?: () => void }) {
+export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, end, opens, chevron, disabled, keepIcon: _keepIcon, danger, forGood, red, label, back, onPick, onBlur }: { title: ReactNode; note?: ReactNode; keepNote?: boolean; which?: string; whichPath?: boolean; rove?: boolean; on?: boolean; icon?: ReactNode; end?: ReactNode; opens?: string; chevron?: boolean; disabled?: boolean; keepIcon?: boolean; danger?: boolean; forGood?: boolean; red?: boolean; label?: string; back?: boolean; onPick?: () => void; onBlur?: () => void }) {
   const tickEnd = Boolean(on);
   const inMenu = useContext(InMenu);
   const shown = keepNote && note;
@@ -362,7 +388,7 @@ export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, e
     <span className="lc-row-which">{loose}</span>
   ) : undefined;
   return (
-    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} aria-label={label} aria-haspopup={opens ? "menu" : undefined} data-opens={opens} data-back={back || undefined} data-rove={rove || undefined} title={tip} data-on={on || undefined} data-danger={danger || undefined} data-for-good={forGood || red || undefined} data-bare={icon ? undefined : true} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
+    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} aria-label={label} aria-haspopup={opens ? "menu" : undefined} data-opens={opens} data-back={back || undefined} data-rove={rove || undefined} title={tip} data-on={on || undefined} data-danger={danger || undefined} data-for-good={forGood || red || undefined} data-bare={icon ? undefined : true} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick} onBlur={onBlur}>
       {icon && <span className="lc-row-tick">{icon}</span>}
       <span className="lc-row-t">
         {aside ? (
@@ -409,6 +435,8 @@ export function BackRow({ name, label, menu, rove = true, onBack }: { name: Reac
 */
 export function SubMenu({ title, icon, value, label, width = 240, children }: { title: ReactNode; icon?: ReactNode; value?: ReactNode; label: string; width?: number; children: (done: () => void) => ReactNode }) {
   const subs = useContext(Subs);
+  // A menu item only inside a menu, as Row is: in the pinned Session card, which is no menu, it is a plain button that opens one.
+  const inMenu = useContext(InMenu);
   const row = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -464,7 +492,7 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
         ref={row}
         type="button"
         className="lc-row l-focus"
-        role="menuitem"
+        role={inMenu ? "menuitem" : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         data-open={open || undefined}
@@ -523,10 +551,17 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
   press acts. The ask lives in the row, so it goes with the menu: shut, or another row's menu opened, it asks from the
   start. A press that comes too soon after the ask (confirm.ts) is the second click of a double-click and does nothing.
   The confirm's `sureNote` shows under it, since it says what the press will do; the first state's `note` is its tooltip.
+  Where the row stays up (the team card pinned beside the chat), the ask runs out after CONFIRM_LAPSE or once the focus
+  leaves the row, so it never waits in red for a press meant for something else.
 */
 export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, red, onConfirm }: { title: ReactNode; sure: ReactNode; note?: ReactNode; sureNote?: ReactNode; icon?: ReactNode; forGood?: boolean; red?: boolean; onConfirm: () => void }) {
   const [askedAt, setAskedAt] = useState<number | null>(null);
   const asked = askedAt !== null;
+  useEffect(() => {
+    if (askedAt === null) return;
+    const t = setTimeout(() => setAskedAt(null), CONFIRM_LAPSE);
+    return () => clearTimeout(t);
+  }, [askedAt]);
   return (
     <Row
       title={asked ? sure : title}
@@ -536,6 +571,7 @@ export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, red, on
       danger={asked}
       forGood={forGood}
       red={red}
+      onBlur={asked ? () => setAskedAt(null) : undefined}
       onPick={() => {
         const now = performance.now();
         const step = confirmPress(askedAt, now);

@@ -174,11 +174,11 @@ export function replaceTab(d0: DockState, from: DockTab, to: DockTab): DockState
 }
 
 /**
-  What used to be a tab and isn't any more (2026-11-25): Session is a popup from the session header's
-  icon row, and the New tab guide is gone with the tab strip. A layout that still names them (kept from
+  What used to be a tab and isn't any more (2026-11-25): Session is a card the session header's
+  icon row pins, and the New tab guide is gone with the tab strip. A layout that still names them (kept from
   before, or one App.tsx opened for a session not yet on screen) loses them here. When the one showing
   was one of them, the panel is hidden rather than showing a surface nobody asked for, and `popup`
-  says the Session popup was what was asked for, so the session opens it.
+  says the Session card was what was asked for, so the session pins it.
 */
 export const NOT_TABS: readonly DockTab[] = ["session", GUIDE];
 export function dropPopups(d: DockState): { dock: DockState; popup?: "session" } {

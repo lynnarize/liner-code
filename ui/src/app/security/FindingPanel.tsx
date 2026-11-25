@@ -106,7 +106,8 @@ const ACT_ICON: Record<string, (p: { size?: number }) => ReactNode> = { found: I
 
 /**
   Dismiss, with why: a reason picks it at once; Other asks for a note first, in the same menu, with a way back on top and
-  the note sent by Enter, or no note by the row under it (a menu holds rows, never buttons of its own).
+  the note sent by Enter, or no note by the row under it (a menu holds rows, never buttons of its own). It is keyed by
+  the finding, so Next never carries one finding's note to the next.
 */
 function Dismiss({ onDismiss }: { onDismiss: (r: DismissReason, note?: string) => void }) {
   const [other, setOther] = useState(false);
@@ -119,6 +120,8 @@ function Dismiss({ onDismiss }: { onDismiss: (r: DismissReason, note?: string) =
       align="end"
       width={280}
       triggerClass="lc-pane-btn lf-x-dismiss"
+      // Shut by a click outside or Escape, it opens next time at its reasons, not on Other with the note left in it.
+      onOpenChange={(open) => !open && (setOther(false), setNote(""))}
       trigger={
         <>
           Dismiss
@@ -192,6 +195,8 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
   const root = useRef<HTMLElement>(null);
   // A new finding starts at its top.
   useEffect(() => void root.current?.querySelector(".lc-pane-body")?.scrollTo({ top: 0 }), [f.id]);
+  // And with an empty note box: the panel stays up across Next, and Enter would add words meant for the last finding to this one.
+  useEffect(() => setNote(""), [f.id]);
 
   const ex = f.explain;
   const places: CodeExcerpt[] = ex?.where?.length ? ex.where : [];
@@ -353,7 +358,7 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
       {/* Three buttons leave the words little room in a narrow panel: a few words, the whole sentence in the tooltip. */}
       {f.state === "open" ? (
         <PaneFoot say={<span title={fixing ? (f.fix?.state === "ready" ? "Its fix is ready to merge" : "Being fixed in a session in its own worktree") : "Fix starts a session in its own worktree, with this as its brief"}>{fixing ? (f.fix?.state === "ready" ? "Fix ready to merge" : "Being fixed") : "Fix works in a worktree"}</span>}>
-          <Dismiss onDismiss={(r, note) => run(act.dismiss(f.id, r, note).then((n) => (toast(`Dismissed as ${DISMISS_LABEL[r].toLowerCase()}. The next scan won't raise it again.`), onActed?.(n))))} />
+          <Dismiss key={f.id} onDismiss={(r, note) => run(act.dismiss(f.id, r, note).then((n) => (toast(`Dismissed as ${DISMISS_LABEL[r].toLowerCase()}. The next scan won't raise it again.`), onActed?.(n))))} />
           <PaneButton disabled={busy} onClick={() => run(act.ask(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: a session to ask about it would open here."))))}>
             Ask about it
           </PaneButton>

@@ -123,8 +123,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [picking, setPicking] = useState(false);
   // Where this server's page has been, so Back and Forward show only with somewhere to go (browser-trail.ts).
   const [trail, setTrail] = useState(NO_TRAIL);
-  // When the head's Back or Forward was last pressed, so the page that loads after it reads as that step.
-  const stepped = useRef(0);
+  // When the head's Back or Forward was last pressed and which way, so the page that loads after it reads as that step,
+  // and a place both behind and ahead of this one is reached the way it was asked for.
+  const stepped = useRef({ at: 0, step: 0 });
   useEffect(() => setTrail(NO_TRAIL), [target?.port]);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [question, setQuestion] = useState("");
@@ -264,9 +265,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       else if (d.kind === "nav") {
         const path = String(d.path || "/");
         // A whole page that loads after the head's Back or Forward is that step; any other load is a new place (browser-trail.ts).
-        const how = landing(d.how, Date.now() - stepped.current < 5000);
-        stepped.current = 0;
-        setTrail((t) => landed(t, path, how));
+        const own = Date.now() - stepped.current.at < 5000 ? stepped.current.step : 0;
+        const how = landing(d.how, own !== 0);
+        stepped.current = { at: 0, step: 0 };
+        // The page says which way its own step went where it can tell (proxy.ts); otherwise the head's press does.
+        const step = typeof d.step === "number" && d.step ? d.step : own;
+        setTrail((t) => landed(t, path, how, step));
         setTarget((t) => (t ? { ...t, path } : t));
         setAddress((a) => (document.activeElement?.classList.contains("lc-br-addr") ? a : shown({ port: now.current.target?.port ?? null, path })));
       } else if (d.kind === "picked") {
@@ -601,12 +605,12 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         <div className="lc-pane-field lc-br-field">
           {/* Back and Forward only with somewhere to go, Reload only with a page open: in a narrow panel the address keeps the room. */}
           {target && canBack(trail) && (
-            <button type="button" className="lc-br-nav l-focus" aria-label="Back" title="Back" onClick={() => ((stepped.current = Date.now()), cmd("back"))}>
+            <button type="button" className="lc-br-nav l-focus" aria-label="Back" title="Back" onClick={() => ((stepped.current = { at: Date.now(), step: -1 }), cmd("back"))}>
               <I.chevL size={14} />
             </button>
           )}
           {target && canForward(trail) && (
-            <button type="button" className="lc-br-nav l-focus" aria-label="Forward" title="Forward" onClick={() => ((stepped.current = Date.now()), cmd("forward"))}>
+            <button type="button" className="lc-br-nav l-focus" aria-label="Forward" title="Forward" onClick={() => ((stepped.current = { at: Date.now(), step: 1 }), cmd("forward"))}>
               <I.chevR size={14} />
             </button>
           )}

@@ -20,7 +20,7 @@ import { addToDraft, SendBox } from "./Composer";
 import { getState, loadItems, rpc, useEngine, useItems } from "./engine";
 import { I, MARK_WORD } from "./icons";
 import { agentOf, ago, clock, isModelAgent, markOf, mergeFiles, modelLabel, onTheWall, plural, providerLabel, sumLines, threadModel, turnsOf, wallShown } from "./model";
-import { markLabelOf, markStateOf, prSaid, reviewHeld, seenAsk, statusKind, wallKind, type WallKind } from "./session-state";
+import { markLabelOf, markStateOf, needsReview, prSaid, seenAsk, statusKind, wallKind, type WallKind } from "./session-state";
 import { isStep, LiveLine, trailSteps } from "./Timeline";
 import { pairOf } from "./Crew";
 import { rowWords, SideFacts, SideMark } from "./SideList";
@@ -45,8 +45,8 @@ type Filter = "all" | WallKind | "review";
 export { wallKind };
 const RANK: Record<WallKind, number> = { needs: 0, working: 1, done: 2 };
 
-/** Sessions waiting for review: Reviewer-blocked, finished with unreviewed files, or with an open pull request. */
-export const needsReview = (t: Thread) => !t.archived && !t.routine && !t.security && !t.done && (reviewHeld(t) || (t.toReview ?? 0) > 0 || t.pr?.state === "open");
+/** Sessions waiting for review (session-state.ts, where plain Node tests it). */
+export { needsReview };
 
 /** The sessions on the Wall, in its order: By status's three (statusKind), each newest first, unread answers ahead of read ones. */
 export function wallOrder(threads: Thread[], now = Date.now()) {

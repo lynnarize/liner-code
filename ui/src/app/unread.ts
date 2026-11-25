@@ -6,13 +6,22 @@
 */
 import { useEffect } from "react";
 import { rpc } from "./engine";
+import { clearsUnread, shownAfresh } from "./row-menu";
 
-/** Clears the session's unread mark while it is on screen and the window has focus, now and whenever the window comes back. */
+/**
+  Clears the session's unread mark while it is on screen and the window has focus, now and whenever the window comes back;
+  not one you marked unread while it was open (row-menu.ts), which stays so until you leave it.
+*/
 export function useReadWhileShown(id: string | undefined, unread: boolean | undefined) {
   useEffect(() => {
     if (!id) return;
+    shownAfresh(id);
+    return () => shownAfresh(id);
+  }, [id]);
+  useEffect(() => {
+    if (!id) return;
     const clear = () => {
-      if (unread && document.hasFocus()) void rpc("thread.update", { id, unread: false });
+      if (clearsUnread(id, unread, document.hasFocus())) void rpc("thread.update", { id, unread: false });
     };
     clear();
     window.addEventListener("focus", clear);

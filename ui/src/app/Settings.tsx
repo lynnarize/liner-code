@@ -34,6 +34,7 @@ import { StartPick } from "./Models";
 import { startSaid } from "./start-words";
 import { Badge, ConfirmRow, Disc, Kbd, LookAgain, MenuFoot, ModelTag, NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
 import { confirmPress } from "./confirm";
+import { CONFIRM_LAPSE } from "./confirm";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
 import { appHasNews, sizeOf, updates } from "./Updates";
@@ -2337,6 +2338,13 @@ function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"
   const [kind, setKind] = useState<"command" | "path">("command");
   const [pattern, setPattern] = useState("");
   const [action, setAction] = useState<"allow" | "ask" | "deny">("deny");
+  // The rule whose × was pressed once, and when (confirm.ts): a deny dropped by a stray click would quietly let a step through.
+  const [sure, setSure] = useState<{ key: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!sure) return;
+    const t = setTimeout(() => setSure(null), CONFIRM_LAPSE);
+    return () => clearTimeout(t);
+  }, [sure]);
   const add = () => {
     const p = pattern.trim();
     if (!p) return;
@@ -2347,16 +2355,36 @@ function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"
     <Group title="Permission rules" note="Glob rules for the steps an agent asks Liner Code to approve, read top to bottom (the last match wins). Deny refuses a step even where Auto or a session grant would let it through. At Full access, and where a tool's own Auto lets a step through, nothing is asked, so no rule is read there.">
       <Field title="Command and path globs" below>
         <div className="lc-mem">
-          {rules.map((r, i) => (
-            <div key={`${i}:${r.kind}:${r.pattern}`} className="lc-mem-row">
-              <span className="lc-mono">
-                <b>{r.action.toUpperCase()}</b> · {r.kind}: {r.pattern}
-              </span>
-              <button type="button" className="lc-ib l-focus" aria-label={`Remove rule ${r.pattern}`} onClick={() => onSave(rules.filter((_, j) => j !== i))}>
-                <I.close size={14} />
-              </button>
-            </div>
-          ))}
+          {rules.map((r, i) => {
+            const key = `${i}:${r.kind}:${r.pattern}`;
+            const asked = sure?.key === key;
+            return (
+              <div key={key} className="lc-mem-row">
+                <span className="lc-mono">
+                  <b>{r.action.toUpperCase()}</b> · {r.kind}: {r.pattern}
+                </span>
+                {/* The first press asks, as a project's Remove does; the second click of a double-click is held back. */}
+                <button
+                  type="button"
+                  className={asked ? "lc-btn" : "lc-ib l-focus"}
+                  data-kind={asked ? "danger" : undefined}
+                  data-size={asked ? "sm" : undefined}
+                  aria-label={asked ? `Remove rule ${r.pattern}: press again to remove it` : `Remove rule ${r.pattern}`}
+                  onBlur={() => setSure(null)}
+                  onClick={() => {
+                    const now = performance.now();
+                    const step = confirmPress(sure?.key === key ? sure.at : null, now);
+                    if (step === "ask") return setSure({ key, at: now });
+                    if (step === "wait") return;
+                    setSure(null);
+                    onSave(rules.filter((_, j) => j !== i));
+                  }}
+                >
+                  {asked ? "Remove it" : <I.close size={14} />}
+                </button>
+              </div>
+            );
+          })}
           <form
             className="lc-mem-add"
             onSubmit={(e) => {

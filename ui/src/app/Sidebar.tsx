@@ -33,7 +33,7 @@ import { appIcon } from "./Addon";
 import { I, ModelMark, N, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
-import { groupValue, stopShows, unreadRow } from "./row-menu";
+import { groupValue, markUnread, stopShows, unreadRow } from "./row-menu";
 import type { Box } from "./menu-place";
 import { rowWords, SideCounts, SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused } from "./SideList";
 import { asksYou, markLabelOf, markStateOf, needsYou, newsForYou, prSaid, seenAsk, waitsOnYou, worksNow } from "./session-state";
@@ -346,9 +346,11 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     const patch =
       what === "pin" ? { pinned: !t.pinned } : what === "settle" ? { done: !settled, unread: false, pinned: false } : what === "snooze" ? { snoozedUntil: at!.getTime(), wake: null } : what === "unread" ? { unread: unreadRow(t).unread } : { snoozedUntil: null, wake: null };
     const before = { pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, wake: t.wake ?? null };
+    // Marked unread by hand, the open session stays so until you leave it (row-menu.ts); Undo lets that go too.
+    if (what === "unread") markUnread(t.id, unreadRow(t).unread);
     await rpc("thread.update", { id: t.id, ...patch });
     const where = what === "pin" ? (t.pinned ? "out of Pinned" : "to Pinned") : what === "settle" ? (settled ? "back to its project" : "to Settled") : what === "snooze" ? `to Snoozed, until ${at!.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "back";
-    toast(what === "unread" ? `Marked ${t.title} ${t.unread ? "read" : "unread"}` : `Moved ${t.title} ${where}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, ...before }) }, duration: 5000 });
+    toast(what === "unread" ? `Marked ${t.title} ${t.unread ? "read" : "unread"}` : `Moved ${t.title} ${where}`, { action: { label: "Undo", onClick: () => (what === "unread" && markUnread(t.id, before.unread), void rpc("thread.update", { id: t.id, ...before })) }, duration: 5000 });
   };
 
   const moveTo = async (t: Thread, groupId: string | null) => {

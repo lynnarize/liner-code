@@ -263,7 +263,7 @@ function EnvPanel({ thread, project, files, lines, onChanges, close, actions }: 
       ) : (
         <>
           {actions?.(close)}
-          {/* Where it runs, in the Session popup's words; its folder's path in the row's tooltip and at the foot of its list. */}
+          {/* Where it runs, in the Session card's words; its folder's path in the row's tooltip and at the foot of its list. */}
           <Row title="This Mac" note={tilde(cwd)} icon={<I.laptop size={14} />} end={thread.worktree ? "its own worktree" : "the checkout"} opens="mac" onPick={() => go("mac")} />
           <Row title={editor ? `Open in ${editor.name}` : "Open in your editor"} icon={<I.edit size={14} />} onPick={() => openIn(editor)} />
           {editors && editors.length > 1 && <Row title="Editor" icon={<I.code size={14} />} end={editor?.name} opens="editor" onPick={() => go("editor")} />}

@@ -1,6 +1,6 @@
 /*
-  The Session popup (SPEC rule 5, board Session, 2026-11-25): it drops from the Session icon at the right end of the
-  session's header, in the menu's shape. Three sections: where it runs (the Mac or its worktree, the project and its
+  The Session card (SPEC rule 5, board Session, 2026-11-25): the Session icon at the right end of the session's header
+  pins it at the chat's right (Session.tsx), in the menu's shape. Three sections: where it runs (the Mac or its worktree, the project and its
   folder, the branch, the changes still to commit, the agents that worked, a pull request and its checks), its context
   (used of the window, a bar split by source, what fills it opened in place, Compact, what came from cache) and its setup
   (Multi-agent, Tool preset, Sidekick context, Connections, Spend limit, Workspace memory), each a row with its value and
@@ -16,7 +16,7 @@ import { checkpointsOf, compact, duration, money, plural, sumLines } from "./mod
 import { openSurface } from "./TopBar";
 import { openAgents, showTeam } from "./Crew";
 import { addFive, agentsWorked, spendWords } from "./session-pop";
-import { Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
+import { ConfirmRow, Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
 
 const fail = (e: Error) => toast.error(e.message);
 
@@ -121,7 +121,7 @@ const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 /**
   Multi-agent › Off, Teamwork, Swarm: one row, the same in this popup's Setup and in the session's title menu (Session.tsx).
   Teamwork and Swarm are started here (and by /teamwork and /swarm), never in a side chat or a scan. `close` closes the
-  menu it is in.
+  menu it is in. Off stops every worker, so while a team is on it asks once more, as the team card's Turn it off does.
 */
 export function MultiAgentRow({ thread, close }: { thread: Thread; close: () => void }) {
   const mode = isSwarm(thread) ? ((thread.swarm?.mode ?? "teamwork") === "swarm" ? "Swarm" : "Teamwork") : "Off";
@@ -138,7 +138,7 @@ export function MultiAgentRow({ thread, close }: { thread: Thread; close: () => 
     <SubMenu title="Multi-agent" icon={<I.fusion size={14} />} value={mode} label="Multi-agent" width={250}>
       {(done) => (
         <>
-          <Row title="Off" on={mode === "Off"} onPick={() => multiAgent("off", done)} />
+          {mode === "Off" ? <Row title="Off" on onPick={() => multiAgent("off", done)} /> : <ConfirmRow title="Off" sure="Turn it off: every worker stops" red onConfirm={() => multiAgent("off", done)} />}
           <Row title="Teamwork" note="A coordinator and a tree of agents under it" on={mode === "Teamwork"} onPick={() => multiAgent("teamwork", done)} />
           <Row title="Swarm" note="Peers on one board, parked at 0 MB while they wait" on={mode === "Swarm"} onPick={() => multiAgent("swarm", done)} />
         </>

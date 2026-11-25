@@ -26,10 +26,16 @@ export function landing(how: unknown, stepping: boolean): Landing {
   return "pop";
 }
 
-/** The trail once the page has landed on `path`. */
-export function landed(t: Trail, path: string, how: Landing = "pop"): Trail {
+/**
+  The trail once the page has landed on `path`. A step that says which way it went (`step`: -1 back, 1 forward, from the
+  head's own Back or Forward or from the page) takes that way: after A, B, then a link to A, a Forward from B lands on
+  the A ahead, not the A behind. A step that doesn't say, or whose way holds another place, is read from its neighbours.
+*/
+export function landed(t: Trail, path: string, how: Landing = "pop", step = 0): Trail {
   if (t.places[t.at] === path) return t;
   if (how === "replace" && t.at >= 0) return { places: t.places.map((p, i) => (i === t.at ? path : p)), at: t.at };
+  const to = t.at + Math.sign(step);
+  if (how === "pop" && step && to >= 0 && t.places[to] === path) return { places: t.places, at: to };
   if (how === "pop" && t.at > 0 && t.places[t.at - 1] === path) return { places: t.places, at: t.at - 1 };
   if (how === "pop" && t.places[t.at + 1] === path) return { places: t.places, at: t.at + 1 };
   const places = [...t.places.slice(0, t.at + 1), path];

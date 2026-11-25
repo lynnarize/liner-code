@@ -99,7 +99,7 @@ export function showBelow(threadId: string) {
   belows.set(threadId, true);
 }
 const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
-// The Session popup reads the session itself and closes itself when a row takes you to a surface (SessionInfo.tsx).
+// The Session card reads the session itself (SessionInfo.tsx); pinned, it stays up when a row takes you to a surface.
 const SessionPopup = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionPopup));
 const MultiAgentRow = lazyAgain(() => import("./SessionInfo").then((m) => m.MultiAgentRow));
 /** The install previews that have come up by themselves once, while the app runs. */
@@ -719,9 +719,9 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   onChanges={() => setDock((d) => openTab(d, "changes"))}
                   actions={(close) => (
                     <>
-                      {/* The Session popup, as its icon in the header's row opens it. */}
+                      {/* The Session card, as its icon in the header's row pins it. */}
                       <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), setSessionOpen(true))} />
-                      {/* One "Multi-agent  Off ›" row, as the Session popup's Setup has it; Agents opens what the Agents key opens (the popup, or the panel's surface). */}
+                      {/* One "Multi-agent  Off ›" row, as the Session card's Setup has it; Agents opens what the Agents key opens (the popup, or the panel's surface). */}
                       {!thread.sideOf && !thread.security && (
                         <>
                           <Suspense fallback={null}>

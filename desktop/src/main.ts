@@ -14,7 +14,7 @@ import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
 import { extractLaunchTarget, launchQuestion, parseDeepLink, type LaunchTarget } from "./deeplink";
 import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, type Live } from "./finish";
-import { afterCrash, engineStatusDue } from "./window-state";
+import { afterCrash, closeOf, engineStatusDue } from "./window-state";
 import { fileIn, folderOf, openAsText, openIn as openInWith, type Opener } from "./editor";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
@@ -270,12 +270,13 @@ function createWindow(secondary = false) {
   w.on("resize", keepFrame);
   w.on("move", keepFrame);
 
-  // Closing the primary window on Mac keeps the app (and its sessions) running; secondary windows close normally.
+  // Closing the last window open on Mac keeps the app (and its sessions) running; any other window closes (window-state.ts closeOf).
   w.on("close", (e) => {
-    if (quitting || secondary || windows.size > 1) return;
+    const then = closeOf({ open: windows.size, quitting, mac: isMac });
+    if (then === "close") return;
     // Elsewhere closing the window quits, so it asks first while sessions work, as quitting does:
     // asked after the window has gone, Cancel would leave the app running with no window.
-    if (!isMac) {
+    if (then === "ask") {
       if (holdQuit()) e.preventDefault();
       return;
     }
@@ -1240,7 +1241,8 @@ void app.whenReady().then(async () => {
     }
     boot.token = engine.token;
     appOrigin = origin;
-    void win?.loadURL(`${appOrigin}/`);
+    // Every window, a New Window too: one left on the old address would be talking to nothing.
+    for (const w of windows.values()) if (!w.isDestroyed()) void w.loadURL(`${appOrigin}/`);
   };
   engine.onFail = (m) => void fail(m);
   engine.port = prefs.port ?? 0;

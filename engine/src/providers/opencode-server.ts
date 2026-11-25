@@ -14,16 +14,17 @@
   `opencode acp` cleanly on first open.
 */
 import { createHash, randomBytes } from "node:crypto";
+import { rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Access, AgentStep, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
-import { killTree, RUN_ENV, spawn, which } from "../exec.ts";
-import { TOOLS } from "../liner-tools.ts";
+import { below, endAll, killTree, marked, markFile, marking, processes, RUN_ENV, spawn, THREAD_ENV, which, type Mark, type Proc } from "../exec.ts";
+import { PAIR_ENV, SECURITY_ENV, SUBAGENT_ENV, SWARM_ENV, TOOLS } from "../liner-tools.ts";
 import { commandRisk, isDestructive, readsOnly, ruleFor } from "../risk.ts";
-import { commandWords, fromFolder, gitInside, inFolder, leaves, linerCall, plainOutput, secretFile } from "./acp.ts";
+import { CANCEL_MS, commandWords, fromFolder, gitInside, inFolder, jsonc, leaves, linerCall, opencodeOwn, plainOutput, RENAMED, secretFile } from "./acp.ts";
 import { LINER_WAIT_SEC, ResumeFailed, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -46,6 +47,8 @@ type OpenCodeAgent = {
 
 /** How long `opencode serve` has to print its listening address and answer `/api/info`. */
 const START_MS = 25_000;
+/** How long a shutdown waits to read what is below the server before it ends what it can find: a slow `ps` never holds a quit. */
+const CLOSE_LOOK_MS = 1500;
 /** How long an idle daemon with zero registered sessions stays alive before shutting down. */
 let daemonIdleMs = 60_000;
 export const setDaemonIdleMs = (ms: number) => void (daemonIdleMs = ms);
@@ -116,14 +119,20 @@ export function stripLeadingCd(command: string, cwd: string): string {
   - Code Mode (`execute*`) and unasked mutators (`OPENCODE_UNASKED`) are always denied.
   - Native in-process `subagent*` / `task*` are allowed on normal sessions (child permissions route
     back through the shared SSE stream) and denied on sidekicks, side chats, and sealed scans.
+  - `yours`: the permission rules of your own OpenCode settings (acp.ts opencodeOwn). Their denies come along after
+    the leading ask, as the ACP driver's opencodeRules carries them: a session's rules are the last OpenCode reads, so
+    that ask would bury a deny of yours otherwise (2.3.2 ran `bash: deny` at Full). Your allows don't: the level decides.
 */
-export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | "scan" | "sealed" | "swarm">, serverName?: string): PermRule[] {
+export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | "scan" | "sealed" | "swarm">, serverName?: string, yours: Json = {}): PermRule[] {
+  // Everything denied but what you named, as you said it, with what you named coming to the access level.
+  const shut = yours["*"] === "deny";
   const rules: PermRule[] = [
     { action: "*", resource: "*", effect: "ask" },
-    ...OPENCODE_NOTES.map((action): PermRule => ({ action, resource: "*", effect: "allow" })),
+    ...(shut ? [{ action: "*", resource: "*", effect: "deny" } as PermRule, ...Object.keys(yours).filter((n) => n !== "*" && yours[n] !== "deny").map((action): PermRule => ({ action, resource: "*", effect: "ask" }))] : OPENCODE_NOTES.map((action): PermRule => ({ action, resource: "*", effect: "allow" }))),
     // Isolate per-session Liner MCP servers on a shared daemon: deny every other session's `liner_*`, then allow ours.
     { action: "liner_*", resource: "*", effect: "deny" },
     ...(serverName ? TOOLS.map((t): PermRule => ({ action: `${serverName}_${t.name}`, resource: "*", effect: "allow" })) : []),
+    ...yourDenies(yours, shut ? [] : OPENCODE_NOTES),
     { action: "execute*", resource: "*", effect: "deny" },
     ...OPENCODE_UNASKED.map((action): PermRule => ({ action, resource: "*", effect: "deny" })),
   ];
@@ -133,6 +142,47 @@ export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | 
   rules.push({ action: "subagent*", resource: "*", effect: subEffect });
   return rules;
 }
+
+/** OpenCode 2's own names for a name your rules may use (acp.ts RENAMED), and edit for write and patch, which 2.x asks as edit. Read when called: acp.ts imports this file. */
+const namesOf = (name: string) => [name, ...(RENAMED[name] ? [RENAMED[name]] : /^(?:write|patch|multiedit)$/.test(name) ? ["edit"] : [])];
+/**
+  Your rules' denies as rules of a session's list, in your order since the last that fits wins: a name denied whole, under
+  OpenCode 2's name for it too, and a name's patterns when one of them denies, its allows brought to the level (an ask, or
+  an allow for what goes by itself anyway), as opencodeRules writes them for ACP. "*"'s patterns bring only their denies:
+  its asks would bury what goes by itself.
+*/
+function yourDenies(yours: Json, free: string[]): PermRule[] {
+  const out: PermRule[] = [];
+  for (const [name, rule] of Object.entries(yours)) {
+    const names = namesOf(name);
+    if (rule === "deny") {
+      if (name !== "*") for (const action of names) out.push({ action, resource: "*", effect: "deny" });
+      continue;
+    }
+    if (!rule || typeof rule !== "object" || !Object.values(rule).includes("deny")) continue;
+    const open: PermRule["effect"] = free.includes(name) ? "allow" : "ask";
+    const each = Object.entries(rule as Json).map(([resource, effect]): [string, PermRule["effect"]] => [resource, effect === "deny" ? "deny" : effect === "allow" ? open : "ask"]);
+    for (const action of names) for (const [resource, effect] of name === "*" ? each.filter(([, e]) => e === "deny") : each) out.push({ action, resource, effect });
+  }
+  return out;
+}
+
+/** Your OpenCode settings' permission rules for a session in `cwd` (acp.ts opencodeOwn): your files, and the endpoint's config. */
+function yourRules(cwd: string, env: NodeJS.ProcessEnv): Json {
+  try {
+    return opencodeOwn(cwd, env, jsonc(env.OPENCODE_CONFIG_CONTENT || "{}") ?? {}).permission;
+  } catch {
+    return {};
+  }
+}
+
+/** Two rule lists alike, rule by rule (T3 Code: provider-opencode v2/adapter.ts, sameRules). */
+const sameRules = (a: PermRule[] | undefined, b: PermRule[]) => a?.length === b.length && a.every((r, i) => r.action === b[i].action && r.resource === b[i].resource && r.effect === b[i].effect);
+
+/** A server's password under either of OpenCode's names: neither may reach a command an agent runs. */
+const PASSWORDS = ["OPENCODE_PASSWORD", "OPENCODE_SERVER_PASSWORD"];
+/** What is one session's own in an environment, not the shared server's: its thread (for a dev server it starts) and a worker's ports. */
+const SESSION_VARS = [THREAD_ENV, "LINER_WORKTREE_PORT_OFFSET"];
 
 /**
   Builds daemon-level `OPENCODE_CONFIG_CONTENT` preserving any endpoint provider config while enforcing
@@ -158,6 +208,27 @@ export function daemonConfigContent(env: NodeJS.ProcessEnv): string {
   };
   return JSON.stringify({ ...base, permission });
 }
+
+/**
+  The name a session's Liner MCP server goes by on the shared server: from its thread and what it is there (a lead, a sidekick,
+  a coordinator, a scan), so a session has the same name after the engine restarts and resumes with its tools reachable (T3
+  Code: provider-opencode v2/adapter.ts t3McpServerName, `t3-code-<thread>`), and two sessions never share one; the rules keep
+  one from another's either way (opencodeSessionRules). It was its surface key's file, made anew each run (agent-tools.ts),
+  and every resume after a restart started over. A team's workers share their thread, so a worker's still comes from its key's
+  file, and its saved rules are written again on resume instead (ensureReady).
+*/
+export function mcpServerName(o: Pick<OpenOptions, "env" | "mcp" | "sidekick" | "side" | "scan">): string {
+  const m = o.mcp?.env ?? {};
+  const thread = o.env[THREAD_ENV];
+  const team = /^(?:worker|orchestrator)$/.test(m[SWARM_ENV] ?? "");
+  const who = thread && !team ? `thread:${thread}` : m.LINER_SURFACE_KEY_FILE ? `key:${m.LINER_SURFACE_KEY_FILE}` : "";
+  if (!who) return `liner_${randomBytes(4).toString("hex")}`;
+  const what = [m[SWARM_ENV], m[PAIR_ENV], m[SUBAGENT_ENV], m[SECURITY_ENV], o.sidekick && "sidekick", o.side && "side", o.scan && "scan"].map((x) => x || "").join("|");
+  return `liner_${createHash("sha256").update(`${who}|${what}`).digest("hex").slice(0, 8)}`;
+}
+
+/** The highest of some risks: a compound command is as risky as its riskiest part. */
+const highest = (risks: ReturnType<typeof commandRisk>[]) => (risks.includes("high") ? "high" : risks.includes("medium") ? "medium" : "low");
 
 /** Stable pool key so sessions with the same OpenCode binary and provider/auth config share one daemon. */
 function poolKeyFor(bin: string, env: NodeJS.ProcessEnv): string {
@@ -211,12 +282,23 @@ export class OpenCodeDaemon {
   private idleTimer: NodeJS.Timeout | undefined;
   private closed = false;
   private onDead?: () => void;
+  /** The marker the server and all it starts carry (exec.ts Mark), so a shutdown, or the next engine after a crash, ends them. */
+  private mark: Mark | undefined;
+  private reaping: Promise<void> | undefined;
+  /** Its marker's value, which each session's environment carries too (sessionEnv): one replaces what the commands get. */
+  readonly runValue: string | undefined;
+  /** A check of whether it still answers (doubt), while one runs: the pool hands it out only once that's settled. */
+  private doubting: Promise<void> | undefined;
+  /** How many open sessions hold each Liner MCP server name, so a close removes a server only when its last session goes. */
+  private mcpHolds = new Map<string, number>();
 
-  private constructor(url: string, password: string, child: ChildProcessWithoutNullStreams | null, onDead?: () => void) {
+  private constructor(url: string, password: string, child: ChildProcessWithoutNullStreams | null, onDead?: () => void, mark?: Mark) {
     this.url = url.replace(/\/+$/, "");
     this.auth = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`;
     this.child = child;
     this.onDead = onDead;
+    this.mark = mark;
+    this.runValue = mark?.value;
     this.sseReady = new Promise<void>((resolve) => {
       this.markSseReady = resolve;
     });
@@ -230,6 +312,8 @@ export class OpenCodeDaemon {
         for (const s of this.sessions.values()) s.onDaemonLost();
         this.sessions.clear();
         this.parents.clear();
+        // What it started (a dev server, its pty helper) is pid 1's now: ended by its marker, as a shutdown would.
+        void this.reap(child, []);
         this.onDead?.();
       });
     }
@@ -259,14 +343,32 @@ export class OpenCodeDaemon {
   /** Spawns a headless `opencode serve --port 0 --hostname 127.0.0.1` daemon and verifies its V2 `/api/info`. */
   static async spawn(bin: string, env: NodeJS.ProcessEnv, onDead?: () => void): Promise<OpenCodeDaemon> {
     const password = randomBytes(24).toString("hex");
-    const mark = randomBytes(12).toString("hex");
+    // Marked as an ACP agent's process is (acp.ts spawnAt): in its environment, and as a file in this engine's folder it and
+    // everything it starts hold open, so what outlives a kill, or an engine that died hard, is still found and ended.
+    const mark: Mark = { value: randomBytes(12).toString("hex"), file: process.platform === "win32" ? undefined : markFile("run", randomBytes(9).toString("hex")) };
+    // Not a session's own variables: the server is every session's, and each gets its own through its environment (sessionEnv).
+    const shared = Object.fromEntries(Object.entries(env).filter(([k]) => !PASSWORDS.includes(k) && !SESSION_VARS.includes(k)));
     const childEnv: NodeJS.ProcessEnv = {
-      ...env,
-      OPENCODE_SERVER_PASSWORD: password,
+      ...shared,
+      // OPENCODE_PASSWORD, which 2.x reads first, in its stdio mode, which takes it out of its own environment before it starts
+      // anything, so no command an agent runs inherits it (2.3.2: cli serve; its own `opencode acp` starts its server so). With
+      // OPENCODE_SERVER_PASSWORD and the plain mode, every command had it, and one used it to reach the server's /api/session.
+      // Still readable in the server's own environment by what runs as you (ps -E), as with ACP: 2.3.2 reads it from there alone.
+      // (T3 Code: provider-opencode v2/OpenCode2Server.ts serverEnvironment drops the inherited 1.x name the same way.)
+      OPENCODE_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: daemonConfigContent(env),
-      [RUN_ENV]: mark,
+      [RUN_ENV]: mark.value,
     };
-    const child = spawn(bin, ["serve", "--port", "0", "--hostname", "127.0.0.1"], { env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+    // A process group of its own, so ending it ends the commands its sessions ran too: without one, killTree could signal the
+    // server alone, and every dev server or pty helper it had started lived on after the quit.
+    const { stdio, done } = marking(["pipe", "pipe", "pipe"], [mark]);
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      // --stdio also ends the server once its stdin closes: with an engine that died hard, as well as on a shutdown.
+      child = spawn(bin, ["serve", "--stdio", "--port", "0", "--hostname", "127.0.0.1"], { env: childEnv, stdio: stdio as ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
+    } finally {
+      done();
+    }
     let out = "";
     let url = "";
     try {
@@ -291,15 +393,48 @@ export class OpenCodeDaemon {
       const bodyText = await r.text().catch(() => "");
       const info = (() => { try { return r.ok ? JSON.parse(bodyText) : null; } catch { return null; } })();
       if (!info || typeof info !== "object" || !("version" in info)) throw new NoV2Server(`opencode serve doesn't expose V2 /api/info (status ${r.status}, body: ${bodyText.slice(0, 120)}).`);
-      return new OpenCodeDaemon(url, password, child, onDead);
+      return new OpenCodeDaemon(url, password, child, onDead, mark);
     } catch (e) {
       killTree(child);
+      void endMarked(mark);
       throw e;
     }
   }
 
   get alive() {
     return !this.closed;
+  }
+
+  /**
+    Whether it still answers, asked when a Stop went unanswered: one that doesn't (frozen, or wedged) is ended with all it
+    started, as the ACP driver ends an agent that hasn't stopped 15 seconds after Stop, so the next message starts a new one
+    rather than waiting on it for good, and every session on it with it. Its sessions are in OpenCode's database, and resume.
+  */
+  doubt(ms = 3000): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.doubting ??= fetch(`${this.url}/api/info`, { headers: { authorization: this.auth, accept: "application/json" }, signal: AbortSignal.timeout(ms), redirect: "error" })
+      .then((r) => r.ok, () => false)
+      .then((ok) => (ok || this.closed ? undefined : this.shutdown()))
+      .finally(() => (this.doubting = undefined));
+    return this.doubting;
+  }
+
+  /** Settles once no check of it is running (doubt). */
+  settled(): Promise<void> {
+    return this.doubting ?? Promise.resolve();
+  }
+
+  /** A session holds a Liner MCP server name. */
+  holdMcp(name: string) {
+    this.mcpHolds.set(name, (this.mcpHolds.get(name) ?? 0) + 1);
+  }
+
+  /** A session lets its name go; true when no other session holds it, and the server can go. */
+  releaseMcp(name: string) {
+    const left = (this.mcpHolds.get(name) ?? 1) - 1;
+    if (left > 0) this.mcpHolds.set(name, left);
+    else this.mcpHolds.delete(name);
+    return left <= 0;
   }
 
   register(sessionID: string, session: OpenCodeServerSession) {
@@ -352,7 +487,7 @@ export class OpenCodeDaemon {
     if (this.sessions.size === 0 && !this.closed && this.child && daemonIdleMs > 0) {
       clearTimeout(this.idleTimer);
       this.idleTimer = setTimeout(() => {
-        if (this.sessions.size === 0) this.shutdown();
+        if (this.sessions.size === 0) void this.shutdown();
       }, daemonIdleMs);
       this.idleTimer.unref?.();
     }
@@ -525,8 +660,12 @@ export class OpenCodeDaemon {
     if (found) found.session.onEvent(type, data, found.isChild ? sid : undefined);
   }
 
-  shutdown() {
-    if (this.closed) return;
+  /**
+    Ends the server and everything it started. The promise settles once all of it has gone, for an engine that quits right
+    after: a server that ignores SIGTERM would otherwise outlive the engine, whose own SIGKILL timer never fires.
+  */
+  shutdown(): Promise<void> {
+    if (this.closed) return this.reaping ?? Promise.resolve();
     this.closed = true;
     clearTimeout(this.idleTimer);
     for (const t of this.stopping.values()) clearTimeout(t);
@@ -535,10 +674,43 @@ export class OpenCodeDaemon {
     for (const s of this.sessions.values()) s.onDaemonLost();
     this.sessions.clear();
     this.parents.clear();
-    if (this.child) killTree(this.child);
+    const child = this.child;
     this.onDead?.();
+    if (!child) return Promise.resolve();
+    // Its tree, read first (CLOSE_LOOK_MS at most), since once it goes what it started is pid 1's.
+    const up = child.exitCode === null && child.signalCode === null && child.pid && process.platform !== "win32";
+    let timer: NodeJS.Timeout | undefined;
+    const tree = up ? Promise.race([processes().then((all) => below(all, child.pid!), () => [] as Proc[]), new Promise<Proc[]>((r) => (timer = setTimeout(() => r([]), CLOSE_LOOK_MS)))]).finally(() => clearTimeout(timer)) : Promise.resolve([] as Proc[]);
+    return this.reap(child, tree);
+  }
+
+  /** Ends `child`'s group, what was below it (`tree`), and whatever else carries its marker; once, however often it's asked. */
+  private reap(child: ChildProcessWithoutNullStreams, tree: Proc[] | Promise<Proc[]>): Promise<void> {
+    const mark = this.mark;
+    this.mark = undefined;
+    const ended = Promise.resolve(tree).then((left) => {
+      child.stdin.end();
+      killTree(child);
+      return endAll([...left, ...(child.pid && child.exitCode === null && child.signalCode === null ? [{ pid: child.pid, ppid: process.pid, command: "opencode serve" }] : [])]).then(() => undefined, () => undefined);
+    });
+    const reaping = Promise.all([ended, ended.then(() => (mark ? endMarked(mark) : undefined))]).then(() => undefined);
+    this.reaping = reaping;
+    REAPING.add(reaping);
+    void reaping.finally(() => REAPING.delete(reaping));
+    return reaping;
   }
 }
+
+/** Ends every process that still carries `mark`, then lets its file go once nothing holds it. */
+function endMarked(mark: Mark): Promise<void> {
+  return marked(mark)
+    .then((left) => endAll(left, () => marked(mark)))
+    .then(() => undefined, () => undefined)
+    .finally(() => mark.file && rmSync(mark.file, { force: true }));
+}
+
+/** Servers still being ended, which the engine's quit waits for (shutdownOpenCodeDaemons). */
+const REAPING = new Set<Promise<void>>();
 
 /** Shared daemon pool keyed by `(binaryPath, envFingerprint)` so sessions and subagents share one process. */
 const DAEMONS = new Map<string, Promise<OpenCodeDaemon>>();
@@ -548,7 +720,13 @@ export function sharedOpenCodeDaemon(bin: string, env: NodeJS.ProcessEnv): Promi
   const key = poolKeyFor(bin, env);
   const existing = DAEMONS.get(key);
   if (existing) {
-    return existing.then((d) => (d.alive ? d : (DAEMONS.delete(key), sharedOpenCodeDaemon(bin, env))));
+    // One being checked after an unanswered Stop (doubt) is handed out once it has answered, or a new one once it's ended.
+    return existing.then(async (d) => {
+      await d.settled();
+      if (d.alive) return d;
+      if (DAEMONS.get(key) === existing) DAEMONS.delete(key);
+      return sharedOpenCodeDaemon(bin, env);
+    });
   }
   const starting = OpenCodeDaemon.spawn(bin, env, () => {
     if (DAEMONS.get(key) === starting) DAEMONS.delete(key);
@@ -564,10 +742,8 @@ export function sharedOpenCodeDaemon(bin: string, env: NodeJS.ProcessEnv): Promi
 export async function shutdownOpenCodeDaemons() {
   const all = [...DAEMONS.values()];
   DAEMONS.clear();
-  for (const p of all) {
-    const d = await p.catch(() => null);
-    d?.shutdown();
-  }
+  // A server that went idle a moment ago may still be ending: the quit waits for that one too.
+  await Promise.all([...all.map((p) => p.then((d) => d.shutdown(), () => undefined)), ...REAPING]);
 }
 
 /**
@@ -612,6 +788,10 @@ export class OpenCodeServerSession implements ProviderSession {
   /** Permission and form request IDs already handled (deduplicates SSE + reconciliation polls). */
   private seenPerms = new Set<string>();
   private seenForms = new Set<string>();
+  /** Each tool call's input as `session.tool.called` gave it, by call id (root and children): a shell ask names only its parts. */
+  private inputs = new Map<string, Json>();
+  /** A Stop's interrupt the server hasn't answered: on close, the server is asked whether it still answers at all (doubt). */
+  private unanswered = false;
   /** Settle window in ms after subagents finish (shortened in tests). */
   settleMs = 1500;
   /** Interval in ms between active-turn reconciliation checks (shortened in tests). */
@@ -633,6 +813,16 @@ export class OpenCodeServerSession implements ProviderSession {
   private async ensureReady(sink: TurnSink): Promise<OpenCodeDaemon | null> {
     if (this.fallback) return null;
     if (this.daemon?.alive && this.sessionID) return this.daemon;
+    // Its server ended under it (hung after a Stop, or crashed): the conversation is in OpenCode's database, so a new server
+    // resumes it, with this session's tools and environment handed to that one again.
+    if (this.daemon && this.sessionID) {
+      if (this.serverName) this.daemon.releaseMcp(this.serverName);
+      this.o = { ...this.o, resume: this.sessionID, fork: undefined };
+      this.sessionID = undefined;
+      this.serverName = undefined;
+      this.registeredMcps.clear();
+      this.toldServer = false;
+    }
     let d: OpenCodeDaemon;
     try {
       d = await this.getDaemon();
@@ -651,8 +841,7 @@ export class OpenCodeServerSession implements ProviderSession {
 
     // Register per-session Liner MCP server under a tag scoped to this thread/worker + tool kit so sessions on the shared daemon never cross-talk and resumed sessions match their saved permissions.
     if (this.o.mcp && !this.serverName) {
-      const tagSrc = `${this.o.mcp.env.LINER_SURFACE_KEY_FILE ?? ""}|${this.o.mcp.env.LINER_SWARM ?? ""}|${this.o.mcp.env.LINER_PAIR ?? ""}|${this.o.mcp.env.LINER_SUBAGENT ?? ""}`;
-      const name = tagSrc.replace(/\|/g, "") ? `liner_${createHash("sha256").update(tagSrc).digest("hex").slice(0, 8)}` : `liner_${randomBytes(4).toString("hex")}`;
+      const name = mcpServerName(this.o);
       const r = await d
         .request(
           "PUT",
@@ -671,6 +860,7 @@ export class OpenCodeServerSession implements ProviderSession {
       if (r && r.status >= 200 && r.status < 300) {
         this.serverName = name;
         this.registeredMcps.add(name);
+        d.holdMcp(name);
         // `PUT /api/experimental/mcp/:name` connects asynchronously ("pending" -> "connected"); wait briefly so tools are live before the first prompt.
         for (let i = 0; i < 20; i++) {
           const st = await d.request<{ data?: { name?: string; status?: { status?: string } }[] }>("GET", `/api/mcp?${locQuery}`, undefined, AbortSignal.timeout(3_000)).catch(() => null);
@@ -695,7 +885,7 @@ export class OpenCodeServerSession implements ProviderSession {
       }
     }
 
-    const rules = opencodeSessionRules(this.o, this.serverName);
+    const rules = opencodeSessionRules(this.o, this.serverName, yourRules(this.o.cwd, this.o.env));
     const modelRef = parseModelRef(this.model, this.effort);
 
     if (this.o.resume && this.o.fork) {
@@ -705,6 +895,8 @@ export class OpenCodeServerSession implements ProviderSession {
         throw new ResumeFailed(`OpenCode couldn't fork session ${this.o.resume} (${r.status}).`);
       }
       this.sessionID = r.data.data.id;
+      // A fork keeps the rules it was forked with: this session's go in their place, as on a resume.
+      await d.request("PATCH", `/api/session/${encodeURIComponent(this.sessionID)}`, { permissions: rules }, AbortSignal.timeout(10_000)).catch(() => null);
     } else if (this.o.resume) {
       const r = await d.request<{ data?: { id?: string; permissions?: PermRule[] } }>("GET", `/api/session/${encodeURIComponent(this.o.resume)}`);
       if (r.status === 404) {
@@ -713,14 +905,13 @@ export class OpenCodeServerSession implements ProviderSession {
         throw new ResumeFailed(`OpenCode session ${old} is no longer on this server.`);
       }
       if (r.status < 200 || r.status >= 300 || !r.data?.data?.id) throw new Error(`OpenCode couldn't load session ${this.o.resume} (${r.status}).`);
-      // If the resumed session's saved permission ruleset doesn't allow this Liner MCP server (or still allows native subagents during Swarm), open a fresh session with handoff so the tools are reachable.
-      const savedPerms = r.data.data.permissions;
-      if (Array.isArray(savedPerms) && savedPerms.length > 0) {
-        const needAction = this.serverName ? `${this.serverName}_${this.o.swarm ? "swarm_manage" : "browser_open"}` : undefined;
-        const hasServer = !needAction || savedPerms.some((p) => p.action === needAction && p.effect === "allow");
-        const subRule = [...savedPerms].reverse().find((p) => p.action === "subagent*");
-        const wantSub: PermRule["effect"] = this.o.sidekick || this.o.side || this.o.scan || this.o.sealed || this.o.swarm ? "deny" : "allow";
-        if (!hasServer || (subRule && subRule.effect !== wantSub)) {
+      // Its saved rules are brought to this session's own (its Liner server's name, its level's subagents, your denies) rather than
+      // the conversation started over: a server name from before a restart, or rules an older Liner Code wrote, would hold it back
+      // (T3 Code: provider-opencode v2/adapter.ts writes a session's rules again when they differ, sameRules). Only a server that
+      // won't take them starts over, with the conversation so far.
+      if (!sameRules(r.data.data.permissions, rules)) {
+        const w = await d.request("PATCH", `/api/session/${encodeURIComponent(r.data.data.id)}`, { permissions: rules }, AbortSignal.timeout(10_000)).catch(() => null);
+        if (!w || w.status < 200 || w.status >= 300) {
           this.o = { ...this.o, resume: undefined, fork: undefined };
           throw new ResumeFailed("OpenCode session permissions changed for Liner tools.");
         }
@@ -737,6 +928,8 @@ export class OpenCodeServerSession implements ProviderSession {
       this.sessionID = r.data.data.id;
     }
 
+    // This session's own environment for the commands it runs, before anything runs (sessionEnv).
+    await this.giveEnv(d, this.sessionID);
     d.register(this.sessionID, this);
     sink.session(this.sessionID);
 
@@ -771,9 +964,24 @@ export class OpenCodeServerSession implements ProviderSession {
     this.calls.clear();
 
     const files = (attached ?? []).map((p) => ({ uri: pathToFileURL(resolve(this.o.cwd, p)).href }));
+    // Stop ends the turn once the server has answered its interrupt, which ends the execution and its commands (one that ignores
+    // signals too), as the ACP driver waits for its cancel. A server that never answers is hung (frozen, wedged): it's asked
+    // whether it answers at all, and ended if not (doubt), so the next message gets a new one that resumes the conversation,
+    // where it used to wait on it for good, and every OpenCode session with it. The runtime gives up on the turn at 15 seconds
+    // (Runtime.untilStopped) and closes this, which asks too (close); this waits a little longer, for a caller that doesn't.
     const onAbort = () => {
-      this.interruptTree(d, sid);
-      this.finishTurn();
+      this.unanswered = true;
+      this.interruptTree(d, sid, CANCEL_MS + 500).then(
+        () => {
+          this.unanswered = false;
+          this.finishTurn();
+        },
+        async () => {
+          await d.doubt(Math.min(3000, Math.max(100, CANCEL_MS)));
+          if (!d.alive && this.done) this.sink?.notice(`OpenCode hadn't stopped ${Math.round(CANCEL_MS / 1000)} seconds after Stop, so Liner Code ended it. It picks up again on your next message.`);
+          this.finishTurn();
+        },
+      );
     };
     if (signal.aborted) return;
     signal.addEventListener("abort", onAbort, { once: true });
@@ -880,11 +1088,36 @@ export class OpenCodeServerSession implements ProviderSession {
     clearInterval(this.reconcileTimer);
     this.reconcileTimer = undefined;
     if (d?.alive && sid) {
-      if (this.sink || this.hasRunningChildren()) this.interruptTree(d, sid);
-      if (this.serverName) void d.request("DELETE", `/api/experimental/mcp/${encodeURIComponent(this.serverName)}?location[directory]=${encodeURIComponent(this.o.cwd)}`).catch(() => {});
+      // An interrupt it doesn't answer, or a Stop it never answered, says it may be hung: it's asked, and ended if so (doubt).
+      const wait = Math.min(3000, Math.max(100, CANCEL_MS));
+      if (this.sink || this.hasRunningChildren()) this.interruptTree(d, sid, CANCEL_MS).catch(() => d.doubt(wait));
+      // Its server goes when no other open session holds the same name (the same session opened again, say).
+      if (this.serverName && d.releaseMcp(this.serverName)) void d.request("DELETE", `/api/experimental/mcp/${encodeURIComponent(this.serverName)}?location[directory]=${encodeURIComponent(this.o.cwd)}`, undefined, AbortSignal.timeout(5000)).catch(() => {});
       d.unregister(sid);
+      if (this.unanswered) void d.doubt(wait);
     }
     this.finishTurn();
+  }
+
+  /**
+    What this session's commands get as their environment. The server is every session's, and 2.3.2 gives each session its own
+    (PUT /api/session/:id/environment, which replaces the server's for that session's commands, seen): so a command carries its
+    own session's thread (a dev server it starts shows in that session's Browser), not the first session's, and never a server
+    password. Whole, since it replaces; the server's marker too, so what a command leaves running still ends with the server.
+    A subagent's session doesn't inherit it, so each is given it as it starts (onChildCreated).
+  */
+  private sessionEnv(d: OpenCodeDaemon): Record<string, string> {
+    const vars: Record<string, string> = {};
+    for (const [k, v] of Object.entries(this.o.env)) if (typeof v === "string" && !PASSWORDS.includes(k)) vars[k] = v;
+    if (d.runValue) vars[RUN_ENV] = d.runValue;
+    return vars;
+  }
+
+  private giveEnv(d: OpenCodeDaemon, sessionID: string): Promise<void> {
+    return d.request("PUT", `/api/session/${encodeURIComponent(sessionID)}/environment`, { variables: this.sessionEnv(d) }, AbortSignal.timeout(5000)).then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   /**
@@ -892,16 +1125,17 @@ export class OpenCodeServerSession implements ProviderSession {
     the session tree on the daemon so cancelling children cannot auto-wake the parent with
     `<subagent state="cancelled">` and spawn orphaned subagents after Liner Code stopped listening.
   */
-  private interruptTree(d: OpenCodeDaemon, sid: string) {
+  private interruptTree(d: OpenCodeDaemon, sid: string, ms = CANCEL_MS): Promise<unknown> {
     const kids = [...this.agents.keys()];
     d.markStopping(sid, kids);
-    void d.request("POST", `/api/session/${encodeURIComponent(sid)}/interrupt`).catch(() => {});
+    // The root's answer is what a Stop waits for; with a limit, since a hung server answers nothing.
+    const asked = d.request("POST", `/api/session/${encodeURIComponent(sid)}/interrupt`, undefined, AbortSignal.timeout(ms));
     for (const a of this.agents.values()) {
       if (a.status === "running") {
         a.status = "stopped";
         a.agent.state = "stopped";
         a.agent.now = undefined;
-        void d.request("POST", `/api/session/${encodeURIComponent(a.id)}/interrupt`).catch(() => {});
+        void d.request("POST", `/api/session/${encodeURIComponent(a.id)}/interrupt`, undefined, AbortSignal.timeout(ms)).catch(() => {});
       }
     }
     void d
@@ -912,6 +1146,7 @@ export class OpenCodeServerSession implements ProviderSession {
         }
       })
       .catch(() => {});
+    return asked;
   }
 
   /**
@@ -1027,7 +1262,9 @@ export class OpenCodeServerSession implements ProviderSession {
   }
 
   onDaemonLost() {
-    this.failTurn(new Error("OpenCode server exited unexpectedly."));
+    // Ended after a Stop it never answered (doubt): the turn ends as stopped, not as a failure.
+    if (this.signal?.aborted) this.finishTurn();
+    else this.failTurn(new Error("OpenCode server exited unexpectedly."));
   }
 
   /** Called by `OpenCodeDaemon` when a child subagent session is created under this session (or under one of its children). */
@@ -1070,6 +1307,7 @@ export class OpenCodeServerSession implements ProviderSession {
       sink,
     };
     this.agents.set(childID, a);
+    if (this.daemon?.alive) void this.giveEnv(this.daemon, childID);
     clearTimeout(this.settleTimer);
     this.settleTimer = undefined;
     this.paintAgent(a);
@@ -1077,6 +1315,11 @@ export class OpenCodeServerSession implements ProviderSession {
 
   /** Handles one SSE V2 event for either the root session (`childID === undefined`) or a descendant subagent (`childID`). */
   onEvent(type: string, data: Json, childID?: string) {
+    // Kept whatever the turn: a shell ask comes after its call, and names only the command's parts (handlePermission).
+    if (type === "session.tool.called" && typeof data.id === "string" && data.input && typeof data.input === "object") {
+      this.inputs.set(data.id, data.input as Json);
+      if (this.inputs.size > 300) this.inputs.delete(this.inputs.keys().next().value!);
+    }
     if (type === "permission.asked") {
       void this.handlePermission(data, childID);
       return;
@@ -1453,8 +1696,17 @@ export class OpenCodeServerSession implements ProviderSession {
     const resources = Array.isArray(data.resources) ? data.resources.map(String) : [];
     const meta = (data.metadata && typeof data.metadata === "object" ? data.metadata : {}) as Json;
     const kind: ToolKind = ACTION_KIND[low] ?? "other";
-    const command = low === "bash" || low === "shell" ? String(meta.command ?? resources[0] ?? "").trim() : "";
-    const reader = kind === "exec" && Boolean(command) && readsOnly(command);
+    // A command is judged whole, as the ACP driver and Claude Code judge it: 2.3.2 asks once for a command, its `resources` its
+    // parts (`ls; rm -f x` is "ls" and "rm -f x"), and "once" lets every part run, so judging the first part alone let a delete
+    // through at Read only (seen). The whole command comes from the call's own event, which comes before the ask (`source` names
+    // the call); every part is judged too, and with that event missed, the parts are the command, one to a line.
+    const shell = low === "bash" || low === "shell";
+    const callID = typeof (data.source as Json | undefined)?.id === "string" ? String((data.source as Json).id) : "";
+    const whole = shell ? String(this.inputs.get(callID)?.command ?? meta.command ?? "").trim() : "";
+    const parts = shell ? resources.map((r) => r.trim()).filter((r) => r && r !== "*") : [];
+    const command = whole || parts.join("\n");
+    const judged = shell ? [...new Set([command, ...parts])].filter(Boolean) : [];
+    const reader = kind === "exec" && judged.length > 0 && judged.every((c) => readsOnly(c));
     const dirs = [...(this.o.dirs ?? []), opencodeOutputs(this.o.env)];
     const metaPath = typeof meta.path === "string" ? meta.path : typeof meta.filePath === "string" ? meta.filePath : undefined;
     const paths = kind === "exec" ? [] : [...resources.filter((r) => r && r !== "*"), ...(resources.length === 0 && metaPath ? [metaPath] : [])];
@@ -1462,7 +1714,7 @@ export class OpenCodeServerSession implements ProviderSession {
     const stray = paths.find((p) => !inFolder(this.o.cwd, p) && !handed(p));
     const gitDir = kind === "edit" && paths.some((p) => gitInside(this.o.cwd, p));
     const scoped = paths.length > 0 && !stray && !gitDir;
-    const words = reader ? commandWords(command) : [];
+    const words = reader ? judged.flatMap((c) => commandWords(c)) : [];
     const beyond = words.find((w) => leaves(w, this.o.cwd, dirs));
     const extDir = low === "external_directory" ? (resources[0] || String(meta.parentDir ?? "")) : "";
     const extHanded = Boolean(extDir) && handed(extDir);
@@ -1473,7 +1725,8 @@ export class OpenCodeServerSession implements ProviderSession {
 
     // Read only refuses anything that edits, mutates, leaves the project, or uses Code Mode with no card.
     if (this.access === "read" && !reads && !ownLiner) {
-      const what = kind === "edit" ? `change ${paths[0] ? fromFolder(this.o.cwd, paths[0]) : "files"}` : kind === "exec" ? `run ${command || "a command"}` : `use ${action}`;
+      const said = kind === "edit" || kind === "exec" ? "" : this.askTitle(low, action, extDir || away || paths[0], resources, undefined);
+      const what = kind === "edit" ? `change ${paths[0] ? fromFolder(this.o.cwd, paths[0]) : "files"}` : kind === "exec" ? `run ${command || "a command"}` : said !== action ? said.charAt(0).toLowerCase() + said.slice(1) : `use ${action}`;
       if (!this.readRefused) this.sink?.notice(`This session only reads, so OpenCode wasn't let ${what}.`);
       this.readRefused = true;
       await reply("reject", `This session is Read only: Liner Code refused your request to ${what}.`);
@@ -1481,7 +1734,7 @@ export class OpenCodeServerSession implements ProviderSession {
     }
 
     const free = this.access === "full" || reads || ownLiner || ((this.access === "edits" || this.access === "auto" || this.access === "review") && kind === "edit" && scoped);
-    if (free && !(this.o.guard && isDestructive(command))) {
+    if (free && !(this.o.guard && judged.some((c) => isDestructive(c)))) {
       await reply("once");
       return;
     }
@@ -1498,8 +1751,8 @@ export class OpenCodeServerSession implements ProviderSession {
     const fields = [command && { label: "Command", value: command }, file && { label: "File", value: fromFolder(this.o.cwd, file) }, { label: "Where", value: this.o.cwd }].filter(Boolean) as { label: string; value: string }[];
     const loose = Boolean(away) || (kind === "edit" && !scoped);
     const rule = loose || low === "execute" ? undefined : kind === "exec" ? ruleFor(command) : kind === "edit" ? "Edit" : kind !== "other" ? low : /^[\w.:-]+$/.test(action) ? `tool ${action}` : undefined;
-    const risk = loose || low === "execute" || secret || gitDir ? "high" : kind === "exec" ? commandRisk(command) : kind === "edit" ? "medium" : "low";
-    const baseTitle = kind === "exec" ? `Run ${short(stripLeadingCd(command, this.o.cwd), 70)}` : kind === "edit" && file ? `Edit ${fromFolder(this.o.cwd, file)}` : short(data.message || action, 70);
+    const risk = loose || low === "execute" || secret || gitDir ? "high" : kind === "exec" ? highest(judged.map((c) => commandRisk(c))) : kind === "edit" ? "medium" : "low";
+    const baseTitle = kind === "exec" ? `Run ${short(stripLeadingCd(command, this.o.cwd), 70)}` : kind === "edit" && file ? `Edit ${fromFolder(this.o.cwd, file)}` : this.askTitle(low, action, extDir || file, resources, data.message);
     const title = childLabel ? `${childLabel}: ${baseTitle}` : baseTitle;
 
     this.pendingAsks++;
@@ -1512,6 +1765,27 @@ export class OpenCodeServerSession implements ProviderSession {
       this.pendingAsks--;
       this.maybeFinish();
     }
+  }
+
+  /**
+    What an ask that isn't a command or an edit says on its card: what it reads, searches, fetches or reaches, as the ACP
+    driver's cards say it with OpenCode's own titles there, not a bare "read" or "external_directory". A path outside the
+    project from the home folder (~/…), as the app says one.
+  */
+  private askTitle(low: string, action: string, path: string | undefined, resources: string[], message: unknown): string {
+    const home = this.o.env.HOME || homedir();
+    const where = (p: string) => {
+      const rel = fromFolder(this.o.cwd, p.replace(/[\\/]\*$/, ""));
+      return rel.startsWith(home + "/") ? `~/${rel.slice(home.length + 1)}` : rel;
+    };
+    const first = resources.find((r) => r && r !== "*");
+    if (low === "read" && path) return `Read ${short(where(path), 70)}`;
+    if (low === "external_directory" && path) return `Reach ${short(where(path), 60)}, outside the project`;
+    if ((low === "glob" || low === "grep" || low === "list") && first) return `Search ${short(first, 60)}`;
+    if (low === "webfetch" && first) return `Fetch ${short(first, 70)}`;
+    if (low === "websearch" && first) return `Search the web for ${short(first, 50)}`;
+    if (typeof message === "string" && message.trim()) return short(message, 70);
+    return first ? `${action}: ${short(first.includes("/") ? where(first) : first, 60)}` : action;
   }
 
   /** Routes an OpenCode V2 `form.created` prompt to Liner Code's question card and posts the reply. */

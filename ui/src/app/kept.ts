@@ -48,3 +48,16 @@ export const textRead = (s: Store, key: string, fallback: string | null): string
 export function draftsToDrop(entries: readonly { key: string; at?: number }[], keep: number): string[] {
   return [...entries].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(Math.max(0, keep)).map((e) => e.key);
 }
+
+/** The drafts whose kept files (draftFiles.ts, in IndexedDB) have been read back, or that had files in memory, in this window. */
+const read = new Set<string>();
+/**
+  Whether the box writes a draft's files now: always with files in it, but with none only once the kept ones were read
+  back. The box first draws empty, and writing that wiped what was kept before the read returned (always under
+  StrictMode's second mount, and whenever the box went before the read did).
+*/
+export const draftSaves = (key: string, files: readonly unknown[]) => files.length > 0 || read.has(key);
+/** The draft's kept files have been read back (or it had files in memory already): from now on an empty box is written too. */
+export function draftRead(key: string) {
+  read.add(key);
+}

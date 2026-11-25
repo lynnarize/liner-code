@@ -32,7 +32,7 @@ test("A confirm asks on the first press, ignores the second click of a double-cl
   assert.equal(confirmPress(1000, 1000 + 120), "wait", "a double-click's second click confirmed at once");
   assert.equal(confirmPress(1000, 1000 + CONFIRM_SETTLE - 1), "wait");
   assert.equal(confirmPress(1000, 1000 + CONFIRM_SETTLE), "do");
-  assert.equal(confirmPress(1000, 1000 + 4000), "do");
+  assert.equal(confirmPress(1000, 1000 + 3000), "do");
 });
 
 test("Settings' Archive keeps no ask of its own, so Delete for good goes when the row's menu closes or another opens", () => {

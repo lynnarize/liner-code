@@ -4,8 +4,9 @@
   first (slots.ts). With a frame selected and nothing in it, the frame's own size; with nothing,
   what a frame is and how to select.
 */
+import { useMemo } from "react";
 import { FRAME_SIZES } from "@contracts";
-import { design, frameOf, useDesign } from "../store";
+import { design, useDesign } from "../store";
 import { Corners } from "./Corners";
 import { Choice, Num, Row, Section } from "./controls";
 import { Blur, Shadow, Stroke } from "./Effects";
@@ -77,10 +78,11 @@ const SPREAD = [
 
 /** One or more frames on the canvas: size, batch resize, align, and distribute. */
 function FrameStyle() {
-  const frames = useDesign((s) => {
-    const ids = [...new Set(s.sel.map((x) => x.frame))];
-    return ids.map((id) => frameOf(s, id)).filter((f): f is NonNullable<typeof f> => Boolean(f));
-  });
+  // The ids as one string and the frames as the store holds them, then the list made from both: a selector that built the
+  // list itself would hand back a new array on every read, and React would render this for ever.
+  const ids = useDesign((s) => [...new Set(s.sel.map((x) => x.frame))].join("\n"));
+  const all = useDesign((s) => s.file?.frames);
+  const frames = useMemo(() => (ids ? ids.split("\n") : []).map((id) => all?.find((f) => f.id === id)).filter((f): f is NonNullable<typeof f> => Boolean(f)), [ids, all]);
   if (!frames.length) return <Empty several />;
   if (frames.length > 1) {
     const sameW = frames.every((f) => f.w === frames[0].w) ? frames[0].w : undefined;

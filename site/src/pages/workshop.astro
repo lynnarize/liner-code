@@ -1,7 +1,7 @@
 ---
 // Workshop, one thing: ask for what Liner Code doesn't have, and an agent builds it as an add-on.
 // The Demo agent can't play a Workshop turn, so the turn is told in words; the pictures are the
-// Add-ons page and Home in Workshop, from the 0.2.9 app with the Demo.
+// Add-ons page and Home in Workshop, from the 0.3.2 app with the Demo.
 import Base from '../layouts/Base.astro';
 import Head from '../components/Head.astro';
 import Rule from '../components/Rule.astro';
@@ -25,7 +25,7 @@ const { kinds, ways, gate, turn, keep } = w;
     <div class="wrap">
       <div class="head">
         <p class="tag settle"><i></i>{kinds.tag}</p>
-        <h2 class="h2 settle" id="ws-kinds"><span class="dim">{kinds.dim}</span>{kinds.head}</h2>
+        <h2 class="h2 settle" id="ws-kinds">{kinds.head}</h2>
       </div>
     </div>
     <Rule />
@@ -39,13 +39,13 @@ const { kinds, ways, gate, turn, keep } = w;
 
   <section aria-labelledby="ws-ways">
     <div class="wrap">
-      <Head tag={ways.tag} dim={ways.dim} head={ways.head} sub={ways.sub} />
+      <Head tag={ways.tag} head={ways.head} sub={ways.sub} />
     </div>
     <Rule />
     <div class="wrap">
       <div class="grid row">
         <div class="say settle">
-          <h3><span class="dim">{ways.page.dim}</span>{ways.page.title}</h3>
+          <h3>{ways.page.title}</h3>
           <p>{ways.page.text}</p>
         </div>
         <div class="stage sky settle d1"><div class="shot foot" data-ui><Shot name={ways.page.name} alt={ways.page.alt} /></div></div>
@@ -56,7 +56,7 @@ const { kinds, ways, gate, turn, keep } = w;
       <div class="grid row flip">
         <div class="stage mist pad settle"><div class="shot" data-ui><Shot name={ways.home.name} alt={ways.home.alt} /></div></div>
         <div class="say settle d1">
-          <h3><span class="dim">{ways.home.dim}</span>{ways.home.title}</h3>
+          <h3>{ways.home.title}</h3>
           <p>{ways.home.text}</p>
         </div>
       </div>
@@ -69,7 +69,7 @@ const { kinds, ways, gate, turn, keep } = w;
     <div class="wrap">
       <div class="head">
         <p class="tag settle"><i></i>{gate.tag}</p>
-        <h2 class="h2 settle" id="ws-gate"><span class="dim">{gate.dim}</span>{gate.head}</h2>
+        <h2 class="h2 settle" id="ws-gate">{gate.head}</h2>
       </div>
       <div class="trust">
         <div class="trust-say settle">
@@ -87,7 +87,7 @@ const { kinds, ways, gate, turn, keep } = w;
     <div class="wrap">
       <div class="head">
         <p class="tag settle"><i></i>{turn.tag}</p>
-        <h2 class="h2 settle" id="ws-turn"><span class="dim">{turn.dim}</span>{turn.head}</h2>
+        <h2 class="h2 settle" id="ws-turn">{turn.head}</h2>
       </div>
       <Rows rows={turn.rows} steps />
     </div>
@@ -98,7 +98,7 @@ const { kinds, ways, gate, turn, keep } = w;
     <div class="wrap">
       <div class="head">
         <p class="tag settle"><i></i>{keep.tag}</p>
-        <h2 class="h2 settle" id="ws-keep"><span class="dim">{keep.dim}</span>{keep.head}</h2>
+        <h2 class="h2 settle" id="ws-keep">{keep.head}</h2>
       </div>
       <Rows rows={keep.rows} />
     </div>
@@ -107,7 +107,7 @@ const { kinds, ways, gate, turn, keep } = w;
 
   <section aria-labelledby="ws-try">
     <div class="wrap">
-      <Head tag={w.try.tag} dim={w.try.dim} head={w.try.head} sub={w.try.sub} />
+      <Head tag={w.try.tag} head={w.try.head} sub={w.try.sub} />
     </div>
     <Rule />
     <div class="wrap">

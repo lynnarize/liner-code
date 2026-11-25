@@ -3,43 +3,34 @@ import Base from '../layouts/Base.astro';
 import Rule from '../components/Rule.astro';
 import Hero from '../components/Hero.astro';
 import Strips from '../components/Strips.astro';
-import Design from '../components/Design.astro';
-import Security from '../components/Security.astro';
-import Code from '../components/Code.astro';
+import Cards from '../components/Cards.astro';
 import Trust from '../components/Trust.astro';
-import Shipped from '../components/Shipped.astro';
-import Questions from '../components/Questions.astro';
 import Close from '../components/Close.astro';
+import { design, security, agents } from '../data/site';
 ---
 <Base home>
   <Hero />
   <Strips />
-  <Design />
+  <Cards s={design} />
   <Rule />
-  <Security />
+  <Cards s={security} />
   <Rule />
-  <Code />
+  <Cards s={agents} />
   <Rule />
   <Trust />
-  <Rule />
-  <Shipped />
-  <Rule />
-  <Questions />
   <Rule />
   <Close />
 </Base>
 
 <script>
   // The headline is the switch: a face, or 1 2 3, wipes the window to that face and crossfades its stage.
-  // It turns by itself until touched. Then the settle on scroll, and the pinned Design steps.
+  // It turns by itself until touched.
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const win = document.getElementById('window')!;
   const imgs = [...win.querySelectorAll('img')];
   const bds = [...document.querySelectorAll('#stage .bd')];
   const faces = [...document.querySelectorAll<HTMLButtonElement>('.face')];
   const keys = [...document.querySelectorAll<HTMLButtonElement>('.keys button')];
-  const cap = document.getElementById('cap')!;
-  const caps: [string, string][] = JSON.parse(cap.dataset.caps || '[]');
   let at = 0, timer = 0, touched = false, clear = 0;
 
   function show(i: number) {
@@ -56,10 +47,6 @@ import Close from '../components/Close.astro';
     clear = window.setTimeout(() => { from.classList.remove('was'); to.classList.remove('wipe', 'go'); }, 800);
     bds.forEach((b, n) => b.classList.toggle('on', n === i));
     [faces, keys].forEach((set) => set.forEach((b, n) => b.setAttribute('aria-pressed', String(n === i))));
-    cap.classList.add('swap');
-    cap.querySelector('b')!.textContent = caps[i][0];
-    cap.querySelector('span')!.textContent = caps[i][1];
-    requestAnimationFrame(() => requestAnimationFrame(() => cap.classList.remove('swap')));
     at = i;
   }
   function pick(i: number) { touched = true; clearInterval(timer); show(i); }
@@ -85,19 +72,4 @@ import Close from '../components/Close.astro';
   if (document.readyState === 'complete') go(); else addEventListener('load', go);
 
   // The settle on scroll is in Base.astro, for every page.
-
-  // Design: the statement nearest the middle of the screen sets the pinned window.
-  const steps = [...document.querySelectorAll<HTMLElement>('.step')];
-  const pin = [...document.querySelectorAll('#pin img')];
-  const count = [...document.querySelectorAll('#pin-count i')];
-  if ('IntersectionObserver' in window) {
-    const so = new IntersectionObserver((es) => es.forEach((e) => {
-      if (!e.isIntersecting) return;
-      const i = Number((e.target as HTMLElement).dataset.step);
-      steps.forEach((s, n) => s.classList.toggle('on', n === i));
-      pin.forEach((m, n) => m.classList.toggle('on', n === i));
-      count.forEach((c, n) => c.classList.toggle('on', n === i));
-    }), { rootMargin: '-46% 0px -46% 0px' });
-    steps.forEach((s) => so.observe(s));
-  }
 </script>

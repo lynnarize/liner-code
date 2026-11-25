@@ -1,0 +1,20 @@
+---
+// A home section: one heading, at most a sentence, and three cards, each a piece of the app with a title and a line.
+import Head from './Head.astro';
+import Rule from './Rule.astro';
+import Frag from './Frag.astro';
+import type { Frag as Card } from '../data/site';
+interface Props { s: { id: string; tag: string; head: string; sub?: string; more?: { href: string; label: string }; cards: Card[] } }
+const { s } = Astro.props;
+---
+<section id={s.id} class="anchor" aria-labelledby={`${s.id}-title`}>
+  <div class="wrap">
+    <Head tag={s.tag} head={s.head} sub={s.sub} more={s.more} id={`${s.id}-title`} />
+  </div>
+  <Rule />
+  <div class="wrap">
+    <div class="cells c3 cards">
+      {s.cards.map((c, i) => <Frag f={c} class={i ? `d${i}` : undefined} />)}
+    </div>
+  </div>
+</section>

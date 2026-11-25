@@ -1,7 +1,7 @@
 ---
 import Rule from './Rule.astro';
 import ToolMarks from './ToolMarks.astro';
-import { tools, stats } from '../data/site';
+import { tools } from '../data/site';
 ---
 <Rule />
 <section aria-label="The agents it runs">
@@ -9,14 +9,6 @@ import { tools, stats } from '../data/site';
     <div class="tools-in">
       <p class="tools-say">{tools.say}</p>
       <ToolMarks />
-    </div>
-  </div>
-</section>
-<Rule />
-<section aria-label="In numbers">
-  <div class="wrap">
-    <div class="cells c4 stats">
-      {stats.map((s, i) => <div class:list={['cell stat settle', i ? `d${i}` : '']}><b>{s.b}</b><span>{s.span}</span></div>)}
     </div>
   </div>
 </section>

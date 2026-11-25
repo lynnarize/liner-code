@@ -21,7 +21,6 @@ import { hero } from '../data/site';
       </div>
     </div>
     <div class="stagehead">
-      <p class="cap" id="cap" aria-live="polite" data-caps={JSON.stringify(hero.caps)}><b>{hero.caps[0][0]}</b><span>{hero.caps[0][1]}</span></p>
       <div class="keys" aria-hidden="true">
         {hero.faces.map((_, i) => <button type="button" tabindex="-1" data-face={i} aria-pressed={String(i === 0)}>{i + 1}</button>)}
       </div>

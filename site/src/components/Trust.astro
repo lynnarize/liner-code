@@ -1,17 +1,18 @@
 ---
-import Head from './Head.astro';
+// Set apart as one inverted block inside the rails: ink in the light look, a raised ground in the dark.
 import { trust, site } from '../data/site';
 ---
-<section id="trust">
+<section id="trust" class="anchor" aria-labelledby="trust-title">
   <div class="wrap">
-    <Head tag={trust.tag} dim={trust.dim} head={trust.head} sub={trust.sub} />
-    <div class="trust">
-      <div class="trust-say settle">
-        <p class="lead">{trust.lead}</p>
-        <a class="link" href={site.threat}>{trust.link}</a>
+    <div class="ink settle">
+      <i class="handle"></i><i class="handle"></i><i class="handle"></i><i class="handle"></i>
+      <div class="ink-head">
+        <p class="tag"><i></i>{trust.tag}</p>
+        <h2 class="h2" id="trust-title">{trust.head}</h2>
+        <p class="ink-sub">{trust.sub} <a class="link" href={site.threat}>{trust.link}</a></p>
       </div>
       <dl>
-        {trust.items.map((t, i) => <div class:list={['settle', { d1: i % 2 === 1 }]}><dt>{t.dt}</dt><dd>{t.dd}</dd></div>)}
+        {trust.items.map((t) => <div><dt>{t.dt}</dt><dd>{t.dd}</dd></div>)}
       </dl>
     </div>
   </div>

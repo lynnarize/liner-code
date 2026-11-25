@@ -1,15 +1,19 @@
 ---
 // A close-up: a part of the app at its true size (w / scale) times the mockup's scale k, on a small stage.
+// With `fit`, the picture's shape decides: one that stays short inside a card's stage (at most 336px wide
+// there, the stage as tall) sits in its middle, a taller one hangs from the top and runs off the foot.
 import Shot from './Shot.astro';
 import shots from '../data/shots.json';
 import type { Frag } from '../data/site';
 interface Props { f: Frag; class?: string }
 const { f, class: cls } = Astro.props;
-const s = (shots as Record<string, { w: number; scale: number }>)[f.name];
+const s = (shots as Record<string, { w: number; h: number; scale: number }>)[f.name];
+if (!s) throw new Error(`shots.json has no "${f.name}"`);
 const w = Math.round((s.w / s.scale) * f.k);
+const mid = f.fit ? Math.min(w, 336) * (s.h / s.w) < 260 : f.mid;
 ---
 <article class:list={['cell settle', cls]}>
-  <div class:list={['stage', f.stage, { mid: f.mid }]} data-ui><Shot name={f.name} phone={f.phone} class="frag" style={`--w:${w}px`} alt={f.alt} /></div>
+  <div class:list={['stage', f.stage, { mid }]} data-ui><Shot name={f.name} phone={f.phone} class="frag" style={`--w:${w}px`} alt={f.alt} /></div>
   <h3>{f.title}</h3>
   <p>{f.text}</p>
 </article>

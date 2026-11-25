@@ -25,7 +25,7 @@ const { only, session, surfaces, rest } = f;
 
   <section id="only" class="anchor">
     <div class="wrap">
-      <Head tag={only.tag} dim={only.dim} head={only.head} sub={only.sub} />
+      <Head tag={only.tag} head={only.head} sub={only.sub} />
       <Rows rows={only.rows} />
     </div>
   </section>
@@ -33,13 +33,13 @@ const { only, session, surfaces, rest } = f;
 
   <section id="session" class="anchor">
     <div class="wrap">
-      <Head tag={session.tag} dim={session.dim} head={session.head} sub={session.sub} />
+      <Head tag={session.tag} head={session.head} sub={session.sub} />
     </div>
     <Rule />
     <div class="wrap">
       <div class="grid row">
         <div class="say settle">
-          <h3><span class="dim">{session.diff.dim}</span>{session.diff.title}</h3>
+          <h3>{session.diff.title}</h3>
           <p>{session.diff.text}</p>
         </div>
         <div class="stage sky settle d1"><div class="shot foot" data-ui><Shot name={session.diff.name} alt={session.diff.alt} /></div></div>
@@ -57,7 +57,7 @@ const { only, session, surfaces, rest } = f;
 
   <section id="surfaces" class="anchor">
     <div class="wrap">
-      <Head tag={surfaces.tag} dim={surfaces.dim} head={surfaces.head} sub={surfaces.sub} />
+      <Head tag={surfaces.tag} head={surfaces.head} sub={surfaces.sub} />
       <Rows rows={surfaces.rows} />
     </div>
   </section>
@@ -65,7 +65,7 @@ const { only, session, surfaces, rest } = f;
 
   <section id="rest" class="anchor">
     <div class="wrap">
-      <Head tag={rest.tag} dim={rest.dim} head={rest.head} sub={rest.sub} />
+      <Head tag={rest.tag} head={rest.head} sub={rest.sub} />
     </div>
     <Rule />
     <div class="wrap">

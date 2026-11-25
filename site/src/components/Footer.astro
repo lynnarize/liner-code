@@ -1,31 +1,41 @@
 ---
+// The foot of the sheet: the rails run on to the page's end, a rule with its handles opens it, then cells
+// divided by hairlines and the wordmark set large between two rules, on the page ground like every section.
 import Mark from './Mark.astro';
+import Rule from './Rule.astro';
 import { footer, site } from '../data/site';
 import { RELEASE_API, hrefFor } from '../lib/downloads';
 import { latestDownloads } from '../lib/latest-release';
 const latest = await latestDownloads();
 ---
 <footer class="foot">
-  <div class="tiles">
-    <div class="tile say">
-      <p>{footer.say}</p>
-      <p class="small">{footer.copy}</p>
+  <div class="rails" aria-hidden="true"></div>
+  <Rule />
+  <div class="wrap">
+    <div class="foot-cells">
+      <div class="fc say">
+        <p>{footer.say}</p>
+        <p class="small">{footer.copy}</p>
+      </div>
+      <nav class="fc navt" aria-label="Footer">
+        {footer.links.map((l) => <a href={l.href}>{l.label}</a>)}
+      </nav>
+      <div class="fc ver">
+        <b>{site.label}</b>
+        <p class="small">{footer.platforms}</p>
+      </div>
+      <div class="fc get">
+        <a class="btn" data-dl-single href={hrefFor(latest.mac, site.latest)} data-mac={latest.mac ?? ''} data-win={latest.win ?? ''} data-releases={site.latest} data-api={RELEASE_API}>{footer.get}</a>
+        <p class="small">{footer.free}</p>
+      </div>
     </div>
-    <nav class="tile navt" aria-label="Footer">
-      {footer.links.map((l) => <a href={l.href}>{l.label}</a>)}
-    </nav>
-    <div class="tile ver">
-      <b>{site.label}</b>
-      <p class="small">{footer.platforms}</p>
-    </div>
-    <div class="tile word" aria-hidden="true">
-      <div class="big"><Mark /><span>Liner</span></div>
-    </div>
-    <a class="tile get" data-dl-single href={hrefFor(latest.mac, site.latest)} data-mac={latest.mac ?? ''} data-win={latest.win ?? ''} data-releases={site.latest} data-api={RELEASE_API}>
-      <span>{footer.get}</span>
-      <svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 42 42 14M20 14h22v22"/></svg>
-    </a>
   </div>
+  <Rule />
+  <div class="wrap" aria-hidden="true">
+    <div class="word"><Mark /><span>Liner</span></div>
+  </div>
+  <Rule />
+  <div class="foot-end"></div>
   <script is:inline>
     // Before paint, a Windows visitor's one footer link is the setup, not the dmg. The chip check may still send Windows on ARM to the releases page.
     (function () {

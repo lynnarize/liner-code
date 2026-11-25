@@ -1819,9 +1819,14 @@ export class Runtime {
           this.drop(liveKeyOf(threadId, agentId));
           store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "Nothing to compact yet: this session starts again from the conversation so far on your next message." });
           blank = true;
-        } else prompt = `${handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart")}\n\n${prompt}`;
-        // Said when you moved the session to another tool.
-        if (switched && show && !blank) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.` });
+        } else {
+          // A switch names who said what, so the tool taking over doesn't read another model's answers as its own.
+          const note = handoff(earlier, switched ? "switch" : t.forkSession !== undefined ? "fork" : "restart", undefined, switched ? (ref) => this.labelOf(ref) : undefined);
+          prompt = `${note}\n\n${prompt}`;
+          // Said when you moved the session to another tool: from which model to which, and the note it was sent, to read.
+          const from = earlier.findLast((x) => x.kind === "turn")?.model;
+          if (switched && show) store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.`, handoff: { ...(from ? { from } : {}), to: `${r.provider}:${r.model}`, ...(r.effort ? { effort: r.effort } : {}), note } });
+        }
       } else if (compact && r.provider !== "demo" && !(session.canCompact ? session.canCompact() : this.providerInfo.find((p) => p.id === r.provider)?.supports.compact ?? familyOf(r.provider) === "claude")) {
         // Providers without native /compact would treat literal "/compact" as chat text; reset the live provider session instead so the next turn starts fresh with Liner's handoff summary.
         const tool = this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider;
@@ -4541,43 +4546,77 @@ export function shownOf(x: unknown): UserShown | undefined {
 export { titleFrom };
 
 /**
-  The conversation so far, for a session that starts fresh. What you asked stays whole and the
-  newest work comes first in the budget: older answers shrink, then drop, before your requests do.
+  The conversation so far, for a session that starts fresh: a handoff note. What you asked stays whole and the newest work
+  comes first in the budget: older answers shrink, then drop, before your requests do. The first ask, the plan as it stands
+  and the files changed outlive a turn that's left out, as T3 Code keeps the first request whatever else drops
+  (packages/provider-core/src/server/handoffBudget.ts, selectHistory). `label` names a model by its ref ("Opus 5.5"): given
+  for a switch, so the tool taking over reads who said what instead of being told it said it itself.
 */
-export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "switch", budget = 24000) {
+export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "switch", budget = 24000, label?: (ref: string) => string) {
+  const switching = why === "switch";
+  // Who worked each turn, by the turn's first mark: what a switch says answered it.
+  const model = new Map<number, string>();
+  for (const it of items) if (it.kind === "turn" && !model.has(it.turn)) model.set(it.turn, it.model);
+  const answerer = (turn: number) => (!switching ? "You" : (label && model.has(turn) ? label(model.get(turn)!) : "") || "The agent before you");
+  const askedWord = switching ? "The person asked" : "You were asked";
   const turns = new Map<number, string[]>();
   const add = (turn: number, line: string) => turns.set(turn, [...(turns.get(turn) ?? []), line]);
   /** What each turn asked, whole, however many lines it runs to. */
   const asked = new Map<number, string[]>();
   for (const it of items) {
     if (it.kind === "user") {
-      add(it.turn, `You were asked: ${it.text}`);
-      asked.set(it.turn, [...(asked.get(it.turn) ?? []), `You were asked: ${it.text}`]);
-    } else if (it.kind === "text" && it.text.trim()) add(it.turn, `You answered: ${it.text.length > 2400 ? `${it.text.slice(0, 2400)}…` : it.text}`);
+      add(it.turn, `${askedWord}: ${it.text}`);
+      asked.set(it.turn, [...(asked.get(it.turn) ?? []), `${askedWord}: ${it.text}`]);
+    } else if (it.kind === "text" && it.text.trim()) add(it.turn, `${answerer(it.turn)} answered: ${it.text.length > 2400 ? `${it.text.slice(0, 2400)}…` : it.text}`);
     else if (it.kind === "proposal" && it.state === "approved") add(it.turn, `The plan that was approved: ${it.title}\n${it.plan}`);
     else if (it.kind === "checkpoint" && it.files.length) add(it.turn, `Files changed${it.reverted ? " (since undone)" : it.committed ? ` (committed ${it.committed})` : ""}: ${it.files.map((f) => f.path).join(", ")}`);
-    else if (it.kind === "tool" && (it.toolKind === "exec" || it.toolKind === "edit" || it.toolKind === "write")) add(it.turn, `(${it.title}${it.status === "failed" ? ", failed" : ""})`);
+    // A command that failed says how, in its last lines: what the next model would otherwise run again to find out (T3 Code
+    // hands on a command's exit and output).
+    else if (it.kind === "tool" && it.toolKind === "exec" && it.status === "failed" && it.output?.trim()) add(it.turn, `(${it.title}, failed: …${clean(it.output).trim().slice(-400)})`);
+    else if (it.kind === "tool" && (it.toolKind === "exec" || it.toolKind === "edit" || it.toolKind === "write")) add(it.turn, `(${it.title}${it.status === "failed" ? ", failed" : it.status === "stopped" ? ", stopped" : ""})`);
+    // How a turn ended when it didn't end well: the next model carries on from half-done work, not from a finished answer.
+    else if (it.kind === "notice" && it.text === "You stopped this turn.") add(it.turn, "(The person stopped this turn before it finished.)");
+    else if (it.kind === "error" || it.kind === "limit") add(it.turn, `(The turn ended on a problem: ${it.message.slice(0, 400)})`);
   }
-  const blocks = [...turns.entries()].sort((a, b) => a[0] - b[0]).map(([turn, lines]) => ({ whole: lines.join("\n"), asks: (asked.get(turn) ?? []).join("\n") }));
+  // What outlives the turns left out: the first ask, the plan as it stands, the files changed and not undone.
+  const firstAsk = items.find((x) => x.kind === "user");
+  const plan = items.findLast((x) => x.kind === "plan");
+  const open = plan?.kind === "plan" && plan.entries.some((e) => e.status !== "completed") ? plan.entries : [];
+  const planNote = open.length ? `The plan as it stands:\n${open.map((e) => `- [${e.status === "completed" ? "x" : e.status === "in_progress" ? "~" : " "}] ${e.title}`).join("\n").slice(0, 1600)}` : "";
+  const files = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted ? x.files.map((f) => f.path) : [])))];
+  const filesNote = files.length ? `Files changed so far and not undone: ${files.slice(0, 40).join(", ")}${files.length > 40 ? ` and ${files.length - 40} more` : ""}` : "";
+  const firstNote = firstAsk?.kind === "user" ? `The first ask, which started it: ${firstAsk.text.length > 1600 ? `${firstAsk.text.slice(0, 1600)}…` : firstAsk.text}` : "";
+  const blocks = [...turns.entries()].sort((a, b) => a[0] - b[0]).map(([turn, lines]) => ({ turn, whole: lines.join("\n"), asks: (asked.get(turn) ?? []).join("\n") }));
+  // Room kept for what stands apart from the turns, so the note stays in the budget.
+  const room = budget - [firstNote, planNote, filesNote].reduce((n, s) => n + (s ? s.length + 2 : 0), 0);
   // Newest first into the budget; an older turn that doesn't fit keeps only what you asked.
-  const kept: string[] = [];
+  const kept: { turn: number; text: string }[] = [];
   let used = 0;
   let dropped = 0;
   for (let i = blocks.length - 1; i >= 0; i--) {
     const { whole, asks } = blocks[i];
     let b = whole;
-    if (used + b.length > budget) b = asks;
+    if (used + b.length > room) b = asks;
     // The newest turn always goes, cut to half the budget if it must be, so one huge paste leaves room for the work before it.
-    if (!kept.length && (!b || b.length > budget)) b = `${(b || whole).slice(0, budget >> 1)}\n(cut here: it was too long to carry over)`;
-    if (!b || used + b.length > budget) {
+    if (!kept.length && (!b || b.length > room)) b = `${(b || whole).slice(0, budget >> 1)}\n(cut here: it was too long to carry over)`;
+    if (!b || used + b.length > room) {
       dropped = i + 1;
       break;
     }
-    kept.unshift(b);
+    kept.unshift({ turn: blocks[i].turn, text: b });
     used += b.length;
   }
-  const lead = why === "switch" ? "You're taking over this conversation from another model. Here it is so far" : why === "fork" ? "This is a copy of a conversation, continuing from here. Here it is so far" : "This conversation started before this session. Here it is so far";
-  return `${lead}; carry on from where it left off.\n\n<earlier>\n${dropped ? `(${dropped} older ${dropped === 1 ? "turn" : "turns"} left out)\n\n` : ""}${kept.join("\n\n")}\n</earlier>`;
+  // The first ask goes on its own only when its turn was left out.
+  const firstKept = firstAsk && kept.some((k) => k.turn === firstAsk.turn && k.text.includes(firstAsk.text.slice(0, 200)));
+  const apart = [firstKept ? "" : firstNote, planNote, filesNote].filter(Boolean);
+  const fromWho = switching && label ? [...model.entries()].sort((a, b) => b[0] - a[0])[0]?.[1] : undefined;
+  const lead =
+    why === "switch"
+      ? `You're taking over this conversation from ${fromWho ? label!(fromWho) : "another model"}. Here is a handoff note with everything so far: what the person asked, what was answered and done, and where it was left. It's context, not a new request: what to do now is the person's message after it`
+      : why === "fork"
+        ? "This is a copy of a conversation, continuing from here. Here it is so far"
+        : "This conversation started before this session. Here it is so far";
+  return `${lead}; carry on from where it left off.\n\n<earlier>\n${apart.length ? `${apart.join("\n\n")}\n\n` : ""}${dropped ? `(${dropped} older ${dropped === 1 ? "turn" : "turns"} left out)\n\n` : ""}${kept.map((k) => k.text).join("\n\n")}\n</earlier>`;
 }
 
 /**

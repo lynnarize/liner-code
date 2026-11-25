@@ -149,7 +149,7 @@ test("a session moved to another tool, warmed, says so on its first turn", async
     store.putItem("t", { kind: "user", id: "u1", turn: 1, at: Date.now(), text: "first" });
     await runtime.warm("t");
     await runtime.send("t", "second");
-    assert.match(f.made[0].texts[0], /You were asked: first/);
+    assert.match(f.made[0].texts[0], /The person asked: first/);
     assert.ok(store.timeline("t").some((x) => x.kind === "notice" && /takes over here/.test(x.text)), "the switch is said, as when the turn opens it itself");
   } finally {
     f.restore();

@@ -2461,6 +2461,40 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
     color: var(--l-ink-2);
   }
 }
+/* Moved to another tool: one quiet chip, "Switched", from, to and the effort, that opens on the note it was sent. */
+.lc-switched-h {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-switched-h .lc-model {
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-switched-to {
+  color: var(--l-ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-switched-h:hover {
+    background: color-mix(in oklab, var(--l-ink) 8%, transparent);
+  }
+}
+.lc-switched .lc-thought-t {
+  max-height: 320px;
+  margin-top: 6px;
+  overflow: auto;
+}
 /* What it thought, on a rail, as the steps hang off theirs. */
 .lc-thought-t {
   margin: 2px 0 4px 4px;
@@ -8128,4 +8162,15 @@ button.lc-cardl-r {
 /* In Liner Design's small chat, on the live line's left edge. */
 .lc-cardl.ldc-cards {
   padding: 4px 4px 0 2px;
+}
+/* Before a message that moves the session to another tool: said once, quietly, above the cards at the chat's end. */
+.lc-switched-ahead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.lc-switched-ahead .lc-model {
+  font-size: 13px;
+  color: var(--l-ink-2);
 }

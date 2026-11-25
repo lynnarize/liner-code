@@ -3,6 +3,7 @@
 Notes for the next release are collected here, then moved into `CHANGELOG.md` when it ships
 (the website is built from `CHANGELOG.md`).
 
+- Moving a session to another tool's model hands it a note with everything so far: who answered what, the first ask, the plan left open, the files changed and how a failed command or a stopped turn ended. The chat shows "Switched" with both models and the effort, and opens on the note it was sent; before you send, a line says your next message hands off.
 - OpenCode Go's limits no longer read the Go key OpenCode or Hermes saved until you agree: Read the Go key in Usage, or Settings › General.
 - The Effort pill is empty at a model's lowest level and full only at its highest: the lower of two levels (OpenCode's None) no longer draws as half. Its fill ends round about the knob.
 - Claude Code's and Codex's model lists show the models alone, without a line over each saying what it is for.

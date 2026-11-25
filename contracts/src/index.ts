@@ -890,6 +890,8 @@ export type ApprovalGrant = { kind: GrantKind; label: string };
 export type PersistedGrant = { kind: GrantKind; label: string; parts: string[]; tool?: boolean };
 
 type Base = { id: string; turn: number; at: number };
+/** A move to another tool, as the timeline shows it (the notice that carries it). */
+export type Handoff = { from?: string; to: string; effort?: Effort; note: string };
 export type Item =
   | (Base & {
       kind: "turn";
@@ -1046,7 +1048,11 @@ export type Item =
   | (Base & { kind: "error"; message: string; why?: ErrorWhy; provider?: string; fallback?: string })
   /** `fallback`: another ready tool's model that can carry on (another account of the same tool first). */
   | (Base & { kind: "limit"; message: string; until?: number; provider: string; fallback?: string })
-  | (Base & { kind: "notice"; text: string; stop?: boolean })
+  /**
+    `handoff`: the session moved to another tool, and the one taking over was told the conversation so far as a note. `from`
+    and `to` are model refs ("claude:opus", "codex:gpt-6.1-sol"), `effort` the level it runs at, `note` the words it was sent.
+  */
+  | (Base & { kind: "notice"; text: string; stop?: boolean; handoff?: Handoff })
   /** Liner Security, in a scan's chat: a finding it reported, your answers saved, the second look, the scan's end (SecurityItem). Put by the engine. */
   | (Base & { kind: "security"; event: SecurityItem });
 

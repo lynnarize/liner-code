@@ -10,7 +10,7 @@
 */
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { addonKey, PR_TEST_TOOL, BROWSER_TOOL as BROWSER, BROWSER_WORDS, bareTitle as bare, callCommand, callInput as inputOf, callPath, CANVAS_TOOL as CANVAS_STEP, canvasFrame, canvasWords, CARD_TOOLS, DESIGN_TOOLS, FRAME_FILE, frameFileName, isStepCall, KIND_WORDS, SERVER_TOOL as SERVER, serverOf, SIDEKICK_WORDS, STEP_KINDS, stepFileName, stepKind, toolNameOf, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type StepKind, type TurnPart, type PlanEntry } from "@contracts";
+import { addonKey, PR_TEST_TOOL, BROWSER_TOOL as BROWSER, BROWSER_WORDS, bareTitle as bare, callCommand, callInput as inputOf, callPath, CANVAS_TOOL as CANVAS_STEP, canvasFrame, canvasWords, CARD_TOOLS, DESIGN_TOOLS, FRAME_FILE, frameFileName, isStepCall, KIND_WORDS, SERVER_TOOL as SERVER, serverOf, SIDEKICK_WORDS, STEP_KINDS, stepFileName, stepKind, toolNameOf, type ConnectionAsk, type Item, type ShownChip, type PanelAsk, type ProviderInfo, type AgentProfile, type StepKind, type TurnPart, type PlanEntry, type Handoff, splitModel } from "@contracts";
 import { appIcon, OfferCard } from "./Addon";
 import { toComposer } from "./Find";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
@@ -23,7 +23,7 @@ import { commandOf as askCommand, headlineOf } from "./Ask";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, useSteady } from "./ui";
+import { agentOf, clock, designPart, duration, effortsFor, isModelAgent, markOf, mergeFiles, modelLabel, threadModel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, useSteady } from "./ui";
 import { agentName, CrewCard, Fanout, isSidekick, useCardFold } from "./Crew";
 import { firstSentence, lineCount, planCard, planCount, planLine, reportHead, type Report } from "./chat-cards";
 import { toast } from "@liner/components/toast/toast";
@@ -33,6 +33,7 @@ import { SentWith } from "./SentWith";
 import { bridge, isNative } from "./bridge";
 import * as os from "./os";
 import { thoughtLine } from "./live-thought";
+import { levelName } from "./picker";
 import "./timeline.css";
 
 type Tool = Extract<Item, { kind: "tool" }>;
@@ -162,6 +163,7 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "i
           <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} hidePlan={card?.plan.id} />
         </Boundary>
       ))}
+      <Ahead threadId={threadId} items={items} providers={providers} />
       <Boundary label="The cards" quiet>
         <ChatCards threadId={threadId} items={items} card={card} />
       </Boundary>
@@ -397,6 +399,7 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
       // A notice that a tool has gone silent carries Stop beside it while its turn runs; the one that
       // still holds (nothing came after it) is said on the status line instead.
       else if (it.kind === "notice" && it === quiet) continue;
+      else if (it.kind === "notice" && it.handoff) blocks.push({ key: it.id, node: <Switched h={it.handoff} providers={providers} /> });
       else if (it.kind === "notice")
         blocks.push({
           key: it.id,
@@ -881,6 +884,62 @@ function Thought({ it }: { it: Extract<Item, { kind: "reasoning" }> }) {
       <div className="lc-fold">
         <div>
           <p className="lc-thought-t">{it.text}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+  Before you send: the session's model was changed to another tool's, so your next message hands that tool the conversation
+  as a note (T3 Code's "Context handoff pending", client-runtime handoff.ts resolvePendingHandoff). As the engine decides it
+  (runtime.ts openSession `switched`): a saved session of another tool's. Not while a turn runs, when the row it puts says it.
+*/
+function Ahead({ threadId, items, providers }: { threadId: string; items: Item[]; providers: ProviderInfo[] }) {
+  const t = useEngine((s) => threadOf(s, threadId));
+  const agents = useEngine((s) => s.agents);
+  if (!t?.providerSession || t.status === "running") return null;
+  const to = threadModel(t, agents, providers);
+  const { provider } = splitModel(to);
+  if (provider === "demo" || t.providerSession.startsWith(`${provider}:`) || !items.some((x) => x.kind === "user" || x.kind === "text")) return null;
+  const from = items.findLast((x) => x.kind === "turn")?.model;
+  return (
+    <p className="lc-notice lc-switched-ahead">
+      <span>Your next message hands off</span>
+      {from && <ModelTag kind={markOf(from)} label={modelLabel(from, providers)} size={14} />}
+      <span>→</span>
+      <ModelTag kind={markOf(to)} label={modelLabel(to, providers)} size={14} />
+      <span>with a note of everything so far</span>
+    </p>
+  );
+}
+
+/**
+  Where the session moved to another tool: from which model to which, at what effort, and the handoff note the one taking
+  over was sent, folded under it to read (T3 Code's handoff row, apps/web/src/components/chat/V2LifecycleRow.tsx).
+*/
+function Switched({ h, providers }: { h: Handoff; providers: ProviderInfo[] }) {
+  const [open, setOpen] = useState(false);
+  // The model's own name for the level, else the word it was saved as (a model no tool lists any more).
+  const level = h.effort ? (effortsFor(h.to, providers).list.find((e) => e.id === h.effort)?.label ?? h.effort) : undefined;
+  const to = modelLabel(h.to, providers);
+  return (
+    <div className="lc-thought lc-switched" data-open={open || undefined}>
+      <button type="button" className="lc-switched-h l-focus" aria-expanded={open} title={open ? "Hide the handoff note" : `Read the handoff note ${to} was sent`} onClick={() => setOpen((o) => !o)}>
+        <span className="lc-switched-w">Switched</span>
+        {h.from && (
+          <>
+            <ModelTag kind={markOf(h.from)} label={modelLabel(h.from, providers)} size={14} />
+            <span className="lc-switched-to" aria-label="to">→</span>
+          </>
+        )}
+        <ModelTag kind={markOf(h.to)} label={to} size={14} />
+        {level && <span className="lc-switched-w">{levelName(level)}</span>}
+        <Chev className="lc-row-chev" />
+      </button>
+      <div className="lc-fold">
+        <div>
+          <p className="lc-thought-t">{h.note}</p>
         </div>
       </div>
     </div>

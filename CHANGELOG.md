@@ -1,5 +1,177 @@
 # Changelog
 
+## 0.3.2 (beta), 2026-11-25
+
+Update from 0.3.1: on a Mac Liner Code does it by itself (Restart to update), or download the new
+DMG; on Windows, run the new setup. **Teamwork and Swarm**, a team of agents on every tool, with
+only you landing their work. **Subagents for every tool.** **A new right panel**, its icons in the
+session header and a pinned Session card. **Switch tools mid-session** with a handoff note. **A
+whale on Home.**
+
+### Added
+
+- **Teamwork and Swarm,** on every tool: a team of agents in one session, each in its own worktree
+  when it writes, posting to a shared board and woken when someone names it. Teamwork picks how big
+  the job is (one change, software, a review) and ends with an auditor that reads the writer's
+  worktree; Swarm lets the agents run among themselves. Two run at once unless you say more, the
+  rest wait with no process; a team pauses for you after 40 turns it started by itself, on Stop and after a
+  restart. Only you land a worker's branch, from the Agents panel, and when a team rests with work
+  still on a branch the session says which.
+- **Subagents for every tool:** OpenCode, Cursor, Grok and the ACP agents you add can send subagents
+  too; ones that read run side by side, ones that write take turns. Claude Code, Codex, Hermes and
+  Antigravity keep their own.
+- **OpenCode runs as a local server:** Liner Code starts `opencode serve` on 127.0.0.1 and talks to
+  it over HTTP, one process for all its sessions, stopped a minute after the last one closes.
+- **Links into the app:** a `liner-code://` link that names a session opens it, and one that names a
+  folder asks you before it adds it as a project.
+- **More than one window:** File › New Window (Shift-Command-N on a Mac, Ctrl+Shift+N on Windows).
+- **A whale on Home:** drawn in fine dots, it swims behind the message box; a small card turns it
+  off, and so does Settings › Appearance. In the dark the paper is near black beside a grey sidebar.
+- Moving a session to another tool's model hands it a note with everything so far: who answered
+  what, the first ask, the plan left open, the files changed and how a failed command or a stopped
+  turn ended. The chat shows "Switched" with both models and the effort, and opens on the note it
+  was sent; before you send, a line says your next message hands off.
+- Typing / lists every command as one full-width list, each with its icon, its name and what it
+  does, and now includes /teamwork and /swarm. A tool command named like one of Liner Code's is
+  listed once, not twice the second time you type /.
+
+### Changed
+
+- Every Hermes model offers Hermes's effort levels, not only the one a session last ran on: Liner
+  Code checks whether an agent's levels are the same whatever the model, and a model id you add to
+  such an agent takes them too. A model without levels now says whether its tool lists none for it
+  or hasn't said yet.
+- OpenCode Go's limits no longer read the Go key OpenCode or Hermes saved until you agree: Read the
+  Go key in Usage, or Settings › General.
+- The Effort pill is empty at a model's lowest level and full only at its highest: the lower of two
+  levels (OpenCode's None) no longer draws as half. Its fill ends round about the knob.
+- Claude Code's and Codex's model lists show the models alone, without a line over each saying what
+  it is for.
+- The model picker opens with its list over the chip you clicked and the card about a model beside
+  it, to the right. Before, the list stood a card's width away to the left and only the small card
+  was over the chip.
+- The session's surfaces are a row of icons at the right end of its header (Session, Terminal,
+  Changes, Browser, Files, ···); the rail down the paper's right edge and the panel's tabs are gone.
+- The right panel is a flush column of the paper with one hairline at its left, every surface has
+  one head with its name, Full canvas and Close, and in the full canvas or a narrow window the
+  session header stays in view above it.
+- Every menu has one shape: 28px rows, a 14px grey icon, the value or tick at the right end, grey
+  labels and foot lines, and rows that open a menu to the side.
+- A working mark is three dots travelling round in grey whoever's model it is; in lists of steps a
+  finished step is a tick, one not started an empty ring, a failed one a red cross.
+- In Liner Security a finding and a scan's Found panel have the right panel's frame: a head with the
+  name, how bad and Close; Summary, Code and Activity as sections of one column; a foot with Fix in
+  ink last.
+- Liner Security's find fields are always there and say "Find a finding", "Find a project", "Find a
+  session"; Findings' order and exports share one options menu.
+- Liner Security's empty states, menus and step marks are the app's own, and each page's one action
+  (Add a project, Start a scan, Dismiss them) is ink.
+- Pull request, Design, Side chat and add-on panels sit in the panel's one frame, each with one
+  action in ink in its foot.
+- Linked pull requests is now Pull request's "#N" picker, which its key opens; an add-on's ··· can
+  pin it to Your apps.
+- Pointing at a session in the sidebar shows Pin, Settle and ···, whose menu adds Mark unread and
+  Stop it, with Snooze until and Group opening to the side.
+- The Session card says where a session runs, what fills its context and its setup as rows, with
+  Multi-agent, Tool preset, Connections, Spend limit and Workspace memory each a menu to the side.
+- The crew chip and the Swarm or Teamwork chip open one agents popup: who works as a tree, the board
+  and the worktrees, then Pause, Hibernate all and Turn it off.
+- The Plan and the team at work are cards at the end of the chat, over the live line, each folding
+  to one line; the strips over the message box are gone.
+- The live line is one line: the newest step, its time and ›.
+- A team's report to its coordinator reads as one folded row, who to whom and its first sentence,
+  that opens in place.
+- One agent in the panel has a head with a way back, who sent it and Stop, and its message box as
+  the foot.
+- Changes keeps its turn, its files as "N files ⌄", its totals and Previous and Next in its head;
+  how the diff is drawn is one options menu, each file's row has a bare Viewed tick and your editor,
+  and the foot says what you've viewed beside Undo and Commit in ink.
+- Asking about lines in Changes' split view is the same box as in the unified view.
+- Files has its find field, Only changed files and one Look again in its head, a file's Copy path,
+  Copy text and Open in Browser under its ···, and Show changes and Open in editor in its foot.
+- The Browser's address field holds Back, Forward and Reload, and pressing the address lists the
+  folder's dev servers (Run, Restart, Stop), its pages and the other servers on this Mac; Width,
+  Theme and Zoom are rows of its ··· that open to the side, and the page fills the panel edge to
+  edge.
+- Device's simulator picker and tools are in its head, the Device log is its foot as the Browser's
+  Console is, and its ask is the Browser's.
+- The terminal's tools are the panel's size, and its find is the app's one find bar, counting
+  matches in the whole scrollback.
+- Liner Design's inspector is drawn as the panel is: its tabs in a head with Hide, sections ruled as
+  the panel's, and one foot whose ink button is Build, or Fix all while Checks has something to fix.
+- Checks lists To fix and Passed as sections; the HTML tab names its layer on a file's strip with
+  how it is said as a picker; Build marks a frame a screen or not for code from a row.
+- Liner Design's top row has the session header's buttons, Build in a project and Another folder
+  open to the side, and the running app's picker lists dev servers as the Browser does.
+- A design's row menu has Stop it while it draws, Rename with F2 and its deletes in red; deleting a
+  page asks once more.
+- The pinned Design chat has the panel's head, and the small chat row is one line ending in ›.
+- Settings, Usage, Setup and the Add-ons page take the panel's look: each form's one action is in
+  ink, a picture switch list and Add one's other ways are menus, an add-on's details read as a panel
+  with Remove in its ···, and Setup's list wears the step marks.
+- One word for one thing in Settings and Usage: Spend limit, From cache, Workspace memory, the
+  message box, and Changes.
+- Home's, the Wall's and the message box's menus, lists and Permissions are the app's one menu
+  shape, with a grey label and an ink tick.
+- The Wall's tiles wear the panel's look: bordered cards with one action in ink, files by their
+  coloured letter, and the Plan and the team at work folded to a line under the live line.
+- Liner Design's small chat shows the Plan and the team at work as a line each over its live line.
+- The session title's menu says where it runs in the Session card's words, opens its lists in place,
+  and its Commit opens Changes with the commit form open.
+- Home's project picker opens From GitHub and Find on this Mac each as a list of its own, and its
+  GitHub notes are the app's one empty state.
+- The Commit and push card and the pull request card in the chat are bordered as the Plan card is,
+  with their one action in ink, a branch in plain words and the checks as ticks, green when they
+  passed.
+- Compare's columns are the panel's frame side by side, with Keep this one in ink and Show the
+  changes as a lit icon.
+- ⌘K's session rows say what the sidebar's row menu says (Pin, Mark unread, Settle, Open beside,
+  Export as Markdown, Stop it, Archive), and Stop it and Delete are red.
+- Notices hang at the chat's right edge while the panel is open, clear of its head.
+- A panel surface that breaks shows the panel's one empty state with Try again.
+- The Browser shows Back and Forward only when there is somewhere to go, so a narrow panel keeps
+  room for the address.
+- An ask's buttons are the panel's size, "Don't ask again" is quiet beside the ink Run it, and what
+  a session no longer asks about is a plain menu with a way back.
+- A Working mark is never tinted by a model or an agent.
+- The keyboard settings say Show or hide the Session card, settle and Changes.
+- The model picker is as dense as Capy's: 28px rows that touch, shorter labels and head rows, and a
+  side card whose facts, Effort, Ultracode and Star all fit without scrolling. More models show at
+  once in the same size.
+- The Session card pins at the chat's top right, as T3 Code's does, and stays there as you move
+  between sessions until you press its icon again; the chat and the message box make room for it in
+  a wide window. With Teamwork or a Swarm on, the team's card pins under it on its own (turning a
+  team on no longer opens the Agents panel), and the team's chip shows or hides it until you next
+  open the session.
+
+### Fixed
+
+- Quitting Liner Code ends OpenCode's shared server and every command its sessions started, a server
+  that won't stop included, and the next launch ends them if Liner Code ever quit hard. Quitting
+  also waits for a team's open workers to close.
+- A team's worker that only reads can't change your checkout through an ask, whatever the session's
+  level, and landing a worker's worktree runs no git hook it could have written there.
+- A repository's `.liner/patch.json` that says ask can't turn a command you set to deny into a card:
+  the stricter of your rules and the repository's holds.
+- Closing the first window beside a New Window and then the other leaves the app with a window to
+  bring back, and elsewhere than a Mac asks before it quits while sessions work.
+- Picking a frame in Liner Design could freeze its inspector.
+- Multi-agent › Off, End worker and the × on a permission rule each ask before they act, so one
+  stray press can't stop a team or drop a deny.
+- Dismiss them in Liner Security acted on picked findings you could no longer see. It now acts only
+  on those shown.
+- The Wall's Review queue never counted an open pull request.
+- In Changes' split view, Previous, Next and asking about a line did nothing.
+- An ask card in the Browser, a device or a design turned off most of the app's shortcuts.
+- A question you answered in your own words picked them twice once you came back to it.
+- Mark unread on the open session was undone at once.
+- Files attached to a draft could be lost on a reload.
+- A key typed while the engine reconnected hid a running terminal behind "The shell couldn't start".
+- Liner Design's page rows couldn't be reached from the keyboard, and renaming or removing a page
+  could overwrite a design you had opened since.
+- A queued message dropped on the message box put its id in as text.
+- The / list kept an agent's old commands for five minutes after it sent new ones.
+
 ## 0.3.1 (beta), 2026-11-22
 
 Update from 0.3.0: on a Mac Liner Code does it by itself (Restart to update), or download the new

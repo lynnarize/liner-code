@@ -38,6 +38,8 @@ function makeHarness(o: {
   hibernateSec?: number;
   /** Reuses another harness's home, as the engine does when it starts again. */
   home?: string;
+  /** Reuses another harness's project folder (already set up), as the engine finds it when it starts again. */
+  project?: string;
   /** False leaves Teamwork switched on in the thread without calling enable, as a restarted engine finds it. */
   enable?: boolean;
   /** Makes opening a worker's tool throw; `nth` counts the opens for that worker, from 1. */
@@ -60,8 +62,8 @@ function makeHarness(o: {
   }) => Promise<void>;
 }) {
   const home = o.home ?? tempDir("liner-swarm-home-");
-  const project = tempDir("liner-swarm-proj-");
-  if (o.gitRepo) {
+  const project = o.project ?? tempDir("liner-swarm-proj-");
+  if (o.gitRepo && !o.project) {
     git(project, ["init", "-b", "main"]);
     git(project, ["config", "user.email", "test@liner.local"]);
     git(project, ["config", "user.name", "Liner Test"]);
@@ -2426,5 +2428,170 @@ describe("Swarm auditors run where the work is", () => {
     const rules = swarmCoordinatorRules((t) => t, "squad", 2, "teamwork");
     assert.match(rules, /audit: true, of: "<writer>"/);
     assert.match(rules, /With several writers, add one auditor per writer you want audited, or one without of, which is told every branch and path\./);
+  });
+});
+
+describe("Swarm work not in the checkout yet", () => {
+  /** The notices that tell the person of unlanded work, in the order they were put. */
+  const unlandedNotices = (h: ReturnType<typeof makeHarness>) => [...h.items.values()].filter((it) => it.kind === "notice" && /not in your checkout yet/.test(it.text)).map((it) => (it as { text: string }).text);
+  /**
+    A team in a git repo whose coordinator's wakes run as turns that start and end. A worker named none-* changes nothing,
+    commit-* commits its file on its branch, slow-* waits for `release` first, and every other writes a file it leaves
+    uncommitted; each reports to the coordinator.
+  */
+  function landHarness(o: { home?: string; project?: string; enable?: boolean } = {}) {
+    let release!: () => void;
+    const gate = new Promise<void>((res) => (release = res));
+    const h = makeHarness({
+      gitRepo: true,
+      ...o,
+      onCoordinatorWake: (swarm) => coordinatorTurn(swarm),
+      onWorkerTurn: async ({ name, cwd, swarm }) => {
+        if (name.startsWith("slow")) await gate;
+        if (!name.startsWith("none")) writeFileSync(join(cwd, `${name}.txt`), `work of ${name}\n`);
+        if (name.startsWith("commit")) {
+          git(cwd, ["add", "-A"]);
+          git(cwd, ["commit", "-m", `Work of ${name}`]);
+        }
+        swarm.post(TID, { from: name, text: `@coordinator Finished ${name}.` });
+      },
+    });
+    h.settings.swarmAutoPost = false;
+    return { h, release };
+  }
+  const writer = async (h: ReturnType<typeof makeHarness>, name: string) => (await h.swarm.addWorker(TID, { name, workspace: "share", mode: "write", brief: `Write ${name}.txt` })).member;
+  /** Waits until nobody is at work and every check for unlanded work started by then has run. */
+  const settled = async (h: ReturnType<typeof makeHarness>) => {
+    await waitFor(() => !busyOrQueued(h.swarm));
+    for (let i = 0; i < 3; i++) {
+      await sleep(20);
+      await h.swarm.unlandedChecked(TID);
+    }
+  };
+
+  it("A team at rest with one changed, unlanded worktree puts one notice naming the worker and its branch.", async () => {
+    const { h } = landHarness();
+    try {
+      const w = await writer(h, "edit");
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), [`@edit's work is on branch ${w.branch}, not in your checkout yet. Land it from the Agents panel (Worktrees).`]);
+      const posts = h.swarm.snapshot(TID)!.posts;
+      assert.ok(!posts.some((p) => /not in your checkout yet/.test(p.text)), "nothing goes on the board");
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("The same unlanded work reached again when another coordinator turn ends adds no second notice.", async () => {
+    const { h } = landHarness();
+    try {
+      await writer(h, "edit");
+      await settled(h);
+      assert.equal(unlandedNotices(h).length, 1);
+      const wakes = h.coordWakes.length;
+      coordinatorTurn(h.swarm);
+      h.swarm.onCoordinatorTurn(TID, "working");
+      h.swarm.onCoordinatorTurn(TID, "waiting", true);
+      await settled(h);
+      assert.equal(unlandedNotices(h).length, 1);
+      assert.equal(h.coordWakes.length, wakes, "and the coordinator is not woken by it");
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A worktree with no changes is not named, while one with uncommitted changes and one with commits are.", async () => {
+    const { h } = landHarness();
+    try {
+      await writer(h, "none");
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), [], "a team whose only worktree is unchanged is told nothing");
+      const a = await writer(h, "edit");
+      const b = await writer(h, "commit");
+      await settled(h);
+      assert.equal(git(b.worktreePath!, ["status", "--porcelain"]), "", "the committing worker left nothing uncommitted");
+      assert.deepEqual(unlandedNotices(h), [`Work not in your checkout yet: @edit (${a.branch}), @commit (${b.branch}). Land each from the Agents panel (Worktrees).`]);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("After the person lands one of two unlanded worktrees a new notice names the one left, and once both are landed nothing more is said.", async () => {
+    const { h } = landHarness();
+    try {
+      const a = await writer(h, "edit-a");
+      const b = await writer(h, "edit-b");
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), [`Work not in your checkout yet: @edit-a (${a.branch}), @edit-b (${b.branch}). Land each from the Agents panel (Worktrees).`]);
+      await h.swarm.landWorker(TID, "edit-a");
+      await settled(h);
+      assert.equal(unlandedNotices(h).length, 2);
+      assert.equal(unlandedNotices(h)[1], `@edit-b's work is on branch ${b.branch}, not in your checkout yet. Land it from the Agents panel (Worktrees).`);
+      await h.swarm.landWorker(TID, "edit-b");
+      await settled(h);
+      coordinatorTurn(h.swarm);
+      await settled(h);
+      assert.equal(unlandedNotices(h).length, 2, "nothing more is said once all is landed");
+      const saved = JSON.parse(readFileSync(join(h.home, "swarms", TID, "state.json"), "utf8"));
+      assert.equal(saved.unlandedTold, undefined, "and the mark is cleared");
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("No unlanded-work notice is put while a worker is still at work, and one is once it has finished.", async () => {
+    const { h, release } = landHarness();
+    try {
+      const a = await writer(h, "edit");
+      const b = await writer(h, "slow");
+      await waitFor(() => memberOf(h.swarm, "edit")?.state === "hibernated" && memberOf(h.swarm, "slow")?.state === "working");
+      // A coordinator turn ending (the person's own message, say) while @slow still works.
+      coordinatorTurn(h.swarm);
+      await sleep(40);
+      await h.swarm.unlandedChecked(TID);
+      assert.deepEqual(unlandedNotices(h), []);
+      release();
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), [`Work not in your checkout yet: @edit (${a.branch}), @slow (${b.branch}). Land each from the Agents panel (Worktrees).`]);
+    } finally {
+      release();
+      h.swarm.dispose();
+    }
+  });
+
+  it("No unlanded-work notice is put while the team is paused at the turn limit, and one is once the person carries on.", async () => {
+    const { h } = landHarness();
+    h.swarm.selfTurnsMax = 1;
+    try {
+      const w = await writer(h, "edit");
+      await waitFor(() => h.swarm.snapshot(TID)!.paused?.reason === "limit");
+      await settled(h);
+      h.swarm.onCoordinatorTurn(TID, "waiting");
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), []);
+      h.swarm.resume(TID);
+      await settled(h);
+      assert.deepEqual(unlandedNotices(h), [`@edit's work is on branch ${w.branch}, not in your checkout yet. Land it from the Agents panel (Worktrees).`]);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A second manager on the same home after a restart does not repeat an unlanded-work notice already given.", async () => {
+    const { h: first } = landHarness();
+    await writer(first, "edit");
+    await settled(first);
+    assert.equal(unlandedNotices(first).length, 1);
+    first.swarm.dispose();
+
+    const { h: second } = landHarness({ home: first.home, project: first.project, enable: false });
+    try {
+      second.swarm.onCoordinatorTurn(TID, "working");
+      second.swarm.onCoordinatorTurn(TID, "waiting");
+      await settled(second);
+      assert.deepEqual(unlandedNotices(second), []);
+    } finally {
+      second.swarm.dispose();
+    }
   });
 });

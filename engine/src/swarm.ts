@@ -339,6 +339,8 @@ type PersistedSwarm = {
   selfTurns?: number;
   /** Set while the team waits for the person (see SwarmPause). */
   paused?: SwarmPause;
+  /** The unlanded work the person was last told of, as its names and branches in one string: said again only when it changes. */
+  unlandedTold?: string;
   updatedAt: number;
 };
 
@@ -363,6 +365,8 @@ type SwarmRun = {
   coordWakeQueued: boolean;
   /** Adds run one after another, so each sees the roster (and the names) the one before it left. */
   adding: Promise<unknown>;
+  /** Checks for unlanded work run one after another, so two ends at once can't both tell the person. */
+  unlandedCheck: Promise<void>;
 };
 
 export type SwarmHost = {
@@ -502,6 +506,7 @@ export class SwarmManager {
         stallState: { headSeq: data.nextSeq - 1, alerts: 0, pinged: new Set(), lastAt: 0 },
         coordWakeQueued: false,
         adding: Promise.resolve(),
+        unlandedCheck: Promise.resolve(),
       };
       this.runs.set(threadId, runState);
       if (interrupted) this.tellPaused(runState);
@@ -556,6 +561,7 @@ export class SwarmManager {
       stallState: { headSeq: 0, alerts: 0, pinged: new Set(), lastAt: 0 },
       coordWakeQueued: false,
       adding: Promise.resolve(),
+      unlandedCheck: Promise.resolve(),
     };
     this.runs.set(threadId, r);
     this.save(r);
@@ -828,6 +834,8 @@ export class SwarmManager {
       if (this.dueNow(r, coord)) this.scheduleCoordinatorWake(r);
     }
     this.publish(r);
+    // The coordinator's answer may not say the work still has to be landed, so the engine says it once the team is at rest.
+    if (state === "waiting") this.noteUnlanded(r);
   }
 
   /** Carries a paused team on (the Agents panel's Carry on). A team that is switched off stays as it is. */
@@ -1002,6 +1010,70 @@ export class SwarmManager {
       const turn = this.host.turnOf?.(threadId) ?? this.host.thread(threadId).turns;
       this.host.putItem(threadId, { kind: "notice", id: `sw_pause_${threadId}_${p.at}`, turn, at: p.at, text });
     }
+  }
+
+  /**
+    Whether the team has come to rest: the swarm is on, the coordinator is not in a turn nor about to be woken, nobody is at
+    work or in a turn that has not ended, and the team is not paused for the limit or a restart (the person's own Stop is
+    rest: what is left in the worktrees is still theirs to land). Never throws.
+  */
+  private atRest(r: SwarmRun): boolean {
+    try {
+      const threadId = r.data.threadId;
+      if (this.disposed || this.runs.get(threadId) !== r || !this.host.thread(threadId).swarm?.enabled) return false;
+      if (r.data.paused && r.data.paused.reason !== "stopped") return false;
+      const coord = r.data.members.find((m) => m.name === "coordinator");
+      if (coord?.state === "working" || r.coordWakeQueued || this.host.isCoordinatorBusy(threadId)) return false;
+      if (r.data.members.some((m) => m.name !== "coordinator" && atWork(m))) return false;
+      for (const id of this.turning.values()) if (id === threadId) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+    When the team is at rest, checks in the background which worktrees hold work the session checkout does not have, and tells
+    the person in the timeline once per set of them. Nothing goes on the board or to any agent: it wakes nobody and is no turn.
+  */
+  private noteUnlanded(r: SwarmRun) {
+    // No worktree left and nothing told before: nothing to look at, so no git runs.
+    if (!r.data.unlandedTold && !this.unlandedWorktrees(r).length) return;
+    if (!this.atRest(r)) return;
+    r.unlandedCheck = r.unlandedCheck.then(() => this.checkUnlanded(r)).catch(() => {});
+  }
+
+  /** Waits for the unlanded-work checks started so far on a thread (for tests and callers that need them done). */
+  unlandedChecked(threadId: string): Promise<void> {
+    return this.runs.get(threadId)?.unlandedCheck ?? Promise.resolve();
+  }
+
+  private async checkUnlanded(r: SwarmRun) {
+    const threadId = r.data.threadId;
+    const repo = this.cwdOf(threadId);
+    const left: PersistedMember[] = [];
+    for (const m of this.unlandedWorktrees(r)) {
+      const wt = m.worktreePath!;
+      const st = await git(wt, ["status", "--porcelain"]);
+      let changed = st.code === 0 && Boolean(st.stdout.trim());
+      if (!changed && m.branch) {
+        // Commits the worker made on its branch that the checkout's HEAD does not have.
+        const ahead = await git(repo, ["rev-list", "--count", `HEAD..refs/heads/${m.branch}`]);
+        changed = ahead.code === 0 && Number(ahead.stdout.trim()) > 0;
+      }
+      if (changed) left.push(m);
+    }
+    // The team may have started again (or been switched off) while git ran: the next rest checks afresh.
+    if (!this.atRest(r)) return;
+    const told = left.map((m) => `@${m.name} (${m.branch})`).join(", ");
+    if (told === (r.data.unlandedTold ?? "")) return;
+    r.data.unlandedTold = told || undefined;
+    this.save(r);
+    if (!told || !this.host.putItem) return;
+    const text = left.length === 1 ? `@${left[0].name}'s work is on branch ${left[0].branch}, not in your checkout yet. Land it from the Agents panel (Worktrees).` : `Work not in your checkout yet: ${told}. Land each from the Agents panel (Worktrees).`;
+    const at = Date.now();
+    const turn = this.host.turnOf?.(threadId) ?? this.host.thread(threadId).turns;
+    this.host.putItem(threadId, { kind: "notice", id: `sw_unlanded_${threadId}_${at}`, turn, at, text });
   }
 
   /** Records an optional role (such as Task Interviewer) as skipped in the Teamwork tree without starting any process. */
@@ -1817,6 +1889,8 @@ export class SwarmManager {
     if (r && this.wakeReportedParents(r)) this.publish(r);
     // Pumped after the turn has ended, so a wake of this worker that came in meanwhile starts now.
     this.pumpQueue(threadId);
+    // The last turn to end with the coordinator idle and not about to be woken: no coordinator turn's end will come to say it.
+    if (r) this.noteUnlanded(r);
   }
 
   /** One wake turn for a worker, tracking measured worktree diffs, usage, auto-post fallback, and hibernation. */

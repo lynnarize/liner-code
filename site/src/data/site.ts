@@ -137,7 +137,7 @@ export const trust = {
     { dt: 'Your sign-ins', dd: 'Liner never sees a sign-in and resells no tokens. Every call is billed to your own account.' },
     { dt: 'Your machine', dd: 'The app talks to its own engine on 127.0.0.1, behind a token made new on each run.' },
     { dt: 'Held to a level', dd: "Auto, Manual, Reviewer decides or Full access, and Read only for a Security scan. Even at Full access it asks before a step it can't take back." },
-    { dt: 'Signed updates', dd: 'Each update is checked by SHA-256, code signature and Team ID before it is swapped in.' },
+    { dt: 'Signed updates', dd: 'Each update is checked by SHA-256 and its code signature before it is swapped in. Once this copy is signed by a developer, an update has to carry the same Team ID.' },
   ],
 };
 

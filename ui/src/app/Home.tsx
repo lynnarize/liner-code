@@ -21,6 +21,7 @@ import { BackRow, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 import { ProjectQuickPick } from "./Projects";
 import { ModeIcon, ModeRows } from "./Modes";
 import { HomeUpdates } from "./Updates";
+import { Sea } from "./Sea";
 import * as os from "./os";
 
 type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode; startPrompt?: { text: string; at: number } };
@@ -277,6 +278,8 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
 
   return (
     <div className="lc-home">
+      {/* The sea behind it all (Sea.tsx), unless it's off in Settings, Appearance. */}
+      <Sea />
       <header className="lc-top lc-top-home" data-drag>
         {!sidebar && (
           <ShowSidebar onShow={onSidebar} />

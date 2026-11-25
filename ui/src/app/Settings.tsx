@@ -66,7 +66,7 @@ type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "m
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns anonymous usage counts analytics telemetry tokens install id opencode go key sign-in limits hermes" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, the sea on Home, where designs open, and a picture behind the session.", words: "sea whale ascii ocean fish home theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
@@ -956,6 +956,11 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
             ]}
             aria-label="Motion"
           />
+        </Field>
+      </Group>
+      <Group title="Home" tag={<New />} note="Behind the message box on Home, a whale drawn in fine dots swims through the water. Your pointer stirs it, a click lets out bubbles, and a click on the whale makes it blow.">
+        <Field title="The sea and its whale">
+          <NamedSwitch name="The sea and its whale" checked={look.sea !== false} onCheckedChange={(sea) => set({ sea })} />
         </Field>
       </Group>
       <Group title="Designs and pages" tag={<New />} note="Where a design or an HTML page an agent shows you opens. Any one of them can still open the other way from its own buttons.">

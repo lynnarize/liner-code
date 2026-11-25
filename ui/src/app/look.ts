@@ -20,12 +20,13 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
   then how much of the desktop comes through, and `bgFrost` (off unless true) blurs it.
   `motion`: Full plays every view's way in each time it opens; Quick shows a view you open as it is
   and keeps the motion for what arrives while you watch. The system's Reduce motion stops both.
+  `sea`: the sea with its whale, drawn in dots, behind Home (Sea.tsx); on unless it's false.
 */
 export type Glass = "clear" | "tinted" | "solid";
 export type ActionColour = "red" | "accent" | "ink" | "own";
 export type DesignsWhere = "panel" | "chat";
 export type Motion = "full" | "quick";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; bgFrost?: boolean; v?: number };
+export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; bgFrost?: boolean; sea?: boolean; v?: number };
 export const LOOK_KEY = "liner-code:look";
 const MOTIONS: Motion[] = ["full", "quick"];
 export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "tinted", designs: "panel", designsAuto: true, action: "red", motion: "quick" };

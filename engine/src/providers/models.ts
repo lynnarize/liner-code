@@ -67,13 +67,19 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
   const child = spawn(path, cmd.slice(1), { cwd: scratch, env, stdio: ["pipe", "pipe", "pipe"], detached: true }) as ChildProcessWithoutNullStreams;
   const waiting = new Map<number, (m: Json) => void>();
   let seq = 0;
+  // The options as the tool last sent them on its own (config_option_update), which a model switch may answer with.
+  let updated: unknown;
   jsonLines(child.stdout, (v) => {
-    const m = v as { id?: number; method?: string; result?: Json; error?: unknown };
+    const m = v as { id?: number | string; method?: string; params?: Json; result?: Json; error?: unknown };
     // With a method it's the tool's own request, under an id of its own.
     if (typeof m.id === "number" && waiting.has(m.id) && !m.method) {
       waiting.get(m.id)!(m.error ? {} : (m.result ?? {}));
       waiting.delete(m.id);
     }
+    // A tool that asks before a model switch (Hermes on a guarded model) is told no at once, so the switch below never waits on it.
+    if (m.method === "session/request_permission" && m.id !== undefined) child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: m.id, result: { outcome: { outcome: "cancelled" } } })}\n`);
+    const u = m.method === "session/update" ? (m.params?.update as Json | undefined) : undefined;
+    if (u?.sessionUpdate === "config_option_update" && Array.isArray(u.configOptions)) updated = u.configOptions;
   });
   child.stderr.resume();
   const request = (method: string, params: Json) =>
@@ -89,8 +95,23 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
     onAbort = () => r(null);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+  /**
+    The levels the session lists once switched to `model`, or null when that can't be told: no way to switch, a switch it
+    refused, or a reply that carries no options (Hermes's older ACP server answers with none).
+  */
+  const switchedLevels = async (model: string): Promise<EffortInfo[] | null> => {
+    const ask = s && typeof s.sessionId === "string" ? acpModelRequest(s, s.sessionId, model) : null;
+    if (!ask) return null;
+    updated = undefined;
+    const r = await request(ask.method, ask.params);
+    const said = Array.isArray(r.configOptions) && r.configOptions.length ? r.configOptions : updated;
+    if (!Array.isArray(said) || !said.length) return null;
+    const on = (said as Json[]).find((c) => c.category === "model" || c.id === "model");
+    return on && on.currentValue !== model ? null : thoughtLevels(said);
+  };
+  let s: Json | null = null;
   try {
-    const s = await Promise.race([
+    s = await Promise.race([
       (async () => {
         await request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: "liner-code", title: "Liner Code", version: VERSION } });
         return request("session/new", { cwd: scratch, mcpServers: [] });
@@ -112,17 +133,50 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
       current = state?.currentModelId ?? "";
       for (const m of state?.availableModels ?? []) out.push({ id: m.modelId, ...split(m.name ?? m.modelId), description: (m.description ?? "").replace(/^Provider: [^•]*•?\s*/, "").replace(/^current$/, ""), isDefault: m.modelId === current });
     }
-    // The levels the session lists for the model it opened on (OpenCode 2's "effort" option, category thought_level) are that
-    // model's own; it lists them for no other model, so the rest have none until a session on them says.
+    // The levels the session lists (category thought_level) are for the model it opened on. Some tools list one set whatever
+    // the model (Hermes: its reasoning levels), others a set per model (OpenCode 2: GLM has no medium), and ACP doesn't say
+    // which: so this throwaway session is switched once to another model and the option read again. The same both times,
+    // they are the tool's for every model, and go on its "default" row too, which is how the app knows (toolLevels).
+    // Otherwise each of the two keeps its own, and the rest have none until a session on them says.
     const levels = thoughtLevels(s.configOptions);
-    if (levels.length) for (const m of out) if (m.isDefault) m.efforts = levels;
+    const other = current ? out.find((m) => !m.isDefault) : undefined;
+    const there = other ? await within(switchedLevels(other.id), timeout, gone(child)) : null;
+    const wide = there && there.map((e) => e.id).join(" ") === levels.map((e) => e.id).join(" ") ? levels : undefined;
+    for (const m of out) {
+      if (wide) m.efforts = wide;
+      else if (m.isDefault && (levels.length || there)) m.efforts = levels;
+      else if (there && m === other) m.efforts = there;
+    }
     const now = out.find((m) => m.isDefault);
-    return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with` }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
+    return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with`, ...(wide ? { efforts: wide } : {}) }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
     killTree(child);
   }
+}
+
+/** How long the model switch that tells a tool's levels apart (acpModels) may take, in ms, before it counts as not told. */
+export const LEVEL_SWITCH = { ms: 15000 };
+
+/** What `p` gives, or null once `LEVEL_SWITCH.ms` passes or one of `ends` (the listing's own bound, the tool gone) comes first. */
+async function within<T>(p: Promise<T>, ...ends: Promise<null>[]): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<null>((r) => (timer = setTimeout(() => r(null), LEVEL_SWITCH.ms)));
+  try {
+    return await Promise.race([p, late, ...ends]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+  The effort levels a tool takes for every model, the same whichever it is on, or undefined when they differ by model or it
+  hasn't said: an ACP agent's "default" row carries them only when its listing found them the same on two models (acpModels).
+  A model id you added, or one a session hasn't run on, takes these; no other tool's levels are shared.
+*/
+export function toolLevels(models: ModelInfo[]): EffortInfo[] | undefined {
+  return models.find((m) => m.id === "default")?.efforts;
 }
 
 /** Dollars per million tokens as the picker shows a price: "$4", "$1.40", "$0.145". */
@@ -162,9 +216,10 @@ export function opencodeModelList(stdout: string): ModelInfo[] | null {
     // One OpenCode has switched off (its config, or deprecated) it won't run.
     if (m.enabled === false) continue;
     const row: ModelInfo = { id: `${m.providerID}/${m.id}`, label: typeof m.name === "string" && m.name.trim() ? m.name.trim() : m.id, description: "", group: m.providerID };
+    // Its list is the whole answer: a model listed with no variants takes no level, said as none ([]) rather than unknown.
     if (Array.isArray(m.variants)) {
       const ids = m.variants.map((v) => (v as { id?: unknown } | null)?.id).filter((id): id is string => typeof id === "string" && Boolean(id));
-      if (ids.length) row.efforts = [...new Set(ids)].map((id) => effortOf(id));
+      row.efforts = [...new Set(ids)].map((id) => effortOf(id));
     }
     const costs = Array.isArray(m.cost) ? m.cost : [];
     const base = costs.find((c) => !(c as { tier?: unknown } | null)?.tier);

@@ -285,3 +285,14 @@ export function stopKey(key: string, at: number, stops: number): number | "own" 
   if (key === "ArrowRight") return Math.min(stops - 1, at + 1);
   return undefined;
 }
+
+/**
+  Why a model shows no levels, in the words of what its tool said: that it takes none (OpenCode lists no variants for it), or
+  nothing yet (a Hermes model no session has run on, before its listing showed Hermes's levels are the same for every model).
+  One line said both once, and a model that takes Hermes's levels read as taking none. Unknown (`said` unset): the plain line.
+*/
+export function noLevels(tool: string | undefined, said: boolean | undefined): string {
+  if (said === undefined) return "This model has no effort levels.";
+  const who = tool ?? "Its tool";
+  return said ? `${who} lists no effort levels for this model.` : `${who} hasn't said which effort levels this model takes, so it thinks at its own default.`;
+}

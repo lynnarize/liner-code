@@ -577,7 +577,7 @@ test("No effort level is invented in the app: a model's levels are what its tool
   const model = readFileSync(new URL("model.ts", dir), "utf8");
   const body = model.slice(model.indexOf("export function effortsFor("), model.indexOf("\n}\n", model.indexOf("export function effortsFor(")));
   assert.doesNotMatch(body, /supports\.effort/, "a model's levels still follow whether its tool takes levels at all");
-  assert.match(body, /m\?\.efforts\?\.length \? \{ list: m\.efforts, fallback: m\.defaultEffort \} : \{ list: \[\], fallback: undefined \}/, "a model's levels are not exactly its own");
+  assert.match(body, /m\?\.efforts\?\.length \? \{ list: m\.efforts, fallback: m\.defaultEffort(, said)? \} : \{ list: \[\], fallback: undefined(, said)? \}/, "a model's levels are not exactly its own");
   // Settings' lead's effort is the levels of the lead's model, not the app's three.
   assert.match(readFileSync(new URL("Agentic.tsx", dir), "utf8"), /<EffortPick modelRef=\{c\.lead\}/, "Settings' lead's effort isn't the lead model's levels");
 });

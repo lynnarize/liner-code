@@ -22,7 +22,7 @@ import { findFiles, gitStatus, tree } from "./files.ts";
 import { savedModelsNamed } from "./providers/claude.ts";
 import { ensureSampleProject } from "./providers/demo.ts";
 import { detectOnce, endpointModels } from "./providers/endpoint.ts";
-import { skillsIn } from "./providers/models.ts";
+import { skillsIn, toolLevels } from "./providers/models.ts";
 import { onAcpCommands, onAcpEfforts } from "./providers/acp.ts";
 import type { Routines } from "./routines.ts";
 import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
@@ -236,11 +236,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   syncProviders(store.settings, runtime.keys);
   let detected: ProviderInfo[] = [];
   // Model ids you added go after the tool's own. With no effort levels: the tool doesn't list them, so it hasn't said which
-  // they take, and another model's would be a guess (levels differ by model).
+  // they take, and another model's would be a guess (levels differ by model). Unless the tool showed its levels are the same
+  // for every model (toolLevels): then an id you added takes them too.
   const withCustom = (d: ProviderInfo): ProviderInfo => {
     const mine = (store.settings.customModels ?? []).filter((c) => c.provider === d.id && !d.models.some((m) => m.id === c.id));
     if (!mine.length) return d;
-    return { ...d, models: [...d.models, ...mine.map((c): ModelInfo => ({ id: c.id, label: c.label?.trim() || c.id, description: "A model id you added", custom: true }))] };
+    const wide = toolLevels(d.models);
+    return { ...d, models: [...d.models, ...mine.map((c): ModelInfo => ({ id: c.id, label: c.label?.trim() || c.id, description: "A model id you added", custom: true, ...(wide ? { efforts: wide } : {}) }))] };
   };
   const shown = () => detected.map(withCustom);
   const apply = () => {
@@ -364,13 +366,22 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     store.emit({ type: "commands", provider, commands });
   });
   // When an ACP session switches to a non-default model and reports thought_level options, cache them in models.json so the picker knows that model's effort levels.
+  // A tool whose levels were found the same for every model (toolLevels) that now lists others for one of them was a guess
+  // for the rest after all: that model keeps what it said, and the others' copies go until a session on each says (the next
+  // listing, after the tool updates, asks again).
   onAcpEfforts((providerId, modelId, efforts) => {
     const cur = detected.find((d) => d.id === providerId);
     if (!cur || !efforts.length) return;
     const same = (a: ModelInfo["efforts"], b: ModelInfo["efforts"]) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+    const wide = toolLevels(cur.models);
+    const broken = wide !== undefined && !same(wide, efforts);
     let changed = !cur.supports.effort;
     const models = cur.models.map((m) => {
-      if (m.id !== modelId) return m;
+      if (m.id !== modelId) {
+        if (!broken || !same(m.efforts, wide)) return m;
+        changed = true;
+        return { ...m, efforts: undefined };
+      }
       if (same(m.efforts, efforts)) return m;
       changed = true;
       return { ...m, efforts };

@@ -15,7 +15,7 @@ import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { allModels, effortsFor, everyModel, isGoModel, makerName, markOf, modelLabel, pairReady, shortName, sourceMarkOf, toolMarkOf, type ModelChoice } from "./model";
-import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut, pickerWide, priceSaid, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
+import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, noLevels, PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut, pickerWide, priceSaid, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
 import { BackRow, ModelTag, NamedSwitch, Pop } from "./ui";
 import "./models.css";
 
@@ -345,7 +345,7 @@ const EXTRA_SAID: Record<string, string> = { ultracode: "Extra high effort, and 
   The engine holds one effort, an extra being one of its values: a switch on sets it, off goes back to the level picked
   before it while this part was up. A model with no levels says so, and offers none.
 */
-export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; onPick: (id: string) => void }) {
+export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, said, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; said?: boolean; onPick: (id: string) => void }) {
   const { levels, extras } = effortParts(list);
   const shown = effortShown(list, value, fallback, held);
   // The level picked before an extra went on, for the switch to go back to; kept for this model's levels only.
@@ -353,7 +353,7 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
   const before = useRef<{ key: string; level?: string }>({ key });
   if (before.current.key !== key) before.current = { key };
   if (shown.chosen) before.current.level = shown.level;
-  if (!list.length) return <p className="lc-pk-none">This model has no effort levels.</p>;
+  if (!list.length) return <p className="lc-pk-none">{noLevels(tool, said)}</p>;
   const level = levels[shown.at];
   const name = level ? levelName(level.label) : "Its own default";
   const own = !shown.extra && !level;
@@ -473,7 +473,7 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
   const m = row.pick;
   const tool = providers.find((p) => p.id === m.providerId);
   const toolLabel = tool?.label ?? m.provider;
-  const { list, fallback } = effortsFor(m.ref, providers);
+  const { list, fallback, said } = effortsFor(m.ref, providers);
   // Starred when any source's id is, as the list's Starred has it (picker.ts toolList); the button acts on them all.
   const fav = row.offers.some((x) => favs.includes(x.ref));
   const src = sourceOf(m);
@@ -527,7 +527,7 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
       )}
       {m.price?.note && <p className="lc-pk-pnote">{m.price.note}</p>}
       <div className="lc-pk-rule" />
-      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} onPick={(id) => effort.pick(m.ref, id)} />}
+      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} onPick={(id) => effort.pick(m.ref, id)} />}
       <button type="button" className="lc-pk-star l-focus" data-rove aria-pressed={fav} onClick={() => star(row.offers.map((x) => x.ref))}>
         <I.star size={16} />
         {fav ? "Starred" : "Star this model"}
@@ -796,12 +796,12 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       </>
     );
   else if (view === "effort" && effort && effortOf) {
-    const { list, fallback: def } = effortsFor(effortOf, providers);
+    const { list, fallback: def, said } = effortsFor(effortOf, providers);
     body = (
       <>
         <BackRow name={effort.label ?? "Effort"} onBack={leave} />
         {/* Left open after a pick, as the card's is: a slider's Left and Right and the switches change it a step at a time. */}
-        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} onPick={(id) => effort.pick(effortOf, id)} />
+        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} said={said} onPick={(id) => effort.pick(effortOf, id)} />
       </>
     );
   } else if (view === "card" && shown)
@@ -1038,7 +1038,7 @@ export function EffortPick({ modelRef, value, held = true, label = "Effort", onC
         <div className="lc-mp" onKeyDown={rove}>
           {/* Left open after a pick: the slider's Left and Right and the switches change it a step at a time. */}
           {/* The stored word, not `shown`: resolved, "" would come in as the tool's default and read as chosen. */}
-          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} onPick={onChange} />
+          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} said={all.said} onPick={onChange} />
         </div>
       )}
     </Pop>

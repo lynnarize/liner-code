@@ -39,11 +39,13 @@ export function modelInfo(ref: string, providers: ProviderInfo[]): ModelInfo | u
 /**
   The effort levels a model takes, and which it uses when you don't pick: exactly what its tool reported for that model,
   never a list of the app's, another model's, or a guess (DeepSeek's have no Medium). None: it takes no level, and the
-  app offers none.
+  app offers none. `said`: whether the tool has said this model's levels at all (none said as none), unset for a model it
+  doesn't list, so the picker can tell "takes none" from "hasn't said".
 */
-export function effortsFor(ref: string, providers: ProviderInfo[]): { list: EffortInfo[]; fallback: string | undefined } {
+export function effortsFor(ref: string, providers: ProviderInfo[]): { list: EffortInfo[]; fallback: string | undefined; said?: boolean } {
   const m = modelInfo(ref, providers);
-  return m?.efforts?.length ? { list: m.efforts, fallback: m.defaultEffort } : { list: [], fallback: undefined };
+  const said = m ? m.efforts !== undefined : undefined;
+  return m?.efforts?.length ? { list: m.efforts, fallback: m.defaultEffort, said } : { list: [], fallback: undefined, said };
 }
 /**
   The level a new session asks of a model alone: its own default when its tool names one, else "" (the tool's own default,

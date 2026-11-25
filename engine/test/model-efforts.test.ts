@@ -13,7 +13,7 @@ import { createApi } from "../src/api.ts";
 import { opencode } from "../src/providers/acp.ts";
 import { claude, sdk } from "../src/providers/claude.ts";
 import { codexListed } from "../src/providers/codex.ts";
-import { effortOf, OPENCODE_LIST, opencodeModelList, thoughtLevels, ULTRACODE, ULTRATHINK } from "../src/providers/models.ts";
+import { acpModels, effortOf, OPENCODE_LIST, opencodeModelList, thoughtLevels, toolLevels, ULTRACODE, ULTRATHINK } from "../src/providers/models.ts";
 import { Runtime } from "../src/runtime.ts";
 import { Store } from "../src/store.ts";
 
@@ -30,7 +30,7 @@ test("OpenCode's model list gives each model its own effort levels from each pro
   assert.deepEqual(ids(by("opencode/deepseek-v4-pro")), ["high", "max"]);
   assert.deepEqual(ids(by("opencode/hy4-flash-free")), ["none", "high"]);
   assert.equal(by("opencode/hy4-flash-free")!.efforts![0].label, "none", "a level the app doesn't know keeps OpenCode's word");
-  assert.equal(by("opencode/iceman-free")!.efforts, undefined, "a model with no variants has no levels");
+  assert.deepEqual(by("opencode/iceman-free")!.efforts, [], "a model listed with no variants is said to take none, not left unknown");
   assert.equal(by("opencode-go/glm-5.3")!.group, "opencode-go");
   assert.equal(by("opencode/glm-5.3")!.label, "GLM-5.3");
   assert.equal(list.length, 16);
@@ -287,6 +287,91 @@ test("A model id you added takes no effort levels from the tool's other models",
   } finally {
     e.stop();
   }
+});
+
+test("A model id you added takes the levels its tool showed are the same for every model", () => {
+  const levels = [effortOf("low"), effortOf("high")];
+  const e = engine([tool("hermes", [{ id: "default", label: "Hermes default", description: "", efforts: levels }, { id: "nous:a", label: "A", description: "", efforts: levels }])], [{ provider: "hermes", id: "nous:mine" }]);
+  try {
+    const mine = e.runtime.providerInfo.find((p) => p.id === "hermes")?.models.find((m) => m.id === "nous:mine");
+    assert.ok(mine?.custom);
+    assert.deepEqual(mine.efforts?.map((x) => x.id), ["low", "high"]);
+    assert.equal(e.runtime.effortFor("hermes", "nous:mine", "high"), "high", "and runs at the one picked");
+  } finally {
+    e.stop();
+  }
+});
+
+/**
+  An ACP agent asked only for its models: m1 (it opens on), m2 and m3. `levels`: each model's thinking choices (one with none
+  has no thought_level option). `how` it answers a model switch: "" with its options, "empty" with none (Hermes's older ACP
+  server), "notify" with a config_option_update and a bare reply, "ask" only after asking permission, "refuse" staying on m1.
+*/
+function fakeLister(levels: Record<string, string>, how = "") {
+  const dir = mkdtempSync(join(tmpdir(), "lc-acp-levels-"));
+  const file = join(dir, "fake-acp");
+  const script = `
+const rl = require("node:readline").createInterface({ input: process.stdin });
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+const LEVELS = ${JSON.stringify(levels)}, HOW = ${JSON.stringify(how)};
+let model = "m1", held = null;
+const opts = () => [
+  { id: "model", category: "model", type: "select", currentValue: model, options: ["m1", "m2", "m3"].map((v) => ({ value: v, name: v.toUpperCase() })) },
+  ...(LEVELS[model] ? [{ id: "effort", category: "thought_level", type: "select", currentValue: "default", options: [...LEVELS[model].split(","), "default"].map((v) => ({ value: v, name: v })) }] : []),
+];
+rl.on("line", (l) => {
+  const m = JSON.parse(l);
+  if (m.method === "initialize") send({ id: m.id, result: {} });
+  if (m.method === "session/new") send({ id: m.id, result: { sessionId: "s1", configOptions: opts() } });
+  if (m.method === "session/set_config_option") {
+    if (HOW === "ask") return ((held = m), send({ id: "p1", method: "session/request_permission", params: { sessionId: "s1", options: [] } }));
+    if (HOW !== "refuse") model = m.params.value;
+    if (HOW === "empty") return send({ id: m.id, result: { configOptions: [] } });
+    if (HOW === "notify") return (send({ method: "session/update", params: { sessionId: "s1", update: { sessionUpdate: "config_option_update", configOptions: opts() } } }), send({ id: m.id, result: {} }));
+    send({ id: m.id, result: { configOptions: opts() } });
+  }
+  if (m.id === "p1" && !m.method && held) ((model = held.params.value), send({ id: held.id, result: { configOptions: opts() } }), (held = null));
+});`;
+  writeFileSync(file, `#!${process.execPath}\n${script}`);
+  chmodSync(file, 0o755);
+  return () => acpModels([file], "Fake", { ...process.env }, join(dir, "scratch"));
+}
+const levelsOf = (list: ModelInfo[]) => Object.fromEntries(list.map((m) => [m.id, m.efforts?.map((e) => e.id).join(",")]));
+
+test("An ACP agent whose thinking levels are the same on two models gives them to every model, its default row too", async () => {
+  const list = await fakeLister({ m1: "low,high", m2: "low,high", m3: "low,high" })();
+  assert.deepEqual(levelsOf(list), { default: "low,high", m1: "low,high", m2: "low,high", m3: "low,high" });
+  assert.deepEqual(toolLevels(list)?.map((e) => e.id), ["low", "high"], "the default row says they are the tool's");
+});
+
+test("An ACP agent whose thinking levels differ by model gives each of the two it was on its own, and the rest none until a session says", async () => {
+  const list = await fakeLister({ m1: "low,high", m2: "max" })();
+  assert.deepEqual(levelsOf(list), { default: undefined, m1: "low,high", m2: "max", m3: undefined });
+  assert.equal(toolLevels(list), undefined);
+});
+
+test("An ACP agent with no thinking option on either model is said to take none, on every model", async () => {
+  const list = await fakeLister({})();
+  assert.deepEqual(levelsOf(list), { default: "", m1: "", m2: "", m3: "" });
+});
+
+test("An ACP agent that answers a model switch with no options, or stays put, is not taken to share its levels", async () => {
+  for (const how of ["empty", "refuse"]) {
+    const list = await fakeLister({ m1: "low,high", m2: "low,high", m3: "low,high" }, how)();
+    assert.deepEqual(levelsOf(list), { default: undefined, m1: "low,high", m2: undefined, m3: undefined }, how);
+  }
+});
+
+test("An ACP agent's levels sent as an update after a model switch are read as its answer", async () => {
+  const list = await fakeLister({ m1: "low,high", m2: "low,high" }, "notify")();
+  assert.equal(levelsOf(list).m3, "low,high");
+});
+
+test("An ACP agent that asks permission before a model switch is answered at once, so its model listing never waits on it", async () => {
+  const start = Date.now();
+  const list = await fakeLister({ m1: "low,high", m2: "low,high" }, "ask")();
+  assert.equal(levelsOf(list).m3, "low,high");
+  assert.ok(Date.now() - start < 5000, "not the switch's whole time limit");
 });
 
 test("Claude Code's list saved for the next launch reads with its price apart and no levels copied onto older models", () => {

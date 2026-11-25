@@ -82,7 +82,8 @@ export type ModelInfo = {
   description: string;
   /**
     The effort levels the tool reported for this model, lowest first, in its own words, never a shared list or another model's
-    (models differ: one has no medium). None: the tool takes none for it, or didn't say.
+    (models differ: one has no medium), or the levels the tool takes for every model when it showed they don't differ (an ACP
+    agent's, models.ts toolLevels). Empty: the tool said it takes none for this model. Unset: the tool hasn't said.
   */
   efforts?: EffortInfo[];
   /** The level the tool says it runs at when none is given. Unset when it doesn't say: the tool's own default then applies. */

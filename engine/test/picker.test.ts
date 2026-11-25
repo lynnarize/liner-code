@@ -5,7 +5,7 @@
 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, keptLevel, levelName, mergeOffers, pressStop, releaseStop, settingLevel, sliderNow, sourceWriter, startLevel, stopAt, stopKey, stopOf, switchAsChip, switchExtra, toggleStars, toolList, pickerWide, PICKER_WIDE, priceSaid, sectionsOf, settle } from "../../ui/src/app/picker.ts";
+import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, keptLevel, levelName, mergeOffers, noLevels, pressStop, releaseStop, settingLevel, sliderNow, sourceWriter, startLevel, stopAt, stopKey, stopOf, switchAsChip, switchExtra, toggleStars, toolList, pickerWide, PICKER_WIDE, priceSaid, sectionsOf, settle } from "../../ui/src/app/picker.ts";
 import { lineupOf } from "../../contracts/src/lineup.ts";
 
 test("The side card turns to a row only once the pointer has rested on it, so crossing rows on the way to the card leaves it as it was", () => {
@@ -342,4 +342,10 @@ test("Settings saves the tool's own default for the lead's effort as no word, wh
   assert.equal(settingLevel(""), null, "the lead's own default was sent as \"\", which settings.save refuses");
   assert.equal(settingLevel("high"), "high");
   assert.equal(settingLevel("ultracode"), "ultracode");
+});
+
+test("A model with no levels says whether its tool lists none for it or hasn't said yet, not one line for both", () => {
+  assert.equal(noLevels("OpenCode", true), "OpenCode lists no effort levels for this model.");
+  assert.equal(noLevels("Hermes", false), "Hermes hasn't said which effort levels this model takes, so it thinks at its own default.");
+  assert.equal(noLevels(undefined, undefined), "This model has no effort levels.", "a model the tool doesn't list keeps the plain line");
 });

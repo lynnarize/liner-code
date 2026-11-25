@@ -10,7 +10,7 @@ interface Props { title?: string; description?: string; home?: boolean; noindex?
 const { title, description = site.description, home = false, noindex = false } = Astro.props;
 const fullTitle = title ? `${title} | ${site.name}` : site.title;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
-const ogImage = new URL('/og-2.png', Astro.site ?? site.url).href;
+const ogImage = new URL('/og-3.png', Astro.site ?? site.url).href;
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',

@@ -1,0 +1,22 @@
+---
+// Both files, with the visitor's own one filled in. The addresses are the latest release at build
+// time, and download-buttons.ts asks GitHub again in the browser. data-mac and data-win are the
+// direct files; empty means the build could not read the release, so the button already goes to the releases page.
+import { APPLE } from '../data/icons';
+import { close, site } from '../data/site';
+import { RELEASE_API, hrefFor } from '../lib/downloads';
+import { latestDownloads } from '../lib/latest-release';
+
+interface Props { place: 'hero' | 'close' }
+const { place } = Astro.props;
+const latest = await latestDownloads();
+const macHref = hrefFor(latest.mac, site.latest);
+const winHref = hrefFor(latest.win, site.latest);
+const macLabel = close.mac;
+const winLabel = place === 'hero' ? 'Windows' : close.win;
+---
+<div class="os-dl" data-dl data-mac={latest.mac ?? ''} data-win={latest.win ?? ''} data-releases={site.latest} data-api={RELEASE_API}>
+  <a class="btn" data-os="mac" data-label={macLabel} href={macHref} title="Apple silicon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={APPLE}/></svg><span class="dl-label">{macLabel}</span></a>
+  <a class="btn quiet" data-os="win" data-label={winLabel} href={winHref} title="Windows x64"><span class="dl-label">{winLabel}</span></a>
+  <p class="dl-note" id={`dl-note-${place}`} data-dl-note hidden></p>
+</div>

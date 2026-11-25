@@ -1,13 +1,13 @@
 ---
-import { close, site } from '../data/site';
+import Downloads from './Downloads.astro';
+import { close } from '../data/site';
 ---
 <section id="download" aria-labelledby="download-title">
   <div class="wrap close">
     <h2 class="h2 settle" id="download-title">{close.head}</h2>
     <div class="close-end">
       <div class="close-act settle d1">
-        <a class="btn" href={site.latest}>{close.mac}</a>
-        <a class="btn quiet" href={site.latest}>{close.win}</a>
+        <Downloads place="close" />
       </div>
       <p class="small settle d1">{close.small}</p>
     </div>

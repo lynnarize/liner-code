@@ -1,6 +1,7 @@
-// Every word on the site, from the approved mockup (v2), with what 0.2.9 changed. The version comes from
-// the repository's package.json and its stage (beta) and dates from CHANGELOG.md, so a release updates
-// them by itself. Pictures are named here and sized by src/data/shots.json.
+// Every word on the site, from the approved mockup (v2). The version comes from the repository's
+// package.json and its stage (beta) and dates from CHANGELOG.md, so a release updates them by itself.
+// The homepage release lines are written here. Pictures are named here and sized by src/data/shots.json.
+// Download addresses are not: those come from the latest GitHub release (src/lib/latest-release.ts).
 import pkg from '../../../package.json';
 import { releases, shortDate } from '../lib/changelog';
 
@@ -36,9 +37,9 @@ export const nav = [
 ];
 
 export const hero = {
-  callout: { tag: `New in ${VERSION}`, text: 'Liner Security: scans that only read', href: '#security' },
+  callout: { tag: `New in ${VERSION}`, text: 'Fewer buttons, one look everywhere', href: '#shipped' },
   faces: ['Code it.', 'Design it.', 'Secure it.'],
-  lead: 'One desktop app for the coding agents you already have. Claude Code, Codex, OpenCode and Hermes run in it on your own sign-ins, and do more than write code.',
+  lead: 'One desktop app for the coding agents you already have. Claude Code, Codex, OpenCode and Hermes run on your own sign-ins, with a design canvas and a read-only security scan — no Liner account, no markup.',
   small: `Free and open source. ${VERSION} ${STAGE}.`,
   // The caption over the window, one per face; the script reads them from the page.
   caps: [
@@ -142,6 +143,8 @@ export const trust = {
 
 // One line each, written from CHANGELOG.md; the dates come from it too.
 const log = [
+  { v: '0.3.1', span: 'Fewer buttons, one look in every face, and a model picker for each tool.' },
+  { v: '0.3.0', span: 'A new icon, Send and Stop as one button, and an engine that answers only its own address.' },
   { v: '0.2.9', span: 'Liner Security, the third face: scans that only read, a second look, and a fix per finding. A new left panel.' },
   { v: '0.2.8', span: 'A see-through window on a Mac, a compact Home, and Carry on for work left open.' },
   { v: '0.2.7', span: "Sessions on screen in about 0.6 s. Fusion works to its sidekick's class." },
@@ -151,8 +154,8 @@ const log = [
 ];
 export const shipped = {
   tag: 'Changelog',
-  dim: 'Six betas this month.',
-  head: 'Liner Security is the newest.',
+  dim: 'Eight betas in November.',
+  head: 'Fewer buttons, one look.',
   link: 'The whole changelog',
   rows: log.map((r) => ({ ...r, date: dateOf(r.v) })),
 };

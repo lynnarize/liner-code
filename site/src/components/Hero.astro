@@ -1,7 +1,7 @@
 ---
 import Shot from './Shot.astro';
-import { hero, site } from '../data/site';
-import { APPLE } from '../data/icons';
+import Downloads from './Downloads.astro';
+import { hero } from '../data/site';
 ---
 <section class="hero" id="top">
   <div class="wrap">
@@ -16,8 +16,7 @@ import { APPLE } from '../data/icons';
     <div class="hero-sub">
       <p class="lead">{hero.lead}</p>
       <div class="hero-act">
-        <a class="btn" href="#download"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={APPLE}/></svg>Download for macOS</a>
-        <a class="btn quiet" href="#download">Windows</a>
+        <Downloads place="hero" />
         <p class="small">{hero.small}</p>
       </div>
     </div>
@@ -30,7 +29,7 @@ import { APPLE } from '../data/icons';
     <div class="stage hero-stage" id="stage">
       {hero.shots.map((s, i) => <div class:list={['bd', s.stage, { on: i === 0 }]}></div>)}
       <div class="window" data-ui id="window">
-        {hero.shots.map((s, i) => <Shot name={s.name} alt={s.alt} class={i === 0 ? 'on' : undefined} priority={i === 0} />)}
+        {hero.shots.map((s, i) => <Shot name={s.name} alt={s.alt} class={i === 0 ? 'on' : undefined} priority={i === 0} widths={[800, 1200, 1600]} sizes="(max-width: 640px) 150vw, (max-width: 960px) 100vw, min(92vw, 1166px)" />)}
       </div>
     </div>
   </div>

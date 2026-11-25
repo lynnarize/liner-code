@@ -1,6 +1,7 @@
 ---
 // Every page: head tags, the look (light, dark, or the system's), the nav, the ruled sheet and the footer.
 import { site } from '../data/site';
+import { CF_BEACON_TOKEN } from '../data/analytics';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import '../styles/site.css';
@@ -44,6 +45,18 @@ const jsonLd = {
         if (t === 'dark' || t === 'light') d.dataset.theme = t;
         var dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
         document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0f1115' : '#ffffff');
+      })();
+    </script>
+    <script is:inline>
+      // Which download is filled in, before the first paint. Windows asks for the setup; a Mac, and anything else, for the dmg.
+      (function () {
+        var ua = navigator.userAgent || '';
+        var p = (navigator.userAgentData && navigator.userAgentData.platform) || '';
+        var os = 'other';
+        if (/iPhone|iPad|iPod/i.test(ua)) os = 'other';
+        else if (/^win/i.test(p) || /Windows/i.test(ua)) os = 'win';
+        else if (/^mac/i.test(p) || /Macintosh|Mac OS X/i.test(ua)) os = 'mac';
+        document.documentElement.dataset.os = os;
       })();
     </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -114,5 +127,10 @@ const jsonLd = {
       })();
     </script>
     <slot name="end" />
+    <script>
+      import { bootDownloads } from '../lib/download-buttons.ts';
+      bootDownloads();
+    </script>
+    {CF_BEACON_TOKEN && <script is:inline defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: CF_BEACON_TOKEN })} />}
   </body>
 </html>

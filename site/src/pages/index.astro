@@ -74,6 +74,7 @@ import Close from '../components/Close.astro';
   addEventListener('keydown', (e) => {
     const t = e.target as HTMLElement;
     if (e.metaKey || e.ctrlKey || e.altKey || /input|textarea|select/i.test(t.tagName)) return;
+    if (document.getElementById('site-nav')?.classList.contains('menu-open')) return;
     if (e.key >= '1' && e.key <= '3' && win.getBoundingClientRect().bottom > 120) pick(Number(e.key) - 1);
   });
   // The other two faces are fetched once the first is on screen (in the look shown), then the window turns by itself.

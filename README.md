@@ -63,6 +63,63 @@ focus, springs that never overshoot.
   </tr>
 </table>
 
+## Install the beta
+
+Liner Code is in **beta** (since 0.2.4): macOS 13 or later on Apple silicon, tried on macOS 27, and
+Windows x64, still with rough edges. Download the latest release from
+[GitHub Releases](https://github.com/lynnarize/liner-code/releases/latest). The Download buttons on
+[linercode.dev](https://linercode.dev) open that same page. Pick the file whose name carries the
+version:
+
+- **macOS (Apple silicon):** `Liner-Code-<version>-mac-arm64.dmg`. Open it and drag Liner Code to
+  Applications. `Liner-Code-<version>-mac-arm64.zip` is the same `Liner Code.app`, and it is the
+  file a Mac downloads when it updates itself. Unzipping that and moving the app works too.
+- **Windows (x64):** `Liner-Code-<version>-win-x64-setup.exe`. It installs for you alone, with no
+  administrator, into your own folder, and puts Liner Code in the Start menu. Settings › Apps
+  removes it, and leaves your sessions and settings. To run it without installing, unzip
+  `Liner-Code-<version>-win-x64.zip` anywhere and open `Liner Code.exe` in the `Liner Code` folder.
+
+A `.sha256` file sits beside each of those on the release.
+
+**The builds aren't notarized or code-signed yet.** The Mac app is signed ad hoc, so macOS blocks
+the first open. The Windows setup and the zip have no signature.
+
+- **macOS:** open System Settings › Privacy & Security, press **Open Anyway** beside Liner Code,
+  and confirm. Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.
+- **Windows:** SmartScreen asks the first time: **More info › Run anyway**.
+
+You need Git, and at least one of [Claude Code](https://code.claude.com),
+[Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
+[Hermes](https://github.com/nousresearch/hermes-agent) installed and signed in. Liner Code runs the
+tool you already have and only asks it whether you're signed in. On a Mac, Git and Python come
+with Apple's command line tools (the Terminal uses Python), and the first run says so if they're
+missing: `xcode-select --install`. On Windows, `git` needs to be on your PATH. The first run also
+asks for [ripgrep](https://github.com/BurntSushi/ripgrep) when an agent's search would have nothing
+to run. You can press Start before a tool is ready. A session needs one of those four, signed in,
+or an API key for Claude or Codex under Settings › Models.
+
+**On a Mac it updates itself**, after you move it to Applications or another folder you can write.
+Opened from the disk image, macOS keeps it in a temporary folder and the app asks you to move it
+before it can replace itself. A few seconds after it opens, and every six hours, it reads this
+repository's latest release, downloads `Liner-Code-<version>-mac-arm64.zip`, and checks the
+SHA-256 the release gives for that zip (GitHub's own digest, or the `.sha256` file beside it). It
+then checks the app inside: the bundle id, the version, and that the signature still holds.
+**Restart to update** puts it in place, and so does quitting. The swap clears the quarantine
+attribute on the app it installs. The published betas are signed ad hoc and carry no Apple Team
+ID, so an update is checked for a signature that still holds and is not pinned to a developer. A
+copy a developer has signed takes an update only from that same Team ID. Windows doesn't update
+itself yet: run the next setup, which puts the new version in place of the old one. Settings ›
+Updates starts on Automatically, and can be Just tell me or Off. The checks are written out under
+[Updates](#updates).
+
+On Windows the Terminal is PowerShell, without full-screen programs for now. Building it from a
+Mac: `npm run win` (it needs NSIS: `brew install makensis`).
+
+Stuck? Open a [Discussion](https://github.com/lynnarize/liner-code/discussions). Q&A is for
+something that won't start, Ideas for what it should do, and Early testers for how the beta feels.
+**Help › Report a Problem…** makes a zip with the log and versions and opens an
+[issue](https://github.com/lynnarize/liner-code/issues/new/choose).
+
 ## Features
 
 <table>
@@ -149,33 +206,6 @@ Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.
 The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Design mode
 (PolyForm Noncommercial), and from T3 Code's HTML previews; no code was copied from them either.
-
-## Install the beta
-
-Liner Code is in **beta** (since 0.2.4): for Macs with Apple Silicon, tried on macOS 27, and still
-with rough edges. Download `Liner-Code-<version>-mac-arm64.dmg` from
-[Releases](https://github.com/lynnarize/liner-code/releases), open it and drag Liner Code to
-Applications. It isn't notarized by Apple yet, so the first open is blocked: open
-System Settings › Privacy & Security, press **Open Anyway** beside Liner Code, and confirm. (Or, in
-Terminal: `xattr -dr com.apple.quarantine "/Applications/Liner Code.app"`.) After that it updates
-itself from this repository's releases.
-
-**On Windows** (x64, new in 0.1.9): download `Liner-Code-<version>-win-x64-setup.exe` and run it.
-It installs for you alone, with no administrator, and puts Liner Code in the Start menu; Settings ›
-Apps removes it again, leaving your sessions and settings. It isn't signed yet, so SmartScreen asks
-the first time: **More info › Run anyway**. It doesn't update itself yet: run the next setup, which
-puts the new version in place of the old one. To run it without installing, unzip
-`Liner-Code-<version>-win-x64.zip` anywhere and open `Liner Code.exe`. Its Terminal is PowerShell,
-without full-screen programs for now. Building it from a Mac: `npm run win` (it needs NSIS:
-`brew install makensis`).
-
-You need at least one coding tool installed and signed in: [Claude Code](https://code.claude.com),
-[Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai) or
-[Hermes](https://github.com/nousresearch/hermes-agent). Git and the Terminal need Apple's command
-line tools; first run says so if they're missing.
-
-Found something? **Help › Report a Problem…** makes a zip with the log and versions and opens an
-[issue](https://github.com/lynnarize/liner-code/issues/new/choose).
 
 ## Your accounts and your data
 
@@ -455,16 +485,21 @@ Liner Code keeps itself and the agent tools current; both show on Home's corner 
 Settings › Updates, each set to Automatically, Just tell me, or Off. Liner Code itself starts on
 Automatically. The tools are yours, so they start on Just tell me.
 
-- **Liner Code** looks at the latest release of its GitHub repository a few seconds after it opens
-  and every six hours. It downloads the zip for this Mac, checks it against the release's SHA-256
+- **Liner Code** looks at the latest release of its GitHub repository (a draft or a release marked
+  pre-release is skipped) a few seconds after it opens and every six hours. It downloads the zip
+  for this Mac (`Liner-Code-<version>-mac-<arch>.zip`), checks it against the release's SHA-256
   (GitHub's own digest, or the `.sha256` file beside the zip), unpacks it and checks it again
-  (bundle id, version, signature), then puts it in place when you press Restart to update, or
-  when you quit. A waiting copy that no longer checks out when it's about to go in (or when the
-  app opens) is deleted, and Liner Code says so once and downloads it again. If it can't take the
-  old copy's place, it says why next time it opens and links
-  the release page instead of trying again at every quit. A copy run from source, from a folder
-  you can't write to, or from Downloads without being moved to Applications says so and links the
-  release page instead. A private repository is read with the GitHub CLI's sign-in.
+  (bundle id `app.liner.code`, the version, and that the signature still holds), then puts it in
+  place when you press Restart to update, or when you quit. When this copy was signed by a
+  developer, the update has to carry the same Team ID. The beta releases are signed ad hoc and
+  have no Team ID, so only the signature-still-holds check runs. A waiting copy that no longer
+  checks out when it's about to go in (or when the app opens) is deleted, and Liner Code says so
+  once and downloads it again. If it can't take the old copy's place, it says why next time it
+  opens and links the release page instead of trying again at every quit. A copy run from source,
+  from a folder you can't write to, or from the temporary folder macOS gives a downloaded app that
+  hasn't been moved to Applications says so and links the release page instead. Windows is
+  packaged and doesn't swap itself in: the new setup comes from the release page. A private
+  repository is read with the GitHub CLI's sign-in.
 - **The agent tools** (Claude Code, Codex, OpenCode, Hermes, Grok Build) are compared with where
   each is published (npm; Hermes asks itself). When you press Update (or by themselves, set to
   Automatically), they're updated with their own updaters (`claude update`, `codex update`,

@@ -1,6 +1,9 @@
 ---
 import Mark from './Mark.astro';
 import { footer, site } from '../data/site';
+import { RELEASE_API, hrefFor } from '../lib/downloads';
+import { latestDownloads } from '../lib/latest-release';
+const latest = await latestDownloads();
 ---
 <footer class="foot">
   <div class="tiles">
@@ -18,9 +21,20 @@ import { footer, site } from '../data/site';
     <div class="tile word" aria-hidden="true">
       <div class="big"><Mark /><span>Liner</span></div>
     </div>
-    <a class="tile get" href={site.latest}>
+    <a class="tile get" data-dl-single href={hrefFor(latest.mac, site.latest)} data-mac={latest.mac ?? ''} data-win={latest.win ?? ''} data-releases={site.latest} data-api={RELEASE_API}>
       <span>{footer.get}</span>
       <svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 42 42 14M20 14h22v22"/></svg>
     </a>
   </div>
+  <script is:inline>
+    // Before paint, a Windows visitor's one footer link is the setup, not the dmg. The chip check may still send Windows on ARM to the releases page.
+    (function () {
+      if (document.documentElement.dataset.os !== 'win') return;
+      var links = document.querySelectorAll('[data-dl-single]');
+      for (var i = 0; i < links.length; i++) {
+        var href = links[i].getAttribute('data-win');
+        if (href) links[i].setAttribute('href', href);
+      }
+    })();
+  </script>
 </footer>

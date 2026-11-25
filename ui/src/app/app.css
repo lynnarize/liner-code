@@ -582,6 +582,12 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
 }
+/* In dark the tray's control is near black, as the paper is now, so a card's primary button (Approve and start,
+   Next, Try again) would vanish into its card: there it takes the ink button's inverted pill instead. */
+[data-theme="dark"] .lc-btn[data-kind="primary"] {
+  background: var(--l-ink);
+  color: var(--lc-paper);
+}
 .lc-btn[data-kind="accent"] {
   background: var(--lc-act);
   color: var(--lc-act-ink);
@@ -614,7 +620,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   .lc-btn[data-kind="accent"]:hover:not(:disabled) {
     filter: brightness(1.08);
   }
-  .lc-btn[data-kind="ink"]:hover:not(:disabled) {
+  .lc-btn[data-kind="ink"]:hover:not(:disabled),
+  [data-theme="dark"] .lc-btn[data-kind="primary"]:hover:not(:disabled) {
     background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
   }
 }

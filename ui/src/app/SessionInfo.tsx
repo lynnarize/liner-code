@@ -14,7 +14,7 @@ import { rpc, useEngine, useItems } from "./engine";
 import { I, StateMark } from "./icons";
 import { checkpointsOf, compact, duration, money, plural, sumLines } from "./model";
 import { openSurface } from "./TopBar";
-import { openAgents } from "./Crew";
+import { openAgents, showTeam } from "./Crew";
 import { addFive, agentsWorked, spendWords } from "./session-pop";
 import { Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
 
@@ -126,18 +126,21 @@ const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 export function MultiAgentRow({ thread, close }: { thread: Thread; close: () => void }) {
   const mode = isSwarm(thread) ? ((thread.swarm?.mode ?? "teamwork") === "swarm" ? "Swarm" : "Teamwork") : "Off";
   if (thread.sideOf || thread.security) return null;
-  const multiAgent = (to: "off" | "teamwork" | "swarm") => {
+  // `done` shuts its side menu: in the pinned Session card `close` closes nothing, and the side menu stayed up after a pick.
+  const multiAgent = (to: "off" | "teamwork" | "swarm", done: () => void) => {
+    done();
     close();
     if (to === "off") void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail);
-    else void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: to }).then(() => openSurface(thread.id, "agents"), fail);
+    // On, the team's card pins at the chat's right (Crew.tsx TeamPin), where the Agents panel opened before.
+    else void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: to }).then(() => showTeam(thread.id), fail);
   };
   return (
     <SubMenu title="Multi-agent" icon={<I.fusion size={14} />} value={mode} label="Multi-agent" width={250}>
-      {() => (
+      {(done) => (
         <>
-          <Row title="Off" on={mode === "Off"} onPick={() => multiAgent("off")} />
-          <Row title="Teamwork" note="A coordinator and a tree of agents under it" on={mode === "Teamwork"} onPick={() => multiAgent("teamwork")} />
-          <Row title="Swarm" note="Peers on one board, parked at 0 MB while they wait" on={mode === "Swarm"} onPick={() => multiAgent("swarm")} />
+          <Row title="Off" on={mode === "Off"} onPick={() => multiAgent("off", done)} />
+          <Row title="Teamwork" note="A coordinator and a tree of agents under it" on={mode === "Teamwork"} onPick={() => multiAgent("teamwork", done)} />
+          <Row title="Swarm" note="Peers on one board, parked at 0 MB while they wait" on={mode === "Swarm"} onPick={() => multiAgent("swarm", done)} />
         </>
       )}
     </SubMenu>

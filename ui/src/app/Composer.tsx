@@ -39,7 +39,7 @@ import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
 import { wordRead } from "./kept";
-import { stashKeyOf, steersHere } from "./composer-rules";
+import { commandIconOf, stashKeyOf, steersHere } from "./composer-rules";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -265,7 +265,13 @@ function useTrayFit(tray: RefObject<HTMLDivElement | null>) {
   }, [tray]);
 }
 
-type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$" | "#"; hint?: string; note?: string; path?: string; liner?: boolean; tag?: string; pick?: () => void };
+/** A command row's icon, by its name (composer-rules.ts commandIconOf). */
+function CommandIcon({ name }: { name: string }) {
+  const Icon = (I as Record<string, (p: { size?: number }) => ReactNode>)[commandIconOf(name)] ?? I.slash;
+  return <Icon size={14} />;
+}
+
+type Choice = { key: string; insert: string; label: string; kind: "@" | "/" | "$" | "#"; hint?: string; note?: string; path?: string; tag?: string; pick?: () => void };
 const commandCache = new Map<string, Promise<{ commands: CommandInfo[]; skills: SkillInfo[] }>>();
 const commandsFor = (projectId: string, agent: string, threadId?: string) => {
   const key = `${projectId}|${agent}`;
@@ -645,9 +651,10 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       const extra = mention.kind === "/" ? (slashRows ?? []).filter((r) => `${r.name} ${r.note ?? ""}`.toLowerCase().includes(q)).map((r): Choice => ({ key: `+${r.name}`, insert: "", label: `/${r.name}`, hint: r.hint, note: r.note, kind: "/", tag: r.tag, pick: r.onPick })) : [];
       const list = !tools ? extra :
         mention.kind === "/"
-          ? [...extra, ...tools.commands.filter((c) => `${c.name} ${c.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((c): Choice => ({ key: c.name, insert: `/${c.name}`, label: `/${c.name}`, hint: c.hint, note: c.description, kind: "/", liner: c.source === "liner" }))]
+          ? [...extra, ...tools.commands.filter((c) => `${c.name} ${c.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((c): Choice => ({ key: c.name, insert: `/${c.name}`, label: `/${c.name}`, hint: c.hint, note: c.description, kind: "/" }))]
           : tools.skills.filter((x) => `${x.name} ${x.description}`.toLowerCase().includes(q)).sort((a, b) => rank(a.name) - rank(b.name)).map((x): Choice => ({ key: x.name, insert: `$${x.name}`, label: `$${x.name}`, note: x.description, kind: "$", path: x.path }));
-      setFound(list.slice(0, 12));
+      // Every command, the list scrolling past its height as Antigravity's does; skills stay at the first twelve.
+      setFound(list.slice(0, mention.kind === "/" ? 80 : 12));
       setHl(0);
     }
     return () => {
@@ -1427,17 +1434,26 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
                   <span className="l-shimmer">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>
                 </MenuFoot>
               )}
-              {found.map((f, i) => (
-                <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
-                  {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : f.kind === "#" ? <I.branch size={14} /> : null}
-                  <span className="lc-mono lc-mention-n">
-                    {f.label}
-                    {f.hint && <span className="lc-quiet"> {f.hint}</span>}
-                  </span>
-                  {f.note && <span className="lc-mention-d">{f.note}</span>}
-                  {(f.tag || f.liner) && <span className="lc-mp-def">{f.tag ?? "Liner Code"}</span>}
-                </button>
-              ))}
+              {found.map((f, i) =>
+                f.kind === "/" ? (
+                  // A command as Antigravity's list has it: its icon, its name without the slash, what it does in grey; Liner Code's own read as the tools' do, no tag.
+                  <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind="/" title={f.hint ? `${f.label} ${f.hint}` : f.label} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
+                    <CommandIcon name={f.label.slice(1)} />
+                    <span className="lc-mention-n">{f.label.slice(1)}</span>
+                    {f.note && <span className="lc-mention-d">{f.note}</span>}
+                  </button>
+                ) : (
+                  <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
+                    {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : f.kind === "#" ? <I.branch size={14} /> : null}
+                    <span className="lc-mono lc-mention-n">
+                      {f.label}
+                      {f.hint && <span className="lc-quiet"> {f.hint}</span>}
+                    </span>
+                    {f.note && <span className="lc-mention-d">{f.note}</span>}
+                    {f.tag && <span className="lc-mp-def">{f.tag}</span>}
+                  </button>
+                ),
+              )}
               {mention.kind !== "@" && tools && found.length === 0 && <MenuFoot>No {mention.kind === "/" ? "command" : "skill"} matches that.</MenuFoot>}
             </div>
           )}
@@ -1727,13 +1743,13 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     const say = mine ? `${leadShort} leads, ${shortName(label(side!))} works` : note;
     return (
       <button type="button" className="lc-who-row l-focus" data-rove data-way="pair" data-aim="fusion" data-on={mine || undefined} aria-pressed={mine} disabled={!two} title={two ? "The lead plans, decides and reviews; the sidekick does the work the lead hands it." : note} aria-label={`Fusion, ${say}`} onClick={() => pickFusion(t)}>
-        <I.fusion size={16} />
+        <I.fusion size={14} />
         <span className="lc-who-row-t lc-pk-word">Fusion</span>
         {/* The pair cut with an ellipsis, whole in its tooltip; "Fusion" itself never gives way. */}
         <span className="lc-pk-pair" title={note}>
           {note}
         </span>
-        {mine && <I.check size={16} className="lc-who-tick" />}
+        {mine && <I.check size={14} className="lc-who-tick" />}
       </button>
     );
   };
@@ -1939,7 +1955,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
         {
           id: AGENTS_TAB,
           label: "Your agents",
-          icon: <I.agents size={16} />,
+          icon: <I.agents size={14} />,
           on: agentsOn,
           note: yours.length === 0 ? "None yet" : undefined,
           body: (

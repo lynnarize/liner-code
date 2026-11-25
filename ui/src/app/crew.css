@@ -49,7 +49,8 @@
     color 140ms ease;
 }
 .lc-crew:hover,
-.lc-crew[aria-expanded="true"] {
+.lc-crew[aria-expanded="true"],
+.lc-crew[aria-pressed="true"] {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }

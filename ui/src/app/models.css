@@ -491,7 +491,7 @@
 .lc-pk-top {
   display: flex;
   align-items: center;
-  height: 40px;
+  height: 32px;
   padding: 0 6px;
   border-bottom: 1px solid var(--l-line);
 }
@@ -525,17 +525,16 @@
 .lc-pk-pin {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px;
+  padding: 4px;
   border-bottom: 1px solid var(--l-line);
 }
 /* The tool's own row, pinned over its models: its mark, name and count at the left, its sources' switch at the right. */
 .lc-pk-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 6px 0 14px;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 12px;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--l-ink);
@@ -564,13 +563,13 @@
   margin-left: auto;
 }
 .lc-pk-src > button {
-  height: 28px;
-  padding: 0 10px;
+  height: 22px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--l-ink-3);
   cursor: pointer;
@@ -600,9 +599,8 @@
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 2px;
   min-height: 0;
-  padding: 2px 6px 6px;
+  padding: 0 4px 4px;
   overflow: hidden auto;
   scroll-padding: var(--lc-ring);
   overscroll-behavior: contain;
@@ -618,7 +616,6 @@
 .lc-pk-models {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 /* A maker's name with its mark, "Starred", or in a tool of one maker what the models under it are for: 12px grey, one line. */
 .lc-pk-lab {
@@ -626,14 +623,13 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
-  height: 26px;
+  height: 22px;
   padding: 0 8px;
   font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-pk-lab[data-what] {
-  height: 24px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .lc-pk-lab > span {
   min-width: 0;
@@ -644,14 +640,30 @@
 .lc-pk-rule {
   flex: none;
   height: 1px;
-  margin: 4px 2px;
+  margin: 3px 4px;
   background: var(--l-line);
 }
-/* A model's row: 32 high, 8 in, its maker's mark, the name, its sources in grey, its price in mono, the tick last. */
+/*
+  Every row in the picker is a menu's row, as dense as Capy's: 28 high, 8 in, 8 between its parts, the rows touching. The
+  pinned rows (Fusion), the foot's (Your agents, Older versions) and what a search finds take it as the models do.
+*/
+.lc-pk .lc-who-row {
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+.lc-pk .lc-mp-pick {
+  min-height: 28px;
+  padding: 0 8px;
+}
+.lc-pk .lc-mp-row + .lc-mp-row {
+  margin-top: 0;
+}
+/* A model's row: 28 high, 8 in, its maker's mark, the name, its sources in grey, its price in mono, the tick last. */
 .lc-who-row.lc-pk-row {
-  gap: 9px;
-  height: 32px;
-  min-height: 32px;
+  gap: 8px;
+  height: 28px;
+  min-height: 28px;
   padding: 0 8px;
 }
 .lc-pk-row[data-on] {
@@ -659,12 +671,12 @@
 }
 /*
   The name has first call on the room: it never shrinks while the sources or the price can, and is cut only when alone it
-  doesn't fit beside the mark and the tick (100% less the 14px mark, the 14px tick and their two 9px gaps). The sources give
+  doesn't fit beside the mark and the tick (100% less the 14px mark, the 14px tick and their two 8px gaps). The sources give
   way first (their huge shrink takes nearly all of it), then the price; what follows the name is pushed to the row's end.
 */
 .lc-pk-row > .lc-who-row-t {
   flex: 0 0 auto;
-  max-width: calc(100% - 46px);
+  max-width: calc(100% - 44px);
 }
 .lc-pk-row > .lc-who-row-t + * {
   margin-left: auto;
@@ -712,8 +724,7 @@
 .lc-pk-foot {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px;
+  padding: 4px;
   border-top: 1px solid var(--l-line);
 }
 /* Narrow: the side card's words as one line at the very foot: the mark and name, the price, the Effort chip, a star. */
@@ -721,8 +732,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 8px 0 14px;
+  min-height: 36px;
+  padding: 0 6px 0 12px;
   border-top: 1px solid var(--l-line);
   color: var(--l-ink-2);
 }
@@ -740,14 +751,14 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   box-shadow: inset 0 0 0 1px var(--l-line-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--l-ink-2);
   cursor: pointer;
 }
@@ -762,8 +773,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -785,14 +796,13 @@
 .lc-pk-star[aria-pressed="true"] svg path {
   fill: currentColor;
 }
-/* The side card: what the pointed model is, where it runs, its price, its effort and its star. */
+/* The side card: what the pointed model is, where it runs, its price, its effort and its star, its facts 12px lines 20 apart as Capy's card. */
 .lc-pk-side {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   box-sizing: border-box;
   max-height: var(--lc-pk-tall);
-  padding: 6px;
+  padding: 4px;
   overflow: hidden auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -804,13 +814,12 @@
 .lc-pk-own {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 .lc-pk-sh {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 32px;
+  gap: 8px;
+  min-height: 28px;
   padding: 0 8px;
   font-weight: 500;
   color: var(--l-ink);
@@ -820,9 +829,9 @@
   color: var(--l-ink-2);
 }
 .lc-pk-sd {
-  margin: 0 8px 6px;
-  font-size: 12.5px;
-  line-height: 18px;
+  margin: 0 8px 4px;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--l-ink-3);
 }
 .lc-pk-f {
@@ -830,9 +839,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 24px;
+  height: 20px;
   padding: 0 8px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-pk-f > b {
@@ -861,8 +870,8 @@
   flex-direction: column;
   align-items: stretch;
   gap: 1px;
-  padding: 5px 8px 6px;
-  font-size: 12.5px;
+  padding: 2px 8px 4px;
+  font-size: 12px;
   color: var(--l-ink-3);
 }
 .lc-pk-eh-top {
@@ -889,13 +898,13 @@
   color: var(--l-ink-3);
 }
 .lc-pk-eh > span {
-  font-size: 11.5px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
   text-align: left;
   color: var(--l-ink-3);
 }
 /*
-  Effort's slider: one pill 28 high, a stop a level of the model's own, the lowest at its start and the highest at its end.
+  Effort's slider: one pill 24 high, a stop a level of the model's own, the lowest at its start and the highest at its end.
   The knob stands on the level it runs at and the ink fills up to it, so the lowest level is the knob alone at the start
   (a model whose lowest is "none" must not read as half), and with no level picked the track is empty with no knob. Each
   stop past the knob keeps a 1px tick where the knob would sit; a stop's part of the track is the part nearest it, so the
@@ -908,8 +917,8 @@
   position: relative;
   display: flex;
   flex: none;
-  height: 28px;
-  margin: 0 8px 6px;
+  height: 24px;
+  margin: 0 8px 4px;
   border-radius: 8px;
   background: var(--l-wash-2);
   overflow: hidden;
@@ -941,7 +950,7 @@
 .lc-pk-slide-stop[data-tick]::after {
   content: "";
   position: absolute;
-  top: 9px;
+  top: 7px;
   left: calc(50% + 9px - 18px * var(--lc-pk-at, 0.5));
   width: 1px;
   height: 10px;
@@ -959,7 +968,7 @@
   top: 3px;
   left: calc(3px + var(--lc-pk-fill, 0) * (100% - 18px));
   width: 12px;
-  height: 22px;
+  height: 18px;
   border-radius: 5px;
   background: oklch(0.995 0 0);
   box-shadow: var(--l-thumb-shadow);
@@ -978,7 +987,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 4px 8px;
+  padding: 2px 8px;
 }
 .lc-pk-xr-t {
   display: flex;
@@ -987,39 +996,38 @@
   gap: 1px;
 }
 .lc-pk-xr-t > b {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 450;
   color: var(--l-ink);
 }
 .lc-pk-xr-t > span {
-  font-size: 11.5px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
   color: var(--l-ink-3);
 }
 .lc-pk-ef {
   display: flex;
   flex-direction: column;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
-/* Where a model runs from, its sources: a short list of 28px rows, a tick on the one in use. */
+/* Where a model runs from, its sources: a short list of 24px rows, a tick on the one in use. */
 .lc-pk-lv {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .lc-pk-lvr {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 9px;
-  height: 28px;
+  gap: 8px;
+  height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   text-align: left;
   color: var(--l-ink);
   cursor: pointer;
@@ -1048,14 +1056,14 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  height: 30px;
+  gap: 6px;
+  height: 26px;
   margin-top: 2px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--l-wash-2);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--l-ink);
   cursor: pointer;
 }

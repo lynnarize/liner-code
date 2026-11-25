@@ -194,12 +194,24 @@ function deskPrompt(title: string, asks: string[], said: string[], files: string
   return `Someone is deciding on a coding session's work, "${title}", and asks you about it.\n\n${why}${last}${touched}${changes}The case as they see it:\n${context.slice(0, 4000)}\n\nTheir question: ${question}\n\nAnswer in two to four plain sentences; Markdown is fine, no headings. Read the files in this folder if you need to, and change nothing. If you can't tell, say what would settle it.`;
 }
 
-/** Commands Liner Code runs itself, on any tool. */
-const LINER_COMMANDS: CommandInfo[] = [
+/** Commands Liner Code runs itself, on any tool (thread.send takes them before the tool sees the message). */
+export const LINER_COMMANDS: CommandInfo[] = [
   { name: "goal", description: "Keep working, turn after turn, until this is done", hint: "<what done means>", source: "liner" },
+  { name: "teamwork", description: "A coordinator plans the work and hands its parts to a tree of agents", hint: "<what to build>", source: "liner" },
+  { name: "swarm", description: "Peers on one board take the work between them, parked while they wait", hint: "<the goal>", source: "liner" },
   { name: "reviewer", description: "Have the Reviewer, another model family, read the changes now", source: "liner" },
   { name: "pr", description: "Open a pull request from this branch, right here in the chat", source: "liner" },
 ];
+/** The commands that turn a team on, which a side chat and a scan never take (thread.send leaves them to the tool there). */
+const TEAM_COMMANDS = new Set(["teamwork", "swarm"]);
+/**
+  What the composer's "/" lists: Liner Code's own first, then the tool's. A tool command with the same name stays the
+  tool's, every time it is asked, the cached answer as the fresh one (the cached one listed both). A session with no team
+  (a side chat, a scan) has no Teamwork or Swarm.
+*/
+export function commandsWith(tool: CommandInfo[], team = true): CommandInfo[] {
+  return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && !tool.some((x) => x.name === c.name)), ...tool];
+}
 
 /** A project's CLAUDE.md and AGENTS.md, as they are at its root. */
 function rulesOf(root: string) {
@@ -899,15 +911,16 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const { provider } = splitModel(ref);
       const key = `${provider}|${cwd}`;
       const had = commandsCache.get(key);
-      const own = { commands: LINER_COMMANDS, skills: [] as SkillInfo[] };
-      if (had && Date.now() - had.at < 5 * 60_000) return { commands: [...LINER_COMMANDS, ...had.commands], skills: had.skills };
+      const t = threadId ? store.threads.find((x) => x.id === threadId) : undefined;
+      const team = !t?.sideOf && !t?.security;
+      const own = { commands: commandsWith([], team), skills: [] as SkillInfo[] };
+      if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team), skills: had.skills };
       const p = providers[provider];
       if (!p?.commands) return own;
       try {
         const r = await p.commands(runtime.envFor(provider), cwd);
         commandsCache.set(key, { at: Date.now(), ...r });
-        // Liner Code's own come first; a tool command with the same name stays the tool's.
-        return { commands: [...LINER_COMMANDS.filter((c) => !r.commands.some((x) => x.name === c.name)), ...r.commands], skills: r.skills };
+        return { commands: commandsWith(r.commands, team), skills: r.skills };
       } catch {
         return own;
       }

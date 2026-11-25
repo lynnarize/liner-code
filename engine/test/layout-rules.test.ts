@@ -524,10 +524,17 @@ test("The model picker is a rail, a middle card that never changes size, and a c
   const scroll = one(".lc-pk-scroll");
   assert.equal(value(scroll, "flex"), "1 1 0", "the models don't take the middle card's room left over");
   assert.equal(value(scroll, "overflow"), "hidden auto", "the models don't scroll inside the card");
-  assert.equal(value(one(".lc-pk-top"), "height"), "40px", "Find is not a 40px row");
-  assert.equal(value(one(".lc-pk-head"), "height"), "36px", "the tool's row with its source switch is not 36px");
-  assert.equal(value(one(".lc-who-row.lc-pk-row"), "height"), "32px", "a model's row is not 32 high");
-  assert.equal(value(one(".lc-pk-lvr"), "height"), "28px", "an effort level's row is not 28 high");
+  // As dense as Capy's picker: 28px rows touching, 22px labels, the side card's facts 12px lines 20 apart.
+  assert.equal(value(one(".lc-pk-top"), "height"), "32px", "Find is not a 32px row");
+  assert.equal(value(one(".lc-pk-head"), "height"), "28px", "the tool's row with its source switch is not 28px");
+  assert.equal(value(one(".lc-who-row.lc-pk-row"), "height"), "28px", "a model's row is not 28 high");
+  assert.equal(value(one(".lc-pk .lc-who-row"), "min-height"), "28px", "Fusion, Your agents and Older versions are taller than a model's row");
+  assert.equal(value(one(".lc-pk-scroll"), "gap"), undefined, "the models' rows have room between them");
+  assert.equal(value(one(".lc-pk-models"), "gap"), undefined, "the models' rows have room between them");
+  assert.equal(value(one(".lc-pk-lab"), "height"), "22px", "a maker's label is not 22 high");
+  assert.equal(value(one(".lc-pk-f"), "height"), "20px", "the side card's facts are not 20px lines");
+  assert.equal(value(one(".lc-pk-f"), "font-size"), "12px", "the side card's facts are not 12px");
+  assert.equal(value(one(".lc-pk-lvr"), "height"), "24px", "a source's row in the card is not 24 high");
   assert.equal(value(one(".lc-pk-rail"), "width"), "40px", "the rail is not 40 wide");
   assert.equal(value(one(".lc-pk-tool"), "width"), "28px", "a tool's button is not 28 wide");
   assert.equal(value(one('.lc-pk-tool[aria-pressed="true"]'), "background"), "var(--lc-plate)", "the tool shown isn't in the app's one pressed look");

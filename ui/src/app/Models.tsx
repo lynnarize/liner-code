@@ -259,7 +259,7 @@ export function ModelSearch({ query, keysFrom, value, also = [], only, height = 
 }
 
 /**
-  One model as a row, 32 high: its maker's mark, the name, where it comes from in grey in a tool of several sources ("Zen ·
+  One model as a row, 28 high: its maker's mark, the name, where it comes from in grey in a tool of several sources ("Zen ·
   Go"), what it costs at its end in mono ("$4 / $20", "In plan"), then the tick on the one picked (a model added to compare
   gets a quiet one). An older version reads in the third ink. With `star`, a star follows at its very end (a picker with no
   side card to star from), shown while the row is pointed at or focused, and always once starred. `title` says what a
@@ -481,7 +481,7 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
   return (
     <>
       <div className="lc-pk-sh">
-        <ModelMark kind={markOf(m.ref)} size={16} />
+        <ModelMark kind={markOf(m.ref)} size={14} />
         <span>{modelLabel(m.ref, providers)}</span>
       </div>
       {m.description && <p className="lc-pk-sd">{m.description}</p>}
@@ -529,7 +529,7 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
       <div className="lc-pk-rule" />
       {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} onPick={(id) => effort.pick(m.ref, id)} />}
       <button type="button" className="lc-pk-star l-focus" data-rove aria-pressed={fav} onClick={() => star(row.offers.map((x) => x.ref))}>
-        <I.star size={16} />
+        <I.star size={14} />
         {fav ? "Starred" : "Star this model"}
       </button>
     </>
@@ -775,7 +775,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
             <button key={s ?? "\u0000all"} type="button" role="radio" aria-checked={source === s} className="lc-who-row l-focus" data-rove data-on={source === s || undefined} onClick={() => (setSource(s), leave())}>
               {s === null ? <I.layers size={16} /> : <ModelMark kind={sourceMarkOf(s)} size={14} />}
               <span className="lc-who-row-t">{s === null ? `Every source ${tool.label} has` : sourceName(s)}</span>
-              {source === s && <I.check size={16} className="lc-who-tick" />}
+              {source === s && <I.check size={14} className="lc-who-tick" />}
             </button>
           ))}
         </div>
@@ -899,13 +899,13 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
                 {p.icon}
                 <span className="lc-who-row-t">{p.label}</span>
                 {p.note && <span className="lc-who-row-n">{p.note}</span>}
-                {p.on && <I.check size={16} className="lc-who-tick" />}
+                {p.on && <I.check size={14} className="lc-who-tick" />}
                 <I.chevR size={14} />
               </button>
             ))}
             {older.length > 0 && (
               <button type="button" className="lc-who-row l-focus" data-rove data-view="older" aria-label={`Older versions: ${older.length}`} onClick={() => enter("older")}>
-                <I.clock size={16} />
+                <I.clock size={14} />
                 <span className="lc-who-row-t">Older versions</span>
                 <span className="lc-who-row-n">{older.length}</span>
                 <I.chevR size={14} />
@@ -939,7 +939,7 @@ function ChoiceRows({ choices, value, onPick }: { choices: PickChoice[]; value?:
               {c.note}
             </span>
           )}
-          {value === c.id && <I.check size={16} className="lc-who-tick" />}
+          {value === c.id && <I.check size={14} className="lc-who-tick" />}
         </button>
       ))}
     </>
@@ -1000,7 +1000,7 @@ export function StartPick({ value, onPick, align = "end" }: { value: Start; onPi
     id: "pair",
     title: "Fusion",
     note: two && cast ? `${label(cast.lead)} + ${label(cast.sidekick)}` : "Needs two different models ready",
-    icon: <I.fusion size={16} />,
+    icon: <I.fusion size={14} />,
     disabled: !two,
     show: (
       <span className="lc-model">

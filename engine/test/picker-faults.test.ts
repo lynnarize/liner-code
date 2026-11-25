@@ -88,7 +88,7 @@ test("The arrow keys reach every row of the picker: the Reviewer's Automatic, th
 test("A long name has first call on its row: the sources give way first, then the price", () => {
   const css = sheet("models.css");
   assert.equal(value(blocks(css, ".lc-pk-row > .lc-who-row-t")[0] ?? "", "flex"), "0 0 auto", "the name shrinks while the sources and price have room to give");
-  assert.equal(value(blocks(css, ".lc-pk-row > .lc-who-row-t")[0] ?? "", "max-width"), "calc(100% - 46px)", "a name alone too long runs past the tick");
+  assert.equal(value(blocks(css, ".lc-pk-row > .lc-who-row-t")[0] ?? "", "max-width"), "calc(100% - 44px)", "a name alone too long runs past the tick");
   assert.equal(value(blocks(css, ".lc-pk-from")[0], "flex"), "0 100000 auto", "the sources don't give way first");
   assert.equal(value(blocks(css, ".lc-pk-row > .lc-pk-price")[0] ?? "", "flex"), "0 1 auto", "the price never gives way");
   assert.match(code("Models.tsx"), /<span className="lc-pk-from" title=\{fromTitle\}>/, "cut sources have no tooltip with their whole text");
@@ -127,7 +127,7 @@ test("The Effort head has the label at the left and the level at the right, and 
   assert.equal(value(blocks(css, ".lc-pk-eh-now[data-own]")[0], "color"), "var(--l-ink-3)", "the tool's own default isn't in the third ink");
   const line = blocks(css, ".lc-pk-eh > span")[0];
   assert.equal(value(line, "text-align"), "left");
-  assert.equal(value(line, "font-size"), "11.5px");
+  assert.equal(value(line, "font-size"), "11px");
   assert.equal(value(line, "color"), "var(--l-ink-3)");
   const part = body(code("Models.tsx"), "export function EffortPart(");
   assert.match(part, /<b>\{label\}<\/b>\s*<span className="lc-pk-eh-now" data-own=\{!level \|\| undefined\}>\s*\{name\}/, "the head doesn't name the level at its right");
@@ -169,11 +169,11 @@ test("Effort is one slider of the model's own levels with no shared list of leve
   // The fill and the knob move only as decoration: Reduce motion stops them.
   assert.match(sheet("models.css"), /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-slide-fill,\s*\.lc-pk-slide-knob \{\s*transition: none;/);
   const css = sheet("models.css");
-  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "height"), "28px");
+  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "height"), "24px");
   assert.equal(value(blocks(css, ".lc-pk-slide")[0], "border-radius"), "8px");
   assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background"), "var(--l-ink)", "the fill isn't in ink");
   assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "width"), "12px");
-  assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "height"), "22px");
+  assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "height"), "18px");
   assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "border-radius"), "5px");
 });
 

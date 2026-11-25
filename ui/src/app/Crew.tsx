@@ -274,10 +274,10 @@ function setPop(threadId: string, open: boolean) {
   popOpen.set(threadId, open);
   for (const w of popWatchers) w();
 }
-function usePopOpen(threadId: string) {
+function usePopOpen(threadId: string, fallback = false) {
   return useSyncExternalStore(
     (w) => (popWatchers.add(w), () => void popWatchers.delete(w)),
-    () => popOpen.get(threadId) ?? false,
+    () => popOpen.get(threadId) ?? fallback,
   );
 }
 /**
@@ -305,6 +305,40 @@ function ChipPop({ threadId, label, trigger, children }: { threadId: string; lab
 }
 
 /**
+  Teamwork's and a Swarm's chip: it pins the team's card at the chat's right, under the Session card (TeamPin), and a
+  second press takes it away. The card shows from the moment the team is on until you shut it.
+*/
+function TeamChip({ threadId, label, children }: { threadId: string; label: string; children: ReactNode }) {
+  const shown = usePopOpen(threadId, true);
+  // Shut is for now only: the card shows again each time the team is on and its session opens (the chip mounts).
+  useEffect(() => {
+    chipsShown.add(threadId);
+    return () => void (chipsShown.delete(threadId), popOpen.delete(threadId));
+  }, [threadId]);
+  return (
+    <button type="button" className="lc-crew l-focus" aria-pressed={shown} aria-label={`${label}: who works, the board and the worktrees${shown ? ", pinned. Press to unpin" : ""}`} onClick={() => setPop(threadId, !shown)}>
+      {children}
+    </button>
+  );
+}
+/** Shows the team's card in the pinned column: what turning Teamwork or a Swarm on opens, in place of the Agents panel. */
+export function showTeam(threadId: string) {
+  setPop(threadId, true);
+}
+/** The team's card in the pinned column at the chat's right (Session.tsx), what the chip's popup held, up while the team is on and you haven't shut it. */
+export function TeamPin({ thread }: { thread: Thread }) {
+  const on = isSwarm(thread);
+  const swarm = useSwarm(thread.id, on);
+  const shown = usePopOpen(thread.id, true);
+  if (!on || !swarm || !shown) return null;
+  return (
+    <div className="lc-pin-card lc-pop-panel">
+      <TeamPop thread={thread} swarm={swarm} close={() => {}} />
+    </div>
+  );
+}
+
+/**
   The header's chip: who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents") while two or more
   are at work in this session right now (the lead's turn running counts one, each agent it sent that still works one
   more), and always while Teamwork or a Swarm is on ("Swarm 2 of 5 working"). At rest the header holds nothing between
@@ -319,22 +353,13 @@ export function CrewChip({ thread }: { thread: Thread }) {
     const working = live.filter((m) => m.state === "working").length;
     const label = swarm.mode === "swarm" ? "Swarm" : "Teamwork";
     return (
-      <ChipPop
-        threadId={thread.id}
-        label={`${label}: who works, the board and the worktrees`}
-        trigger={
-          <>
-            <StateMark state={working ? "working" : "done"} size={12} />
-            <span className="lc-crew-t">
-              {label}
-              <span className="lc-quiet"> {swarm.paused ? "paused" : working ? `${working} of ${live.length} working` : live.length > 1 ? `${live.length - 1} parked` : "ready"}</span>
-            </span>
-            <I.chevD size={12} />
-          </>
-        }
-      >
-        {(close) => <TeamPop thread={thread} swarm={swarm} close={close} />}
-      </ChipPop>
+      <TeamChip threadId={thread.id} label={label}>
+        <StateMark state={working ? "working" : "done"} size={12} />
+        <span className="lc-crew-t">
+          {label}
+          <span className="lc-quiet"> {swarm.paused ? "paused" : working ? `${working} of ${live.length} working` : live.length > 1 ? `${live.length - 1} parked` : "ready"}</span>
+        </span>
+      </TeamChip>
     );
   }
   if (!crew) return null;

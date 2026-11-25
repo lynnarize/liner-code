@@ -2778,9 +2778,25 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
-.lc-mention[aria-label="Commands"],
 .lc-mention[aria-label="Skills"] {
   width: min(580px, calc(100% - 20px));
+}
+/*
+  The commands as Antigravity lists them: across the whole box, about nine rows before it scrolls, each its icon, its name
+  in ink and what it does in grey on the same line, at the same size, 8 apart.
+*/
+.lc-mention[aria-label="Commands"] {
+  right: 10px;
+  width: auto;
+  max-height: min(260px, 50vh);
+}
+.lc-mention-row[data-kind="/"] .lc-mention-n {
+  max-width: 40%;
+  color: var(--l-ink);
+}
+.lc-mention-row[data-kind="/"] .lc-mention-n + .lc-mention-d {
+  margin-left: -2px;
+  font-size: 13px;
 }
 .lc-mention-row {
   flex: none;

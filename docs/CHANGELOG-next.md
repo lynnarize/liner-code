@@ -9,7 +9,7 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - The Effort pill is empty at a model's lowest level and full only at its highest: the lower of two levels (OpenCode's None) no longer draws as half. Its fill ends round about the knob.
 - Claude Code's and Codex's model lists show the models alone, without a line over each saying what it is for.
 - The model picker opens with its list over the chip you clicked and the card about a model beside it, to the right. Before, the list stood a card's width away to the left and only the small card was over the chip.
-- The session's surfaces are a row of icons at the right end of its header (Session, Terminal, Changes, Browser, Files, ···); the rail down the paper's right edge and the panel's tabs are gone, and Session opens as a small popup.
+- The session's surfaces are a row of icons at the right end of its header (Session, Terminal, Changes, Browser, Files, ···); the rail down the paper's right edge and the panel's tabs are gone.
 - The right panel is a flush column of the paper with one hairline at its left, every surface has one head with its name, Full canvas and Close, and in the full canvas or a narrow window the session header stays in view above it.
 - Every menu has one shape: 28px rows, a 14px grey icon, the value or tick at the right end, grey labels and foot lines, and rows that open a menu to the side.
 - A working mark is three dots travelling round in grey whoever's model it is; in lists of steps a finished step is a tick, one not started an empty ring, a failed one a red cross.
@@ -52,3 +52,6 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - An ask's buttons are the panel's size, "Don't ask again" is quiet beside the ink Run it, and what a session no longer asks about is a plain menu with a way back.
 - A Working mark is never tinted by a model or an agent.
 - The keyboard settings say Open the Session popup, settle and Changes.
+- The model picker is as dense as Capy's: 28px rows that touch, shorter labels and head rows, and a side card whose facts, Effort, Ultracode and Star all fit without scrolling. More models show at once in the same size.
+- The Session card pins at the chat's top right, as T3 Code's does, and stays there as you move between sessions until you press its icon again; the chat and the message box make room for it in a wide window. With Teamwork or a Swarm on, the team's card pins under it on its own (turning a team on no longer opens the Agents panel), and the team's chip shows or hides it until you next open the session.
+- Typing / lists every command as one full-width list, each with its icon, its name and what it does, and now includes /teamwork and /swarm. A tool command named like one of Liner Code's is listed once, not twice the second time you type /.

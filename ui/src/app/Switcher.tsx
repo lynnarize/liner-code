@@ -2,7 +2,7 @@
   The session's surfaces, as a row of icons at the right end of its header, after the Reviewer (SPEC
   rule 1, board Main, 2026-11-25; surface-row.ts says what is lit and what ··· lists). They were a rail down
   the paper's right edge (0.2.7) and a strip of tabs over the panel before that.
-  Session opens its popup; the Terminal shows or hides the bottom panel; Changes, Browser and Files show
+  Session pins its card at the chat's right, as T3 Code's is, and a second press takes it away; the Terminal shows or hides the bottom panel; Changes, Browser and Files show
   their surface, and pressing the lit one hides the panel (dock.ts toggleTab, as the rail did). ··· is a
   menu of the rest: Pull request, Design, Side chat, Device, and Your apps to the side (each app, then New
   add-on). Each row's key is at its end, your binding (keymap.ts). 20px navigation icons in 32px buttons,
@@ -41,8 +41,8 @@ export function Switcher({ thread, dock, onDock, below, onBelow, files, session,
   onBelow: () => void;
   /** Files waiting to be committed: said in Changes' name for a screen reader. */
   files: number;
-  /** The Session popup: open or not, and what it holds (Session.tsx draws SessionInfo there). */
-  session: { open: boolean; onOpen: (open: boolean) => void; body: (close: () => void) => ReactNode };
+  /** The Session card: pinned or not (Session.tsx draws SessionInfo in the pinned column). */
+  session: { open: boolean; onOpen: (open: boolean) => void };
   /** New add-on: asks the agent for one in the composer. */
   onMake: () => void;
 }) {
@@ -53,18 +53,16 @@ export function Switcher({ thread, dock, onDock, below, onBelow, files, session,
   const more = moreLit(dock);
   return (
     <div className="lc-sw" role="toolbar" aria-label="Surfaces">
-      <Pop
-        label="Session: where it runs, its context and its setup"
-        align="end"
-        width={340}
-        triggerClass="lc-sw-b"
-        triggerAttrs={{ title: tip("Session", "surface.session") }}
-        open={session.open}
-        onOpenChange={session.onOpen}
-        trigger={<N.session />}
+      <button
+        type="button"
+        className="lc-sw-b l-focus"
+        aria-pressed={session.open}
+        aria-label={session.open ? "Session: where it runs, its context and its setup, pinned. Press to unpin" : "Session: where it runs, its context and its setup"}
+        title={session.open ? tip("Unpin the Session card", "surface.session") : tip("Session", "surface.session")}
+        onClick={() => session.onOpen(!session.open)}
       >
-        {(close) => session.body(close)}
-      </Pop>
+        <N.session />
+      </button>
       {(["terminal", "changes", "browser", "files"] as const).map((id) => {
         const on = iconLit(id, dock, below, session.open);
         const { label, icon: Icon } = ICON[id];

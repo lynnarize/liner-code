@@ -43,7 +43,8 @@ import { toComposer as putInComposer } from "./Find";
 import { onFullCanvas, onOpenSurface, SideKeys } from "./TopBar";
 import { askPicker } from "./pr-pick";
 import { ModeChip } from "./Modes";
-import { CrewChip, LoneStop, openAgents, pairOf } from "./Crew";
+import { CrewChip, LoneStop, openAgents, pairOf, showTeam, TeamPin } from "./Crew";
+import { setSessionPinned, useSessionPinned } from "./pinned";
 import { LiveLine, Timeline } from "./Timeline";
 import { Disc, Kbd, Lines, NamedSwitch, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 
@@ -129,8 +130,13 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   // One that names Linked pull requests, gone into Pull request's picker on 2026-11-25, has Pull request in its place.
   const [first] = useState(() => dropPopups(replaceTab(keptDock(thread.id), "linked", "pr")));
   const [dock, setDockState] = useState<DockState>(first.dock);
-  // The Session popup, from its icon in the header's row, its key, ⌘K and the title's menu.
-  const [sessionOpen, setSessionOpen] = useState(first.popup === "session");
+  // The Session card, pinned at the chat's right as T3 Code's is, from its icon in the header's row, its key, ⌘K and the
+  // title's menu: one choice for every session (pinned.ts). A kept layout that asked for the old popup pins it.
+  const sessionOpen = useSessionPinned();
+  const setSessionOpen = setSessionPinned;
+  useEffect(() => {
+    if (first.popup === "session") setSessionPinned(true);
+  }, []);
   const setDock = (d: DockState | ((d: DockState) => DockState)) =>
     setDockState((prev) => {
       const next = typeof d === "function" ? d(prev) : d;
@@ -543,7 +549,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
       if (tw) {
         const wantMode = tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork";
         if (!isSwarm(thread) || (thread.swarm?.mode ?? "teamwork") !== wantMode) await rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: wantMode });
-        setDock((d) => openTab(d, "agents"));
+        // The team's card pinned at the chat's right, not the Agents panel: it opens there on its own while the team is on.
+        showTeam(thread.id);
         const body = (tw[2] ?? "").trim();
         if (!body && !m.files.length) return;
         await rpc("thread.send", { id: thread.id, text: body, files: m.files, mode: m.mode, ...(m.once ? { once: m.once } : {}) });
@@ -758,15 +765,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
               onBelow={() => setBelow(!below)}
               files={openFiles}
               onMake={() => putInComposer(thread.id, "Make me a panel that ")}
-              session={{
-                open: sessionOpen,
-                onOpen: setSessionOpen,
-                body: (close) => (
-                  <Suspense fallback={null}>
-                    <SessionPopup thread={thread} onShowChange={(path) => review("all", path)} onClose={close} />
-                  </Suspense>
-                ),
-              }}
+              session={{ open: sessionOpen, onOpen: setSessionOpen }}
             />
             {onCloseSide && (
               <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
@@ -775,6 +774,21 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             )}
           </header>
           <div className="lc-stage" hidden={view !== "chat"}>
+            {/*
+              The pinned column at the chat's right, as T3 Code has its card: the Session card while its icon is pressed,
+              and under it, while Teamwork or a Swarm is on, the team's card. They stay until shut; a row that opens
+              something else leaves them up. Where the thread is wide the chat and the message box make room for them.
+            */}
+            <aside className="lc-pin" aria-label="Session details">
+              {sessionOpen && (
+                <div className="lc-pin-card lc-pop-panel">
+                  <Suspense fallback={null}>
+                    <SessionPopup thread={thread} onShowChange={(path) => review("all", path)} onClose={() => {}} />
+                  </Suspense>
+                </div>
+              )}
+              <TeamPin thread={thread} />
+            </aside>
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
                 {empty ? (

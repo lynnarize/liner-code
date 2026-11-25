@@ -12,12 +12,14 @@ const blocks = (css: string, selector: string) => [...css.matchAll(/([^{}]+)\{([
 // One property's value in a block, or undefined.
 const value = (block: string, property: string) => block.match(new RegExp(`(?:^|[;\\s])${property}:\\s*([^;]+);`))?.[1].trim();
 
-test("A finding's footer wraps instead of spilling out of a narrow panel", () => {
-  const bars = blocks(sheet("security/findings.css"), ".lf-x-act-bar");
-  assert.equal(bars.length, 1);
-  assert.equal(value(bars[0], "height"), undefined, "the bar keeps a fixed height instead of a minimum");
-  assert.equal(value(bars[0], "min-height"), "60px");
-  assert.equal(value(bars[0], "flex-wrap"), "wrap");
+test("A finding's foot is the panel's own, so its buttons never spill out of a narrow panel", () => {
+  // Its words give way with an ellipsis and its buttons keep their size (pane.css), where its own bar once spilled them out.
+  assert.equal(blocks(sheet("security/findings.css"), ".lf-x-act-bar").length, 0, "the finding keeps a foot bar of its own");
+  const tsx = readFileSync(new URL("../../ui/src/app/security/FindingPanel.tsx", import.meta.url), "utf8");
+  assert.match(tsx, /<PaneFoot say=/, "the finding's foot is not the frame's PaneFoot");
+  const pane = sheet("pane.css");
+  assert.equal(value(blocks(pane, ".lc-pane-say")[0], "min-width"), "0", "the foot's words don't give way to its buttons");
+  assert.equal(value(blocks(pane, ".lc-pane-btn")[0], "flex"), "none", "the foot's buttons shrink under their words");
 });
 
 test("Liner Design's top row is a size container that hides the kept copies when narrow", () => {
@@ -40,19 +42,23 @@ test("The Add-ons page's column and title match Settings' page pattern", () => {
   assert.deepEqual({ maxWidth: value(cols[0], "max-width"), h1Size: value(heads[0], "font-size") }, { maxWidth: "760px", h1Size: "24px" }, "the column and title keep the Add-ons page's own measures instead of Settings'");
 });
 
-test("Every menu has the 14px corner its rule asks for, outweighing Liner's own sheet", () => {
+test("Every menu has the one menu shape's 10px corner and 4px inset, outweighing Liner's own sheet", () => {
   const css = sheet("app.css");
   const panels = blocks(css, ".l-pop.lc-pop-panel");
-  assert.ok(panels.some((b) => value(b, "border-radius") === "14px"), "no .l-pop.lc-pop-panel block draws the 14px corner");
-  // blocks() only matches whole selectors, so scan every selector that mentions the panel for the old 13px corner too.
-  const stale = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].includes("lc-pop-panel") && value(m[2], "border-radius") === "13px");
-  assert.equal(stale.length, 0, "a block whose selector contains lc-pop-panel still draws 13px");
+  assert.ok(panels.some((b) => value(b, "border-radius") === "10px" && value(b, "padding") === "4px" && value(b, "gap") === "0"), "no .l-pop.lc-pop-panel block draws the 10px corner with 4px round its touching rows");
+  // blocks() only matches whole selectors, so scan every selector that mentions the panel for the old corners too.
+  const stale = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].includes("lc-pop-panel") && ["13px", "14px"].includes(value(m[2], "border-radius") ?? ""));
+  assert.equal(stale.length, 0, "a block whose selector contains lc-pop-panel still draws 13 or 14px");
+  // A rule runs edge to edge, a label is grey, and a foot line sits under a rule.
+  assert.ok(blocks(css, ".lc-pop-panel > .lc-sep").some((b) => value(b, "margin") === "4px -4px"), "a menu's rule doesn't run edge to edge");
+  assert.ok(blocks(css, ".lc-pop-head").some((b) => value(b, "font-size") === "12.5px" && value(b, "color") === "var(--l-ink-4)"), "a menu's label isn't 12.5px in the fourth ink");
+  assert.ok(blocks(css, ".lc-pop-foot").some((b) => value(b, "border-top") === "1px solid var(--l-line)" && value(b, "color") === "var(--l-ink-4)"), "a menu's foot line isn't grey under a rule");
 });
 
 test("A menu's rows stand 2px apart in every list of rows", () => {
   const lists: [string, string][] = [
-    ["app.css", ".lc-envp"], ["app.css", ".lc-env-in"], ["app.css", ".lc-who-scroll"], ["app.css", ".lc-rvm"], ["app.css", ".lc-qp-list"],
-    ["crew.css", ".lc-crp"], ["crew.css", ".lc-cr-files"], ["addons-page.css", ".lc-ao-ways"], ["models.css", ".lc-pc-list"],
+    ["app.css", ".lc-envp"], ["app.css", ".lc-who-scroll"], ["app.css", ".lc-rvm"], ["app.css", ".lc-qp-list"],
+    ["crew.css", ".lc-crp"], ["crew.css", ".lc-cr-files"], ["models.css", ".lc-pc-list"],
   ];
   for (const [file, selector] of lists) {
     const bs = blocks(sheet(file), selector);
@@ -61,19 +67,21 @@ test("A menu's rows stand 2px apart in every list of rows", () => {
   }
 });
 
-test("Every surface's first row in the panel card takes its top inset from the card, written once", () => {
-  const card = blocks(sheet("app.css"), ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])");
-  assert.ok(card.some((b) => value(b, "--lc-card-top") === "8px"), "the card's rule does not declare --lc-card-top: 8px");
-  assert.ok(card.some((b) => value(b, "margin") === "var(--lc-card-top) 0 var(--lc-card-top) var(--lc-card-top)"), "the card's margin still writes the 8px out three times");
-  const rows: [string, string][] = [
-    ["surfaces.css", ".lc-br-bar"], ["surfaces.css", ".lc-linked-top"], ["surfaces.css", ".lc-dev-bar"],
-    ["surfaces.css", ".lc-terms-tabs"], ["surfaces.css", ".lc-files-find"], ["dock.css", ".lc-addon-banner"],
-  ];
-  for (const [file, selector] of rows) {
-    const bs = blocks(sheet(file), selector);
-    assert.equal(bs.length, 1, `${file} should hold one ${selector} block`);
-    assert.ok(bs[0].includes("var(--lc-card-top"), `${selector} in ${file} does not take its top inset from the card`);
+test("Beside the thread the panel is a flush column of the paper: no card, no ring, no inset, one hairline at its left", () => {
+  const css = sheet("app.css");
+  // The card is gone: nothing gives the open panel a margin, a corner or a ring of its own.
+  for (const sel of [".lc-session:not([data-wide]) .lc-body > .lc-panel", ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])"]) {
+    for (const b of blocks(css, sel)) {
+      assert.equal(value(b, "border-radius"), undefined, `${sel} still rounds the panel into a card`);
+      assert.equal(value(b, "--lc-card-top"), undefined, `${sel} still insets the panel as a card`);
+      assert.ok(!(value(b, "margin") ?? "").includes("--lc-card-top"), `${sel} still sets the card's margin`);
+    }
   }
+  assert.ok(blocks(css, ".lc-session[data-beside] .lc-panel").some((b) => value(b, "box-shadow") === "inset 1px 0 0 var(--l-line)"), "the panel has no hairline down its left edge");
+  assert.ok(blocks(css, ".lc-session .lc-body > .lc-panel").some((b) => value(b, "background") === "var(--lc-paper)" && value(b, "flex-direction") === "column"), "the panel isn't a column on the paper");
+  assert.ok(blocks(css, ".lc-session:not([data-wide]) .lc-grip::after").some((b) => value(b, "top") === "0" && value(b, "bottom") === "0"), "the grip's line stops short of the panel's ends, as it did round the card");
+  // A surface out of sight lies over the whole panel, now that no strip of tabs stands over them.
+  assert.ok(blocks(sheet("surfaces.css"), ".lc-surface[hidden]").some((b) => value(b, "inset") === "0"), "a hidden surface still leaves room for a strip of tabs");
 });
 
 test("The panel's column lands on whole pixels, in one pane and in two", () => {
@@ -97,18 +105,15 @@ test("The Agents surface starts its text 16px in, like the other text-led surfac
   assert.equal(value(panels[0], "padding"), "2px 16px 16px", "Agents keeps its own 14px side inset");
 });
 
-test("The more-files line in Changes' files menu starts where the menu's files start", () => {
+test("The more-files line in Changes' files menu is the menus' grey foot line, and the full canvas's column keeps its own", () => {
   const css = sheet("surfaces.css");
   const base = blocks(css, ".lc-rv-more");
   assert.equal(base.length, 1);
   assert.equal(value(base[0], "padding"), "6px 8px", "the line in the full canvas's files column keeps the padding sized for its list");
-  // In the side panel the files are a menu under the row's Files button (Review.tsx), its rows 10px in.
-  const row = blocks(css, ".lc-rv-fm");
-  assert.equal(row.length, 1);
-  assert.equal(value(row[0], "padding"), "0 10px", "the menu's files are no longer 10px in, so the line below would not line up");
-  const menu = blocks(css, ".lc-rv-fmenu > .lc-rv-more");
-  assert.equal(menu.length, 1, "no rule stands the line in the files menu where its files start");
-  assert.equal(value(menu[0], "padding-inline"), "10px");
+  // In the side panel the files are a menu under the head's "N files ⌄" (Review.tsx): its foot is the shared MenuFoot, not rows of its own.
+  const review = readFileSync(new URL("../../ui/src/app/Review.tsx", import.meta.url), "utf8");
+  assert.ok(/<MenuFoot>\{\[hidden > 0 \? `\$\{plural\(hidden, "test file"\)\} hidden` : "", diff && total > diff\.length \? moreFilesSaid\(/.test(review), "the files menu doesn't say the hidden tests and the files not sent in its foot line");
+  assert.equal(blocks(css, ".lc-rv-fm").length, 0, "the files menu still draws rows of its own");
 });
 
 test("The panel takes the paper at 786px of session, and two panes at 946px, not the old 700 and 860", () => {
@@ -121,44 +126,27 @@ test("The panel takes the paper at 786px of session, and two panes at 946px, not
   assert.ok(dock.includes("@container lc-session (max-width: 946px)"), "dock.css does not hand the paper over to two panes at 946px");
 });
 
-test("Taking the whole paper, the panel is flat with its row as the paper's header, in one pane and in two", () => {
+test("Over the whole paper, and in a session too narrow for both, the panel lies under the session header, which stays in view with its row of surfaces", () => {
   const css = sheet("app.css");
-  const flat = (two: boolean) => {
-    const at = two ? '[data-panes="2"]' : "";
-    const why = two ? " with two panes" : "";
-    const p = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])`);
-    assert.ok(p.some((b) => value(b, "--lc-card-top") === "0px" && value(b, "margin") === "0" && value(b, "border-radius") === "0" && value(b, "box-shadow") === "none"), `no flat rule for the panel that takes the paper${why}`);
-    const s = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]:not([data-leaving])`);
-    assert.ok(s.some((b) => value(b, "align-self") === "stretch" && value(b, "height") === "auto" && value(b, "max-height") === "none"), `the Session panel does not fill the paper's height${why}`);
-    const t = blocks(css, `.lc-session[data-panel]${at}:not([data-wide]) .lc-body > .lc-panel > .lc-panel-top`);
-    assert.ok(t.some((b) => value(b, "display") === "flex"), `the paper's header row does not come back${why}`);
-  };
-  flat(false);
-  flat(true);
-  assert.ok(css.includes("@container lc-session (max-width: 946px)"), "app.css does not hold the two-pane paper handover at 946px");
-  const lead = blocks(sheet("dock.css"), '.lc-session[data-panel][data-panes="2"] .lc-stabs-lead');
-  assert.ok(lead.some((b) => value(b, "display") === "inline-flex"), "the sidebar's button does not come back in the two-pane paper header");
-  const lights = blocks(css, 'html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-session[data-panel][data-panes="2"]:not(.lc-beside + .lc-beside .lc-session) .lc-panel-top');
-  assert.ok(lights.some((b) => value(b, "padding-left") === "max(10px, calc(var(--lc-lights-x, 70px) + 4px))"), "the two-pane paper header does not start after the traffic lights");
+  const over = (b: string) => value(b, "grid-column") === "1 / -1" && value(b, "margin-top") === "var(--lc-head)" && value(b, "z-index") === "2";
+  assert.ok(blocks(css, ".lc-session[data-wide] .lc-body > .lc-panel").some(over), "in the full canvas the panel doesn't lie under the header");
+  assert.ok(blocks(css, ".lc-session[data-wide] .lc-body > .lc-thread").some((b) => value(b, "grid-area") === "1 / 1"), "the thread loses its cell, and its header drops under the panel");
+  assert.ok(blocks(css, ".lc-session[data-wide] .lc-thread > :not(.lc-top)").some((b) => value(b, "visibility") === "hidden"), "the rest of the thread stays in sight under the panel");
+  assert.equal(blocks(css, ".lc-session[data-wide] .lc-thread").filter((b) => value(b, "opacity") === "0").length, 0, "the whole thread, its header too, still goes see-through in the full canvas");
+  const narrow = [...css.matchAll(/@container lc-session \(max-width: 786px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join("\n");
+  assert.ok(blocks(narrow, ".lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])").some(over), "a narrow session's panel doesn't lie under the header");
+  assert.ok(blocks(narrow, ".lc-session[data-panel] .lc-body > .lc-thread").some((b) => value(b, "grid-area") === "1 / 1"), "a narrow session's thread loses its cell");
+  assert.ok(blocks(narrow, ".lc-session[data-panel] .lc-thread > :not(.lc-top)").some((b) => value(b, "visibility") === "hidden"), "a narrow session's thread stays in sight under the panel");
+  // The panel never has a row of its own as the paper's header, so nothing puts one under the Mac's lights.
+  assert.ok(!css.includes(".lc-panel-top {\n  --lc-up"), "a rule still puts the panel's own row under the traffic lights");
+  assert.ok(!sheet("dock.css").includes(".lc-stabs-lead"), "the sidebar's button still has a place in a panel row");
 });
 
-test("The panel keeps its card while it closes, and a narrow session keeps its flat paper", () => {
+test("A panel that was the whole paper closes as it was, under the header, told by the session's data-left-wide", () => {
   const css = sheet("app.css");
-  const look = blocks(css, ".lc-session:not([data-wide]) .lc-body > .lc-panel");
-  assert.ok(look.some((b) => value(b, "--lc-card-top") === "8px" && value(b, "margin") === "var(--lc-card-top) 0 var(--lc-card-top) var(--lc-card-top)" && value(b, "overflow") === "hidden" && value(b, "border-radius") === "14px" && value(b, "background") === "var(--lc-paper)" && value(b, "box-shadow") === "0 0 0 1px var(--lc-hair), 0 1px 2px oklch(0.3 0.04 265 / 0.04)"), "the card's look still drops while the panel closes");
-  assert.ok(look.some((b) => value(b, "box-shadow") === "0 0 0 0.5px var(--lc-line), 0 1px 2px oklch(0.3 0.04 265 / 0.04)"), "the Retina ring still drops while the panel closes");
-  const bg = blocks(css, "html[data-bg] .lc-session:not([data-wide]) .lc-body > .lc-panel");
-  assert.ok(bg.some((b) => value(b, "background") === "color-mix(in oklab, var(--lc-paper) 86%, transparent)"), "the tinted ground still drops while the panel closes");
-  const sess = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"]');
-  assert.ok(sess.some((b) => value(b, "align-self") === "start" && value(b, "height") === "auto" && value(b, "max-height") === "calc(100% - 16px)" && value(b, "overflow") === "auto"), "the Session card's height still drops while it closes");
-  const open = blocks(css, ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])");
-  assert.ok(open.some((b) => value(b, "justify-self") === "stretch" && value(b, "width") === "auto" && value(b, "min-width") === "0"), "the open card no longer stretches to its column");
-  assert.ok(look.some((b) => value(b, "width") === "calc(max(100%, min(var(--lc-panel-w, clamp(340px, (100cqw - 46px) * 0.36, 520px)), calc(100cqw - 466px))) - 8px)"), "the width it closes at does not take the card's 8px margin off");
-  // L13 renamed these closing selectors to the panel's own [data-leaving] mark: the session has lost [data-panel] by then.
-  const flatClosing = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-leaving]');
-  assert.ok(flatClosing.some((b) => value(b, "--lc-card-top") === "0px" && value(b, "margin") === "0" && value(b, "border-radius") === "0" && value(b, "box-shadow") === "none"), "a narrow session's panel does not stay flat while it closes");
-  const sessClosing = blocks(css, '.lc-session:not([data-wide]) .lc-body > .lc-panel[data-tab="session"][data-leaving]');
-  assert.ok(sessClosing.some((b) => value(b, "align-self") === "stretch" && value(b, "height") === "auto" && value(b, "max-height") === "none"), "a narrow session's Session panel does not stay flat while it closes");
+  assert.ok(blocks(css, ".lc-session[data-left-wide] .lc-body > .lc-panel[data-leaving]").some((b) => value(b, "grid-column") === "1 / -1" && value(b, "margin-top") === "var(--lc-head)"), "a closing full-canvas panel jumps into the column beside the thread");
+  assert.ok(blocks(css, ".lc-session[data-left-wide] .lc-body > .lc-thread").some((b) => value(b, "grid-area") === "1 / 1"), "the thread loses its cell while the full canvas closes");
+  assert.ok(blocks(css, "html[data-bg] .lc-session .lc-body > .lc-panel").some((b) => value(b, "background") === "color-mix(in oklab, var(--lc-paper) 86%, transparent)"), "the panel's own ground over a picture is gone");
 });
 
 test("Two panes fit their column while open, and keep their width less the card's margin while closing", () => {
@@ -201,11 +189,11 @@ test("Settings' crumbs start their word, not their box, on the row's edge", () =
   assert.equal(value(c[0], "margin-left"), "-6px", "a crumb's own 6px padding is not pulled back to the row's edge");
 });
 
-test("the Found panel's header is its own, not a page's top row", () => {
+test("the Found panel's header is a pane's head, not a page's top row", () => {
   const tsx = readFileSync(new URL("../../ui/src/app/security/FoundPanel.tsx", import.meta.url), "utf8");
-  assert.equal(tsx.includes("lc-top lsc-found-top"), false, "the Found header still carries lc-top, so the traffic-light rule reaches it");
-  const top = blocks(sheet("security/scan.css"), ".lsc-found-top");
-  assert.equal(value(top[0], "min-height"), "var(--lc-head)", "the Found header does not keep the top row's height on its own");
+  assert.equal(tsx.includes("lc-top"), false, "the Found header still carries lc-top, so the traffic-light rule reaches it");
+  assert.match(tsx, /<PaneHead\s+name="Found"/, "the Found panel does not draw the frame's head");
+  assert.equal(value(blocks(sheet("pane.css"), ".lc-pane-head")[0], "height"), "var(--lc-head)", "a pane's head is not the top row's height");
 });
 
 test("Usage folds by its own width, not the window's", () => {
@@ -254,8 +242,10 @@ test("Liner Design's sidebar rows stand 2px apart, as the shared ones do", () =>
   for (const sel of [".ld-side", ".ld-layers", ".ld-files"]) assert.equal(value(blocks(css, sel)[0], "gap"), "2px", sel + " keeps 1px between rows");
 });
 
-test("a finding's last line ends clear of the fade", () => {
-  assert.equal(value(blocks(sheet("security/findings.css"), ".lf-x-body")[0], "padding"), "4px 22px 40px", "the body's bottom padding is under the fade's 36px");
+test("a finding's last line ends clear of its foot, with no fade over it", () => {
+  const css = sheet("security/findings.css");
+  assert.ok(blocks(css, ".lf-x-body").every((b) => !value(b, "mask-image")), "the finding's body still fades its last lines out");
+  assert.equal(value(blocks(css, ".lf-x-body > .lc-pane-sec:last-child")[0], "padding-bottom"), "16px", "the last section ends flush on the foot's rule");
 });
 
 test("Liner Design's open chat keeps 4px at its header's right", () => {
@@ -272,8 +262,12 @@ test("the composer's stacked rows stand on the card's 4px edge", () => {
   assert.equal(value(blocks(css, ".lc-cold")[0], "margin"), "0 4px 6px", "the cache line sits 2px in, not the card's 4");
 });
 
-test("Browser's start-page rows take the column's width, not the panel's 300", () => {
-  assert.equal(value(blocks(sheet("surfaces.css"), ".lc-br-start-in .lc-br-ports")[0], "max-width"), "none", "the start page's ports are held to the panel's 300px");
+test("Browser's servers, pages and the rest of the Mac are in the address's list, not rows on a start page", () => {
+  const browser = readFileSync(new URL("../../ui/src/app/Browser.tsx", import.meta.url), "utf8");
+  const list = browser.slice(browser.indexOf("function AddressList("));
+  for (const label of ["<PanelHead end={runningNote(servers)}>Dev servers</PanelHead>", "<PanelHead>Pages in this folder</PanelHead>", "<PanelHead>Elsewhere on {os.here}</PanelHead>", '<MenuFoot>{error ?? "Servers come from .claude/launch.json"}</MenuFoot>']) assert.ok(list.includes(label), `${label} is not in the address's list`);
+  assert.equal(blocks(sheet("surfaces.css"), ".lc-br-start-in .lc-br-ports").length, 0, "the start page still draws its own rows of servers");
+  assert.ok(!/lc-br-ports|LaunchRows/.test(browser), "the start page or a servers button still lists what the address's list lists");
 });
 
 test("Setup's install list fades at its bottom to say it scrolls", () => {
@@ -328,35 +322,24 @@ test("corners follow the four-size scale outside the skipped ranges", () => {
   }
 });
 
-test("the 2x ring override names the open card's selector beside the bare one, so the ring is half a pixel", () => {
-  const css = sheet("app.css");
-  const open = ".lc-session:not([data-wide]) .lc-body > .lc-panel:not([data-leaving])";
-  const bare = ".lc-session:not([data-wide]) .lc-body > .lc-panel";
-  const lists = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sels: m[1].split(",").map((s) => s.trim().replace(/\s+/g, " ")), body: m[2] }));
-  assert.ok(lists.some((b) => b.sels.includes(open) && b.sels.includes(bare) && (value(b.body, "box-shadow") ?? "").includes("0.5px")), "the 2x override does not carry the open card's selector, so the card rule's 1px ring wins on a Retina screen");
-});
 
-test("a narrow session's closing panel is named by its own mark, and the dead [data-panel] closing copy is gone", () => {
+test("the dead [data-panel] closing copy of the panel's look is gone", () => {
   const css = sheet("app.css");
-  const narrow = [...css.matchAll(/@container lc-session \(max-width: 786px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]);
-  assert.ok(narrow.length, "app.css does not hold the 786px session container");
-  const closing = narrow.flatMap((c) => blocks(c, ".lc-session:not([data-wide]) .lc-body > .lc-panel[data-leaving]"));
-  assert.ok(closing.some((b) => value(b, "border-radius") === "0"), "the narrow closing panel is not named by its own [data-leaving] mark, so the bare card rule turns it into a card while it fades");
   assert.equal(blocks(css, ".lc-session[data-panel]:not([data-wide]) .lc-body > .lc-panel").length, 0, "the closing copy that asks for [data-panel] is still there: the session has lost that mark by then, so it never matches");
 });
 
-test("a panel that was the whole paper closes flat, told by the session's data-left-wide", () => {
-  const wide = blocks(sheet("app.css"), ".lc-session[data-left-wide] .lc-body > .lc-panel[data-leaving]");
-  assert.ok(wide.some((b) => value(b, "box-shadow") === "none" && value(b, "border-radius") === "0" && value(b, "margin") === "0"), "no data-left-wide rule keeps a closing full-canvas panel flat: it flashes as a card with a ring");
-});
 
-test("the first Remove on an add-on's sheet keeps its size and corner, while the confirm Remove stays without a height", () => {
-  const css = sheet("addons-page.css");
-  const own = blocks(css, ".lc-ao-remove:not(.lc-btn)");
-  // 30, a button's size from the set (R11), the same as the header buttons.
-  assert.ok(own.some((b) => value(b, "height") === "30px"), "the first Remove is not a .lc-btn and has no rule giving it a height, so it reads as bare text");
-  const plain = blocks(css, ".lc-ao-remove");
-  assert.ok(plain.length > 0 && plain.every((b) => value(b, "height") === undefined), "the plain .lc-ao-remove rule carries a height, so the confirm .lc-btn would not take the button's size");
+test("an add-on's sheet is drawn in the panel's frame, and Remove asks in its ··· as a confirm row that isn't red", () => {
+  // The sheet once drew its own head, a dl of facts and a foot with a red Remove (QA D36): now the frame's parts draw it.
+  const page = readFileSync(new URL("../../ui/src/app/AddonsPage.tsx", import.meta.url), "utf8");
+  const details = page.slice(page.indexOf("function Details("), page.indexOf("type Opened ="));
+  for (const part of ["<PaneHead", "<PaneBody", "<PaneSection", "<PaneRow", "<PaneFoot"]) assert.ok(details.includes(part), `the sheet lost ${part}`);
+  assert.ok(!/<dl>|<footer>/.test(details), "the sheet still draws its own facts list or foot");
+  const confirm = details.match(/<ConfirmRow [^\n]*title="Remove" sure="Remove it"[^\n]*\/>/)?.[0];
+  assert.ok(confirm, "Remove is not a confirm row in the sheet's ···");
+  assert.ok(!/\b(red|forGood)\b/.test(confirm), "Remove keeps the files, so it should not be red from the start");
+  assert.ok(/<PaneButton ink[\s\S]*?>\s*Open it\s*<\/PaneButton>/.test(details), "Open it is not the foot's ink action");
+  assert.equal(blocks(sheet("addons-page.css"), ".lc-ao-remove").length, 0, "a rule is left for the old Remove button");
 });
 
 test("Design's title wrapper is a flex parent, so the title button shortens instead of running under the chip", () => {
@@ -378,7 +361,8 @@ test("Liner Design's top row keeps the title, the kept copies, the zoom and Play
 });
 
 test("with the sidebar hidden, Design's title keeps clear of Show the sidebar", () => {
-  const after = blocks(sheet("design/design-face.css"), ".ld-bar > .lc-tb + .lc-pop > .ld-tt");
+  // Show the sidebar is the session header's 32px button (lc-sw-b) in Design's row, as in Code's.
+  const after = blocks(sheet("design/design-face.css"), ".ld-bar > .lc-sw-b + .lc-pop > .ld-tt");
   assert.ok(after.some((b) => value(b, "margin-left") === "-4px"), "the title keeps its full -10px pull after the sidebar button, so its hover plate covers the button's last 4px");
 });
 
@@ -435,12 +419,12 @@ test("The live line's newest step slides in whatever Reduce motion and the Motio
 });
 
 test("Liner Design's and Liner Security's buttons, chips and tabs take the app's sizes, as Code's do", () => {
-  // In-content buttons and chips are 28 square or high (lc-ib's size), a picker's rows 36: none of the 18 to 26 or 34 they once had.
+  // In-content buttons and chips are 28 square or high (lc-ib's size): none of the 18 to 26 or 34 they once had. The live picker's rows are the menu's own Row now (28).
   const sized: [string, string, string, string][] = [
     ["design/inspector.css", ".ld-ib", "height", "28px"], ["design/inspector.css", ".ld-stops > button", "height", "28px"], ["design/inspector.css", ".ld-swt", "height", "28px"],
     ["design/design-face.css", ".ld-chip", "height", "28px"], ["design/design-face.css", ".ld-lab-b", "height", "28px"], ["design/build.css", ".ld-live-lk", "height", "28px"],
-    ["design/build.css", ".ld-lpick-r", "height", "36px"], ["design.css", ".lc-dz-ver", "height", "28px"], ["design.css", ".lc-dz-zoom > button", "height", "28px"],
-    ["security/security.css", ".ls-sg", "height", "28px"], ["security/scan.css", ".lsc-pb", "height", "28px"], ["security/overview.css", ".lo-chev", "height", "28px"],
+["pane.css", ".lc-pane-pick", "height", "28px"], ["design.css", ".lc-dz-zoom > button", "height", "28px"],
+    ["security/security.css", ".ls-sg", "height", "28px"], ["security/overview.css", ".lo-chev", "height", "28px"],
   ];
   for (const [file, selector, property, want] of sized) {
     const found = blocks(sheet(file), selector).map((b) => value(b, property)).filter(Boolean);
@@ -449,6 +433,9 @@ test("Liner Design's and Liner Security's buttons, chips and tabs take the app's
   // One tab look in Security: no page sets its own height or size on the shared tab.
   const findings = sheet("security/findings.css");
   for (const tab of [".lf-tab", ".lf-x-tab"]) assert.ok(blocks(findings, tab).every((b) => !value(b, "height") && !value(b, "font-size")), `${tab} sizes Security's shared tab its own way`);
+  // Start a scan's Sign in, Look again and Add are the app's own small buttons (LookAgain, .lc-btn), not a 28px look of its own.
+  assert.equal(blocks(sheet("security/scan.css"), ".lsc-pb").length, 0, "Start a scan keeps its own button look");
+  assert.match(readFileSync(new URL("../../ui/src/app/security/StartScan.tsx", import.meta.url), "utf8"), /<LookAgain looking=\{looking\}/, "Start a scan's Look again is not the app's one LookAgain");
   // A model's working light, a fact's dot: the server's live dot is words now, so no 7px dot is left in Design's sheets.
   assert.equal(blocks(sheet("design/build.css"), ".ld-bdot").length, 0, "the server's live dot is back in build.css");
   // A finding's code excerpt is code as Files, Changes and Compare show it: 13 on a 22px line.
@@ -495,21 +482,22 @@ test("Every action in an actions menu carries an icon, so no menu has some rows 
     return text.slice(i, text.indexOf(to, i));
   };
   const menus: { file: string; from: string; to: string; actions: string[] }[] = [
-    // The session row's ··· and right-click menu (SessionMenu): the snooze times and the groups are choices in the lists two of its rows open; the rest act.
-    { file: "Sidebar.tsx", from: "function SessionMenu(", to: "\n}\n", actions: ['"Open beside"', '"Unpin"', '"Settle"', '"Snooze until"', '"Move to a group"', '"Wake it now"', '"New group"', '"Take it out of its group"', '"Rename"', '"Export as Markdown"', '"Archive"', '"Bring it back"'] },
+    // The session row's ··· and right-click menu (SessionMenu, board RowMenu): the snooze times and the groups are choices in the menus two of its rows open to the side; the rest act.
+    { file: "Sidebar.tsx", from: "function SessionMenu(", to: "\n}\n", actions: ['"Open beside"', '"Unpin"', 'unreadRow(t).title', '"Settle"', '"Snooze until"', '"Group"', '"Wake it now"', '"New group"', '"Take it out of its group"', '"Rename"', '"Export as Markdown"', '"Stop it"', '"Archive"', '"Bring it back"'] },
     // Several rows picked: the groups are where they go, and taking them out is an action.
-    { file: "Sidebar.tsx", from: 'label="Move them to a group"', to: "</Pop>", actions: ['"Out of their groups"'] },
+    { file: "Sidebar.tsx", from: 'label="Move them to a group"', to: "</Pop>", actions: ['"Take them out of their group"'] },
     // Liner Design's zoom menu, as the zoom buttons elsewhere draw it.
     { file: "design/DesignFace.tsx", from: "<Pop label={`Zoom,", to: "</Pop>", actions: ['"Zoom in"', '"Zoom out"', '"Zoom to fit"', '"Actual size"'] },
     // Run it's arrow: the ways to say yes are choices; the rules page is an action after them.
     { file: "Ask.tsx", from: "function Ways(", to: "\n}\n", actions: ["no longer asks about"] },
   ];
   for (const m of menus) {
-    const rows = between(source(m.file), m.from, m.to).split("\n").filter((l) => l.includes("<Row "));
+    // A row that opens a menu to its side (SubMenu) is a row of the menu too.
+    const rows = between(source(m.file), m.from, m.to).split("\n").filter((l) => l.includes("<Row ") || l.includes("<SubMenu "));
     for (const a of m.actions) {
       const lines = rows.filter((l) => l.includes(a));
       assert.ok(lines.length, `${m.file} has no ${a} row in its menu`);
-      for (const l of lines) assert.equal((l.match(/icon=\{/g) ?? []).length, (l.match(/<Row /g) ?? []).length, `${a} in ${m.file} has no icon`);
+      for (const l of lines) assert.equal((l.match(/icon=\{/g) ?? []).length, (l.match(/<(Row|SubMenu) /g) ?? []).length, `${a} in ${m.file} has no icon`);
     }
   }
 });
@@ -571,7 +559,7 @@ test("The model picker is a rail, a middle card that never changes size, and a c
   const composer = readFileSync(new URL("../../ui/src/app/Composer.tsx", import.meta.url), "utf8");
   const pop = composer.split("\n").find((l) => l.includes("<Pop label={`Who works on this, and how hard"));
   assert.ok(pop, "the who panel's Pop is gone");
-  assert.match(pop, /width=\{pickerWide \? PICKER_WIDE : PICKER_NARROW\} bare/, "the who chip doesn't open the picker at its own widths, drawing its own cards");
+  assert.match(pop, /width=\{pickerWide \? PICKER_WIDE : PICKER_NARROW\} out=\{pickerOut\("end", pickerWide\)\} bare/, "the who chip doesn't open the picker at its own widths, its list over the chip, drawing its own cards");
   assert.match(composer, /<WhoPanel [^>]*side=\{pickerWide \? "card" : "line"\}/, "the who panel doesn't fold its card into a line when narrow");
   const picker_ = readFileSync(new URL("../../ui/src/app/picker.ts", import.meta.url), "utf8");
   assert.match(picker_, /export const PICKER = \{ rail: 40, gap: 8, list: 312, height: 476, side: 268 \} as const;/, "the picker's sizes moved");
@@ -614,17 +602,21 @@ test("No level word is saved or sent as a default from the app: a new session, a
   assert.match(model, /return keptLevel\(list, pairEffort, fallback, pairEffort !== undefined\);/, "a pair's lead's level isn't keptLevel");
 });
 
-test("A menu row is one line 30px high with a 16px icon in the second ink, and no menu draws its icons in the accent", () => {
+test("A menu row is one line 28px high, 6px round, with a 14px icon in the fourth ink, and no menu draws its icons in the accent", () => {
   const css = sheet("app.css");
   const row = blocks(css, ".lc-row");
   assert.equal(row.length, 1, "the menu row has more than one base rule");
-  assert.equal(value(row[0], "min-height"), "30px", "a menu row is not 30 high");
+  assert.equal(value(row[0], "min-height"), "28px", "a menu row is not 28 high");
+  assert.equal(value(row[0], "border-radius"), "6px", "a menu row's corner is not 6px");
   assert.equal(value(row[0], "padding"), "0 8px", "a menu row's padding gives it a second line's height");
   assert.equal(value(row[0], "align-items"), "center", "a menu row's icon and title don't sit on one line");
+  assert.equal(value(row[0], "color"), "var(--l-ink)", "a menu row's words are not in ink");
   const tick = blocks(css, ".lc-row-tick");
   assert.equal(tick.length, 1);
-  assert.equal(value(tick[0], "color"), "var(--l-ink-2)", "a menu row's icon is not in the second ink");
-  assert.ok(blocks(css, ".lc-row-tick > svg").some((b) => value(b, "width") === "16px" && value(b, "height") === "16px"), "a menu row's icon is not 16px");
+  assert.equal(value(tick[0], "color"), "var(--l-ink-4)", "a menu row's icon is not in the fourth ink");
+  assert.ok(blocks(css, ".lc-row-tick > svg").some((b) => value(b, "width") === "14px" && value(b, "height") === "14px"), "a menu row's icon is not 14px");
+  assert.ok(blocks(css, ".lc-row-end").some((b) => value(b, "font-size") === "12.5px" && value(b, "color") === "var(--l-ink-4)"), "a row's end is not 12.5px in the fourth ink");
+  assert.ok(blocks(css, ".lc-row[data-bare]").some((b) => value(b, "grid-template-columns") === "minmax(0, 1fr) auto"), "a row with no icon keeps an empty icon column");
   const title = blocks(css, ".lc-row-t b");
   assert.ok(title.some((b) => value(b, "white-space") === "nowrap"), "a menu row's title wraps onto a second line");
   // No sheet puts a row's icon, tick or end back in the accent.
@@ -636,45 +628,48 @@ test("A menu row is one line 30px high with a 16px icon in the second ink, and n
   }
   // The note under a title is the row's tooltip; it shows only where a caller keeps it (keepNote).
   const ui = readFileSync(new URL("../../ui/src/app/ui.tsx", import.meta.url), "utf8");
-  const rowSource = ui.slice(ui.indexOf("export function Row("), ui.indexOf("export function ConfirmRow("));
+  const rowSource = ui.slice(ui.indexOf("export function Row("), ui.indexOf("export function SubMenu("));
   assert.match(rowSource, /const shown = keepNote && note;/, "a row shows its note without being asked to");
   assert.match(rowSource, /\{shown && <small>\{note\}<\/small>\}/, "a kept note is not under the title");
   assert.match(rowSource, /title=\{tip\}/, "a note that goes is not the row's tooltip");
-  assert.match(rowSource, /\{opens && <I\.chevR size=\{14\} \/>\}/, "a row that opens a list has no 14px › at its end");
+  // The picked one's tick is at the end, the icon stays; a › ends a row that opens a list or leads elsewhere.
+  assert.match(rowSource, /\{tickEnd && <I\.check size=\{14\} className="lc-row-on" \/>\}/, "the picked row's tick isn't at its end");
+  assert.match(rowSource, /\{\(opens \|\| chevron\) && <I\.chevR size=\{14\} \/>\}/, "a row that opens a list has no 14px › at its end");
   // A confirm about to act keeps its note: it says what the press will do.
   assert.match(ui.slice(ui.indexOf("export function ConfirmRow("), ui.indexOf("export const PanelHead")), /keepNote=\{asked\}/, "a confirm's second state hides what it will do");
 });
 
-test("The session menu has no inner headings, and its snooze times and groups open as lists in its place", () => {
+test("The session menu's rows go in the board's order, and its snooze times and groups open to the side", () => {
   const side = readFileSync(new URL("../../ui/src/app/Sidebar.tsx", import.meta.url), "utf8");
   const menu = side.slice(side.indexOf("function SessionMenu("), side.indexOf("\n}\n", side.indexOf("function SessionMenu(")));
   assert.ok(menu.length > 100, "SessionMenu is gone");
-  assert.doesNotMatch(menu, /<PanelHead>/, "the session menu still has a heading inside it");
-  // Its rows, in order, one line each: no note shows under any.
-  const order = ['"Open beside"', '"Pin"', '"Settle"', '"Snooze until"', '"Move to a group"', '"Rename"', '"Export as Markdown"', "<Sep />", '<Row title="Archive"'];
-  const top = menu.slice(menu.lastIndexOf(") : (", menu.indexOf('"Open beside"')));
+  // Board RowMenu: Pin, Mark unread, Settle, Snooze until, Group; a rule; Open beside, Rename, Export as Markdown; a rule; Stop it, Archive. No note shows under any.
+  const order = ['"Pin"', "unreadRow(t).title", '"Settle"', '<SubMenu title="Snooze until"', '<SubMenu title="Group"', "<Sep />", '"Open beside"', '"Rename"', '"Export as Markdown"', "<Sep />", '"Stop it"', '<Row title="Archive"'];
   let at = -1;
   for (const o of order) {
-    const i = top.indexOf(o, at + 1);
+    const i = menu.indexOf(o, o === "<Sep />" ? at + 1 : 0);
     assert.ok(i > at, `${o} is not where the menu's order puts it`);
     at = i;
   }
   assert.doesNotMatch(menu, /keepNote/, "a row in the session menu keeps a second line");
-  assert.doesNotMatch(menu, /title="Archive"[^\n]*forGood|title="Archive"[^\n]*danger/, "Archive, which can be undone, is red");
-  // The two lists open in place, with the way back on top, and the keyboard goes in and comes back.
-  assert.match(menu, /<Row title="Snooze until"[^\n]*opens="snooze" onPick=\{\(\) => open\("snooze"\)\}/, "Snooze until doesn't open its list in the menu's place");
-  assert.match(menu, /<Row title="Move to a group"[^\n]*opens="group" onPick=\{\(\) => open\("group"\)\}/, "Move to a group doesn't open its list in the menu's place");
-  assert.match(menu, /<BackRow name="Snooze until" menu onBack=\{back\} \/>/);
-  assert.match(menu, /<BackRow name="Move to a group" menu onBack=\{back\} \/>/);
-  assert.match(menu, /open = \(which: "snooze" \| "group"\) => \(setList\(which\), focus\("button:not\(:disabled\):not\(\.lc-who-back\)"\)\)/, "the keyboard doesn't land on the list's first row");
-  assert.match(menu, /focus\(`\[data-opens="\$\{was\}"\]`\)/, "the keyboard doesn't come back to the row that opened the list");
-  assert.match(menu, /e\.key === "Escape" && !e\.defaultPrevented && \(e\.preventDefault\(\), back\(\)\)/, "Escape closes the menu from a list instead of going back");
-  // The list is the menu part's own state, and the part is drawn anew for each session and gone when the menu closes.
-  assert.match(menu, /useState<"" \| "snooze" \| "group">\(""\)/);
-  assert.match(side, /<SessionMenu\s+key=\{menu\.t\.id\}/, "the menu keeps one session's open list for the next");
-  // S still snoozes for an hour from the row, and the hour's row says so.
+  assert.doesNotMatch(menu, /title="Archive"[^\n]*forGood|title="Archive"[^\n]*\bred\b|title="Archive"[^\n]*danger/, "Archive, which can be undone, is red");
+  // Stop it is red, and only there while the session works (row-menu.ts stopShows, tested in row-menu.test.ts).
+  assert.match(menu, /\{stopShows\(t\) && <Row title="Stop it"[^\n]*\bred\b[^\n]*rpc\("thread\.stop", \{ id: t\.id \}\)/, "Stop it is not the message box's red stop, shown while it works");
+  // Group says the group it is in at its end.
+  assert.match(menu, /<SubMenu title="Group"[^\n]*value=\{groupValue\(t, groups\)\}/, "Group doesn't say which group it is in");
+  // No list opens in the menu's place any more, so no way back row.
+  assert.doesNotMatch(menu, /BackRow|setList/, "a list still opens in the menu's place");
+  assert.match(side, /<SessionMenu\s+key=\{menu\.t\.id\}/, "the menu keeps one session's state for the next");
+  // S still snoozes for an hour from the row, and the hour's row says so before its clock time.
   assert.match(side, /else if \(e\.key === "s" \|\| e\.key === "S"\) void act\(t, "snooze", snoozeTimes\(\)\[0\]\.at\);/, "S no longer snoozes for an hour");
-  assert.match(menu, /end=\{i === 0 \? "S" : s\.note\}/, "the hour's row lost its S, or the others their clock time at the end");
+  assert.match(menu, /end=\{i === 0 \? `S  \$\{s\.note\}` : `\$\{day\(s\.at\)\} \$\{s\.note\}`\}/, "the hour's row lost its S, or the others their day and time at the end");
+  // Pointing at a row: Pin, Settle, then the ···, with Archive in the menu.
+  const row = side.slice(side.indexOf("const acts = t.archived ?"), side.indexOf("return (", side.indexOf("const acts = t.archived ?")));
+  const pin = row.indexOf('act(t, "pin")');
+  const settle = row.indexOf('act(t, "settle")');
+  const more = row.indexOf("menuAt(t");
+  assert.ok(pin > 0 && settle > pin && more > settle, "pointing at a row doesn't show Pin, Settle, then the ···");
+  assert.doesNotMatch(row, /\.archive\(t\)/, "Archive is still beside the row, not in its menu");
 });
 
 test("Home's project chooser is a small card: the picker's plain find line, six rows before its list scrolls, and two foot rows pinned under a hairline", () => {
@@ -704,4 +699,13 @@ test("Home's project chooser is a small card: the picker's plain find line, six 
   assert.equal(value(blocks(css, ".lc-qp-foot")[0], "border-top"), "1px solid var(--l-line)", "no hairline over the foot rows");
   assert.match(readFileSync(new URL("../../ui/src/app/Home.tsx", import.meta.url), "utf8"), /label=\{`Project: \$\{project\.name\}\. Change it`\}\s*width=\{260\}/, "the chooser isn't 260 wide");
   assert.match(readFileSync(new URL("../../ui/src/app/ui.tsx", import.meta.url), "utf8"), /\.\.\.\(at\.max !== undefined \? \{ "--lc-pop-room"/, "a Pop's room isn't handed to what it holds");
+});
+
+test("The chat's Plan and crew cards have a class of their own, so the message box's card keeps its padding and has no border", () => {
+  // The message box is `.lc-card` (app.css). A second `.lc-card` rule in another sheet restyled it: a 1px border and no room round the words.
+  for (const file of ["crew.css", "timeline.css", "surfaces.css", "pane.css"]) assert.doesNotMatch(sheet(file), /(^|[\s,>+~])\.lc-card(?![\w-])/m, `${file} styles .lc-card, the message box's own class`);
+  assert.match(sheet("crew.css"), /^\.lc-ccard \{/m, "the chat cards have no rule of their own");
+  const tsx = (file: string) => readFileSync(new URL(`../../ui/src/app/${file}`, import.meta.url), "utf8");
+  for (const file of ["Crew.tsx", "Timeline.tsx"]) assert.doesNotMatch(tsx(file), /className="lc-card"/, `${file} draws a chat card with the message box's class`);
+  assert.match(tsx("Composer.tsx"), /<div className="lc-card">/, "the message box lost its card");
 });

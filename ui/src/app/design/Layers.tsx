@@ -12,7 +12,7 @@ import { toast } from "@liner/components/toast/toast";
 import type { DesignFile, DesignFrame, TreeNode } from "@contracts";
 import { I, StateMark } from "../icons";
 import { SideLabel } from "../SideList";
-import { Pop, Row, Sep } from "../ui";
+import { ConfirmRow, Pop, Row, Sep } from "../ui";
 import { keys } from "../os";
 import { parentIn } from "./Canvas";
 import { LayerMark } from "./BuildTab";
@@ -211,8 +211,8 @@ function LayerList() {
               >
                 {on ? <I.chevD size={12} /> : <I.chevR size={12} />}
               </button>
-              {/* The mark column: the frame, or the working mark in its agent's canvas colour (its ring's) while one draws it. */}
-              <span className="ld-ly-mk">{p ? <StateMark state="working" tint={p.lead ? "var(--ld-lead)" : "var(--ld-side)"} label={`${p.name} is drawing this`} /> : <D.frame size={14} />}</span>
+              {/* The mark column: the frame, or the working mark while an agent draws it (who it is shows in its ring's colour on the canvas). */}
+              <span className="ld-ly-mk">{p ? <StateMark state="working" label={`${p.name} is drawing this`} /> : <D.frame size={14} />}</span>
               {naming === f.id ? (
                 <input
                   className="lc-sb-rename"
@@ -295,10 +295,11 @@ function FrameMore({ f, onRename }: { f: DesignFrame; onRename: () => void }) {
               title="Delete"
               icon={<I.trash size={16} />}
               disabled={old}
+              red
               onPick={() => {
                 close();
                 // As Delete on the canvas: one step, with Undo in its toast, said only when the frame went.
-                void design.removeFrames([f.id]).then((step) => step && toast("Took the frame away", { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } }));
+                void design.removeFrames([f.id]).then((step) => step && toast(`Deleted ${f.name}`, { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } }));
               }}
             />
           </div>
@@ -372,12 +373,13 @@ export function DesignSide({ cwd }: { cwd: string }) {
               {count(p.id) > 0 && <span className="ld-m">{count(p.id)}</span>}
               {!old && renamingPage !== p.id && (
                 <span className="ld-ly-acts" onClick={(e) => e.stopPropagation()}>
-                  <Pop label={`${p.name}: page actions`} menu align="end" width={180} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: "Rename or delete page" }} trigger={<I.more size={12} />}>
+                  <Pop label={`${p.name}: page actions`} menu align="end" width={200} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: "Rename or delete page" }} trigger={<I.more size={14} />}>
                     {(close) => (
                       <>
-                        <Row title="Rename page" icon={<I.edit size={14} />} onPick={() => (close(), setRenamingPage(p.id))} />
+                        <Row title="Rename page" icon={<I.edit size={16} />} onPick={() => (close(), setRenamingPage(p.id))} />
+                        {/* It can't be undone, so it asks once more, in the danger colour. */}
                         {file.pages.length > 1 && (
-                          <Row title="Delete page" note={count(p.id) > 0 ? "Moves frames" : undefined} icon={<I.trash size={14} />} onPick={() => (close(), design.removePage(p.id))} />
+                          <ConfirmRow title="Delete page" sure="Delete it" note={count(p.id) > 0 ? "Its frames move to another page" : undefined} sureNote={count(p.id) > 0 ? "Its frames move to another page. This can't be undone" : "This can't be undone"} icon={<I.trash size={16} />} forGood onConfirm={() => (close(), design.removePage(p.id))} />
                         )}
                       </>
                     )}

@@ -357,8 +357,34 @@ html[data-motion="quick"] .ld-face {
   transition: background 140ms ease;
 }
 /* After Show the sidebar the title keeps 2px clear of that button: only its first place in the row needs the full pull. */
-.ld-bar > .lc-tb + .lc-pop > .ld-tt {
+.ld-bar > .lc-sw-b + .lc-pop > .ld-tt {
   margin-left: -4px;
+}
+/* Where an adopted design came from, as a head's quiet words with a ›: a press goes back to that session. */
+.ld-from {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ld-from > svg {
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .ld-from:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
 }
 .ld-bar .lc-pop:has(> .ld-tt) {
   display: flex;
@@ -479,8 +505,18 @@ html[data-motion="quick"] .ld-face {
   max-width: 340px;
   font-size: 13px;
 }
-.ld-empty .lc-btn {
-  margin-top: 10px;
+/* The one empty state (PaneNote) in the canvas's middle; its path in mono under the why. */
+.ld-empty > .lc-panel-empty {
+  flex: none;
+  padding: 24px 40px;
+}
+.ld-empty > .lc-panel-empty > svg {
+  color: var(--l-ink-4);
+}
+.ld-empty .lc-panel-empty p {
+  display: grid;
+  gap: 6px;
+  max-width: 360px;
 }
 
 /* ---------- the canvas ---------- */
@@ -904,67 +940,6 @@ html[data-motion="quick"] .ld-face {
 .ld-own-note {
   padding: 8px 10px 0;
 }
-.ld-own-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  margin: 0 0 6px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink);
-  cursor: pointer;
-}
-.ld-own-back:hover {
-  background: var(--l-wash-2);
-}
-.ld-wl {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  color: var(--l-ink);
-  cursor: pointer;
-}
-.ld-wl:hover,
-.ld-wl[data-on] {
-  background: var(--l-wash-2);
-}
-.ld-wl > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.ld-wl > svg.ld-ok {
-  margin-left: auto;
-  color: var(--l-ok, var(--l-ink-2));
-}
-.ld-wl > span {
-  display: block;
-  min-width: 0;
-}
-.ld-wl b {
-  display: block;
-  font-weight: 500;
-}
-.ld-wl small {
-  display: block;
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-
 /* ---------- an empty canvas: what to do first ---------- */
 .ld-hint {
   position: absolute;

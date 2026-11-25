@@ -23,6 +23,7 @@ import { pairOf } from "../Crew";
 import { I, StateMark } from "../icons";
 import { agentOf, duration, money } from "../model";
 import { NamedSwitch, Pop, Row } from "../ui";
+import { PaneButton, PaneRow } from "../Pane";
 import { SendBox } from "../Composer";
 import { frames } from "./bridge";
 import { Row as IRow, Section } from "./inspect/controls";
@@ -289,9 +290,9 @@ function MadeBy({ t }: { t: Target }) {
         {model ? (
           // Three takes to choose from is another thing than Send, which makes one and puts it in: it keeps its own button.
           <div className="ld-ck-acts">
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy || !words.trim()} onClick={() => void makeFor(t.frame, node, words, 3, lean)}>
+            <PaneButton disabled={busy || !words.trim()} onClick={() => void makeFor(t.frame, node, words, 3, lean)}>
               3 more like this
-            </button>
+            </PaneButton>
             {busy && (
               <span className="ld-ck-q ld-pic-busy">
                 <StateMark state="working" size={12} label="Making the picture" />
@@ -329,14 +330,15 @@ function MadeBy({ t }: { t: Target }) {
         </IRow>
         <p className="ld-note ld-pic-note">{lean ? "The lean's palette goes with the ask, so the picture keeps to its colours." : "The next ask goes without the lean's palette."}</p>
       </Section>
+      {/* An action in a body is a row: From a file opens the Mac's picker, From the project opens its list under it. */}
       <Section id="pic-own" title="Or use your own" plain>
-        <div className="ld-ck-acts">
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => fromFile(t.frame, node)}>
+        <div className="ld-pic-own">
+          <PaneRow icon={<I.file size={14} />} value="On this Mac" quiet opens onClick={() => fromFile(t.frame, node)}>
             From a file
-          </button>
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" aria-expanded={picking} onClick={() => setPicking((x) => !x)}>
+          </PaneRow>
+          <PaneRow icon={<I.folder size={14} />} value={picking ? "Hide" : undefined} quiet opens={!picking} onClick={() => setPicking((x) => !x)}>
             From the project
-          </button>
+          </PaneRow>
         </div>
         {picking && <ProjectPictures onPick={(p) => (setPicking(false), void fromProject(t.frame, node, p))} />}
       </Section>
@@ -440,7 +442,7 @@ export function PicturesRow() {
   const forWhom = one ? (one.asker === "you" ? "you" : one.asker) : who.lead;
   return (
     <div className="lc-trow ld-pic-row" role="status">
-      <StateMark state="working" tint="var(--ld-side)" />
+      <StateMark state="working" />
       <span className="lc-trow-t">
         <b>{maker}</b> is making {one && one.count > 1 ? `${one.count} pictures` : "a picture"} for {forWhom}
         {one && one.count > 1 && <span className="ld-q"> {one.done} of {one.count}</span>}
@@ -664,7 +666,8 @@ function PictureForm({ taken, onDone }: { taken: PictureEndpoint[]; onDone: () =
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
           Cancel
         </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!ok || busy} onClick={() => void add()}>
+        {/* The form's one action is ink, as every form's is; accent is Send's alone. */}
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!ok || busy} onClick={() => void add()}>
           Add a model for AI pictures
         </button>
       </div>

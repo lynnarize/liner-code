@@ -17,13 +17,15 @@
   Design Home.
 */
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import type { DesignFrame, FrameOp, LaunchAsk, LaunchServer, LocalServer, NodeRead, Project } from "@contracts";
+import { FRAME_SIZES, type DesignFrame, type FrameOp, type LaunchAsk, type LaunchServer, type LocalServer, type NodeRead, type Project } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "../engine";
 import { I } from "../icons";
 import { useLaunch } from "../launch";
 import { agentOf } from "../model";
-import { PanelHead, Row } from "../ui";
+import { MenuFoot, PanelHead, Row, Sep, SubMenu } from "../ui";
+import { PaneButton } from "../Pane";
+import { SIZE_ICON, SIZE_NAME, sizeWords } from "./sizes";
 import { frames } from "./bridge";
 import { askAgent, shownAsk } from "./BuildTab";
 import { design, getDesign, subscribeDesign, useDesign, type DesignState } from "./store";
@@ -339,7 +341,7 @@ export async function addLive(cwd: string, file: string, port: number, path: str
   const p = path.startsWith("/") ? path : `/${path}`;
   const name = nameFor(p);
   for (const size of sizes) {
-    const wh = size === "desktop" ? { w: 1280, h: 800 } : { w: 390, h: 844 };
+    const wh = FRAME_SIZES[size];
     await rpc("canvas.frame.add", { cwd, file, frame: { name: size === "desktop" ? name : `${name}, ${wh.w}`, ...wh, kind: "live", url: `localhost:${port}${p}` } });
   }
 }
@@ -385,63 +387,55 @@ function Picker({ threadId, onPut, onClose }: { threadId?: string; onPut: (port:
     }
   };
   const toggle = (k: "desktop" | "phone") => setSizes((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
+  const running = list.filter((c) => c.port).length;
+  // The app's one menu shape, with the Browser's own rows and words: "Dev servers · 1 running", a server and its port or
+  // "Not running ›" (its › runs it), and the grey foot line saying where the servers come from.
   return (
     <div className="ld-lpick">
-      <div className="ld-lpick-h">The running app on the canvas</div>
+      <PanelHead end={ports !== null && list.length ? (running ? `${running} running` : "None running") : undefined}>Dev servers</PanelHead>
       {ports === null ? (
-        <div className="ld-lpick-n l-shimmer">Looking for servers</div>
+        <p className="ld-lpick-n l-shimmer">Looking for servers</p>
       ) : !list.length ? (
-        <div className="ld-lpick-n">No dev server runs for this folder. Start one in the Terminal or the Browser panel, or add it to .claude/launch.json.</div>
+        <p className="ld-lpick-n">No dev server runs for this folder. Start one in the Terminal or the Browser panel, or add it to .claude/launch.json.</p>
       ) : (
-        <div className="ld-lpick-l" role="listbox" aria-label="Servers">
-          {list.map((c) => (
-            <div key={c.key} className="ld-lpick-r" role="option" aria-selected={chosen?.key === c.key} data-on={chosen?.key === c.key || undefined} onClick={() => c.port && setPick(c.key)}>
-              <span className="ld-ell">
-                <b>{c.name}</b> {c.port ? `localhost:${c.port}` : c.launch?.status === "starting" ? "starting" : "stopped"}
-              </span>
-              {!c.port && c.launch && (
-                <button type="button" className="ld-live-lk l-focus" disabled={busy || Boolean(c.launch.problem) || c.launch.status === "starting"} title={c.launch.problem} onClick={(e) => (e.stopPropagation(), void run(c.launch!.name))}>
-                  Run
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        list.map((c) =>
+          c.port ? (
+            <Row key={c.key} title={c.name} icon={<I.server size={16} />} end={`:${c.port}`} on={chosen?.key === c.key} onPick={() => setPick(c.key)} />
+          ) : c.launch ? (
+            <SubMenu key={c.key} title={c.name} icon={<I.server size={16} />} value={c.launch.status === "starting" ? "Starting" : "Not running"} label={`${c.name}: run it`} width={220}>
+              {(done) => <Row title="Run" note={c.launch!.problem} icon={<I.play size={16} />} disabled={busy || Boolean(c.launch!.problem) || c.launch!.status === "starting"} onPick={() => (done(), void run(c.launch!.name))} />}
+            </SubMenu>
+          ) : null,
+        )
       )}
       {asked && (
         <div className="ld-lpick-ask">
           <span>From .claude/launch.json, this runs:</span>
           <code>{asked.ask.command}</code>
-          <div className="ld-bt-a">
-            <button type="button" className="lc-btn" data-size="sm" data-kind="ink" disabled={busy} onClick={() => void run(asked.name, asked.ask.key)}>
+          <div className="ld-lpick-go">
+            <PaneButton onClick={() => setAsked(null)}>Not now</PaneButton>
+            <PaneButton ink disabled={busy} onClick={() => void run(asked.name, asked.ask.key)}>
               Run it
-            </button>
-            <button type="button" className="lc-btn" data-size="sm" data-kind="ghost" onClick={() => setAsked(null)}>
-              Not now
-            </button>
+            </PaneButton>
           </div>
         </div>
       )}
+      <Sep />
       <label className="ld-lpick-f">
         <span>Page</span>
         <input className="ld-lpick-in" value={path} spellCheck={false} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void put()} aria-label="The page's path" />
       </label>
-      <div className="ld-lpick-s" role="group" aria-label="Widths">
-        {(["desktop", "phone"] as const).map((k) => (
-          <button key={k} type="button" className="ld-lpick-c l-focus" aria-pressed={sizes.includes(k)} onClick={() => toggle(k)}>
-            {sizes.includes(k) && <I.check size={12} />}
-            {k === "desktop" ? "Desktop, 1280" : "Phone, 390"}
-          </button>
-        ))}
-      </div>
-      <div className="ld-bt-a ld-lpick-go">
-        <button type="button" className="lc-btn" data-size="sm" data-kind="ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="lc-btn" data-size="sm" data-kind="ink" disabled={busy || !chosen?.port || !sizes.length} onClick={() => void put()}>
+      <PanelHead>Widths</PanelHead>
+      {(["desktop", "phone"] as const).map((k) => (
+        <Row key={k} title={SIZE_NAME[k]} icon={SIZE_ICON[k]} end={sizeWords(k)} on={sizes.includes(k)} onPick={() => toggle(k)} />
+      ))}
+      <div className="ld-lpick-go">
+        <PaneButton onClick={onClose}>Cancel</PaneButton>
+        <PaneButton ink disabled={busy || !chosen?.port || !sizes.length} onClick={() => void put()}>
           Put it on the canvas
-        </button>
+        </PaneButton>
       </div>
+      <MenuFoot>Servers come from .claude/launch.json</MenuFoot>
     </div>
   );
 }
@@ -510,43 +504,42 @@ export function useLiveServer(): { rows: ((close: () => void) => ReactNode) | nu
   const rows = port
     ? (close: () => void) => (
         <>
-          <PanelHead end={up ? "Running" : "Stopped"}>
+          <PanelHead end={up ? "Running" : "Not running"}>
             {name} :{port}
           </PanelHead>
           <Row title="Put another page on the canvas" icon={<I.plus size={16} />} onPick={() => (close(), openLivePicker())} />
           {server ? (
             <>
               <Row title={server.status === "running" ? "Restart" : "Run"} note={server.changed ? "launch.json changed" : undefined} icon={<I.refresh size={16} />} onPick={() => (close(), void restart())} />
-              <Row title="Stop" icon={<I.stop size={16} />} disabled={server.status === "stopped"} onPick={() => (close(), void stop())} />
+              <Row title="Stop" icon={<I.stop size={16} />} red disabled={server.status === "stopped"} onPick={() => (close(), void stop())} />
             </>
           ) : local?.owner ? (
-            <Row title="Stop" note={local.process} icon={<I.stop size={16} />} onPick={() => (close(), void stop())} />
+            <Row title="Stop" note={local.process} icon={<I.stop size={16} />} red onPick={() => (close(), void stop())} />
           ) : (
             <Row title="Started outside this session" note="Stop it where it runs" keepNote disabled />
           )}
+          <MenuFoot>Servers come from .claude/launch.json</MenuFoot>
         </>
       )
     : null;
   const floats = (
     <>
       {asked && (
-        <div className="ld-lpick ld-lpick-float" role="dialog" aria-label="Restart the server">
+        <div className="l-pop lc-pop-panel ld-lpick-float" role="dialog" aria-label="Restart the server">
           <div className="ld-lpick-ask">
             <span>From .claude/launch.json, this runs:</span>
             <code>{asked.ask.command}</code>
-            <div className="ld-bt-a">
-              <button type="button" className="lc-btn" data-size="sm" data-kind="ink" onClick={() => void restart(asked.ask.key)}>
+            <div className="ld-lpick-go">
+              <PaneButton onClick={() => setAsked(null)}>Not now</PaneButton>
+              <PaneButton ink onClick={() => void restart(asked.ask.key)}>
                 Run it
-              </button>
-              <button type="button" className="lc-btn" data-size="sm" data-kind="ghost" onClick={() => setAsked(null)}>
-                Not now
-              </button>
+              </PaneButton>
             </div>
           </div>
         </div>
       )}
       {open && cwd && (
-        <div className="ld-lpick-float" role="dialog" aria-label="Put the running app on the canvas">
+        <div className="l-pop lc-pop-panel ld-lpick-float" role="dialog" aria-label="Put the running app on the canvas">
           <Picker threadId={threadId} onPut={put} onClose={() => openLivePicker(false)} />
         </div>
       )}

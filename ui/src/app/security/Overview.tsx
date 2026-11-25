@@ -10,7 +10,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { DismissReason, FreeCheckId, FreeCheckResult, SecondLookState, SecurityFinding, SecurityOverview, SecurityProject, SeverityCounts } from "@contracts";
 import { DISMISS_LABEL, FREE_CHECK_LABEL, SEVERITIES, SEVERITY_LABEL, noSeverities } from "@contracts";
 import { rpc, useEngine } from "../engine";
-import { I } from "../icons";
+import { I, StepMark } from "../icons";
+import { PaneNote } from "../Pane";
 import { plural, providerLabel } from "../model";
 import { Pop, Row } from "../ui";
 import { useSec } from "./data";
@@ -72,7 +73,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
   return (
     <div className="ls-page">
       <PageTop title="Overview" sidebar={sidebar} onSidebar={onSidebar}>
-        <Pop label="Period" menu width={200} align="end" triggerClass="lo-cb l-focus" trigger={<><Calendar />{`Last ${scope.days} days`}<I.chevD size={12} /></>}>
+        <Pop label="Period" menu width={200} align="end" triggerClass="lo-cb l-focus" trigger={<><I.calendar size={14} />{`Last ${scope.days} days`}<I.chevD size={12} /></>}>
           {(close) => PERIODS.map((d) => <Row key={d} title={`Last ${d} days`} on={d === scope.days} onPick={() => (close(), setSecurityScope({ days: d }))} />)}
         </Pop>
         <Pop label="Project" menu width={240} align="end" triggerClass="lo-cb l-focus" trigger={<><span className="lc-strip-cap">{picked?.name ?? "All projects"}</span><I.chevD size={12} /></>}>
@@ -94,10 +95,7 @@ export function Overview({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: 
       <div className="ls-scroll">
         <div className="lo-col lo-ov" data-loading={data === null || undefined}>
           {error && data === null ? (
-            <div className="ls-none">
-              <b>The overview didn't load</b>
-              <span>{error}</span>
-            </div>
+            <PaneNote icon={<I.shield size={16} />} title="The overview didn't load">{error}</PaneNote>
           ) : none ? (
             <Nothing picked={picked?.name} projectId={scope.projectId} noProject={!projects?.length} />
           ) : (
@@ -274,7 +272,11 @@ function Figures({ o, lastFixed }: { o: SecurityOverview; lastFixed?: number }) 
         <button type="button" className="lo-tile lo-tile-go l-focus" onClick={() => goSecurity({ kind: "scan", threadId: (live[0] ?? fixThreads[0]).id })} aria-label={`Being fixed: ${beingFixed}${ready ? `, ${ready} ready to look at` : ""}. Open the fix session`}>
           <span className="lo-lb">Being fixed</span>
           <b>{beingFixed}</b>
-          <small>{fixNote}</small>
+          <small>
+            {/* A fix at work says so with the working mark, as a row of a session that works does. */}
+            {fix && fix.status === "running" && <StepMark state="working" size={12} />}
+            {fixNote}
+          </small>
         </button>
       ) : (
         <div className="lo-tile">
@@ -341,33 +343,29 @@ function Nothing({ picked, projectId, noProject }: { picked?: string; projectId?
   };
   if (noProject)
     return (
-      <div className="ls-card lo-empty">
-        <span className="ls-disc"><I.folder size={16} /></span>
-        <b>No project to scan yet</b>
-        <span>Add a folder you work on, then scan it. A scan reads your code for what someone could misuse; the free checks run on this Mac with no agent and cost nothing.</span>
-        <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
-          Add a project
-        </button>
-      </div>
+      <PaneNote
+        icon={<I.folder size={16} />}
+        title="No project to scan yet"
+        action={
+          <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
+            Add a project
+          </button>
+        }
+      >
+        Add a folder you work on, then scan it. A scan reads your code for what someone could misuse; the free checks run on this Mac with no agent and cost nothing.
+      </PaneNote>
     );
   return (
-    <div className="ls-card lo-empty">
-      <span className="ls-disc"><I.shield size={16} /></span>
-      <b>{picked ? `${picked} hasn't been scanned yet` : "No project has been scanned yet"}</b>
-      <span>A scan reads your code for what someone could misuse. The free checks run on this Mac with no agent and cost nothing.</span>
-      <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => goSecurity({ kind: "start", ...(projectId ? { projectId } : {}) })}>
-        Start a scan
-      </button>
-    </div>
-  );
-}
-
-/** The period picker's calendar, drawn on the app's 16px grid. */
-function Calendar() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="2.75" y="3.5" width="10.5" height="9.75" rx="2" />
-      <path d="M2.75 6.75h10.5M5.5 2.25v2.5M10.5 2.25v2.5" />
-    </svg>
+    <PaneNote
+      icon={<I.shield size={16} />}
+      title={picked ? `${picked} hasn't been scanned yet` : "No project has been scanned yet"}
+      action={
+        <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => goSecurity({ kind: "start", ...(projectId ? { projectId } : {}) })}>
+          Start a scan
+        </button>
+      }
+    >
+      A scan reads your code for what someone could misuse. The free checks run on this Mac with no agent and cost nothing.
+    </PaneNote>
   );
 }

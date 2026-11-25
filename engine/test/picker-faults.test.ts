@@ -107,7 +107,7 @@ test("The source switch's choice is written through contracts' Settings from the
 test("The picker's cards are never taller than the room its bare Pop was given, only the models' part giving way", () => {
   const ui = code("ui.tsx");
   assert.match(ui, /panelSide\(\{ h, below, above, prefer, keep, keepMin: KEEP_MIN, whole \}\)/, "a Pop's side isn't chosen by panelSide");
-  assert.match(ui, /within, bare\);/, "a bare Pop isn't placed as a whole panel");
+  assert.match(ui, /within, bare, out\);/, "a bare Pop isn't placed as a whole panel");
   assert.match(ui, /\.\.\.\(at\.max !== undefined \? \{ "--lc-pop-room": `\$\{at\.max\}px` \}/, "the room isn't handed to the picker's cards");
   assert.match(ui, /p\.style\.removeProperty\("--lc-pop-room"\)/, "the cards are measured at the room they were fitted to");
   const css = sheet("models.css");
@@ -150,7 +150,7 @@ test("Effort is one slider of the model's own levels with no shared list of leve
   assert.match(slider, /aria-valuemin=\{0\}\s+aria-valuemax=\{n - 1\}\s+aria-valuenow=\{sliderNow\(shown\.at\)\}\s+aria-valuetext=\{name\}/, "the slider doesn't say its value");
   assert.match(slider, /aria-label=\{label\}/);
   assert.match(slider, /setPointerCapture\(e\.pointerId\)/, "a drag leaves the track and is lost");
-  assert.match(slider, /\{levels\.map\(\(e, i\) => \(\s*<span key=\{e\.id\} className="lc-pk-slide-stop" aria-hidden data-tick=\{i > at \|\| undefined\} title=\{stopTitle\(e, i, shown, fallback\)\} \/>/, "a stop has no tick past the level or no title for the mouse");
+  assert.match(slider, /\{levels\.map\(\(e, i\) => \(\s*<span key=\{e\.id\} className="lc-pk-slide-stop" aria-hidden data-tick=\{i > at \|\| undefined\} [^\n]*title=\{stopTitle\(e, i, shown, fallback\)\} \/>/, "a stop has no tick past the level or no title for the mouse");
   assert.match(models, /press again for its own default/, "nothing says how to go back to the tool's own default");
   // The extras as the app's own switch, which the arrows walk.
   assert.match(part, /\{extras\.map\(\(e\) => \(\s*<div key=\{e\.id\} className="lc-pk-xr">/);

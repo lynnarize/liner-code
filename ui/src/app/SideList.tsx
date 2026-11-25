@@ -10,9 +10,9 @@
   the same words (rowWords) and facts.
   Styles: app.css, the block headed "The sidebar's list parts" (class prefix lc-sl-).
 
-  Tints. A working mark's light takes `tint` (any CSS colour) when it is given; otherwise `brand`
-  (a model's MarkKind, as markOf gives it) colours it the way .lc-mk[data-s="working"][data-brand]
-  does, so a session's light is in its model's colour without a second list of colours here.
+  Tints. A working mark is in the second ink whoever works (the state mark's choice B, board Marks,
+  2026-11-25): `brand` is still passed through but no longer colours it, and `tint` (any CSS colour)
+  does only where a holder's own colour says who it is.
   Action buttons in a row's `acts` or a folder's `actions`: use className "lc-sb-a l-focus" (24px in a row, 28px on a folder).
 */
 import { forwardRef, useRef, useSyncExternalStore, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
@@ -60,12 +60,13 @@ export function useWindowFocused() {
   A row's mark, in the 24px column: the state mark (icons.tsx StateMark) for how it stands. `state` is
   a mark's state or a row's (session-state.ts SideState: limited and error draw as limit and
   problem). Each keeps its words for a screen reader (`label` says something else, as a folded
-  folder's "One of its sessions is working"). A working mark takes `tint` or `brand` (the head
-  comment).
+  folder's "One of its sessions is working"). A working mark is never tinted by its model (SPEC rule 7):
+  `tint` and `brand` are taken for the other states only, so callers need not tell them apart.
 */
 export function SideMark({ state, tint, brand, label }: { state: SideState | MarkState; tint?: string; brand?: MarkKind; label?: string }) {
   const s: MarkState = state === "limited" ? "limit" : state === "error" ? "problem" : state;
-  return <StateMark state={s} tint={tint} brand={brand} label={label ?? MARK_WORD[s]} />;
+  const working = s === "working";
+  return <StateMark state={s} tint={working ? undefined : tint} brand={working ? undefined : brand} label={label ?? MARK_WORD[s]} />;
 }
 
 /**

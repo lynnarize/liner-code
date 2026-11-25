@@ -1,8 +1,9 @@
 /*
-  Liner Security: what a scan has found, in a panel beside its chat (boards D, E and F): its name and a search, its
-  status line ("1 finding so far · scanning, about 2 min left"), Open, Fixed and Dismissed, the open ones by severity as a
-  thin bar with its counts, two filters (second look, severity), the list or "Nothing found yet", what was already open
-  and not raised again, and the areas of SECURITY.md with how far it has read each. Live: it asks again whenever the
+  Liner Security: what a scan has found, in a panel beside its chat (boards D, E and F), in the panel's own frame (Pane.tsx):
+  its head with the name, a find field and one menu of two filters (second look, severity); the open ones by severity as a
+  thin bar with its counts; the list under a picker of Open, Fixed and Dismissed, or "Nothing found yet"; what was already
+  open and not raised again; the areas of SECURITY.md with how far it has read each; and at its foot the status line
+  ("1 finding so far · scanning, about 2 min left"). Live: it asks again whenever the
   engine says a finding or the scan changed (security.changed, security.scan). A row opens the finding on Findings.
 
   Beside a fix or a question about a finding (no scan), it shows that one finding instead.
@@ -10,9 +11,11 @@
 import { useMemo, useState } from "react";
 import type { FindingState, ScanRecord, SecondLookState, SecurityFinding, Severity, ThreatModel } from "@contracts";
 import { noSeverities, SEVERITIES, SEVERITY_LABEL } from "@contracts";
-import { I } from "../icons";
+import { I, StepMark } from "../icons";
+import { PaneBody, PaneButton, PaneField, PaneFoot, PaneHead, PaneNote, PaneRow, PaneSection, PANE_PICK, PANE_TOOL } from "../Pane";
+import { Pop, Row, Sep, SubMenu } from "../ui";
 import { duration, plural } from "../model";
-import { CountTabs, FilterChip, Legend, SevBar, SevMark, Tag, TwoLines, sevParts } from "./parts";
+import { Legend, SevBar, SevSquare, sevParts } from "./parts";
 import { goSecurity, useScan, useSecurity } from "./store";
 import "./scan.css";
 
@@ -42,7 +45,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
   left?: string;
   /** The scan's data, given rather than asked for (the dev mock). */
   data?: FoundData;
-  /** Only while the panel lies over the chat (a narrow window), where it covers the top row's lit panel icon that otherwise hides it. */
+  /** Hides the panel: the head's Close, as every pane's head has it. */
   onClose?: () => void;
 }) {
   void threadId;
@@ -56,7 +59,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
   const [tab, setTab] = useState<FindingState>("open");
   const [look, setLook] = useState<SecondLookState | undefined>();
   const [sev, setSev] = useState<Severity | undefined>();
-  const [search, setSearch] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const id = scan?.id ?? scanId;
   const mine = useMemo(() => all.filter((f) => (id ? f.scan === id : f.id === finding)), [all, id, finding]);
@@ -84,144 +87,166 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
         : scan.state === "failed"
           ? [plural(n, "finding"), "it didn't finish"]
           : [n ? `${plural(n, "finding")} so far` : "Nothing yet", paused || scan.state === "asking" ? "paused until you answer or skip" : scan.looking ? "taking the second look" : left ? `scanning, ${left}` : "scanning"];
-  const row = (f: SecurityFinding) => (
-    <button key={f.id} type="button" className="lsc-rw l-focus" onClick={() => goSecurity({ kind: "findings", finding: f.id, state: f.state })}>
-      <SevMark severity={f.severity} />
-      <TwoLines title={f.title} note={noteOf(f, scan, waiting)} />
-    </button>
-  );
+  const row = (f: SecurityFinding) => {
+    // Where it is at the row's right end, so the title keeps its room; the second look and where it came from in its tooltip.
+    const note = noteOf(f, scan, waiting);
+    return (
+      <PaneRow key={f.id} icon={<SevSquare severity={f.severity} />} value={placeOf(f) || undefined} quiet title={[f.title, note].filter(Boolean).join(" · ")} onClick={() => goSecurity({ kind: "findings", finding: f.id, state: f.state })}>
+        {f.title}
+      </PaneRow>
+    );
+  };
 
   // A fix or a question: the one finding it is about.
   if (!id) {
     const f = mine[0];
     return (
       <aside className="lsc-found" aria-label="The finding">
-        <header className="lsc-found-top">
-          <span className="lsc-found-t">The finding</span>
-          <span className="lc-grow" />
-          {onClose && (
-            <button type="button" className="lc-tb l-focus" aria-label="Close" title="Close" onClick={onClose}>
-              <I.close size={16} />
-            </button>
-          )}
-        </header>
-        <div className="lsc-found-b">
+        <PaneHead name="Finding" canvas={false} onClose={onClose} />
+        <PaneBody>
           {f ? (
-            <>
+            <PaneSection label="Summary">
               {row(f)}
-              {f.explain?.lead && <p className="lsc-found-lead">{f.explain.lead}</p>}
-              {f.look.state !== "none" && f.look.words && (
-                <p className="lsc-found-look">
-                  <Tag tone={f.look.state === "confirmed" ? "ok" : undefined}>{LOOK_WORDS[f.look.state]}</Tag> {f.look.words}
-                </p>
+              {(f.explain?.lead || (f.look.state !== "none" && f.look.words)) && (
+                <div className="lsc-found-txt">
+                  {f.explain?.lead && <p className="lsc-found-lead">{f.explain.lead}</p>}
+                  {f.look.state !== "none" && f.look.words && (
+                    <p className="lsc-found-look">
+                      <span data-tone={f.look.state === "confirmed" ? "ok" : undefined}>{LOOK_WORDS[f.look.state]}.</span> {f.look.words}
+                    </p>
+                  )}
+                </div>
               )}
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => goSecurity({ kind: "findings", finding: f.id, state: f.state })}>
-                Open it in Findings
-              </button>
-            </>
-          ) : (
-            <div className="ls-none">{asked.loading ? "" : "This finding is no longer there."}</div>
+            </PaneSection>
+          ) : asked.loading ? null : (
+            <PaneNote icon={<I.search size={16} />} title="This finding is no longer there" />
           )}
-        </div>
+        </PaneBody>
+        {f && (
+          <PaneFoot>
+            <PaneButton ink onClick={() => goSecurity({ kind: "findings", finding: f.id, state: f.state })}>
+              Open it in Findings
+            </PaneButton>
+          </PaneFoot>
+        )}
       </aside>
     );
   }
 
+  const filtered = Boolean(look || sev);
+  const STATES: { value: FindingState; label: string }[] = [
+    { value: "open", label: "Open" },
+    { value: "fixed", label: "Fixed" },
+    { value: "dismissed", label: "Dismissed" },
+  ];
+  const LOOKS: { value: SecondLookState; label: string }[] = [
+    { value: "confirmed", label: "Confirmed" },
+    { value: "unconfirmed", label: "Couldn't confirm" },
+    { value: "none", label: "Not looked at" },
+  ];
   return (
     <aside className="lsc-found" aria-label={done ? "What the scan found" : "What the scan has found so far"}>
-      <header className="lsc-found-top">
-        {search === null ? (
-          <span className="lsc-found-t">{done ? "Found" : "Found so far"}</span>
-        ) : (
-          <input className="lsc-found-q" autoFocus value={search} placeholder="Search these findings" aria-label="Search these findings" onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setSearch(null)} />
-        )}
-        <span className="lc-grow" />
-        <button type="button" className="lc-tb l-focus" aria-label={search === null ? "Search these findings" : "Stop searching"} title={search === null ? "Search these findings" : "Stop searching"} aria-pressed={search !== null} onClick={() => setSearch(search === null ? "" : null)}>
-          <I.search size={16} />
-        </button>
-        {onClose && (
-          <button type="button" className="lc-tb l-focus" aria-label="Close" title="Close" onClick={onClose}>
-            <I.close size={16} />
-          </button>
-        )}
-      </header>
-      <div className="lsc-found-b">
-        {status && (
-          <div className="lsc-fmeta" role="status">
-            {status.filter(Boolean).map((s, i) => (
-              <span key={i}>
-                {i > 0 && <span aria-hidden>·</span>}
-                {s}
-              </span>
-            ))}
+      <PaneHead
+        name="Found"
+        canvas={false}
+        onClose={onClose}
+        shows={
+          <PaneField icon={<I.search size={14} />}>
+            <input value={search} placeholder="Find a finding" aria-label="Find a finding" onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && search && (e.preventDefault(), e.stopPropagation(), setSearch(""))} />
+          </PaneField>
+        }
+        tools={
+          // The view's two filters in one menu, each "Label  Value ›" (rule 8), where two chips stood loose in the body.
+          <Pop label={filtered ? "Narrow the list: some filters on" : "Narrow the list"} menu align="end" width={240} triggerClass={PANE_TOOL} triggerAttrs={{ "aria-pressed": filtered || undefined, title: "Narrow the list" }} trigger={<I.filter size={16} />}>
+            {(close) => (
+              <>
+                <SubMenu title="Second look" value={LOOKS.find((o) => o.value === look)?.label ?? "Any"} label="Second look">
+                  {(done) => (
+                    <>
+                      <Row title="Any" on={!look} onPick={() => (done(), close(), setLook(undefined))} />
+                      {LOOKS.map((o) => <Row key={o.value} title={o.label} on={o.value === look} onPick={() => (done(), close(), setLook(o.value))} />)}
+                    </>
+                  )}
+                </SubMenu>
+                <SubMenu title="Severity" value={sev ? SEVERITY_LABEL[sev] : "Any"} label="Severity">
+                  {(done) => (
+                    <>
+                      <Row title="Any" on={!sev} onPick={() => (done(), close(), setSev(undefined))} />
+                      {SEVERITIES.map((s) => <Row key={s} title={SEVERITY_LABEL[s]} on={s === sev} onPick={() => (done(), close(), setSev(s))} />)}
+                    </>
+                  )}
+                </SubMenu>
+                {filtered && (
+                  <>
+                    <Sep />
+                    <Row title="Clear the filters" icon={<I.close size={14} />} onPick={() => (close(), setLook(undefined), setSev(undefined))} />
+                  </>
+                )}
+              </>
+            )}
+          </Pop>
+        }
+      />
+      <PaneBody>
+        <PaneSection label="Open, by severity" note={plural(open.length, "open finding")}>
+          <div className="lsc-found-txt">
+            <SevBar counts={bySev} />
+            <span className="l-sr-only">{SEVERITIES.map((s) => `${bySev[s]} ${SEVERITY_LABEL[s].toLowerCase()}`).join(", ")}</span>
+            <Legend parts={sevParts(bySev)} count={() => true} tight />
           </div>
-        )}
-        <div className="lsc-found-tabs">
-          <CountTabs
-            label="Which findings"
-            value={tab}
-            onChange={setTab}
-            tabs={[
-              { value: "open", label: "Open", count: count("open") },
-              { value: "fixed", label: "Fixed", count: count("fixed") },
-              { value: "dismissed", label: "Dismissed", count: count("dismissed") },
-            ]}
-          />
-        </div>
+        </PaneSection>
 
-        <div className="ls-blkh lsc-sp">Open findings by severity</div>
-        <SevBar counts={bySev} />
-        <span className="l-sr-only">{SEVERITIES.map((s) => `${bySev[s]} ${SEVERITY_LABEL[s].toLowerCase()}`).join(", ")}</span>
-        <Legend parts={sevParts(bySev)} count={() => true} tight />
-
-        <div className="lsc-filt">
-          <FilterChip label="Second look" value={look} onChange={setLook} options={[{ value: "confirmed", label: "Confirmed" }, { value: "unconfirmed", label: "Couldn't confirm" }, { value: "none", label: "Not looked at" }]} />
-          <FilterChip label="Severity" value={sev} onChange={setSev} options={SEVERITIES.map((s) => ({ value: s, label: SEVERITY_LABEL[s] }))} />
-        </div>
-        {shown.length ? (
-          <div className="lsc-rws">{shown.map(row)}</div>
-        ) : mine.length === 0 && tab === "open" && !look && !sev && !words ? (
-          <div className="ls-none">
-            <span className="ls-disc">
-              <I.search size={16} />
-            </span>
-            <b>{done ? "Nothing found" : "Nothing found yet"}</b>
-            <span>{done ? "The scan read what it could and found nothing to raise." : "Findings show here as soon as the scan finds them."}</span>
-          </div>
-        ) : (
-          <div className="ls-none">
-            <span>{words ? "No finding here matches that." : "None here."}</span>
-          </div>
-        )}
+        <PaneSection
+          label="Findings"
+          note={
+            // Open, Fixed or Dismissed: one picker with its count, where a segmented control stood in the body.
+            <Pop label={`Showing ${STATES.find((t) => t.value === tab)!.label.toLowerCase()} findings. Show others`} menu align="end" width={200} triggerClass={PANE_PICK} trigger={<>{STATES.find((t) => t.value === tab)!.label} {count(tab)}<I.chevD size={12} /></>}>
+              {(close) => STATES.map((t) => <Row key={t.value} title={t.label} end={String(count(t.value))} on={t.value === tab} onPick={() => (close(), setTab(t.value))} />)}
+            </Pop>
+          }
+        >
+          {shown.length ? (
+            shown.map(row)
+          ) : mine.length === 0 && tab === "open" && !look && !sev && !words ? (
+            <PaneNote icon={<I.search size={16} />} title={done ? "Nothing found" : "Nothing found yet"}>
+              {done ? "The scan read what it could and found nothing to raise." : "Findings show here as soon as the scan finds them."}
+            </PaneNote>
+          ) : (
+            <PaneNote title={words ? "No finding here matches that" : "None here"} />
+          )}
+        </PaneSection>
 
         {already.length > 0 && (
-          <>
-            <div className="ls-blkh lsc-sp">
-              Already open, not raised again<span className="ls-num lsc-found-n">{already.length}</span>
-            </div>
-            <div className="lsc-rws">{already.map(row)}</div>
-          </>
+          <PaneSection label="Already open, not raised again" note={already.length}>
+            {already.map(row)}
+          </PaneSection>
         )}
 
         {model && model.areas.length > 0 && (
-          <>
-            <div className="ls-blkh lsc-sp">Areas in {model.file}</div>
+          <PaneSection label={`Areas in ${model.file}`}>
             {model.areas.map((a) => {
               const reading = scan?.areasReading?.some((x) => x.toLowerCase() === a.name.toLowerCase());
               const read = scan?.areasRead?.some((x) => x.toLowerCase() === a.name.toLowerCase());
               const untouched = scan?.areasUntouched?.some((x) => x.toLowerCase() === a.name.toLowerCase());
+              const step = reading ? "working" : read ? "done" : untouched ? "skipped" : "waiting";
               return (
-                <div key={a.name} className="lsc-kvr">
-                  <span className="lsc-k">{a.name}</span>
-                  <span className="lsc-v" data-on={reading || read || undefined}>
-                    {reading ? "Reading now" : read ? "Read" : untouched ? "This branch did not touch it" : done ? "Not read" : "Not read yet"}
-                  </span>
-                </div>
+                <PaneRow key={a.name} icon={<StepMark state={step} size={14} />} value={reading ? "Reading now" : read ? "Read" : untouched ? "This branch did not touch it" : done ? "Not read" : "Not read yet"} quiet={!reading && !read}>
+                  {a.name}
+                </PaneRow>
               );
             })}
-          </>
+          </PaneSection>
         )}
-      </div>
+      </PaneBody>
+      {status && (
+        <PaneFoot
+          say={
+            <span role="status">
+              {status.filter(Boolean).join(" · ")}
+            </span>
+          }
+        />
+      )}
     </aside>
   );
 }

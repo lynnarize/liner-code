@@ -77,6 +77,12 @@ export type SwarmMember = {
   files?: FileChange[];
   /** True once this worker's worktree branch has been merged into the session checkout. */
   landed?: boolean;
+  /** The auditor: a reader by mode that runs on the session's own model and effort whatever the reader settings say. */
+  audit?: boolean;
+  /** For the auditor: the worker whose work it checks, named in add or taken when the team had only one unlanded worktree. It runs in that worker's worktree while it is on disk and not landed. */
+  auditOf?: string;
+  /** The effort level this worker runs at, among its own model's levels ("" or unset: none given, the tool's own). */
+  effort?: string;
 };
 
 /** One append-only post on the swarm message board (`board.jsonl`). */
@@ -116,13 +122,17 @@ export type SwarmSnapshot = {
   updatedAt: number;
 };
 
-/** Why a swarm waits for the person, since when, and (for the limit) after how many turns it started by itself. */
-export type SwarmPause = { reason: "limit" | "restart"; at: number; turns?: number };
+/** Why a swarm waits for the person (the turn limit, a restart, or their own Stop), since when, and (for the limit) after how many turns it started by itself. */
+export type SwarmPause = { reason: "limit" | "restart" | "stopped"; at: number; turns?: number };
 
 /** Turns a swarm may start by itself (worker turns and coordinator wakes) before it pauses for the person; anything the person does starts the count again. */
 export const SWARM_SELF_TURNS_MAX = 40;
 /** Live workers one swarm may hold at once (the coordinator, killed and skipped members don't count). */
 export const SWARM_ROSTER_MAX = 12;
+/** A parked worker whose last turn ended longer ago than this (10 minutes) has a cold prompt cache, so a long session of it starts fresh. */
+export const SWARM_FRESH_AFTER_MS = 10 * 60_000;
+/** The context size its tool last reported (100,000 tokens) at or above which a cold wake starts a worker fresh from its notes. */
+export const SWARM_FRESH_ABOVE_CONTEXT = 100_000;
 
 /** Bounds for concurrent active swarm worker processes (light on RAM by default: 2). */
 export const SWARM_MAX_DEFAULT = 2;

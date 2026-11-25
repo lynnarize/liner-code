@@ -63,13 +63,13 @@
     color: var(--l-ink);
   }
 }
-/* "+ Add add-on" and, past a hairline, the other ways to add one. */
+/* "+ Add one" and, past a hairline, the other ways to add one: the page's one action, so in ink. */
 .lc-ao-split {
   display: inline-flex;
   flex: none;
   border-radius: var(--lc-r-field);
-  background: var(--lc-ctl);
-  color: var(--lc-ctl-ink);
+  background: var(--l-ink);
+  color: var(--lc-paper);
 }
 .lc-ao-split > button,
 .lc-ao-split-more {
@@ -95,55 +95,16 @@
   justify-content: center;
   width: 34px;
   padding: 0;
-  box-shadow: inset 1px 0 0 color-mix(in oklab, var(--lc-ctl-ink) 16%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in oklab, var(--lc-paper) 18%, transparent);
 }
 @media (hover: hover) {
   .lc-ao-split > button:hover,
   .lc-ao-split-more:hover {
-    background: var(--lc-ctl-hover);
+    background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
   }
 }
 .lc-ao-split-more[data-open] {
-  background: var(--lc-ctl-hover);
-}
-.lc-ao-ways {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.lc-ao-ways > button {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: var(--l-ink);
-  cursor: pointer;
-}
-.lc-ao-ways > button > svg {
-  margin-top: 2px;
-  color: var(--l-ink-2);
-}
-.lc-ao-ways > button > span {
-  display: grid;
-  gap: 1px;
-}
-.lc-ao-ways b {
-  font-size: 14px;
-  font-weight: 500;
-}
-.lc-ao-ways small {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-@media (hover: hover) {
-  .lc-ao-ways > button:hover {
-    background: var(--lc-well);
-  }
+  background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
 }
 .lc-ao-banner {
   margin: -12px 0 0;
@@ -240,32 +201,6 @@ button.lc-ao-open {
   height: 38px;
   border-radius: var(--lc-r-field);
 }
-.lc-ao-empty {
-  display: grid;
-  justify-items: start;
-  gap: 8px;
-  padding: 22px 24px;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-well);
-}
-.lc-ao-empty b {
-  font-size: 15px;
-  font-weight: 600;
-}
-.lc-ao-empty p {
-  max-width: 56ch;
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--l-ink-3);
-}
-.lc-ao-empty > span {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-
 /* ---------- Details, from the right ---------- */
 .lc-ao-sheet {
   position: absolute;
@@ -287,6 +222,7 @@ button.lc-ao-open {
   width: min(440px, 100%);
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   border-radius: var(--lc-r-card);
   background: var(--lc-paper);
   box-shadow: -20px 0 48px -24px oklch(0.3 0.04 265 / 0.35);
@@ -309,64 +245,40 @@ button.lc-ao-open {
     animation: none;
   }
 }
-.lc-ao-sheet header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 22px 18px 16px 22px;
-}
-.lc-ao-sheet header .lc-ao-tile {
-  border-radius: 14px;
-}
-.lc-ao-sheet header > div {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-.lc-ao-sheet header b {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-ao-sheet header span {
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-ao-sheet-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 18px;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 22px 20px;
-}
-.lc-ao-sheet-body > p {
+/* Its body: the summary, then rows whose value sits at the right end and wraps rather than being cut. */
+.lc-ao-sheet-body > .lc-ao-sum {
   margin: 0;
-  font-size: 14px;
-  line-height: 21px;
+  padding: 16px 16px 4px;
+  font-size: 13.5px;
+  line-height: 20px;
   color: var(--l-ink-2);
 }
-.lc-ao-sheet dl {
-  display: grid;
-  margin: 0;
-  font-size: 14px;
+.lc-ao-sheet-body .lc-pane-row {
+  align-items: flex-start;
+  height: auto;
+  min-height: 30px;
+  padding-block: 6px;
+  line-height: 18px;
 }
-.lc-ao-sheet dl > div {
-  display: grid;
-  grid-template-columns: 7.5em minmax(0, 1fr);
-  gap: 12px;
-  padding: 10px 0;
-  box-shadow: inset 0 1px 0 var(--lc-hair);
+.lc-ao-sheet-body .lc-pane-rt {
+  flex: none;
+  width: 9em;
 }
-.lc-ao-sheet dt {
-  color: var(--l-ink-3);
+.lc-ao-sheet-body .lc-pane-row > .lc-pane-ri + .lc-pane-rt {
+  flex: 1;
+  width: auto;
 }
-.lc-ao-sheet dd {
-  margin: 0;
+.lc-ao-sheet-body .lc-pane-rv {
+  flex: 1;
+  justify-content: flex-end;
+  max-width: none;
+  white-space: normal;
   overflow-wrap: anywhere;
-  color: var(--l-ink);
+  text-align: right;
+}
+.lc-ao-sheet-body .lc-pane-row code {
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
 }
 .lc-ao-link {
   padding: 0;
@@ -382,71 +294,6 @@ button.lc-ao-open {
 .lc-ao-link:hover {
   text-decoration-color: currentColor;
 }
-.lc-ao-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.lc-ao-files {
-  display: grid;
-  justify-items: start;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-well);
-  font-size: 13px;
-}
-.lc-ao-files ul {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.lc-ao-files li {
-  display: flex;
-  gap: 8px;
-}
-.lc-ao-files small {
-  color: var(--l-ink-3);
-}
-.lc-ao-sheet footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 22px;
-  box-shadow: inset 0 1px 0 var(--lc-hair);
-}
-.lc-ao-sheet footer > .lc-quiet {
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.4;
-}
-.lc-ao-remove {
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-danger-text);
-  cursor: pointer;
-}
-/* The first Remove is a text button of its own, not a .lc-btn: it keeps its size and corner. The confirm Remove is a
-   .lc-btn and takes that button's. */
-.lc-ao-remove:not(.lc-btn) {
-  height: 30px;
-  padding: 0 10px;
-  border-radius: var(--lc-r-field);
-}
-.lc-btn.lc-ao-remove {
-  color: var(--l-danger-text);
-}
-@media (hover: hover) {
-  .lc-ao-remove:hover {
-    background: color-mix(in oklab, var(--l-danger) 9%, transparent);
-  }
-}
-
 /* ---------- From GitHub or a folder ---------- */
 .lc-ao-add {
   --w: 560px;

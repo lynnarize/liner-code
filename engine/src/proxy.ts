@@ -486,11 +486,12 @@ const PROBE = `(() => {
   // A ResizeObserver that settles a frame late is reported as an error but harms nothing; DevTools leaves it out too.
   addEventListener("error", (e) => { if (/^ResizeObserver loop/.test(e.message || "")) return; post({ kind: "console", level: "error", text: e.message + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""), at: Date.now() }); });
   addEventListener("unhandledrejection", (e) => post({ kind: "console", level: "error", text: "Unhandled: " + text([e.reason]), at: Date.now() }));
-  const nav = () => post({ kind: "nav", path: location.pathname + location.search + location.hash, title: document.title });
-  for (const k of ["pushState", "replaceState"]) { const o = history[k].bind(history); history[k] = (...a) => { const r = o(...a); nav(); return r; }; }
-  addEventListener("popstate", nav);
-  addEventListener("hashchange", nav);
-  addEventListener("DOMContentLoaded", nav);
+  // How it landed, so the panel's Back and Forward know a step through history from a new place (ui/src/app/browser-trail.ts).
+  const nav = (how) => post({ kind: "nav", how, path: location.pathname + location.search + location.hash, title: document.title });
+  for (const k of ["pushState", "replaceState"]) { const o = history[k].bind(history); history[k] = (...a) => { const r = o(...a); nav(k === "pushState" ? "push" : "replace"); return r; }; }
+  addEventListener("popstate", () => nav("pop"));
+  addEventListener("hashchange", () => nav("pop"));
+  addEventListener("DOMContentLoaded", () => nav("load"));
 
   // Offline, as the page sees it: requests fail and navigator.onLine says so.
   let offline = false;

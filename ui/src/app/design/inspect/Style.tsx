@@ -14,6 +14,7 @@ import { Fill } from "./Fill";
 import { Layout } from "./Layout";
 import { Picture } from "./Picture";
 import { Size } from "./Size";
+import { D } from "../Rail";
 import { STYLE_TOP } from "./slots";
 import { useTarget } from "./target";
 import { TextInside } from "./Text";
@@ -59,6 +60,20 @@ const PRESETS = [
   { value: "tablet" as const, label: "Tablet" },
   { value: "phone" as const, label: "Phone" },
 ];
+
+// The glyphs by name, read from the rail as each draws: the rail imports parts that import this file.
+const ALIGN = [
+  ["left", "Align left edges", "alignLeft"],
+  ["cx", "Align horizontal centres", "alignCentreH"],
+  ["right", "Align right edges", "alignRight"],
+  ["top", "Align top edges", "alignTop"],
+  ["cy", "Align vertical centres", "alignCentreV"],
+  ["bottom", "Align bottom edges", "alignBottom"],
+] as const;
+const SPREAD = [
+  ["x", "Space them evenly across", "spreadH"],
+  ["y", "Space them evenly down", "spreadV"],
+] as const;
 
 /** One or more frames on the canvas: size, batch resize, align, and distribute. */
 function FrameStyle() {
@@ -110,22 +125,22 @@ function FrameStyle() {
             <Num prefix="W" name="Batch frame width" value={sameW} min={40} onChange={(w) => batch(() => ({ w }))} />
             <Num prefix="H" name="Batch frame height" value={sameH} min={40} onChange={(h) => batch(() => ({ h }))} />
           </Row>
+          {/* Lining up and spacing, as icons on one well (their words in the tooltips), not a page of word buttons. */}
           <Row>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align left edges" onClick={() => align("left")}>Left</button>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align horizontal centers" onClick={() => align("cx")}>Center H</button>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align right edges" onClick={() => align("right")}>Right</button>
+            <div className="ld-stops" role="group" aria-label="Line them up">
+              {ALIGN.map(([how, name, icon]) => (
+                <button key={how} type="button" className="l-focus" aria-label={name} title={name} onClick={() => align(how)}>
+                  {D[icon]({ size: 16 })}
+                </button>
+              ))}
+              {frames.length >= 3 &&
+                SPREAD.map(([axis, name, icon]) => (
+                  <button key={axis} type="button" className="l-focus" aria-label={name} title={name} onClick={() => distribute(axis)}>
+                    {D[icon]({ size: 16 })}
+                  </button>
+                ))}
+            </div>
           </Row>
-          <Row>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align top edges" onClick={() => align("top")}>Top</button>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align vertical centers" onClick={() => align("cy")}>Center V</button>
-            <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Align bottom edges" onClick={() => align("bottom")}>Bottom</button>
-          </Row>
-          {frames.length >= 3 && (
-            <Row>
-              <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Distribute horizontally" onClick={() => distribute("x")}>Distribute H</button>
-              <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" title="Distribute vertically" onClick={() => distribute("y")}>Distribute V</button>
-            </Row>
-          )}
         </Section>
       </div>
     );

@@ -105,7 +105,8 @@ test("the finished message, the folded rows and the hidden button stay out of re
   const src = shipSource();
   assert.ok(src.includes(`className="lc-ship-msg" aria-hidden={!live.msg}`), "the Pushed message is read before the push ends");
   assert.ok(src.includes(`className="lc-ship-body" inert={!live.body || undefined}`), "the folded rows are read while folded");
-  const buttons = [...src.matchAll(/<button type="button" className="lc-ship-next[^>]*>/g)].map((m) => m[0]);
+  // The card's buttons are the frame's (PaneButton, RULING 2): the one action ink, Dismiss quiet.
+  const buttons = src.split("\n").filter((l) => l.includes("<PaneButton") && l.includes(`className="lc-ship-next"`));
   assert.equal(buttons.length, 2, "the card's next buttons are not where they were");
   for (const b of buttons) assert.ok(b.includes("inert={!live.next || undefined}"), `a hidden next button can be reached: ${b}`);
 });

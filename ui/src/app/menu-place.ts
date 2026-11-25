@@ -71,9 +71,22 @@ export function panelSide(o: { h: number; below: number; above: number; prefer: 
 /**
   Where a panel `w` wide hung under or over its trigger `r` starts sideways: its right edge on the trigger's (`end`), its
   left on the trigger's (`start`) or centred on it, kept between `lo` and `hi` (the window's edges, or what it is kept within).
-  Hung above or below, it never covers the trigger it opens from, whatever this gives.
+  Hung above or below, it never covers the trigger it opens from, whatever this gives. `out` is how far it hangs out past the
+  edge it is aligned on: the model picker's side card past its chip's right edge, so that the list is the part over the chip.
 */
-export function panelLeft(align: "start" | "end" | "center", r: { left: number; right: number; width: number }, w: number, lo: number, hi: number): number {
-  const left = align === "end" ? r.right - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left;
+export function panelLeft(align: "start" | "end" | "center", r: { left: number; right: number; width: number }, w: number, lo: number, hi: number, out = 0): number {
+  const left = align === "end" ? r.right + out - w : align === "center" ? r.left + r.width / 2 - w / 2 : r.left - out;
   return Math.max(lo, Math.min(left, hi - w));
+}
+
+/**
+  Where a side menu `w` wide starts, beside the menu `m` it opened from in a window `vw` wide: to the menu's right
+  while it fits there, as menus open in the direction a person reads; to its left when the right has no room (the
+  switcher's ··· and the Session popup sit at the window's right edge); with room on neither side, inside the window's
+  right edge.
+*/
+export function sideMenuLeft(m: { left: number; right: number }, w: number, vw: number): number {
+  if (m.right + GAP + w <= vw - EDGE) return m.right + GAP;
+  if (m.left - GAP - w >= EDGE) return m.left - GAP - w;
+  return Math.max(EDGE, vw - EDGE - w);
 }

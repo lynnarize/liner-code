@@ -20,6 +20,7 @@ import { I, N, type MarkKind } from "../icons";
 import { agentOf, ago, clock, markOf, modelLabel, plural } from "../model";
 import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused, type SideState } from "../SideList";
 import { askWords, markLabelOf, markStateOf, prSaid, reviewHeld, seenAsk, sideStateOf, type MarkState } from "../session-state";
+import { PaneField } from "../Pane";
 import { Row } from "../ui";
 import { goSecurity, useSecurity, useSecurityPage, useSecurityProjects, type SecurityPage } from "./store";
 import "./security.css";
@@ -144,7 +145,8 @@ export function SecuritySide() {
   /** A session's state mark, as Code's rows draw it (session-state.ts markStateOf): fresh until you open what finished while you were elsewhere, its pull request after. */
   const markFor = (t: Thread): MarkState => { const mark = markStateOf(t, { looking: looking(t.id) }); return mark === "new" ? "done" : mark; };
   /** The mark a row shows: a question you've opened and left is grey, its words grey too (seenAsk). */
-  const markOn = (state: SideState | MarkState, seen: boolean | undefined, brand?: MarkKind, label?: string) => <SideMark state={seen ? "done" : state} brand={brand} label={seen ? "Waits for your answer" : label} />;
+  // No brand: a working mark is never tinted by its model (rule 7); the model is among the row's facts.
+  const markOn = (state: SideState | MarkState, seen: boolean | undefined, _brand?: MarkKind, label?: string) => <SideMark state={seen ? "done" : state} label={seen ? "Waits for your answer" : label} />;
   /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it (rowWords): a question in its own words. */
   const live = (t: Thread): { text: string; tone?: "warn" | "danger" } | null =>
     t.status === "running" ? { text: t.doing?.text || "Working" } : t.status === "waiting" && !reviewHeld(t) ? { text: askWords(t), tone: seenAsk(t, looking(t.id)) ? undefined : "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
@@ -320,24 +322,17 @@ export function SecuritySide() {
           <>
             <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
             <Row title="By kind" icon={<I.list size={16} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
-            <Row title={search !== null ? "Hide filter" : "Filter sessions"} icon={<I.search size={16} />} keepIcon on={search !== null} onPick={() => (close(), setSearch((s) => (s === null ? "" : null)))} />
+            <Row title={search !== null ? "Hide Find" : "Find a session"} icon={<I.search size={16} />} keepIcon on={search !== null} onPick={() => (close(), setSearch((s) => (s === null ? "" : null)))} />
             <Row title="Show archived" icon={<I.box size={16} />} keepIcon on={showArchived} onPick={() => (close(), setShowArchived((a) => !a))} />
           </>
         )}
       </SideHead>
+      {/* The app's one find field (PaneField), as the panel's and the Findings page's. */}
       {search !== null && (
-        <div style={{ padding: "0 12px 6px" }}>
-          <input
-            type="search"
-            className="lc-dev-filter"
-            style={{ width: "100%" }}
-            value={search}
-            placeholder="Filter scans and fixes…"
-            aria-label="Filter security sessions"
-            autoFocus
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))}
-          />
+        <div className="ls-side-find">
+          <PaneField icon={<I.search size={14} />}>
+            <input value={search} placeholder="Find a session" aria-label="Find a session" autoFocus onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))} />
+          </PaneField>
         </div>
       )}
 
@@ -358,7 +353,7 @@ export function SecuritySide() {
           folders.map((p) => {
             const working = p.items.find((x) => x.state === "working");
             return (
-              <SideFolder key={p.id} name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs" && !x.seen)} working={Boolean(working)} brand={working?.brand}>
+              <SideFolder key={p.id} name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs" && !x.seen)} working={Boolean(working)}>
                 {p.items.map((x) => x.row)}
               </SideFolder>
             );

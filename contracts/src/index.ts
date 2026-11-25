@@ -501,7 +501,14 @@ export type Thread = {
   chips for what it is about. Display only: the agent is sent `text` as it is, and this never reaches a provider.
 */
 export type ShownChip = { kind: "check" | "frame" | "layer" | "compare" | "build"; label: string };
-export type UserShown = { text: string; chips?: ShownChip[] };
+/**
+  `reports`: what one agent handed to another, when Liner wrote the message out of it (a team's posts woken into its
+  coordinator): who from, to whom, the post's words (cut to REPORT_SHOWN_MAX) and how many lines it had whole. The chat
+  folds each into one row that opens in place.
+*/
+export type UserShown = { text: string; chips?: ShownChip[]; reports?: { from: string; to: string; text: string; lines: number }[] };
+/** How much of one report a message keeps for the person to read in the chat; the whole post stays on the team's board. */
+export const REPORT_SHOWN_MAX = 4000;
 /** files: what you attached, saved on disk, which go with the message when it's sent. `shown`: what the person reads of it (UserShown). */
 export type QueuedMessage = { id: string; text: string; at: number; files?: string[]; anchor?: { file: string; line: number; endLine?: number }; shown?: UserShown };
 /**
@@ -1168,6 +1175,10 @@ export type Settings = {
   swarmMaxActive?: number;
   /** Default model for Swarm & Teamwork workers ("<provider>:<model>"). Unset inherits the session's main model. */
   swarmWorkerModel?: string;
+  /** Default model for read-only workers ("<provider>:<model>"), the auditor aside. Unset: the same as other workers. Off by default, since a model switched without asking is what must not happen. */
+  swarmReaderModel?: string;
+  /** "lower" runs read-only workers (the auditor aside) one effort level under the session's, among their own model's levels. Unset or "same": the session's. */
+  swarmReaderEffort?: "same" | "lower";
   /** Seconds a waiting swarm worker stays open before closing to 0 MB RAM (0..300, default 30). */
   swarmHibernateSec?: number;
   /** Default workspace isolation for Swarm writers: isolated git worktree ("share") or shared folder ("inherit"). */
@@ -1222,17 +1233,17 @@ export type Settings = {
   shareEdits?: boolean;
   /** Once a day, anonymous counts go to linercode.dev: a random install id, the version, the OS and chip, and the tokens agents read and wrote (engine/src/usage-ping.ts). On unless false; off drops what was counted. */
   usagePing?: boolean;
-};
-
-export type UpdateMode = "auto" | "notify" | "off";
-
   /** Liner Code may read the OpenCode Go key OpenCode or Hermes saved (READS_GO_KEY), to ask opencode.ai for Go's limits with it. Off unless true: another tool's sign-in is read only once you agree. */
   readGoKey?: boolean;
-/**
-  A project's rules for agents, at its root: CLAUDE.md for Claude Code, AGENTS.md for Codex,
+};
+
 /** The tools whose saved sign-in Liner Code reads for OpenCode Go's limits, and only with Settings.readGoKey. */
 export const READS_GO_KEY = ["opencode", "hermes"] as const;
 
+export type UpdateMode = "auto" | "notify" | "off";
+
+/**
+  A project's rules for agents, at its root: CLAUDE.md for Claude Code, AGENTS.md for Codex,
   OpenCode, Cursor and the rest. `linked`: CLAUDE.md only imports AGENTS.md (`@AGENTS.md`), so
   the two say the same.
 */
@@ -2092,7 +2103,7 @@ export type Rpc = {
   "swarm.enable": [{ threadId: string; enabled: boolean; mode?: SwarmMode; preset?: SwarmPreset; title?: string; maxActive?: number; hibernateSec?: number }, SwarmSnapshot | null];
   "swarm.config": [{ threadId: string; maxActive?: number; hibernateSec?: number; stallMonitor?: boolean; title?: string }, SwarmSnapshot];
   "swarm.post": [{ threadId: string; text: string; channel?: string }, SwarmSnapshot];
-  "swarm.addWorker": [{ threadId: string; name: string; role?: string; model?: string; workspace?: SwarmWorkspace; mode?: "read" | "write"; channels?: string[]; brief: string; parent?: string; canDelegate?: boolean; n?: number; tasks?: string[]; fork?: string }, SwarmSnapshot];
+  "swarm.addWorker": [{ threadId: string; name: string; role?: string; model?: string; workspace?: SwarmWorkspace; mode?: "read" | "write"; channels?: string[]; brief: string; parent?: string; canDelegate?: boolean; n?: number; tasks?: string[]; fork?: string; /** The auditor: runs on the session's own model and effort. */ audit?: boolean; /** With audit: the worker whose work it checks, in that worker's worktree. */ of?: string }, SwarmSnapshot];
   "swarm.swapModel": [{ threadId: string; name: string; model: string; reason?: string }, SwarmSnapshot];
   "swarm.wake": [{ threadId: string; name: string; note?: string }, SwarmSnapshot];
   "swarm.hibernate": [{ threadId: string; name?: string }, SwarmSnapshot];
@@ -2100,7 +2111,7 @@ export type Rpc = {
   "swarm.killWorker": [{ threadId: string; name: string }, SwarmSnapshot];
   "swarm.land": [{ threadId: string; name: string }, { snapshot: SwarmSnapshot; summary: string }];
   "swarm.stopAll": [{ threadId: string }, SwarmSnapshot];
-  "swarm.resume": [{ threadId: string }, SwarmSnapshot];
+  "swarm.resume": [{ threadId: string }, SwarmSnapshot | null];
 };
 export type RpcMethod = keyof Rpc;
 export type RpcParams<M extends RpcMethod> = Rpc[M][0];

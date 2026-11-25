@@ -29,11 +29,11 @@ import { Glyph, I, ModelMark, StateMark } from "./icons";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortIn, effortsFor, isModelAgent, levelName, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, wayOf, whoOf, type AccessLevel, type Way } from "./model";
 import { onComposerInsert, toComposer } from "./Find";
 import { loadDraftFiles, saveDraftFiles } from "./draftFiles";
-import { BackRow, EffortPart, FindField, ModelPicker, ModelSearch, tabOfRef, usePickerWide, type EffortHook, type OwnCard } from "./Models";
-import { PICKER_NARROW, PICKER_WIDE } from "./picker";
+import { EffortPart, FindField, ModelPicker, ModelSearch, tabOfRef, usePickerWide, type EffortHook, type OwnCard } from "./Models";
+import { PICKER_NARROW, PICKER_WIDE, pickerOut } from "./picker";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
-import { HoverNote, Pop, Sep, SendButton } from "./ui";
+import { BackRow, HoverNote, Kbd, MenuFoot, PanelHead, Pop, Row, Sep, SendButton } from "./ui";
 import * as os from "./os";
 import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
@@ -195,11 +195,11 @@ function PlusMenu({ rows, choices, close }: { rows: PlusRow[]; choices: PlusChoi
   const back = () => {
     const was = open;
     setOpen("");
-    focus(`[data-choice="${was}"]`);
+    focus(`[data-opens="${was}"]`);
   };
   const go = (key: string) => {
     setOpen(key);
-    focus("[data-on], button:not(:disabled):not(.lc-who-back)");
+    focus("[data-on], button:not(:disabled):not([data-back])");
   };
   return (
     <div
@@ -215,29 +215,18 @@ function PlusMenu({ rows, choices, close }: { rows: PlusRow[]; choices: PlusChoi
     >
       {choice ? (
         <>
-          <button type="button" className="lc-who-back l-focus" aria-label={`Back from ${choice.label}`} onClick={back}>
-            <I.chevL size={12} />
-            {choice.label}
-          </button>
+          <BackRow name={choice.label} rove={false} onBack={back} />
           {choice.body(close)}
         </>
       ) : (
         <>
+          {/* The app's menu rows (ui.tsx Row): the key that does the same, or a choice's value with its ›, at the right end in grey. */}
           {rows.map((r) => (
-            <button key={r.key} type="button" className="lc-plus-row l-focus" disabled={r.disabled} title={r.title} onClick={() => (close(), r.onPick())}>
-              {r.icon}
-              <span className="lc-plus-t">{r.label}</span>
-              {r.kbd && <kbd className="lc-plus-k">{r.kbd}</kbd>}
-            </button>
+            <Row key={r.key} title={r.label} icon={r.icon} note={r.title} end={r.kbd && <Kbd>{r.kbd}</Kbd>} disabled={r.disabled} onPick={() => (close(), r.onPick())} />
           ))}
           {choices.length > 0 && <Sep />}
           {choices.map((c) => (
-            <button key={c.key} type="button" className="lc-plus-row l-focus" data-choice={c.key} aria-label={`${c.label}${c.say ? `: ${c.say}` : ""}. Change it`} onClick={() => go(c.key)}>
-              {c.icon}
-              <span className="lc-plus-t">{c.label}</span>
-              {c.value !== undefined && <span className="lc-plus-v">{c.value}</span>}
-              <I.chevR size={14} />
-            </button>
+            <Row key={c.key} title={c.label} icon={c.icon} end={c.value} opens={c.key} label={`${c.label}${c.say ? `: ${c.say}` : ""}. Change it`} onPick={() => go(c.key)} />
           ))}
         </>
       )}
@@ -1245,9 +1234,10 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       {cold && (
         <div className="lc-cold" role="status">
           <I.clock size={14} />
-          <span className="lc-cold-t">The cache has expired: this message re-reads {compact(usage?.contextTokens ?? 0)} tokens. Compact first?</span>
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={compactNow}>
-            Compact
+          <span className="lc-cold-t">The cache has expired: this message re-reads {compact(usage?.contextTokens ?? 0)} tokens</span>
+          {/* The Session popup's own words for the same act. */}
+          <button type="button" className="lc-cold-go l-focus" onClick={compactNow}>
+            Compact now
           </button>
           <button type="button" className="lc-ib l-focus" aria-label="Dismiss" title="Dismiss" onClick={() => setColdSeen(cacheUntil)}>
             <I.close size={14} />
@@ -1419,10 +1409,10 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
           </div>
           {stashOpen && (
             <div className="lc-mention l-glass" role="listbox" aria-label="Stashed drafts">
-              <span className="lc-quiet lc-mention-wait">Stashed drafts</span>
+              <PanelHead>Stashed drafts</PanelHead>
               {readStash().map((x, i) => (
                 <button key={x.at} type="button" role="option" aria-selected={i === stashHl} className="lc-mention-row l-focus" onMouseEnter={() => setStashHl(i)} onMouseDown={(e) => (e.preventDefault(), unstash(i))}>
-                  <I.edit size={12} />
+                  <I.edit size={14} />
                   <span className="lc-mention-d lc-stash-t">{x.text.split("\n")[0]}</span>
                   <span className="lc-quiet">{ago(x.at)}</span>
                 </button>
@@ -1431,7 +1421,12 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
           )}
           {mention && (found.length > 0 || (mention.kind !== "@" && mention.kind !== "#" && !tools)) && (
             <div ref={list} className="lc-mention l-glass" role="listbox" aria-label={mention.kind === "@" ? "Files" : mention.kind === "#" ? "Pull requests" : mention.kind === "/" ? "Commands" : "Skills"} onMouseDown={(e) => e.preventDefault()}>
-              {mention.kind !== "@" && mention.kind !== "#" && !tools && <span className="l-shimmer lc-mention-wait">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>}
+              {/* How the list stands is its grey foot line, as a menu's is: still asking, or nothing matching. */}
+              {mention.kind !== "@" && mention.kind !== "#" && !tools && (
+                <MenuFoot>
+                  <span className="l-shimmer">Asking the tool for its {mention.kind === "/" ? "commands" : "skills"}</span>
+                </MenuFoot>
+              )}
               {found.map((f, i) => (
                 <button key={f.key} type="button" role="option" aria-selected={i === hl} className="lc-mention-row l-focus" data-kind={f.kind} onMouseEnter={() => setHl(i)} onMouseDown={(e) => (e.preventDefault(), pickFile(f))}>
                   {f.kind === "@" ? <I.file size={14} /> : f.kind === "$" ? <I.notes size={14} /> : f.kind === "#" ? <I.branch size={14} /> : null}
@@ -1443,7 +1438,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
                   {(f.tag || f.liner) && <span className="lc-mp-def">{f.tag ?? "Liner Code"}</span>}
                 </button>
               ))}
-              {mention.kind !== "@" && tools && found.length === 0 && <span className="lc-quiet lc-mention-wait">No {mention.kind === "/" ? "command" : "skill"} matches that.</span>}
+              {mention.kind !== "@" && tools && found.length === 0 && <MenuFoot>No {mention.kind === "/" ? "command" : "skill"} matches that.</MenuFoot>}
             </div>
           )}
           {/*
@@ -1457,7 +1452,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
             {editing ? <span className="lc-tray-note" title="Enter saves it, Esc leaves it as it was">Editing a queued message</span> : comparing && <span className="lc-tray-note">Sending to {compare.length + 1} models</span>}
             {steerNote}
             <span className="lc-seg">
-              <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="end" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
+              <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="end" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} out={pickerOut("end", pickerWide)} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
                 {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} solo={aside} side={pickerWide ? "card" : "line"} />}
               </Pop>
               {accessPick}
@@ -1707,6 +1702,8 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       <span className="lc-who-opt-t">{label(ref)}</span>
       <span className="lc-who-opt-n">{providerLabel(ref, providers)}</span>
       <CostMini at={cost === undefined ? undefined : scale(cost)} />
+      {/* Picked as the models list's row is: a plate and an ink tick at the end. */}
+      <span className="lc-who-opt-on" aria-hidden>{on && <I.check size={14} />}</span>
     </button>
   );
   // A shift-click gives more models the same ask, side by side: said on the rows themselves, and while it's so, over the foot.
@@ -1717,6 +1714,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       <Glyph glyph={a.glyph} size={14} />
       <span className="lc-who-opt-t">{a.name}</span>
       <span className="lc-who-opt-n">{label(a.model)}</span>
+      <span className="lc-who-opt-on" aria-hidden>{on && <I.check size={14} />}</span>
     </button>
   );
 
@@ -1996,7 +1994,7 @@ function WatchCanvas({ thread }: { thread: Thread }) {
   if (frame === null) return null;
   return (
     <div className="lc-trow ld-watch" role="status">
-      <StateMark state="working" tint="var(--ld-lead)" />
+      <StateMark state="working" />
       <span className="lc-trow-t">
         <b>{agentOf(thread.agent, agents, providers).name}</b> is drawing{frame ? ` ${frame}` : " on the canvas"}
       </span>
@@ -2030,14 +2028,14 @@ export function PermissionRows({ levels, apart, value, noteOf = (l) => l.note, o
         onPick(l.id);
       }}
     >
-      <div className="lc-perm-h">Permissions</div>
+      <PanelHead>Permissions</PanelHead>
       {levels.map((l, i) => (
         <button key={l.id} type="button" role="radio" aria-checked={value === l.id} className="lc-perm-r l-focus" onClick={() => onPick(l.id)}>
           <span className="lc-perm-t">
             <b>{l.label}</b>
             <small>{noteOf(l)}</small>
           </span>
-          {value === l.id && <I.check size={16} />}
+          {value === l.id && <I.check size={14} />}
           <kbd className="lc-perm-k">{i + 1}</kbd>
         </button>
       ))}
@@ -2046,7 +2044,7 @@ export function PermissionRows({ levels, apart, value, noteOf = (l) => l.note, o
           <span className="lc-perm-t">
             <b>{apart.label}</b>
           </span>
-          {value === apart.id ? <I.check size={16} /> : <span className="lc-perm-on">Enable</span>}
+          {value === apart.id ? <I.check size={14} /> : <span className="lc-perm-on">Enable</span>}
         </button>
       )}
     </div>

@@ -15,8 +15,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LaunchAsk, LaunchServer, LocalServer, Thread } from "@contracts";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
-import { Segmented } from "@liner/components/segmented/segmented";
-import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
 import { bridge, isNative } from "./bridge";
 import { onAgentBrowser, useHiddenBrowsers } from "./agentBrowser";
@@ -25,7 +23,10 @@ import { rpc, useEngine } from "./engine";
 import { I, StateMark } from "./icons";
 import { launchNote, useLaunch } from "./launch";
 import { SurfaceNote } from "./Surfaces";
-import { EnvLine, PanelHead, Pop, Row } from "./ui";
+import { EnvLine, MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
+import { PANE_TOOL, PaneButton, PaneHead, PaneTool } from "./Pane";
+import { elsewhere, runningNote, serverValue } from "./browser-list.ts";
+import { canBack, canForward, landed, landing, NO_TRAIL } from "./browser-trail.ts";
 import { ChoiceChip, SendBox } from "./Composer";
 import * as os from "./os";
 
@@ -120,6 +121,11 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [width, setWidth] = useState<Width>("desktop");
   const [offline, setOffline] = useState(false);
   const [picking, setPicking] = useState(false);
+  // Where this server's page has been, so Back and Forward show only with somewhere to go (browser-trail.ts).
+  const [trail, setTrail] = useState(NO_TRAIL);
+  // When the head's Back or Forward was last pressed, so the page that loads after it reads as that step.
+  const stepped = useRef(0);
+  useEffect(() => setTrail(NO_TRAIL), [target?.port]);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [question, setQuestion] = useState("");
   const [logs, setLogsState] = useState<Log[]>([]);
@@ -147,7 +153,6 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   const [scheme, setSchemeState] = useState<Scheme>(() => kept(`lc:browse:scheme:${thread.projectId}`, "system", (v) => v === "light" || v === "dark" || v === "system"));
   const setZoom = (z: number) => (setZoomState(z), keep(`lc:browse:zoom:${thread.projectId}`, z));
   const setScheme = (s: Scheme) => (setSchemeState(s), keep(`lc:browse:scheme:${thread.projectId}`, s));
-  const zoomBy = (step: 1 | -1) => setZoom(ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(zoom) + step))] ?? 1);
   // Where the agent's pointer is, in page pixels; drawn over the frame while it drives.
   const [pointer, setPointer] = useState<Pointer | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -166,7 +171,8 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
   // One you pressed Run on, to open once it answers (and when you pressed); a row a press is under way for ("*": all of them).
   const [opening, setOpening] = useState<{ name: string; at: number } | null>(null);
   const [pressing, setPressing] = useState<string | null>(null);
-  const [allServers, setAllServers] = useState(false);
+  // The address's list, opened by a press on the address or by the start page's note.
+  const [listOpen, setListOpen] = useState(false);
   // A Run or Restart the engine answered with what it would run, waiting on a yes.
   const [asked, setAsked] = useState<{ name: string; again: boolean; ask: LaunchAsk } | null>(null);
   useEffect(() => setAsked(null), [thread.id]);
@@ -257,6 +263,10 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
       if (d.kind === "console") addLog({ level: String(d.level), text: String(d.text), at: Number(d.at), n: logSeq++ });
       else if (d.kind === "nav") {
         const path = String(d.path || "/");
+        // A whole page that loads after the head's Back or Forward is that step; any other load is a new place (browser-trail.ts).
+        const how = landing(d.how, Date.now() - stepped.current < 5000);
+        stepped.current = 0;
+        setTrail((t) => landed(t, path, how));
         setTarget((t) => (t ? { ...t, path } : t));
         setAddress((a) => (document.activeElement?.classList.contains("lc-br-addr") ? a : shown({ port: now.current.target?.port ?? null, path })));
       } else if (d.kind === "picked") {
@@ -570,225 +580,154 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
     return { left: f.left - s.left + st.scrollLeft + pointer.x * scale, top: f.top - s.top + st.scrollTop + pointer.y * scale };
   }, [pointer, scale]);
 
+  // What runs the page shown: the dot in the field, and the server ··· can stop.
+  const up = target?.port != null && (shownServer ? shownServer.status === "running" : Boolean(own));
+  const stoppable = target?.port != null && (own || (shownServer && shownServer.status !== "stopped"));
+  const openPage = (t: Target) => {
+    setPicked(null);
+    setLogs([]);
+    setFailed(null);
+    setTarget(t);
+  };
+
+  /*
+    The head (Pane.tsx), the board's Browser: one field holding Back, Forward, Reload, a dot while its
+    server runs, the address and the chips of what differs from the default; pressing the address opens
+    its list (dev servers, pages in this folder, elsewhere on this Mac). Then Pick an element and ···.
+  */
+  const head = (
+    <PaneHead
+      shows={
+        <div className="lc-pane-field lc-br-field">
+          {/* Back and Forward only with somewhere to go, Reload only with a page open: in a narrow panel the address keeps the room. */}
+          {target && canBack(trail) && (
+            <button type="button" className="lc-br-nav l-focus" aria-label="Back" title="Back" onClick={() => ((stepped.current = Date.now()), cmd("back"))}>
+              <I.chevL size={14} />
+            </button>
+          )}
+          {target && canForward(trail) && (
+            <button type="button" className="lc-br-nav l-focus" aria-label="Forward" title="Forward" onClick={() => ((stepped.current = Date.now()), cmd("forward"))}>
+              <I.chevR size={14} />
+            </button>
+          )}
+          {target && (
+            <button type="button" className="lc-br-nav l-focus" aria-label="Reload" title="Reload" onClick={reload}>
+              <I.refresh size={14} />
+            </button>
+          )}
+          {up && <span className="lc-br-dot" aria-label="Its server is running" />}
+          <Pop
+            label="Address and servers"
+            open={listOpen}
+            onOpenChange={setListOpen}
+            width={340}
+            className="lc-br-addrpop"
+            triggerClass="lc-br-addrb lc-mono"
+            trigger={target ? shown(target) : <span className="lc-br-addr0">Enter an address</span>}
+          >
+            {(close) => (
+              <AddressList
+                address={address}
+                setAddress={setAddress}
+                onGo={(a) => (close(), void go(a))}
+                servers={servers}
+                pressing={pressing}
+                pages={pages}
+                others={elsewhere(ports)}
+                error={launch?.error}
+                // Run closes the list: a run that needs a yes shows its card under where the list was.
+                onRun={(n, again) => (close(), void runServer(n, again))}
+                onStop={(n) => void stopServer(n)}
+                onStopAll={() => void stopServer()}
+                onOpenServer={(s) => (close(), openServer(s))}
+                onOpenPage={(t) => (close(), openPage(t))}
+              />
+            )}
+          </Pop>
+          {/* The message box's rule: a choice under the ··· that differs from its default shows as a chip you can cross off. Offline shows nowhere in the page, and a phone or tablet drawn smaller to fit looks like Desktop (browserFrame.ts widthUnseen); zoom and the theme show in the page. */}
+          {target && w !== null && widthUnseen(w, room) && <ChoiceChip className="lc-br-chip" icon={width === "phone" ? <I.device size={14} /> : <I.tablet size={14} />} label={width === "phone" ? "Phone" : "Tablet"} clear={{ label: "Back to Desktop width", onClear: () => setWidth("desktop") }} />}
+          {offline && <ChoiceChip className="lc-br-chip" icon={<I.offline size={14} />} label="Offline" clear={{ label: "Go back online", onClear: () => setOff(false) }} />}
+        </div>
+      }
+      tools={
+        <>
+          <PaneTool
+            label={`Pick an element to ask ${agentName} about`}
+            icon={<I.target size={16} />}
+            pressed={picking}
+            disabled={!target}
+            onClick={() => {
+              setPicked(null);
+              cmd(picking ? "unpick" : "pick");
+              setPicking(!picking);
+              frame.current?.focus();
+            }}
+          />
+          {/* The rest under one ···, in the menu shape: open it in your browser, the page's width, theme and zoom as "Label  Value ›", offline, and stop its server (T3 Code: preview/PreviewMoreMenu.tsx). */}
+          <Pop label="More for the page" menu align="end" width={260} triggerClass={PANE_TOOL} disabled={!target} trigger={<I.more size={16} />}>
+            {(close) => (
+              <>
+                <Row title="Open in your browser" icon={<I.external size={14} />} disabled={!target || (target.port === null && !proxy)} onPick={() => (close(), target && bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`))} />
+                <Sep />
+                <SubMenu title="Width" icon={<I.device size={14} />} value={WIDTH_WORD[width]} label="Page width" width={200}>
+                  {() => (["desktop", "tablet", "phone"] as const).map((v) => <Row key={v} title={WIDTH_WORD[v]} end={WIDTH[v] ? `${WIDTH[v]}px` : undefined} on={width === v} onPick={() => (close(), setWidth(v))} />)}
+                </SubMenu>
+                <SubMenu title="Theme" icon={<I.contrast size={14} />} value={SCHEME_WORD[scheme]} label="Page theme" width={220}>
+                  {() => (
+                    <>
+                      {(["system", "light", "dark"] as const).map((v) => <Row key={v} title={SCHEME_WORD[v]} on={scheme === v} onPick={() => (close(), setScheme(v))} />)}
+                      <Sep />
+                      <MenuFoot>The page's prefers-color-scheme follows this</MenuFoot>
+                    </>
+                  )}
+                </SubMenu>
+                <SubMenu title="Zoom" icon={<I.search size={14} />} value={`${Math.round(zoom * 100)}%`} label="Page zoom" width={180}>
+                  {() => ZOOMS.map((z) => <Row key={z} title={`${Math.round(z * 100)}%`} on={zoom === z} onPick={() => (close(), setZoom(z))} />)}
+                </SubMenu>
+                <Row title="Offline" icon={<I.offline size={14} />} on={offline} onPick={() => (close(), setOff(!offline))} />
+                {stoppable && (
+                  <>
+                    <Sep />
+                    <Row title={shownServer && shownServer.status !== "stopped" ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port}`} note={shownServer ? undefined : own?.process} icon={<I.stop size={14} />} red onPick={() => (close(), void stopIt())} />
+                  </>
+                )}
+              </>
+            )}
+          </Pop>
+        </>
+      }
+    />
+  );
+
   if (!target) {
-    // Servers elsewhere on the Mac are offered, the ones that serve a page first, never opened by themselves.
-    const others = (ports ?? []).filter((p) => !p.owner).sort((a, b) => Number(b.web) - Number(a.web));
-    // What a Run would run, in the list's place until it's answered.
+    // What a Run would run, in the page's place until it's answered.
     if (asked)
       return (
-        <div className="lc-br-start">
-          <div className="lc-br-start-in">
+        <>
+          {head}
+          <div className="lc-br-start">
             <RunAsk asked={asked} onYes={() => runServer(asked.name, asked.again, asked.ask.key)} onNo={() => setAsked(null)} />
           </div>
-        </div>
+        </>
       );
-    // launch.json lists servers: each a press from running, as Claude Code's Browser lists them.
-    if (servers.length > 0)
-      return (
-        <div className="lc-br-start">
-          <div className="lc-br-start-in">
-            <LaunchRows servers={allServers ? servers : servers.slice(0, 5)} pressing={pressing} onRun={(n, again) => void runServer(n, again)} onStop={(n) => void stopServer(n)} onOpen={openServer} />
-            {servers.length > 5 && (
-              <button type="button" className="lc-br-seeall l-focus" onClick={() => setAllServers(!allServers)}>
-                {allServers ? "Show fewer" : `See all ${servers.length}`}
-              </button>
-            )}
-            {pages.length > 0 && (
-              <span className="lc-br-ports" aria-label="Pages in this folder">
-                {pages.slice(0, 4).map((f) => (
-                  <button key={f} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: null, path: `/${f}` })}>
-                    <span className="lc-mono">{f}</span>
-                  </button>
-                ))}
-              </span>
-            )}
-            <form
-              className="lc-br-first"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void go(address);
-              }}
-            >
-              <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
-              <button type="submit" className="lc-btn" data-kind="ink">
-                Open
-              </button>
-            </form>
-          </div>
-          <p className="lc-br-start-foot">
-            Run a server to preview your app, or enter an address.
-            <br />
-            Edit this list in .claude/launch.json.
-          </p>
-        </div>
-      );
+    // The servers, the folder's pages and the rest of the Mac are in the address's list; the note says so and opens it.
     return (
-      <SurfaceNote
-        icon={<I.globe size={20} />}
-        title={ports === null ? "Looking for a dev server" : "Nothing of this session's is running yet"}
-        action={ports === null ? undefined : (
-          <>
-            {/* Labelled lists of plain rows, as the panel's other surfaces are: no pills. */}
-            {pages.length > 0 && (
-              <span className="lc-br-ports" aria-label="Pages in this folder">
-                <span className="lc-br-ports-h">Pages in this folder</span>
-                {pages.slice(0, 6).map((f) => (
-                  <button key={f} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: null, path: `/${f}` })}>
-                    <span className="lc-mono">{f}</span>
-                  </button>
-                ))}
-              </span>
-            )}
-            {others.length > 0 && (
-              <span className="lc-br-ports" aria-label={`Other servers on ${os.here}`}>
-                <span className="lc-br-ports-h">Elsewhere on {os.here}</span>
-                {others.slice(0, 6).map((p) => (
-                  <button key={p.port} type="button" className="lc-br-port l-focus" onClick={() => setTarget({ port: p.port, path: "/" })}>
-                    <span className="lc-mono">:{p.port}</span>
-                    <span className="lc-quiet">{p.process}</span>
-                  </button>
-                ))}
-              </span>
-            )}
-            <form
-              className="lc-br-first"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void go(address);
-              }}
-            >
-              <input className="lc-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" />
-              <button type="submit" className="lc-btn" data-kind="ink">
-                Open
-              </button>
-            </form>
-          </>
-        )}
-      >
-        {ports === null ? null : launch?.error ? launch.error : <>Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one. Servers in .claude/launch.json run from here.</>}
-      </SurfaceNote>
+      <>
+        {head}
+        <SurfaceNote
+          icon={<I.globe size={20} />}
+          title={ports === null ? "Looking for a dev server" : "Nothing of this session's is running yet"}
+          action={ports === null ? undefined : <PaneButton onClick={() => setListOpen(true)}>{servers.length ? "Run a dev server" : "Open a page"}</PaneButton>}
+        >
+          {ports === null ? null : launch?.error ? launch.error : servers.length ? <>Run one of the folder's dev servers, open a page, or type an address. Servers come from .claude/launch.json.</> : <>Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one. Servers in .claude/launch.json run from here.</>}
+        </SurfaceNote>
+      </>
     );
   }
 
   return (
     <div className="lc-br">
-      <div className="lc-br-bar">
-        <button type="button" className="lc-ib l-focus" aria-label="Back" onClick={() => cmd("back")}>
-          <I.chevL size={14} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Forward" onClick={() => cmd("forward")}>
-          <I.chevR size={14} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label="Reload" onClick={reload}>
-          <I.refresh size={14} />
-        </button>
-        <form
-          className="lc-br-addrf"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void go(address);
-            (document.activeElement as HTMLElement | null)?.blur();
-          }}
-        >
-          <input className="lc-br-addr lc-mono" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Address" spellCheck={false} />
-        </form>
-        {/* The message box's rule: a choice under the ··· that differs from its default shows as a chip you can cross off. Offline shows nowhere in the page, and a phone or tablet drawn smaller to fit looks like Desktop (browserFrame.ts widthUnseen); zoom and the theme show in the page. */}
-        {w !== null && widthUnseen(w, room) && <ChoiceChip className="lc-br-chip" icon={width === "phone" ? <I.device size={14} /> : <I.tablet size={14} />} label={width === "phone" ? "Phone" : "Tablet"} clear={{ label: "Back to Desktop width", onClear: () => setWidth("desktop") }} />}
-        {offline && <ChoiceChip className="lc-br-chip" icon={<I.offline size={14} />} label="Offline" clear={{ label: "Go back online", onClear: () => setOff(false) }} />}
-        <button
-          type="button"
-          className="lc-ib l-focus"
-          aria-label={`Pick an element to ask ${agentName} about`}
-          title={`Pick an element to ask ${agentName} about`}
-          aria-pressed={picking}
-          onClick={() => {
-            setPicked(null);
-            cmd(picking ? "unpick" : "pick");
-            setPicking(!picking);
-            frame.current?.focus();
-          }}
-        >
-          <I.target size={14} />
-        </button>
-        {servers.length > 0 && (
-          <Pop label="Dev servers" align="end" width={320} triggerClass="lc-ib" trigger={<I.server size={14} />}>
-            {(close) => (
-              <div className="lc-br-more">
-                <PanelHead end={servers.some((s) => s.status !== "stopped") ? `${servers.filter((s) => s.status !== "stopped").length} running` : undefined}>Dev servers</PanelHead>
-                <LaunchRows servers={servers} pressing={pressing} onRun={(n, again) => void runServer(n, again)} onStop={(n) => void stopServer(n)} onOpen={(s) => (openServer(s), close())} />
-                <div className="lc-br-lfoot">
-                  <span className="lc-quiet">From .claude/launch.json</span>
-                  {servers.some((s) => s.status !== "stopped" && !s.problem) && (
-                    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={pressing === "*"} onClick={() => void stopServer()}>
-                      Stop all
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </Pop>
-        )}
-        {/* The top row keeps the everyday tools; the rest is under one ···: open it in your browser, stop its server, the page's zoom, light or dark, its width and offline (T3 Code: preview/PreviewMoreMenu.tsx). */}
-        <Pop label="More for the page" align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
-          {(close) => (
-            <div className="lc-br-more">
-              <Row title="Open in your browser" icon={<I.external size={16} />} disabled={target.port === null && !proxy} onPick={() => (close(), bridge.openExternal(target.port === null ? `${proxy}${target.path}` : `http://localhost:${target.port}${target.path}`))} />
-              {(own || (shownServer && shownServer.status !== "stopped")) && (
-                <Row title={shownServer ? `Stop ${shownServer.name}` : `Stop localhost:${own!.port}`} note={shownServer ? undefined : own!.process} icon={<I.stop size={16} />} onPick={() => (close(), void stopIt())} />
-              )}
-              <PanelHead end={zoom === 1 ? undefined : `${Math.round(zoom * 100)}%`}>Zoom</PanelHead>
-              <div className="lc-br-zoomrow">
-                <button type="button" className="lc-ib l-focus" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => zoomBy(-1)}>
-                  <I.minus size={14} />
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-label="Reset the zoom" title="Back to 100%" disabled={zoom === 1} onClick={() => setZoom(1)}>
-                  {Math.round(zoom * 100)}%
-                </button>
-                <button type="button" className="lc-ib l-focus" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => zoomBy(1)}>
-                  <I.plus size={14} />
-                </button>
-              </div>
-              <PanelHead>Page theme</PanelHead>
-              <div className="lc-br-zoomrow">
-                <Segmented
-                  size="sm"
-                  value={scheme}
-                  onValueChange={setScheme}
-                  options={[
-                    { value: "system", label: "As the app" },
-                    { value: "light", label: "Light" },
-                    { value: "dark", label: "Dark" },
-                  ]}
-                  aria-label="Page theme"
-                />
-              </div>
-              <p className="lc-pop-foot">The page's prefers-color-scheme follows this, for pages that style both.</p>
-              <PanelHead>Page width</PanelHead>
-              <div className="lc-br-zoomrow">
-                <Segmented
-                  size="sm"
-                  value={width}
-                  onValueChange={(v) => setWidth(v)}
-                  options={[
-                    { value: "desktop", label: "Desktop" },
-                    { value: "tablet", label: "Tablet" },
-                    { value: "phone", label: "Phone" },
-                  ]}
-                  aria-label="Page width"
-                />
-              </div>
-              <div className="lc-br-zoomrow">
-                <Switch
-                  size="sm"
-                  checked={offline}
-                  onCheckedChange={setOff}
-                  label="Offline"
-                />
-              </div>
-            </div>
-          )}
-        </Pop>
-      </div>
+      {head}
       <div ref={stage} className="lc-br-stage" data-width={width}>
         {/* Over the page rather than in its place, so a No leaves it as it was. */}
         {asked && (
@@ -851,7 +790,13 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
           </div>
         )}
       </div>
+      {/* The surface's foot is the Console's toggle: its name, its counts, its last line; its drawer opens upward, over the toggle. */}
       <div className="lc-br-console" data-open={consoleOpen || undefined}>
+        {consoleOpen && (
+          <div className="lc-br-logs" role="log" aria-label="Console">
+            {logs.length === 0 ? <p className="lc-quiet">What the page logs shows here.</p> : logs.map((l) => <LogLine key={l.n} l={l} />)}
+          </div>
+        )}
         <button type="button" className="lc-br-console-h l-focus" aria-expanded={consoleOpen} onClick={() => setConsoleOpen((o) => !o)}>
           <I.chevU size={12} />
           <b>Console</b>
@@ -860,19 +805,13 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
           </span>
           {!consoleOpen && logs.length > 0 && <span className="lc-mono lc-br-last" data-level={logs[logs.length - 1].level}>{logs[logs.length - 1].text}</span>}
         </button>
-        {consoleOpen && (
-          <div className="lc-br-logs" role="log" aria-label="Console">
-            {logs.length === 0 ? (
-              <p className="lc-quiet">What the page logs shows here.</p>
-            ) : (
-              logs.map((l) => <LogLine key={l.n} l={l} />)
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
 }
+
+const WIDTH_WORD: Record<Width, string> = { desktop: "Desktop", tablet: "Tablet", phone: "Phone" };
+const SCHEME_WORD: Record<Scheme, string> = { system: "As the app", light: "Light", dark: "Dark" };
 
 /** One console line, drawn once: a new line doesn't redraw the 199 before it. */
 const LogLine = memo(function LogLine({ l }: { l: Log }) {
@@ -941,45 +880,81 @@ function RunAsk({ asked: { name, ask }, onYes, onNo }: { asked: { name: string; 
   );
 }
 
-/** The folder's launch.json servers, each a press from running: Run, or once it's on, Restart and Stop; a row that's on opens its page. */
-function LaunchRows({ servers, pressing, onRun, onStop, onOpen }: { servers: LaunchServer[]; pressing: string | null; onRun: (name: string, again?: boolean) => void; onStop: (name: string) => void; onOpen: (s: LaunchServer) => void }) {
+/**
+  The address's list (board Menus, "The address in Browser, when pressed"): the address itself to type
+  into, then the folder's launch.json servers (each opens to the side: Open, Run, Restart, Stop), the
+  folder's own pages, the servers elsewhere on this Mac, and a grey foot line on where servers come from.
+*/
+function AddressList({ address, setAddress, onGo, servers, pressing, pages, others, error, onRun, onStop, onStopAll, onOpenServer, onOpenPage }: { address: string; setAddress: (a: string) => void; onGo: (a: string) => void; servers: LaunchServer[]; pressing: string | null; pages: string[]; others: LocalServer[]; error?: string; onRun: (name: string, again?: boolean) => void; onStop: (name: string) => void; onStopAll: () => void; onOpenServer: (s: LaunchServer) => void; onOpenPage: (t: Target) => void }) {
+  const running = servers.filter((s) => s.status !== "stopped" && !s.problem).length;
   return (
-    <ul className="lc-br-launch" aria-label="Dev servers">
-      {servers.map((s) => {
-        const on = s.status !== "stopped";
-        const busy = pressing === s.name || pressing === "*";
-        const note = launchNote(s);
-        return (
-          <li key={s.name} className="lc-br-lrow" data-status={s.status} data-bad={(!on && s.ended?.failed) || s.problem ? "" : undefined}>
-            <button type="button" className="lc-br-lmain l-focus" disabled={s.status !== "running"} title={s.status === "running" ? `Open localhost:${s.at}` : undefined} onClick={() => onOpen(s)}>
-              <I.server size={16} />
-              <span className="lc-br-ltext">
-                <span className="lc-br-lname">{s.name}</span>
-                {note && <span className="lc-br-lnote" title={s.ended?.tail?.slice(-6).join("\n")}>{note}</span>}
-              </span>
-              <span className="lc-br-lport lc-mono">:{s.at ?? s.port}</span>
-            </button>
-            {s.status === "running" && (
-              <button type="button" className="lc-br-lgo l-focus" data-quiet={s.changed ? undefined : ""} aria-label={`Restart ${s.name}`} title={s.ask ? FIRST : s.changed ? "Restart with launch.json as it is now" : "Restart"} disabled={busy} onClick={() => onRun(s.name, true)}>
-                <I.refresh size={14} />
-              </button>
-            )}
-            {on ? (
-              <button type="button" className="lc-br-lgo l-focus" aria-label={`Stop ${s.name}`} title="Stop" disabled={busy} onClick={() => onStop(s.name)}>
-                {s.status === "starting" && <StateMark state="working" size={12} className="lc-br-lspin" />}
-                <span className="lc-br-lstop" aria-hidden>
-                  <I.stop size={12} />
-                </span>
-              </button>
-            ) : (
-              <button type="button" className="lc-br-lgo l-focus" aria-label={`Run ${s.name}`} title={s.problem ?? (s.ask ? FIRST : "Run")} disabled={busy || Boolean(s.problem)} onClick={() => onRun(s.name)}>
-                {busy ? <StateMark state="working" size={12} className="lc-br-lspin" /> : <I.play size={14} />}
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <form
+        className="lc-br-addrf"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onGo(address);
+        }}
+      >
+        <input className="lc-br-addr lc-mono" data-autofocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="5173, localhost:3000 or index.html" aria-label="Address" spellCheck={false} />
+      </form>
+      {servers.length > 0 && (
+        <>
+          <Sep />
+          <PanelHead end={runningNote(servers)}>Dev servers</PanelHead>
+          {servers.map((s) => {
+            const busy = pressing === s.name || pressing === "*";
+            const note = launchNote(s);
+            return (
+              <SubMenu key={s.name} title={s.name} icon={s.status === "starting" || busy ? <StateMark state="working" size={14} /> : <I.server size={14} />} value={serverValue(s)} label={s.name} width={240}>
+                {() => (
+                  <>
+                    {s.status === "running" && <Row title="Open its page" icon={<I.globe size={14} />} end={`:${s.at}`} onPick={() => onOpenServer(s)} />}
+                    {s.status === "stopped" ? (
+                      <Row title="Run" icon={<I.play size={14} />} note={s.problem ?? (s.ask ? FIRST : undefined)} keepNote={Boolean(s.problem)} disabled={busy || Boolean(s.problem)} onPick={() => onRun(s.name)} />
+                    ) : (
+                      <>
+                        {s.status === "running" && <Row title="Restart" icon={<I.refresh size={14} />} note={s.ask ? FIRST : s.changed ? "With launch.json as it is now" : undefined} disabled={busy} onPick={() => onRun(s.name, true)} />}
+                        <Row title="Stop" icon={<I.stop size={14} />} red disabled={busy} onPick={() => onStop(s.name)} />
+                      </>
+                    )}
+                    {note && (
+                      <>
+                        <Sep />
+                        <MenuFoot>
+                          <span title={s.ended?.tail?.slice(-6).join("\n")}>{note}</span>
+                        </MenuFoot>
+                      </>
+                    )}
+                  </>
+                )}
+              </SubMenu>
+            );
+          })}
+          {running > 1 && <Row title="Stop all" icon={<I.stop size={14} />} red disabled={pressing === "*"} onPick={onStopAll} />}
+        </>
+      )}
+      {pages.length > 0 && (
+        <>
+          <Sep />
+          <PanelHead>Pages in this folder</PanelHead>
+          {pages.slice(0, 8).map((f) => (
+            <Row key={f} title={f} icon={<I.file size={14} />} onPick={() => onOpenPage({ port: null, path: `/${f}` })} />
+          ))}
+        </>
+      )}
+      {others.length > 0 && (
+        <>
+          <Sep />
+          <PanelHead>Elsewhere on {os.here}</PanelHead>
+          {others.slice(0, 8).map((p) => (
+            <Row key={p.port} title={`localhost:${p.port}`} icon={<I.globe size={14} />} end={p.process} onPick={() => onOpenPage({ port: p.port, path: "/" })} />
+          ))}
+        </>
+      )}
+      <Sep />
+      <MenuFoot>{error ?? "Servers come from .claude/launch.json"}</MenuFoot>
+    </>
   );
 }
 

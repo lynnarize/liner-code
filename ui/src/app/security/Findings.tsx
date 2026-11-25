@@ -1,7 +1,7 @@
 /*
   Liner Security: Findings (board B). The project picker in the top row; Open, Fixed and Dismissed as tabs with their
   counts; the row that narrows the list (Source, Severity, Second look, Fix, each a menu that takes several, the chip
-  saying what it holds), sort (worst first, newest, by file) and search; the list, a row per finding with how bad it is,
+  saying what it holds), the find field, and one options menu (Sort, and the exports); the list, a row per finding with how bad it is,
   its sentence, and a line under (where, what the second look said, whether a fix is at work); and a footnote on where
   they came from. A finding opens in the panel beside the list (FindingPanel), and then the list's edge lines up with
   the title's; with the panel shut it is a column in the middle. ↑ and ↓ move through the list (and the open finding
@@ -15,9 +15,10 @@ import type { DismissReason, FindingSource, FindingState, SecondLookState, Secur
 import { DISMISS_LABEL, SEVERITIES, SEVERITY_LABEL, SOURCE_LABEL } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
-import { ago } from "../model";
+import { ago, plural } from "../model";
 import { I } from "../icons";
-import { Pop, Row } from "../ui";
+import { PaneCheck, PaneField, PaneNote, PANE_TOOL } from "../Pane";
+import { MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "../ui";
 import { FindingPanel } from "./FindingPanel";
 import { act, MOCK, useFindings } from "./findings-data";
 import { PageTop, SevMark } from "./parts";
@@ -97,7 +98,7 @@ const SOURCES = Object.keys(SOURCE_LABEL) as FindingSource[];
 const LOOKS: { value: SecondLookState; label: string }[] = [
   { value: "confirmed", label: "Confirmed" },
   { value: "unconfirmed", label: "Couldn't confirm" },
-  { value: "none", label: "No second look" },
+  { value: "none", label: "Not looked at" },
 ];
 const FIXES: { value: FixPick; label: string }[] = [
   { value: "fixing", label: "Being fixed" },
@@ -364,7 +365,7 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
   const note = list && tab === "open" && counts.open > 0 ? cameFrom(list.filter((f) => f.state === "open")) : "";
 
   return (
-    <div className="lf" data-panel={open ? "open" : undefined}>
+    <div className="lf" data-panel={open ? "open" : undefined} data-picking={pickedIds.size > 0 || undefined}>
       <div className="ls-page lf-main">
         <PageTop title="Findings" sidebar={sidebar} onSidebar={onSidebar}>
           <Pop
@@ -413,100 +414,82 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
               <MultiChip label="Severity" value={sevs} options={SEVERITIES.map((s) => ({ value: s, label: SEVERITY_LABEL[s] }))} onChange={setSevs} />
               <MultiChip label="Second look" value={looks} options={LOOKS} onChange={setLooks} />
               <MultiChip label="Fix" value={fixes} options={FIXES} onChange={setFixes} />
-              {query !== null ? (
-                <label className="lf-search">
-                  <input
-                    autoFocus
-                    value={query}
-                    placeholder="Search the findings"
-                    aria-label="Search the findings"
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") (e.preventDefault(), setQuery(null));
-                      if (e.key === "ArrowDown" && shown[0]) (e.preventDefault(), focusRow(shown[0].id));
-                    }}
-                  />
-                </label>
-              ) : (
-                <span className="lc-grow" />
-              )}
-              {/* Search and sort keep together at the row's end, and wrap together when the row is narrow. Search is one toggle, pressed
-                  while its field shows, as in a scan's Found panel and on Projects: pressed again it stops searching. */}
-              <span className="lf-tools">
-                <button type="button" className="lc-tb lf-tb l-focus" aria-pressed={query !== null} aria-label={query === null ? "Search the findings" : "Stop searching"} title={query === null ? "Search the findings" : "Stop searching"} onClick={() => setQuery(query === null ? "" : null)}>
-                  <I.search size={16} />
-                </button>
-                <Pop
-                  label={`Sorted ${SORTS.find((s) => s.value === sort)!.label.toLowerCase()}. Change the order`}
-                  menu
-                  align="end"
-                  width={200}
-                  triggerClass="lc-tb lf-tb l-focus"
-                  trigger={<I.sort size={16} />}
-                >
-                  {(close) => SORTS.map((s) => <Row key={s.value} title={s.label} on={s.value === sort} onPick={() => (close(), setSort(s.value))} />)}
-                </Pop>
-                <Pop
-                  label="Export visible findings"
-                  menu
-                  align="end"
-                  width={210}
-                  triggerClass="lc-tb lf-tb l-focus"
-                  triggerAttrs={{ title: "Export findings" }}
-                  trigger={<I.download size={16} />}
-                >
-                  {(close) => (
-                    <>
-                      <Row
-                        title="Export SARIF 2.1.0…"
-                        disabled={!shown.length}
-                        onPick={() => {
-                          close();
-                          downloadBlob("liner-security-findings.sarif.json", findingsToSarif(shown), "application/sarif+json;charset=utf-8");
-                          toast.success(`Exported ${shown.length} findings as SARIF`);
-                        }}
-                      />
-                      <Row
-                        title="Export Markdown…"
-                        disabled={!shown.length}
-                        onPick={() => {
-                          close();
-                          downloadBlob("liner-security-findings.md", findingsToMarkdown(shown), "text/markdown;charset=utf-8");
-                          toast.success(`Exported ${shown.length} findings as Markdown`);
-                        }}
-                      />
-                    </>
-                  )}
-                </Pop>
-              </span>
+              {/* The find field is always there, as Files' is in the panel; one options menu holds the order and the exports. */}
+              <PaneField className="lf-search" icon={<I.search size={14} />}>
+                <input
+                  value={query ?? ""}
+                  placeholder="Find a finding"
+                  aria-label="Find a finding"
+                  onChange={(e) => setQuery(e.target.value || null)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && query) (e.preventDefault(), e.stopPropagation(), setQuery(null));
+                    if (e.key === "ArrowDown" && shown[0]) (e.preventDefault(), focusRow(shown[0].id));
+                  }}
+                />
+              </PaneField>
+              <Pop label={`How the list is shown: sorted ${SORTS.find((x) => x.value === sort)!.label.toLowerCase()}`} menu align="end" width={240} triggerClass={PANE_TOOL} triggerAttrs={{ title: "How the list is shown" }} trigger={<I.sliders size={16} />}>
+                {(close) => (
+                  <>
+                    <SubMenu title="Sort" icon={<I.sort size={14} />} value={SORTS.find((x) => x.value === sort)!.label} label="Sort">
+                      {(done) => SORTS.map((x) => <Row key={x.value} title={x.label} on={x.value === sort} onPick={() => (done(), close(), setSort(x.value))} />)}
+                    </SubMenu>
+                    <Sep />
+                    <Row
+                      title="Export as SARIF 2.1.0"
+                      icon={<I.download size={14} />}
+                      disabled={!shown.length}
+                      onPick={() => {
+                        close();
+                        downloadBlob("liner-security-findings.sarif.json", findingsToSarif(shown), "application/sarif+json;charset=utf-8");
+                        toast.success(`Exported ${shown.length} findings as SARIF`);
+                      }}
+                    />
+                    <Row
+                      title="Export as Markdown"
+                      icon={<I.download size={14} />}
+                      disabled={!shown.length}
+                      onPick={() => {
+                        close();
+                        downloadBlob("liner-security-findings.md", findingsToMarkdown(shown), "text/markdown;charset=utf-8");
+                        toast.success(`Exported ${shown.length} findings as Markdown`);
+                      }}
+                    />
+                    <MenuFoot>{plural(shown.length, "finding")} shown go out</MenuFoot>
+                  </>
+                )}
+              </Pop>
             </div>
 
+            {/* Several picked: one bar for them all, drawn as the sidebar's own (lc-sb-bulk), its one action in ink. */}
             {pickedIds.size > 0 && (
-              <div className="lf-filt" role="region" aria-label="Bulk actions" style={{ alignItems: "center", gap: 8 }}>
-                <span className="lc-quiet">{pickedIds.size} selected</span>
+              <div className="lc-sb-bulk l-glass lf-bulk" role="toolbar" aria-label={`${pickedIds.size} findings picked`}>
+                <span className="lc-sb-bulk-n">{pickedIds.size} picked</span>
                 <span className="lc-grow" />
                 {tab === "open" ? (
-                  <Pop label="Dismiss selected findings" menu align="end" width={220} triggerClass="lc-btn l-focus" triggerAttrs={{ "data-kind": "plain", "data-size": "sm" }} trigger="Dismiss selected">
-                    {(close) =>
-                      (Object.keys(DISMISS_LABEL) as DismissReason[]).map((reason) => (
-                        <Row
-                          key={reason}
-                          title={DISMISS_LABEL[reason]}
-                          onPick={() => {
-                            close();
-                            void bulkAction("dismiss", reason);
-                          }}
-                        />
-                      ))
-                    }
+                  <Pop label="Dismiss the picked findings, and say why" menu align="end" width={240} triggerClass="lc-btn l-focus" triggerAttrs={{ "data-kind": "ink", "data-size": "sm" }} disabled={bulkBusy} trigger="Dismiss them">
+                    {(close) => (
+                      <>
+                        <PanelHead>Why they aren't ones to act on</PanelHead>
+                        {(Object.keys(DISMISS_LABEL) as DismissReason[]).map((reason) => (
+                          <Row
+                            key={reason}
+                            title={DISMISS_LABEL[reason]}
+                            onPick={() => {
+                              close();
+                              void bulkAction("dismiss", reason);
+                            }}
+                          />
+                        ))}
+                      </>
+                    )}
                   </Pop>
                 ) : (
-                  <button type="button" className="lc-btn l-focus" data-kind="plain" data-size="sm" disabled={bulkBusy} onClick={() => void bulkAction("reopen")}>
-                    Reopen selected
+                  <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" disabled={bulkBusy} onClick={() => void bulkAction("reopen")}>
+                    Reopen them
                   </button>
                 )}
-                <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setPickedIds(new Set())}>
-                  Clear
+                <button type="button" className="lc-sb-a l-focus" aria-label="Let go of them" title="Let go of them" onClick={() => setPickedIds(new Set())}>
+                  <I.close size={14} />
                 </button>
               </div>
             )}
@@ -515,29 +498,25 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
 
             {!list ? (
               error ? (
-                <div className="ls-none">
-                  <b>The findings didn't load</b>
-                  <span>{error}</span>
-                </div>
+                <PaneNote icon={<I.shield size={16} />} title="The findings didn't load">{error}</PaneNote>
               ) : (
                 // Not yet answered: said so, so the empty tabs never read as nothing found.
-                <div className="ls-none" aria-live="polite">
-                  <span className="l-shimmer">Reading the findings</span>
+                <div aria-live="polite">
+                  <PaneNote title="Reading the findings" />
                 </div>
               )
             ) : shown.length ? (
               <div className="lf-list" role="list" aria-label={`${TABS.find((t) => t.value === tab)!.label} findings`} ref={listRef} onKeyDown={onListKey}>
                 {shown.map((f) => (
-                  <div role="listitem" key={f.id} className="lf-li" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      className="l-focus"
-                      aria-label={`Select ${f.title}`}
+                  <div role="listitem" key={f.id} className="lf-li">
+                    {/* Picking is the bare tick box Changes' Viewed is: shown on pointing, on focus, and while any is picked. */}
+                    <PaneCheck
                       checked={pickedIds.has(f.id)}
-                      onChange={(e) =>
+                      label={`Pick ${f.title}`}
+                      onChange={(on) =>
                         setPickedIds((prev) => {
                           const next = new Set(prev);
-                          if (e.target.checked) next.add(f.id);
+                          if (on) next.add(f.id);
                           else next.delete(f.id);
                           return next;
                         })
@@ -546,7 +525,6 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                     <button
                       type="button"
                       className="lf-rw l-focus"
-                      style={{ flex: 1, minWidth: 0 }}
                       data-id={f.id}
                       data-on={f.id === open?.id || undefined}
                       aria-current={f.id === open?.id || undefined}
@@ -578,32 +556,33 @@ export function Findings({ sidebar, onSidebar, finding, state, source }: { sideb
                 ))}
               </div>
             ) : narrowed && counts[tab] ? (
-              <div className="ls-none">
-                <b>Nothing here matches</b>
-                <span>{`${counts[tab]} ${tab} ${counts[tab] === 1 ? "finding is" : "findings are"} left out by what narrows the list.`}</span>
-                <button type="button" className="lc-btn l-focus lf-none-b" data-kind="ghost" data-size="sm" onClick={clear}>
-                  Show them all
-                </button>
-              </div>
+              <PaneNote
+                icon={<I.filter size={16} />}
+                title="Nothing here matches"
+                action={
+                  <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={clear}>
+                    Show them all
+                  </button>
+                }
+              >
+                {`${counts[tab]} ${tab} ${counts[tab] === 1 ? "finding is" : "findings are"} left out by what narrows the list.`}
+              </PaneNote>
             ) : tab === "open" ? (
-              <div className="ls-none">
-                <span className="ls-disc"><I.shield size={16} /></span>
-                <b>Nothing open</b>
-                <span>{scan ? (list.length ? "Everything this scan raised was fixed or dismissed." : "This scan raised nothing.") : list.length ? "Everything found here was fixed or dismissed." : !projects.length ? "No project to scan yet. Add a folder you work on, then scan it." : "No scan has found anything here yet."}</span>
-                <button type="button" className="lc-btn l-focus lf-none-b" data-kind="ghost" data-size="sm" onClick={() => goSecurity({ kind: "start", projectId: scope.projectId })}>
-                  Start a scan
-                </button>
-              </div>
+              <PaneNote
+                icon={<I.shield size={16} />}
+                title="Nothing open"
+                action={
+                  <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => goSecurity({ kind: "start", projectId: scope.projectId })}>
+                    Start a scan
+                  </button>
+                }
+              >
+                {scan ? (list.length ? "Everything this scan raised was fixed or dismissed." : "This scan raised nothing.") : list.length ? "Everything found here was fixed or dismissed." : !projects.length ? "No project to scan yet. Add a folder you work on, then scan it." : "No scan has found anything here yet."}
+              </PaneNote>
             ) : tab === "fixed" ? (
-              <div className="ls-none">
-                <b>Nothing fixed yet</b>
-                <span>A finding comes here when its fix is merged.</span>
-              </div>
+              <PaneNote icon={<I.check size={16} />} title="Nothing fixed yet">A finding comes here when its fix is merged.</PaneNote>
             ) : (
-              <div className="ls-none">
-                <b>Nothing dismissed</b>
-                <span>What you dismiss stays here with why, and the next scan doesn't raise it again.</span>
-              </div>
+              <PaneNote icon={<I.close size={16} />} title="Nothing dismissed">What you dismiss stays here with why, and the next scan doesn't raise it again.</PaneNote>
             )}
 
             {note && <p className="lf-sub">{note}</p>}

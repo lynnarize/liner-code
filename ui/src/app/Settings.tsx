@@ -32,7 +32,7 @@ const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ d
 import { ModesPlace } from "./Modes";
 import { StartPick } from "./Models";
 import { startSaid } from "./start-words";
-import { Badge, ConfirmRow, Disc, Kbd, LookAgain, ModelTag, NamedSwitch, Pop, Row, Sep } from "./ui";
+import { Badge, ConfirmRow, Disc, Kbd, LookAgain, MenuFoot, ModelTag, NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
 import { confirmPress } from "./confirm";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
 import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./themes";
@@ -42,6 +42,7 @@ import * as os from "./os";
 import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
 import { keptWrite, wordRead, wordWrite } from "./kept.ts";
 import { jsonFault } from "./json-words";
+import { PaneCheck, PaneNote } from "./Pane";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -65,7 +66,7 @@ type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "m
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns anonymous usage counts analytics telemetry tokens install id opencode go key sign-in limits hermes" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the composer's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, where designs open, and a picture behind the session.", words: "theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
@@ -580,7 +581,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         <Field title="Fusion and the Reviewer" note="Who leads, who is its sidekick, and who reads each change.">
           <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
             Open
-            <I.chevR size={12} />
+            <I.chevR size={14} />
           </button>
         </Field>
         <Field title="Where they run" note="A worktree is a branch and folder of its own, so sessions never edit the same files.">
@@ -598,7 +599,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
         <Field title="Permissions" note={accessOf(s.defaultAccess).note}>
           <button type="button" className="lc-st-link l-focus" onClick={() => go("safety")}>
             {accessOf(s.defaultAccess).label}
-            <I.chevR size={12} />
+            <I.chevR size={14} />
           </button>
         </Field>
       </Group>
@@ -700,7 +701,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             />
           </span>
         </Field>
-        <Field title="A cap per session" note={`A session${ROUTINES_ON ? ", or a routine run," : ""} that spends this much stops where it is and tells you; your next message lets it go on for another cap's worth. Claude Code reports cost; other tools can't be held to it.`}>
+        <Field title="Spend limit" note={`A session${ROUTINES_ON ? ", or a routine run," : ""} that spends this much stops where it is and tells you; your next message lets it go on for as much again. Claude Code reports cost; other tools can't be held to it.`}>
           <span className="lc-st-budget">
             <span className="lc-quiet">$</span>
             <input
@@ -709,7 +710,7 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
               defaultValue={s.capUsd || ""}
               placeholder="None"
               inputMode="decimal"
-              aria-label="Spending cap per session in dollars"
+              aria-label="Spend limit per session in dollars"
               onBlur={(e) => {
                 const n = Math.round(dollars(e.target.value) * 100) / 100;
                 e.target.value = n ? String(n) : "";
@@ -782,7 +783,7 @@ function Preview({ look }: { look: Look }) {
         </div>
       </div>
       <span className="lc-pv-cap">
-        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.composer} composer`}
+        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.composer} message box`}
       </span>
     </div>
   );
@@ -901,7 +902,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Main buttons" note="The most important button wherever it is: Send, Commit, a card's main button.">
+      <Group title="Main buttons" note="Send, and Start in the first-run setup. Every other place's one action is in ink.">
         <Field title="Colour">
           <span className="lc-swatches" role="radiogroup" aria-label="Main buttons">
             {ACTIONS.map((a) => (
@@ -920,15 +921,15 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Glass" note="The composer lets the thread show through. Everything else sits on one solid ground.">
+      <Group title="Glass" note="The message box lets the thread show through. Everything else sits on one solid ground.">
         <Field
           title={
             <>
-              Composer
+              Message box
               <New />
             </>
           }
-          note="How much of the thread shows through the composer, blurred."
+          note="How much of the thread shows through the message box, blurred."
         >
           <Segmented
             size="sm"
@@ -939,7 +940,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
               { value: "tinted", label: "Tinted" },
               { value: "solid", label: "Solid" },
             ]}
-            aria-label="Composer glass"
+            aria-label="Message box glass"
           />
         </Field>
       </Group>
@@ -961,7 +962,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
         <Field title="Open them" below>
           <PictureCards label="Where designs and pages open" value={look.designs} options={DESIGNS} onPick={(designs) => set({ designs })} />
         </Field>
-        <Field title="Bring the panel up when an agent shows one" note="Beside the chat only, and not while you're in the diff or a terminal." off={look.designs === "chat"}>
+        <Field title="Bring the panel up when an agent shows one" note="Beside the chat only, and not while you're in Changes or a terminal." off={look.designs === "chat"}>
           <NamedSwitch name="Bring the panel up when an agent shows one" checked={look.designsAuto} disabled={look.designs === "chat"} onCheckedChange={(designsAuto) => set({ designsAuto })} />
         </Field>
       </Group>
@@ -1118,7 +1119,7 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
             Import from VS Code
           </button>
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={make}>
-            <I.plus size={12} />
+            <I.plus size={14} />
             Make one
           </button>
         </span>
@@ -1167,7 +1168,7 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
             <button
               type="button"
               className="lc-btn"
-              data-kind="accent"
+              data-kind="ink"
               data-size="sm"
               disabled={!making.name.trim()}
               onClick={() => {
@@ -1189,7 +1190,7 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setPasting(false)}>
               Cancel
             </button>
-            <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!pasted.trim()} onClick={() => take(pasted)}>
+            <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!pasted.trim()} onClick={() => take(pasted)}>
               Use it
             </button>
           </div>
@@ -1359,7 +1360,7 @@ function Keyboard() {
                 Back to the defaults
               </button>
             )}
-            <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={json.trim() === JSON.stringify(mine, null, 2).trim()} onClick={saveJson}>
+            <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={json.trim() === JSON.stringify(mine, null, 2).trim()} onClick={saveJson}>
               Save
             </button>
           </span>
@@ -1501,7 +1502,7 @@ function Models() {
                   <I.lock size={12} />
                   <input autoFocus type="password" value={keyVal} onChange={(e) => setKeyVal(e.target.value)} onKeyDown={(e) => (e.key === "Enter" && keyVal.trim() ? void saveKey(id, keyVal.trim()) : e.key === "Escape" && setKeyFor(null))} placeholder="Paste the key" aria-label="Key" />
                 </span>
-                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => keyVal.trim() && void saveKey(id, keyVal.trim())}>
+                <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => keyVal.trim() && void saveKey(id, keyVal.trim())}>
                   Save
                 </button>
               </span>
@@ -1524,7 +1525,7 @@ function Models() {
 
 /*
   Check my tools (engine/src/doctor.ts): is each tool there, does it work, and does it still do what Liner Code tells it. Tier 1
-  runs when this page opens and on Check again; tier 2 (does it obey Read only and Manual) on its button, a few seconds a tool,
+  runs when this page opens and on Look again; tier 2 (does it obey Read only and Manual) on its button, a few seconds a tool,
   free; tier 3 only from a tool's own button, which says what it spends. Results live in the engine's memory, so they're still
   here when you come back to the page in this run.
 */
@@ -1573,10 +1574,7 @@ function ToolChecks() {
       title="Check my tools"
       note="Is each tool there, does it work, and does it still do what Liner Code tells it. A new version of a tool can stop obeying an access level; this is how you find out."
       end={
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={any(1)} onClick={() => void run(1, ids)}>
-          <I.refresh size={14} />
-          {any(1) ? "Checking" : "Check again"}
-        </button>
+        <LookAgain looking={any(1)} title="Check every tool again" onLook={() => void run(1, ids)} />
       }
     >
       <Field title="Found and working" note="Free and instant. Runs when you open this page: found on this Mac, its version, sign-in, its model list, and Liner Code's own tools." />
@@ -1638,7 +1636,7 @@ function ToolCheckRowView({ p, row, busy, onMessage }: { p: ProviderInfo; row?: 
                     .filter((c) => c.tier === t)
                     .map((c) => (
                       <li key={c.id} data-s={c.state}>
-                        <StepMark state={busy === t ? "working" : STEP_OF[c.state]} size={14} label={c.state === "skipped" ? "Not checked" : undefined} />
+                        <StepMark state={busy === t ? "working" : STEP_OF[c.state]} size={14} label={c.state === "skipped" ? "Not checked" : undefined} tone={busy !== t && c.state === "passed" ? "ok" : undefined} />
                         <span className="lc-ck-t">
                           <b>{c.label}</b>
                           {c.detail && <small>{c.detail}</small>}
@@ -1687,7 +1685,7 @@ function Voucher() {
             <I.lock size={12} />
             <input autoFocus value={code} disabled={busy} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => (e.key === "Enter" && code.trim() ? void redeem(code.trim()) : e.key === "Escape" && setOpen(false))} placeholder="Type the code" aria-label="Voucher" autoComplete="off" spellCheck={false} />
           </span>
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy || !code.trim()} onClick={() => void redeem(code.trim())}>
+          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy || !code.trim()} onClick={() => void redeem(code.trim())}>
             Redeem
           </button>
         </span>
@@ -1768,7 +1766,7 @@ function Accounts() {
       end={
         !adding && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
-            <I.plus size={12} />
+            <I.plus size={14} />
             Add an account
           </button>
         )
@@ -1834,7 +1832,7 @@ function AccountForm({ tools, taken, onDone }: { tools: ProviderInfo[]; taken: T
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
           Cancel
         </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!id || clash} onClick={add}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!id || clash} onClick={add}>
           Add account
         </button>
       </div>
@@ -1856,7 +1854,7 @@ function AddedAgents() {
       title="Agents you added"
       note="Any agent that speaks the Agent Client Protocol, from the ACP registry or a command you give."
       end={
-        <Pop label="Add an agent" align="end" width={440} triggerClass="lc-btn lc-st-addb" trigger={<><I.plus size={12} />Add an agent</>}>
+        <Pop label="Add an agent" align="end" width={440} triggerClass="lc-btn" triggerAttrs={{ "data-kind": "ghost", "data-size": "sm" }} trigger={<><I.plus size={14} />Add an agent</>}>
           {(close) => <Registry onDone={close} />}
         </Pop>
       }
@@ -1902,7 +1900,7 @@ function Endpoints() {
       end={
         !adding && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
-            <I.plus size={12} />
+            <I.plus size={14} />
             Add an endpoint
           </button>
         )
@@ -1930,36 +1928,27 @@ function EndpointModels({ e, all }: { e: Endpoint; all: Endpoint[] }) {
     const pictures = v === null ? rest : { ...rest, [m]: v };
     save({ endpoints: all.map((x) => (x === e ? { ...e, pictures: Object.keys(pictures).length ? pictures : undefined } : x)) });
   };
+  // Back to the guess for every model you set: the menu's ticks set a model each, so a way back to the guesses sits under them.
+  const guessAgain = () => save({ endpoints: all.map((x) => (x === e ? { ...e, pictures: undefined } : x)) });
   return (
-    <Pop label={`Models of ${e.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>{e.models.length === 1 ? e.models[0] : `${e.models.length} models`}<I.chevD size={12} /></>}>
+    <Pop menu label={`Models of ${e.label}`} align="end" width={300} triggerClass="lc-st-ver" trigger={<>{e.models.length === 1 ? e.models[0] : `${e.models.length} models`}<I.chevD size={12} /></>}>
       {() => (
-        <div className="lc-st-form lc-st-keys lc-st-pics">
-          <div className="lc-st-pics-h">Takes pictures</div>
+        <>
+          <PanelHead>Takes pictures</PanelHead>
           {e.models.map((m) => {
             const mine = e.pictures?.[m];
             const guess = picturesGuess(e.protocol, m);
-            return (
-              <div key={m} className="lc-st-pics-r">
-                <span className="lc-st-pics-t">
-                  <span className="lc-mono">{m}</span>
-                  <small>
-                    {mine === undefined ? "A guess from its name" : "You set this"}
-                    {mine !== undefined && mine !== guess && (
-                      <>
-                        {" · "}
-                        <button type="button" className="lc-link" onClick={() => set(m, null)}>
-                          Use the guess
-                        </button>
-                      </>
-                    )}
-                  </small>
-                </span>
-                <NamedSwitch name={`${m} takes pictures`} checked={mine ?? guess} onCheckedChange={(v) => set(m, v)} />
-              </div>
-            );
+            return <Row key={m} title={m} which={mine === undefined ? "A guess" : "You set this"} on={mine ?? guess} onPick={() => set(m, !(mine ?? guess))} />;
           })}
-          <p className="lc-quiet lc-st-pics-n">A model that doesn't take pictures gets a frame's outline and console errors in words instead.</p>
-        </div>
+          {e.models.some((m) => e.pictures?.[m] !== undefined && e.pictures[m] !== picturesGuess(e.protocol, m)) && (
+            <>
+              <Sep />
+              <Row title="Use the guesses" icon={<I.undo size={14} />} onPick={guessAgain} />
+            </>
+          )}
+          <Sep />
+          <MenuFoot>A model that doesn't take pictures gets a frame's outline and console errors in words instead.</MenuFoot>
+        </>
       )}
     </Pop>
   );
@@ -1978,35 +1967,19 @@ function ToolPictures({ p }: { p: ProviderInfo }) {
     const { [toolPicturesKey(p.id, m)]: _was, ...rest } = mine;
     save({ toolPictures: v === null ? rest : { ...rest, [toolPicturesKey(p.id, m)]: v } });
   };
+  // Ticking a model on is going back to the default (null), so the tick alone sets it either way.
   return (
-    <Pop label={`Pictures for ${p.label}`} align="end" width={340} triggerClass="lc-st-ver" trigger={<>Pictures<I.chevD size={12} /></>}>
+    <Pop menu label={`Pictures for ${p.label}`} align="end" width={300} triggerClass="lc-st-ver" trigger={<>Pictures<I.chevD size={12} /></>}>
       {() => (
-        <div className="lc-st-form lc-st-keys lc-st-pics">
-          <div className="lc-st-pics-h">Takes pictures</div>
+        <>
+          <PanelHead>Takes pictures</PanelHead>
           {models.map((m) => {
             const set_ = mine[toolPicturesKey(p.id, m.id)];
-            return (
-              <div key={m.id} className="lc-st-pics-r">
-                <span className="lc-st-pics-t">
-                  <span className="lc-mono">{m.id === "default" ? m.label : m.id}</span>
-                  <small>
-                    {set_ === undefined ? "Takes pictures unless you say otherwise" : "You set this"}
-                    {set_ === false && (
-                      <>
-                        {" · "}
-                        <button type="button" className="lc-link" onClick={() => set(m.id, null)}>
-                          Use the default
-                        </button>
-                      </>
-                    )}
-                  </small>
-                </span>
-                <NamedSwitch name={`${m.id === "default" ? m.label : m.id} takes pictures`} checked={set_ ?? true} onCheckedChange={(v) => set(m.id, v ? null : false)} />
-              </div>
-            );
+            return <Row key={m.id} title={m.id === "default" ? m.label : m.id} which={set_ === undefined ? undefined : "You set this"} on={set_ ?? true} onPick={() => set(m.id, set_ === false ? null : false)} />;
           })}
-          <p className="lc-quiet lc-st-pics-n">A model that doesn't take pictures gets a frame's outline and console errors in words instead.</p>
-        </div>
+          <Sep />
+          <MenuFoot>A model that doesn't take pictures gets a frame's outline and console errors in words instead.</MenuFoot>
+        </>
       )}
     </Pop>
   );
@@ -2120,7 +2093,8 @@ function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void
         {found && found.length > 0 && (
           <div className="lc-st-form-w" style={{ display: "flex", flexWrap: "wrap", gap: 6 }} role="group" aria-label="Models it lists">
             {found.slice(0, 40).map((m) => (
-              <button key={m} type="button" className="lc-btn" data-kind={list.includes(m) ? "primary" : "plain"} data-size="sm" aria-pressed={list.includes(m)} onClick={() => pick(m)}>
+              // Picked is the pressed plate, not ink: ink is the form's one action, Add endpoint.
+              <button key={m} type="button" className="lc-btn lc-st-pick" data-kind="plain" data-size="sm" aria-pressed={list.includes(m)} onClick={() => pick(m)}>
                 {m}
               </button>
             ))}
@@ -2136,7 +2110,7 @@ function EndpointForm({ taken, onDone }: { taken: Endpoint[]; onDone: () => void
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
           Cancel
         </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!slug(label) || clash || !url.trim() || !list.length || busy !== null} onClick={() => void add()}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!slug(label) || clash || !url.trim() || !list.length || busy !== null} onClick={() => void add()}>
           Add endpoint
         </button>
       </div>
@@ -2191,7 +2165,7 @@ function Registry({ onDone }: { onDone: () => void }) {
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setOwn(false)}>
             Back to the registry
           </button>
-          <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!command.trim() || busy !== null} onClick={() => void add({ label, command })}>
+          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!command.trim() || busy !== null} onClick={() => void add({ label, command })}>
             {busy ? "Adding" : "Add"}
           </button>
         </div>
@@ -2233,9 +2207,7 @@ function Registry({ onDone }: { onDone: () => void }) {
           <I.terminal size={12} />A command of your own
         </button>
         <span className="lc-grow" />
-        <button type="button" className="lc-ib l-focus" aria-label="Read the registry again" title="Read the registry again" onClick={() => (setList(null), load(true))}>
-          <I.refresh size={14} />
-        </button>
+        <LookAgain looking={!list} title="Read the registry again" onLook={() => (setList(null), load(true))} />
       </div>
     </div>
   );
@@ -2299,7 +2271,7 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
       title="Agents"
       note="A name, a model, its effort, and a soul.md that says how it works."
       end={
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onAgent()}>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => onAgent()}>
           <I.plus size={14} />
           New agent
         </button>
@@ -2387,16 +2359,14 @@ function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"
               add();
             }}
           >
-            <select className="lc-input" style={{ width: 110, flex: "none" }} aria-label="Rule kind" value={kind} onChange={(e) => setKind(e.target.value as "command" | "path")}>
-              <option value="command">command</option>
-              <option value="path">path</option>
-            </select>
+            {/* The app's own pickers, not the system's: the group names each for a screen reader, as aria-label did. */}
+            <span role="group" aria-label="Rule kind" className="lc-st-rulesel" data-w="kind">
+              <Select className="lc-st-sel" options={[{ value: "command", label: "command" }, { value: "path", label: "path" }]} value={kind} onValueChange={(v) => setKind(v as "command" | "path")} />
+            </span>
             <input className="lc-input lc-mono" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder={kind === "command" ? "git push* or npm publish*" : "**/.env* or secrets/**"} aria-label="Glob pattern" />
-            <select className="lc-input" style={{ width: 90, flex: "none" }} aria-label="Rule action" value={action} onChange={(e) => setAction(e.target.value as "allow" | "ask" | "deny")}>
-              <option value="deny">deny</option>
-              <option value="ask">ask</option>
-              <option value="allow">allow</option>
-            </select>
+            <span role="group" aria-label="Rule action" className="lc-st-rulesel" data-w="action">
+              <Select className="lc-st-sel" options={[{ value: "deny", label: "deny" }, { value: "ask", label: "ask" }, { value: "allow", label: "allow" }]} value={action} onValueChange={(v) => setAction(v as "allow" | "ask" | "deny")} />
+            </span>
             <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!pattern.trim()}>
               Add
             </button>
@@ -2474,7 +2444,7 @@ function AddonsPlace() {
         title="Connections"
         note="MCP servers that every agent tool gets: Claude Code, Codex, OpenCode and Hermes."
         end={
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
             <I.plus size={14} />
             Add one by hand
           </button>
@@ -2504,13 +2474,13 @@ function AddonsPlace() {
             <span>
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
-            <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => update(a.id, { removed: false })}>
               Bring it back
             </button>
           </div>
         ))}
       </Group>
-      <Group title="Panels" note="Surfaces beside the session, tabs beside Chat and pages of their own. Each runs in a sealed frame, with only what it asked for.">
+      <Group title="Panels" note="In the panel beside your sessions, under ··· › Your apps, or pages of their own. Each runs in a sealed frame, with only what it asked for.">
         {panels.map((a) => {
           const Icon = appIcon(a.panel?.icon);
           return (
@@ -2536,7 +2506,7 @@ function AddonsPlace() {
             <span>
               Removed: {a.name}, {since(a.removed!)}. Its files are kept.
             </span>
-            <button type="button" className="lc-answered-act l-focus" onClick={() => update(a.id, { removed: false })}>
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => update(a.id, { removed: false })}>
               Bring it back
             </button>
           </div>
@@ -2597,7 +2567,7 @@ function AddonKeys({ a }: { a: AddonInfo }) {
             ))}
           </div>
           <div className="lc-st-form-f">
-            <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={!Object.values(values).some((v) => v.trim())} onClick={() => void keep(close)}>
+            <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!Object.values(values).some((v) => v.trim())} onClick={() => void keep(close)}>
               Save
             </button>
           </div>
@@ -2681,10 +2651,10 @@ export function AddByHand({ onDone }: { onDone: () => void }) {
         <span className="lc-st-push">
           <Select options={[{ value: "", label: "Every project" }, ...projects.map((p) => ({ value: p.id, label: `${p.name} only` }))]} value={project} onValueChange={setProject} placeholder="Where" />
         </span>
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onDone}>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onDone}>
           Cancel
         </button>
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || !parsed} onClick={() => void add()}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy || !parsed} onClick={() => void add()}>
           {busy ? "Adding" : "Add it"}
         </button>
       </div>
@@ -2700,7 +2670,8 @@ function Projects() {
   const agents = useEngine((x) => x.agents);
   const threads = useEngine((x) => x.threads);
   const showDemo = useEngine((x) => x.settings.showDemo === true);
-  const hooksTrusted = useEngine((x) => x.settings.worktreeHooksTrusted ?? []);
+  // The fallback goes outside the selector: a fresh [] from inside it is a new snapshot on every read, and React loops until the page breaks.
+  const hooksTrusted = useEngine((x) => x.settings.worktreeHooksTrusted) ?? NONE;
   // The project whose Remove was pressed once, and when: a press inside the settle is the same double-click (confirm.ts).
   const [sure, setSure] = useState<{ id: string; at: number } | null>(null);
   const add = () =>
@@ -2718,7 +2689,7 @@ function Projects() {
       title={plural(projects.length, "project")}
       note="Removing a project only forgets it here. Its folder stays as it is."
       end={
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={add}>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={add}>
           <I.plus size={14} />
           Add a project
         </button>
@@ -2842,12 +2813,12 @@ function MemoryEditor({ project }: { project: Project }) {
   // The field stays while the first read is out, and says a failed one: empty words would read as nothing saved.
   if (failed)
     return (
-      <Field title="What agents remember" below>
+      <Field title="Workspace memory" below>
         <p className="lc-sinfo-note" role="alert">{failed}</p>
         <LookAgain onLook={() => (setFailed(null), setFacts(null), setAgain((n) => n + 1))} />
       </Field>
     );
-  if (!facts) return <Field title="What agents remember" note={<span className="l-shimmer">Reading what agents saved</span>} below />;
+  if (!facts) return <Field title="Workspace memory" note={<span className="l-shimmer">Reading what agents saved</span>} below />;
   const add = () => {
     if (!draft.trim()) return;
     void rpc("memory.add", { projectId: project.id, fact: draft })
@@ -2866,7 +2837,7 @@ function MemoryEditor({ project }: { project: Project }) {
       .finally(() => setMemSaving(false));
   };
   return (
-    <Field title="What agents remember" note={facts.length ? `${plural(facts.length, "fact")} agents saved here. Every new session in this project starts with them.` : "Nothing yet. Agents save facts here as they learn them (a command that works, a decision you made), and every new session starts with them."} below>
+    <Field title="Workspace memory" note={facts.length ? `${plural(facts.length, "fact")} agents saved here. Every new session in this project starts with them.` : "Nothing yet. Agents save facts here as they learn them (a command that works, a decision you made), and every new session starts with them."} below>
       <div className="lc-mem">
         {facts.map((f, i) => (
           <div key={`${i}:${f}`} className="lc-mem-row">
@@ -2904,7 +2875,7 @@ function MemoryEditor({ project }: { project: Project }) {
                 aria-label={`MEMORY.md for ${project.name}`}
               />
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={memSaving} onClick={saveFile}>
+                <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={memSaving} onClick={saveFile}>
                   {memSaving ? "Saving…" : "Save MEMORY.md"}
                 </button>
               </div>
@@ -2965,7 +2936,7 @@ function RulesForm({ project, start, merging, onDraft, onSaved }: { project: Pro
       <textarea className="lc-input lc-mono lc-rules-t" value={text} onChange={(e) => (setText(e.target.value), onDraft(e.target.value))} placeholder={"How to build and test, what to leave alone, the house style…"} spellCheck={false} aria-label={`Rules for ${project.name}`} autoFocus />
       <p className="lc-quiet lc-rules-n">{merging ? "Both files are here, one under the other: make them one text. " : ""}Saving writes AGENTS.md and makes CLAUDE.md a one-line @AGENTS.md, which Claude Code follows. Commit them with the project.</p>
       <div className="lc-rules-f">
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || !text.trim()} onClick={save}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy || !text.trim()} onClick={save}>
           {busy ? "Saving" : "Save for every agent"}
         </button>
       </div>
@@ -2998,7 +2969,7 @@ function ScriptsEditor({ project }: { project: Project }) {
             <input className="lc-input lc-mono" value={x.command} onChange={(e) => edit(i, { command: e.target.value })} onBlur={() => commit(list)} placeholder="npm run dev" aria-label="Command" spellCheck={false} />
             <ScriptKey value={x.key} name={x.name || "the script"} others={list.filter((_, k) => k !== i).map((y) => y.key).filter(Boolean) as string[]} onChange={(key) => commit(list.map((y, k) => (k === i ? { ...y, key } : y)))} />
             <label className="lc-script-wt" title="Also runs in each new worktree, before its first turn">
-              <input type="checkbox" checked={Boolean(x.onWorktree)} onChange={(e) => commit(list.map((y, k) => (k === i ? { ...y, onWorktree: e.target.checked } : y)))} />
+              <PaneCheck checked={Boolean(x.onWorktree)} label={`Run ${x.name || "the script"} in each new worktree`} onChange={(on) => commit(list.map((y, k) => (k === i ? { ...y, onWorktree: on } : y)))} />
               New worktrees
             </label>
             <button type="button" className="lc-ib l-focus" aria-label={`Remove ${x.name || "the script"}`} onClick={() => commit(list.filter((_, k) => k !== i))}>
@@ -3007,8 +2978,8 @@ function ScriptsEditor({ project }: { project: Project }) {
           </span>
         ))}
         <span className="lc-script-add">
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setList((l) => [...l, { id: `s${Date.now().toString(36)}`, name: "", command: "" }])}>
-            <I.plus size={12} />
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setList((l) => [...l, { id: `s${Date.now().toString(36)}`, name: "", command: "" }])}>
+            <I.plus size={14} />
             Add a script
           </button>
           {fresh.map((n) => (
@@ -3086,7 +3057,7 @@ function Git() {
   return (
     <>
       <Group title="Worktrees">
-        <Field title="Start new sessions in a worktree" note="Each gets a branch and a folder of its own. Off, they work in the project's checkout.">
+        <Field title="Start new sessions in a worktree" note="Each gets a branch and a folder of its own. Off, they work in the project's checkout. The same choice as Where they run, under General › New sessions.">
           <NamedSwitch name="Start new sessions in a worktree" checked={s.worktrees} onCheckedChange={(worktrees) => save({ worktrees })} />
         </Field>
         <Field title="Branch names start with" note={`A new worktree's branch is this, then the session's id: ${s.branchPrefix}mvpa5q8q`}>
@@ -3095,15 +3066,17 @@ function Git() {
             <input value={prefix} onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} spellCheck={false} aria-label="Branch prefix" />
           </span>
         </Field>
-        <Field title="Worktree layout" note="Place new worktrees under Liner's worktrees folder (sibling) or inside <repo>/.worktrees/ for direnv/monorepo tools.">
-          <div className="lc-seg">
-            <button type="button" className="lc-seg-b l-focus" aria-pressed={(s.worktreePlace ?? "sibling") === "sibling"} onClick={() => save({ worktreePlace: "sibling" })}>
-              Liner home
-            </button>
-            <button type="button" className="lc-seg-b l-focus" aria-pressed={s.worktreePlace === "inside"} onClick={() => save({ worktreePlace: "inside" })}>
-              Inside repo (.worktrees/)
-            </button>
-          </div>
+        <Field title="Worktree layout" note="New worktrees go under Liner's worktrees folder, or inside the repo in .worktrees/ for direnv and monorepo tools.">
+          <Segmented
+            size="sm"
+            value={s.worktreePlace ?? "sibling"}
+            onValueChange={(v) => save({ worktreePlace: v as "sibling" | "inside" })}
+            options={[
+              { value: "sibling", label: "Liner's folder" },
+              { value: "inside", label: "Inside the repo" },
+            ]}
+            aria-label="Worktree layout"
+          />
         </Field>
         <Field title="Where worktrees live" note="Another drive or folder, for big projects. Worktrees already made stay where they are.">
           <span className="lc-st-input lc-st-wide">
@@ -3171,7 +3144,7 @@ function Git() {
         </Group>
       )}
       <Group title="Snapshots">
-        <Field title="Every turn is kept" note="Before and after each turn, Liner Code saves the project as a commit under refs/liner/, without touching your staging area. That's what Undo turn and the diff use." />
+        <Field title="Every turn is kept" note="Before and after each turn, Liner Code saves the project as a commit under refs/liner/, without touching your staging area. That's what Undo turn and Changes use." />
         <Field title="Folders that aren't repositories" note="Get no snapshots, so no diff and no undo. Run git init in them to get both." />
       </Group>
     </>
@@ -3188,11 +3161,9 @@ function Archive() {
   const list = threads.filter((t) => t.archived).sort((a, b) => b.updatedAt - a.updatedAt);
   if (!list.length)
     return (
-      <div className="lc-st-empty">
-        <I.box size={20} />
-        <b>Nothing archived</b>
-        <span>Archive a session from its row's ··· or the command menu ({os.mod}K) to put it away without deleting it.</span>
-      </div>
+      <PaneNote icon={<I.box size={20} />} title="Nothing archived">
+        Archive a session from its row's ··· or the command menu ({os.mod}K) to put it away without deleting it.
+      </PaneNote>
     );
   const back = (t: Thread) =>
     void rpc("thread.update", { id: t.id, archived: false })
@@ -3362,7 +3333,7 @@ function AppRow({ a }: { a: AppUpdate }) {
     note = native ? "Downloaded and checked. It goes in when you quit, or now." : "Downloaded and checked. It goes in when the app restarts.";
     if (native)
       control = (
-        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => void updates.restart()}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => void updates.restart()}>
           Restart to update
         </button>
       );
@@ -3370,7 +3341,7 @@ function AppRow({ a }: { a: AppUpdate }) {
     if (a.can === "install") {
       note = `${a.latest} is out${a.size ? `, ${sizeOf(a.size)}` : ""}.`;
       control = (
-        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={updates.download}>
+        <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={updates.download}>
           <I.download size={14} />
           Download
         </button>

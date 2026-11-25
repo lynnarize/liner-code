@@ -19,13 +19,14 @@ import { seedComposer, type SlashRow } from "../Composer";
 import { getState, rpc, subscribe as subscribeEngine } from "../engine";
 import { I } from "../icons";
 import { plural } from "../model";
-import { Pop, Row, Sep } from "../ui";
+import { MenuFoot, Pop, Row, Sep } from "../ui";
 import { offLeanMore, type OffAbout } from "./inspect/controls";
 import { homeSlots } from "./DesignHome";
 import { sideSlots } from "./Layers";
 import { leanNow, reloadLean, setLean } from "./lean";
 import { addToLean, nameFor, useOffLean, usesOf, type OffKind } from "./leanwalk";
 import { design, getDesign, subscribeDesign, useDesign } from "./store";
+import { useTrayInk } from "./tray-ink";
 import "./lean-page.css";
 
 // ---------- A small store of this module's own
@@ -159,15 +160,18 @@ function FitRow({ cwd, place }: { cwd: string; place: "home" | "dock" }) {
   const skills = useSkills(cwd);
   const loaded = useLoaded(cwd, place === "home");
   const fit = skills && text.trim().length > 3 && !text.trimStart().startsWith("/") ? fits(text, skills, loaded) : undefined;
+  // In the dock, Load it is ink only as the tray's one button (tray-ink.ts); Home's row is a link and claims nothing.
+  const ink = useTrayInk(fit && place === "dock" ? "load" : undefined);
   if (!fit) return null;
   return (
     <div className={place === "home" ? "ld-fit" : "lc-trow ld-fit-row"} role="status">
-      <I.sparkle size={14} />
+      <I.sparkle size={place === "home" ? 14 : 16} />
       <span className="lc-trow-t">
         <span className="ld-lp-mono">/{fit.skill.name}</span> fits {fit.why}. You have it, and it isn't loaded.
       </span>
       <span className="lc-grow" />
-      <button type="button" className="lc-trow-lk l-focus" onClick={() => setSkill(fit.skill.name, true, cwd, place === "home")}>
+      {/* In the dock, the shape of Code's "N files to commit" row: one button. Home's row keeps its own link. */}
+      <button type="button" className={place === "home" ? "lc-trow-lk l-focus" : "lc-btn lc-trow-commit l-focus"} data-kind={place === "home" ? undefined : ink ? "ink" : "ghost"} onClick={() => setSkill(fit.skill.name, true, cwd, place === "home")}>
         Load it
       </button>
     </div>
@@ -206,7 +210,7 @@ function SideSkills({ cwd }: { cwd: string }) {
       ))}
       {/* Skills load with or without a DESIGN.md: the list, with how many more there are. */}
       {skills && mine.length > 0 && (
-        <Pop label="Add a skill to this design" width={340} triggerClass="ld-tr ld-tr-add" trigger={<><I.plus size={14} /><span className="ld-ell">Add a skill</span>{rest > 0 ? <span className="ld-m">{rest === mine.length ? rest : `${rest} more`}</span> : <span className="ld-m">all loaded</span>}</>} menu>
+        <Pop label="Load a skill for this design" width={340} triggerClass="ld-tr ld-tr-add" trigger={<><I.plus size={14} /><span className="ld-ell">Load a skill</span>{rest > 0 ? <span className="ld-m">{rest === mine.length ? rest : `${rest} more`}</span> : <span className="ld-m">all loaded</span>}</>} menu>
           {() => (
             <>
               {mine.map((s) => (
@@ -239,7 +243,7 @@ export function SkillRows({ cwd, home, done }: { cwd: string; home?: boolean; do
         <Row key={s.name} title={<span className="ld-lp-mono">/{s.name}</span>} note={s.description} on={loaded.includes(s.name)} onPick={() => setSkill(s.name, !loaded.includes(s.name), cwd, home)} />
       ))}
       {skills && !mine.length && <Row title="No design skills on this Mac" note="Skills are SKILL.md files in ~/.claude/skills, ~/.codex/skills or the project's .claude/skills" keepNote disabled />}
-      {!skills && <p className="l-shimmer lc-pop-note">Reading the skills</p>}
+      {!skills && <MenuFoot>Reading the skills</MenuFoot>}
       {/* Home has no design yet, so no lean page to open. */}
       {!home && (
         <>

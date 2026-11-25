@@ -457,7 +457,7 @@ export function accessWords(a: PanelAccess, place?: PanelManifest["place"], dsh?
   if (a.files) out.push("reads this project's files");
   if (a.sessions === "this") out.push(place === "tab" ? "reads this session" : "reads the session it's beside");
   if (a.sessions === "all") out.push("reads your sessions' titles and changes");
-  if (a.composer) out.push("can put text in the composer");
+  if (a.composer) out.push("can put text in the message box");
   if (a.storage) out.push(`keeps its own storage, up to ${sizeWords(a.storage)}`);
   if (a.ai) out.push("asks a model you pick");
   out.push(a.network ? `reaches ${a.network}` : dsh?.host ? "its page has no network" : "no network");
@@ -474,7 +474,7 @@ export function widerAccess(was: PanelAccess, now: PanelAccess): string[] {
   if (now.files && !was.files) out.push("Read the project's files");
   const rank = { undefined: 0, this: 1, all: 2 } as Record<string, number>;
   if (rank[String(now.sessions)] > rank[String(was.sessions)]) out.push(now.sessions === "all" ? "Read every session's titles and changes" : "Read the session it's beside");
-  if (now.composer && !was.composer) out.push("Put text in the composer");
+  if (now.composer && !was.composer) out.push("Put text in the message box");
   if ((now.storage ?? 0) > (was.storage ?? 0)) out.push(was.storage ? `Keep more in its storage: up to ${sizeWords(now.storage!)}, not ${sizeWords(was.storage)}` : `Keep its own storage, up to ${sizeWords(now.storage!)}`);
   if (now.ai && !was.ai) out.push("Ask a model you pick, billed to its account");
   if (now.network && now.network !== was.network) out.push(was.network ? `Reach ${now.network} instead of ${was.network}` : `Reach ${now.network} over the internet`);

@@ -17,16 +17,58 @@
   font-size: 13px;
   container-type: inline-size;
 }
-.ld-insp-top {
-  padding: 0 10px;
+/* The head is the panel's (Pane.tsx): its name is for a screen reader, and the tabs stand in its place. */
+.ld-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-.ld-insp-top .lc-stabs-row {
-  flex: 1 1 auto;
+.ld-insp .lc-pane-name:has(> .ld-sr) {
+  margin: 0;
 }
-.ld-insp-end {
+.ld-itabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -8px;
+}
+/* The tab that shows reads as a surface's name (13.5, 600, ink); the others are the head's quiet words. */
+.ld-itab {
   display: inline-flex;
   flex: none;
-  margin-left: auto;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ld-itab[aria-selected="true"] {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .ld-itab:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.ld-itab-n {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
 }
 .ld-insp-pane {
   display: flex;
@@ -34,44 +76,11 @@
   flex-direction: column;
   min-height: 0;
 }
-.ld-insp-foot {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px 14px;
-}
-.ld-insp-slot:empty {
-  display: none;
-}
 
-/* The selected layer: its glyph, its name, its kind. */
+/* The selected layer: a body's row (PaneRow), its glyph, its name, its kind at the right end. */
 .ld-ish {
-  display: flex;
   flex: none;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 16px;
-  font-size: 14px;
-  font-weight: 500;
-}
-.ld-ish > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.ld-ish-n {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ld-ish small {
-  flex: none;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--l-ink-3);
+  padding-top: 6px;
 }
 
 /* The body scrolls; 4px kept inside its edge so no focus ring is cut. */
@@ -83,19 +92,19 @@
   scrollbar-width: thin;
 }
 
-/* ---------- Sections */
+/* ---------- Sections: the panel's (PaneSection), their rows set 16 in, the tool at the label's right end. */
 .ld-sec {
-  padding: 0 16px 8px;
+  padding-bottom: 8px;
 }
-.ld-sech {
-  display: flex;
+.ld-sec > :not(.lc-pane-lab) {
+  margin-inline: 16px;
+}
+.ld-sec > .lc-pane-lab {
   align-items: center;
-  justify-content: space-between;
-  height: 32px;
-  margin-right: -8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
+}
+.ld-sec > .lc-pane-lab > span:last-child:not(:first-child) {
+  display: inline-flex;
+  margin-right: -6px;
 }
 .ld-ib {
   display: grid;
@@ -119,7 +128,7 @@
     color: var(--l-ink);
   }
 }
-.ld-sec[data-open] .ld-ib {
+.ld-sec-open .ld-ib {
   background: var(--lc-plate);
   color: var(--l-ink);
 }
@@ -335,11 +344,7 @@
   pointer-events: none;
 }
 .ld-tog {
-  cursor: pointer;
-}
-.ld-tog:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
-  outline-offset: 0;
+  gap: 8px;
 }
 
 /* ---------- Swatches */
@@ -404,7 +409,8 @@ span.ld-swt {
   font-weight: 500;
   color: var(--l-ink);
 }
-.ld-off button {
+.ld-off button,
+.ld-plainbox > button {
   padding: 0;
   border: 0;
   background: none;
@@ -476,30 +482,9 @@ span.ld-swt {
   font-family: var(--l-font-mono);
   font-size: 12px;
 }
-/* The inspector's (and its Checks tab's) empty state; the canvas's own is .ld-empty in design-face.css. */
-.ld-insp-empty {
-  display: grid;
-  flex: 1;
-  justify-items: center;
-  align-content: center;
-  gap: 8px;
-  padding: 24px 28px 80px;
-  color: var(--l-ink-3);
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
-}
-.ld-insp-empty > svg {
+/* The inspector's empty states are the panel's one (PaneNote); its icon is as quiet as the panel's. */
+.ld-insp .lc-panel-empty > svg {
   color: var(--l-ink-4);
-}
-.ld-insp-empty b {
-  color: var(--l-ink-2);
-  font-size: 13px;
-  font-weight: 500;
-}
-.ld-insp-empty p {
-  max-width: 240px;
-  margin: 0;
 }
 
 /* ---------- The Code tab */
@@ -507,23 +492,18 @@ span.ld-swt {
   display: flex;
   flex-direction: column;
 }
-.ld-segs {
-  display: flex;
-  flex: none;
-  padding: 4px 12px 8px;
+/* The strip's picker and note: the strip is mono, its own actions the body's face. */
+.ld-code-tab > .lc-pane-file {
+  border-top: 0;
+  padding-right: 8px;
 }
-.ld-code-tab .ld-seg {
-  flex: none;
-  background: none;
-}
-.ld-code-tab .ld-seg .l-seg__pill {
-  background: var(--lc-plate);
-  box-shadow: none;
-}
-.ld-code-tab .ld-seg {
-  --sg-h: 30px;
-  --sg-px: 10px;
-  --sg-fs: 13px;
+.ld-code-i {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--l-ink-4);
+  cursor: help;
 }
 .ld-code {
   flex: none;

@@ -90,6 +90,10 @@
 .ls-sev[data-dot] {
   width: auto;
 }
+.ls-sev.ls-sev-sq {
+  width: 14px;
+  justify-content: center;
+}
 .ls-sev i {
   flex: none;
   width: 8px;
@@ -262,15 +266,17 @@
   align-items: center;
   gap: 8px;
   height: 28px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
+  /* A pane section's label (PaneSection): 12.5, 600, the second ink. */
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
 }
 .ls-blkh-end {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  font-weight: 400;
   color: var(--l-ink-2);
 }
 
@@ -431,32 +437,4 @@
 }
 .ls-pick .ls-tl2 b {
   font-weight: 500;
-}
-
-/* Nothing yet, or not built yet. */
-.ls-none {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 26px 0 18px;
-  font-size: 12.5px;
-  color: var(--l-ink-3);
-  text-align: center;
-}
-.ls-none b {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.ls-disc {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 6px;
-  border-radius: 50%;
-  background: var(--l-wash);
-  color: var(--l-ink-3);
 }

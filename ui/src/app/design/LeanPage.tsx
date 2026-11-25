@@ -13,8 +13,8 @@ import { pairOf } from "../Crew";
 import { rpc, useEngine } from "../engine";
 import { I, StateMark } from "../icons";
 import { agentOf } from "../model";
-import { NamedSwitch, Pop, Row } from "../ui";
-import * as os from "../os";
+import { LookAgain, NamedSwitch, Pop, Row, ShowSidebar } from "../ui";
+import { PaneNote } from "../Pane";
 import { seedComposer } from "../Composer";
 import { cornerChoices, setLean, useLean } from "./lean";
 import { bringBack, useOffLean, walkAgain, type OffFinding } from "./leanwalk";
@@ -98,11 +98,7 @@ function LeanPage({ thread, project, sidebar, onSidebar }: { thread?: Thread; pr
   return (
     <div ref={me} className="ld-lp" role="region" aria-label="The lean">
       <header className="ld-bar ld-lp-bar" data-drag>
-        {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
-        )}
+        {!sidebar && <ShowSidebar onShow={onSidebar} />}
         <button type="button" className="ld-title ld-lp-back l-focus" onClick={closeLean}>
           <I.chevL size={14} />
           {file?.title ?? "Design"}
@@ -431,9 +427,9 @@ function Read({ lean, title, threadId }: { lean: Lean | null; title: string; thr
   if (!t) {
     return (
       <div className="ld-lp-sec ld-lp-empty">
-        <I.info size={20} />
-        <b>Nothing to read yet</b>
-        <span>Write DESIGN.md on the left, or ask the agent to. Colours, type, steps and corners show here, and fill the inspector.</span>
+        <PaneNote icon={<I.info size={20} />} title="Nothing to read yet">
+          Write DESIGN.md on the left, or ask the agent to. Colours, type, steps and corners show here, and fill the inspector.
+        </PaneNote>
       </div>
     );
   }
@@ -525,9 +521,8 @@ function OffList({ title, off, busy, at, builtin }: { title: string; off: OffFin
       <div className="ld-lp-k">
         Off the lean in {title} {at > 0 && <span className="ld-lp-n">{off.length}</span>}
         <span className="lc-grow" />
-        <button type="button" className="lc-pb ld-lp-q l-focus" disabled={busy} onClick={walkAgain}>
-          {busy ? "Reading the frames" : "Check again"}
-        </button>
+        {/* The one Look again everywhere (ui.tsx); its title says what it reads. */}
+        <LookAgain looking={busy} onLook={walkAgain} title="Read the frames again against the lean" />
       </div>
       {at === 0 ? (
         <span className="ld-lp-note ld-lp-run">

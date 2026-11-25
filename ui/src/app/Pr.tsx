@@ -1,10 +1,11 @@
 /*
   Pull requests, from the GitHub CLI. The Pull request surface is the PR card (PrCard.tsx) on
-  this session's branch: your commits as rows under Merge into the base, what reached the base
-  beside them, each clash with its two lines, the checks, and Squash and merge once it's ready.
+  this session's branch, in the panel's one frame: your commits, what reached the base beside
+  them, each clash with its two lines, the checks, and Squash and merge once it's ready.
   A real agent drives it (see sessionPrAgent), with Liner's PR flow's events.
-  Linked pull requests lists the project's, with the one this session opened on top, and says
-  what each waits on.
+  Its head's "#N ⌄" picks among the project's pull requests (pr-pick.ts), this session's on top:
+  a picked one shows what it waits on, with its actions in the foot. This was the Linked pull
+  requests surface, which went into the picker on 2026-11-25; its key opens the picker.
   Asking for a pull request in the chat ("create pr", /pr) puts the same card in the conversation.
   There it runs the project's tests on this Mac before anything is pushed: a check on the card,
   the usual request first when the session asks first, and the output in a console under it.
@@ -12,22 +13,27 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PR_TEST_TOOL, WRITER_CANCELLED, type Item, type PrInfo, type PrPicture, type Thread } from "@contracts";
 import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@liner/pro/pr-flow/pr-flow";
-import { Switch } from "@liner/components/switch/switch";
 import { toast } from "@liner/components/toast/toast";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { bridge, ghInstall } from "./bridge";
 import { getState, isCheckpoint, rpc, subscribe, useEngine, useItemsWhere } from "./engine";
-import { I, StateMark } from "./icons";
+import { I, StateMark, StepMark } from "./icons";
 import { agentOf, checkpointsOf, duration, plural, sumLines } from "./model";
 import { PrCard } from "./PrCard";
-import { prLine, SurfaceNote } from "./Surfaces";
-import { Badge, Lines } from "./ui";
+import { SurfaceNote } from "./Surfaces";
+import { Lines, MenuFoot, PanelHead, Pop, Row, Sep } from "./ui";
+import { PANE_PICK, PaneBody, PaneButton, PaneCheck, PaneFoot, PaneHead, PaneRow, PaneSection, PaneTool } from "./Pane";
+import { onPicker, pickerLists, prActions, prWord, takePicker } from "./pr-pick";
 import * as os from "./os";
 
 /** "failed": the question itself failed, which says nothing about the project. */
 type Gh = "ready" | "missing" | "signed-out" | "no-remote" | "failed";
 
-function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () => void }) {
+/**
+  Why there are no pull requests to show, in the one empty state, with at most one thing to press. In the
+  panel, Look again is the head's tool, so the note doesn't say it twice; in the chat (`onRetry`) it does.
+*/
+function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry?: () => void }) {
+  const again = (words = "Look again") => onRetry && <PaneButton onClick={onRetry}>{words}</PaneButton>;
   if (gh === "missing")
     return (
       <SurfaceNote
@@ -35,12 +41,10 @@ function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () 
         title="Pull requests need the GitHub CLI"
         action={
           <span className="lc-noproj-acts">
-            <button type="button" className="lc-btn" data-kind="plain" onClick={() => bridge.runInTerminal(ghInstall())}>
+            {again()}
+            <PaneButton ink onClick={() => bridge.runInTerminal(ghInstall())}>
               Install it in Terminal
-            </button>
-            <button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>
-              Look again
-            </button>
+            </PaneButton>
           </span>
         }
       >
@@ -54,12 +58,10 @@ function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () 
         title="Sign in to GitHub first"
         action={
           <span className="lc-noproj-acts">
-            <button type="button" className="lc-btn" data-kind="primary" onClick={() => bridge.runInTerminal("gh auth login")}>
+            {again("I've signed in")}
+            <PaneButton ink onClick={() => bridge.runInTerminal("gh auth login")}>
               Sign in in Terminal
-            </button>
-            <button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>
-              I've signed in
-            </button>
+            </PaneButton>
           </span>
         }
       >
@@ -68,19 +70,16 @@ function GhNote({ gh, detail, onRetry }: { gh: Gh; detail?: string; onRetry: () 
     );
   if (gh === "failed")
     return (
-      <SurfaceNote icon={<I.pr size={20} />} title="GitHub didn't answer" action={<button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>Look again</button>}>
+      <SurfaceNote icon={<I.pr size={20} />} title="GitHub didn't answer" action={again()}>
         {detail}
       </SurfaceNote>
     );
   return (
-    <SurfaceNote icon={<I.pr size={20} />} title="This project has no GitHub remote" action={<button type="button" className="lc-btn" data-kind="plain" onClick={onRetry}>Look again</button>}>
+    <SurfaceNote icon={<I.pr size={20} />} title="This project has no GitHub remote" action={again()}>
       Push it to GitHub first, with <span className="lc-code">gh repo create</span> or a remote of your own. Then its pull requests show here.
     </SurfaceNote>
   );
 }
-
-const stateBadge = (pr: PrInfo) =>
-  pr.state === "MERGED" ? <Badge tone="accent" mark="merged">Merged</Badge> : pr.state === "CLOSED" ? <Badge tone="neutral">Closed</Badge> : pr.isDraft ? <Badge tone="neutral" mark="pr">Draft</Badge> : <Badge tone="ok" mark="pr">Open</Badge>;
 
 const CHECK: Record<PrInfo["checks"][number]["state"], PrCheck["state"]> = { pass: "passed", fail: "failed", pending: "running", skipped: "passed" };
 // Stopped already (Stop pressed while a step was being asked): its abort has been and gone, so it ends here.
@@ -357,7 +356,7 @@ function sessionPrAgent(o: { thread: Thread; agentName: string; fields: () => { 
   };
 }
 
-export function PrSurface({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
+export function PrSurface({ thread, agentName, visible, onOpenSession }: { thread: Thread; agentName: string; visible: boolean; onOpenSession?: (id: string) => void }) {
   const [st, setSt] = useState<{ pr: PrInfo | null; branch?: string; ahead?: number; gh: Gh; detail?: string } | null>(null);
   const [n, setN] = useState(0);
   const [title, setTitle] = useState("");
@@ -445,92 +444,220 @@ export function PrSurface({ thread, agentName, visible }: { thread: Thread; agen
     [],
   );
 
-  if (!st) return <SurfaceNote icon={<I.pr size={20} />} title="Asking GitHub" />;
-  if (st.gh !== "ready") return <GhNote gh={st.gh} detail={st.detail} onRetry={() => setN((x) => x + 1)} />;
+  // The project's pull requests, for the head's picker: asked for when the picker opens, when another is picked, and on Look again.
+  const [list, setList] = useState<{ prs: PrInfo[]; gh: Gh; detail?: string } | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [find, setFind] = useState("");
+  // Another pull request of the project, picked to look at (its number); none is this session's own.
+  const [other, setOther] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const wantList = picking || other !== null;
+  useEffect(() => {
+    if (!wantList) return;
+    let live = true;
+    void rpc("pr.list", { projectId: thread.projectId })
+      .then((s) => live && setList(s))
+      .catch((e) => live && setList({ prs: [], gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
+    return () => {
+      live = false;
+    };
+  }, [thread.projectId, wantList, n]);
+  // The Linked key, ⌘K's row for it, or a layout kept from before it went: the picker opens (pr-pick.ts).
+  useEffect(() => onPicker(thread.id, () => setPicking(true)), [thread.id]);
+  useEffect(() => {
+    if (visible && takePicker(thread.id)) setPicking(true);
+  }, [visible, thread.id]);
+  const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId)?.name);
+  const again = () => setN((x) => x + 1);
+  const lookAgain = <PaneTool label="Look again" icon={<I.refresh size={16} />} onClick={again} />;
+
+  if (!st || st.gh !== "ready")
+    return (
+      <>
+        <PaneHead tools={lookAgain} />
+        {!st ? <SurfaceNote icon={<I.pr size={20} />} title="Asking GitHub" /> : <GhNote gh={st.gh} detail={st.detail} />}
+      </>
+    );
   // One closed without merging is over: the branch reads as having none, so another can open.
   const pr = st.pr?.state === "CLOSED" ? null : st.pr;
   const approved = pr?.reviews.filter((r) => r.state === "APPROVED").length ?? 0;
+  const lists = pickerLists(list?.prs ?? [], thread, find);
+  const shown = other !== null ? list?.prs.find((p) => p.number === other) : undefined;
+
+  /** The head's "#N ⌄": this session's pull request and the project's others (pr-pick.ts). */
+  const picker = (number?: number) => (
+    <Pop label="Pull requests in this project" menu width={340} triggerClass={PANE_PICK} open={picking} onOpenChange={(o) => (setPicking(o), o || setFind(""))} trigger={<>{other !== null ? `#${other}` : number ? `#${number}` : "This branch"}<I.chevD size={12} /></>}>
+      {(close) => (
+        <div className="lc-pr-pick">
+          <PanelHead>Pull requests in {project ?? "this project"}</PanelHead>
+          <input className="lc-pr-find" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find a pull request" aria-label="Find a pull request" />
+          <Sep />
+          <PanelHead>This session</PanelHead>
+          {(!find || lists.mine || (number && String(number).startsWith(find.replace(/^#/, "")))) && (
+            <Row title={number ? <PrRowTitle number={number} title={pr?.title ?? thread.title} /> : "This branch, not opened yet"} on={other === null} onPick={() => (setOther(null), close())} />
+          )}
+          <Sep />
+          <PanelHead end={list?.gh === "ready" && lists.open ? `${lists.open} open` : undefined}>Others</PanelHead>
+          {!list ? (
+            <MenuFoot>Asking GitHub</MenuFoot>
+          ) : list.gh !== "ready" ? (
+            <MenuFoot>{list.detail ?? "GitHub didn't answer"}</MenuFoot>
+          ) : lists.others.length === 0 ? (
+            <MenuFoot>{find ? "None of them match" : "No other pull request in this project"}</MenuFoot>
+          ) : (
+            lists.others.map((p) => {
+              const w = prWord(p);
+              return <Row key={p.number} title={<PrRowTitle number={p.number} title={p.title} />} end={<span className="lc-pr-word" data-tone={w.tone}>{w.word}</span>} on={other === p.number || undefined} onPick={() => (setOther(p.number), close())} />;
+            })
+          )}
+        </div>
+      )}
+    </Pop>
+  );
+
+  if (shown) {
+    const w = prWord(shown);
+    const acts = prActions(shown, thread);
+    const merge = async () => {
+      setBusy(true);
+      try {
+        await rpc("pr.merge", { projectId: thread.projectId, number: shown.number });
+        toast.success(`Merged #${shown.number}`);
+        again();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    };
+    const resolve = async () => {
+      const target = shown.threadId ?? thread.id;
+      setBusy(true);
+      try {
+        await rpc("thread.send", { id: target, text: `#${shown.number} (${shown.head}) conflicts with ${shown.base}. Bring ${shown.base} into it, resolve the conflicts, run the tests and push.`, mode: "queue" });
+        toast(shown.threadId ? "Asked its session to resolve them" : `Asked ${agentName} to resolve them`);
+        if (shown.threadId && shown.threadId !== thread.id) onOpenSession?.(shown.threadId);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <>
+        <PaneHead shows={<>{picker()}<span className="lc-pr-word" data-tone={w.tone}>{w.word}</span></>} tools={<>{lookAgain}<PaneTool label={`Open #${shown.number} on GitHub`} icon={<I.external size={16} />} onClick={() => bridge.openExternal(shown.url)} /></>} />
+        <PaneBody>
+          <div className="lc-pr-top">
+            <b className="lc-pr-name">{shown.title}</b>
+            <span className="lc-pr-way">
+              <code title={shown.head}>{shown.head}</code>
+              <I.forward size={12} />
+              <code>{shown.base}</code>
+              {shown.author && <span className="lc-pr-by">by {shown.author}</span>}
+              <span className="lc-grow" />
+              <Lines added={shown.additions} removed={shown.deletions} />
+            </span>
+          </div>
+          {shown.commits.length > 0 && (
+            <PaneSection label="Commits" note={shown.commits.length}>
+              {shown.commits.map((c) => (
+                <PaneRow key={c.sha} icon={<I.commit size={14} />} value={c.sha.slice(0, 7)} quiet>
+                  {c.title}
+                </PaneRow>
+              ))}
+            </PaneSection>
+          )}
+          {shown.checks.length > 0 && (
+            <PaneSection label="Checks" note={`${shown.checks.filter((c) => c.state === "pass").length} of ${shown.checks.length} passed`}>
+              {shown.checks.map((c, i) => (
+                <PaneRow key={`${i}:${c.name}`} title={c.detail} icon={c.state === "pass" ? <StateMark state="done" size={14} /> : <StepMark state={c.state === "fail" ? "failed" : c.state === "pending" ? "working" : "skipped"} size={14} />} value={c.state === "pass" ? "Passed" : c.state === "fail" ? "Failed" : c.state === "pending" ? "Running" : "Skipped"} quiet>
+                  {c.name}
+                </PaneRow>
+              ))}
+            </PaneSection>
+          )}
+          <Reviews pr={shown} />
+        </PaneBody>
+        <PaneFoot say={shown.state === "OPEN" ? (shown.threadId === undefined ? "Not from a session here" : "From another session") : w.word}>
+          {acts.includes("session") && <PaneButton onClick={() => onOpenSession?.(shown.threadId!)}>Open its session</PaneButton>}
+          {acts.includes("resolve") && (
+            <PaneButton ink={!acts.includes("merge")} disabled={busy} onClick={() => void resolve()}>
+              Resolve conflicts
+            </PaneButton>
+          )}
+          {acts.includes("merge") && (
+            <PaneButton ink disabled={busy} onClick={() => void merge()}>
+              {busy ? "Merging" : "Merge"}
+            </PaneButton>
+          )}
+        </PaneFoot>
+      </>
+    );
+  }
 
   return (
-    <div className="lc-pr">
-      <div className="lc-pr-scroll">
-        <PrCard
-          key={thread.id}
-          variant="panel"
-          title={pr?.title ?? (title.trim() || thread.title)}
-          branch={st.branch ?? "this branch"}
-          base={pr?.base ?? base ?? "main"}
-          agent={agent}
-          diff={pr ? { add: pr.additions, del: pr.deletions } : (diff ?? { add: 0, del: 0 })}
-          start={Boolean(pr)}
-        />
-
-        {!pr && (
-          <div className="lc-pr-sec lc-pr-edit" data-open={editing || undefined}>
-            <button type="button" className="lc-pr-lab lc-pr-fold l-focus" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
-              <I.chevR size={12} />
-              Title and description
-              <span>{editing ? "Yours, if you write them" : "Written from the branch"}</span>
-            </button>
-            <div className="lc-fold">
-              <div>
-                <div className="lc-pr-new">
-                  <div className="lc-pr-write">
-                    <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={drafting || !st.ahead} onClick={() => void draftIt()}>
-                      <I.turn size={12} />
-                      {drafting ? "Writing it" : "Write it for me"}
-                    </button>
-                    <span className="lc-quiet">From the branch's changes, its commits and what the session checked</span>
-                  </div>
-                  <label className="lc-pr-field">
-                    <span>Title</span>
-                    <input className="lc-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={thread.title} />
-                  </label>
-                  <label className="lc-pr-field">
-                    <span>What it does</span>
-                    <textarea className="lc-input lc-pr-body" value={body} onChange={(e) => setBody(e.target.value)} placeholder={`A few lines for the reviewer. ${agentName} can write it: ask in the session.`} />
-                  </label>
-                  <Switch size="sm" checked={draft} onCheckedChange={setDraft} label="Open it as a draft" />
-                </div>
+    <div className="lc-pr-view">
+      <PrCard
+        key={thread.id}
+        variant="panel"
+        title={pr?.title ?? (title.trim() || thread.title)}
+        branch={st.branch ?? "this branch"}
+        base={pr?.base ?? base ?? "main"}
+        agent={agent}
+        diff={pr ? { add: pr.additions, del: pr.deletions } : (diff ?? { add: 0, del: 0 })}
+        start={Boolean(pr)}
+        by={pr?.author}
+        head={(h) => {
+          const url = h.url ?? pr?.url;
+          const number = h.number ?? pr?.number;
+          return <PaneHead shows={<>{picker(number)}<span className="lc-pr-word" data-tone={h.tone}>{h.word}</span></>} tools={<>{lookAgain}{url && <PaneTool label={`Open #${number} on GitHub`} icon={<I.external size={16} />} onClick={() => bridge.openExternal(url)} />}</>} />;
+        }}
+        what={
+          !pr && (
+            <PaneSection label="What it does" note={editing || title || body ? "Yours" : "Written from the branch when it opens"}>
+              <PaneRow icon={<I.turn size={14} />} value={drafting ? "Writing it" : undefined} quiet onClick={drafting || !st.ahead ? undefined : () => (setEditing(true), void draftIt())} title="From the branch's changes, its commits and what the session checked">
+                Write it for me
+              </PaneRow>
+              <div className="lc-pr-fields">
+                <input className="lc-input" value={title} onChange={(e) => (setEditing(true), setTitle(e.target.value))} placeholder={thread.title} aria-label="Title" />
+                <textarea className="lc-input lc-pr-body" value={body} onChange={(e) => (setEditing(true), setBody(e.target.value))} placeholder={`A few lines for the reviewer. ${agentName} can write it: ask in the session.`} aria-label="What it does" />
               </div>
-            </div>
-          </div>
-        )}
-
-        {pr && (pr.reviews.length > 0 || pr.requested.length > 0) && (
-          <div className="lc-pr-sec">
-            <div className="lc-pr-lab">
-              Reviews
-              <span>{`${approved} of ${Math.max(pr.reviews.length + pr.requested.length, 1)} approved`}</span>
-            </div>
-            {pr.reviews.map((r, i) => (
-              <div key={`${r.author}-${i}`} className="lc-pr-person">
-                <span className="lc-me-av">{r.author.slice(0, 2).toUpperCase()}</span>
-                <b>{r.author}</b>
-                <span className="lc-grow" />
-                <Badge tone={r.state === "APPROVED" ? "ok" : r.state === "CHANGES_REQUESTED" ? "danger" : "neutral"}>{r.state === "APPROVED" ? "Approved" : r.state === "CHANGES_REQUESTED" ? "Asked for changes" : "Commented"}</Badge>
-              </div>
-            ))}
-            {pr.requested.map((p) => (
-              <div key={p} className="lc-pr-person">
-                <span className="lc-me-av">{p.slice(0, 2).toUpperCase()}</span>
-                <b>{p}</b>
-                <span className="lc-grow" />
-                <Badge tone="warn">Waiting</Badge>
-              </div>
-            ))}
-          </div>
-        )}
-        {pr && (
-          <p className="lc-pr-out">
-            <button type="button" className="lc-linkbtn l-focus" onClick={() => bridge.openExternal(pr.url)}>
-              Open #{pr.number} on GitHub
-            </button>
-            {pr.author && <span className="lc-quiet"> · by {pr.author}</span>}
-          </p>
-        )}
-      </div>
+              <PaneRow icon={<I.edit size={14} />} value={<PaneCheck checked={draft} label="Open it as a draft" onChange={(v) => (setEditing(true), setDraft(v))} />}>
+                Open it as a draft
+              </PaneRow>
+            </PaneSection>
+          )
+        }
+        more={pr && <Reviews pr={pr} approved={approved} />}
+      />
     </div>
+  );
+}
+
+/** "#127  The chart's axis says…": a pull request's number, grey, before its title, in the picker. */
+const PrRowTitle = ({ number, title }: { number: number; title: string }) => (
+  <>
+    <span className="lc-pr-num">#{number}</span> {title}
+  </>
+);
+
+/** Who approved, who asked for changes and who is still asked: one row each, the state at the end. */
+function Reviews({ pr, approved = pr.reviews.filter((r) => r.state === "APPROVED").length }: { pr: PrInfo; approved?: number }) {
+  if (!pr.reviews.length && !pr.requested.length) return null;
+  const av = (who: string) => <span className="lc-pr-av">{who.slice(0, 1).toUpperCase()}</span>;
+  return (
+    <PaneSection label="Reviews" note={`${approved} of ${Math.max(pr.reviews.length + pr.requested.length, 1)} approved`}>
+      {pr.reviews.map((r, i) => (
+        <PaneRow key={`${r.author}-${i}`} icon={av(r.author)} value={<span className="lc-pr-word" data-tone={r.state === "APPROVED" ? "ok" : r.state === "CHANGES_REQUESTED" ? "danger" : undefined}>{r.state === "APPROVED" ? "Approved" : r.state === "CHANGES_REQUESTED" ? "Asked for changes" : "Commented"}</span>}>
+          {r.author}
+        </PaneRow>
+      ))}
+      {pr.requested.map((p) => (
+        <PaneRow key={p} icon={av(p)} value="Waiting" quiet>
+          {p}
+        </PaneRow>
+      ))}
+    </PaneSection>
   );
 }
 
@@ -764,123 +891,6 @@ function PrConsole({ threadId, run, agentName }: { threadId: string; run: Tool; 
             </button>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-export function LinkedSurface({ thread, agentName, onOpenSession }: { thread: Thread; agentName: string; onOpenSession: (id: string) => void }) {
-  const [st, setSt] = useState<{ prs: PrInfo[]; gh: Gh; detail?: string } | null>(null);
-  const [which, setWhich] = useState<"open" | "all">("open");
-  const [n, setN] = useState(0);
-  const [busy, setBusy] = useState<number | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void rpc("pr.list", { projectId: thread.projectId })
-      .then((s) => live && setSt(s))
-      .catch((e) => live && setSt({ prs: [], gh: "failed", detail: e instanceof Error ? e.message : String(e) }));
-    return () => {
-      live = false;
-    };
-  }, [thread.projectId, n]);
-
-  if (!st) return <SurfaceNote icon={<I.link size={20} />} title="Asking GitHub" />;
-  if (st.gh !== "ready") return <GhNote gh={st.gh} detail={st.detail} onRetry={() => setN((x) => x + 1)} />;
-
-  const mine = (p: PrInfo) => p.threadId === thread.id || p.number === thread.pr?.number;
-  const list = st.prs.filter((p) => which === "all" || p.state === "OPEN").sort((a, b) => Number(mine(b)) - Number(mine(a)));
-
-  const merge = async (p: PrInfo) => {
-    setBusy(p.number);
-    try {
-      await rpc("pr.merge", { projectId: thread.projectId, number: p.number });
-      toast.success(`Merged #${p.number}`);
-      setN((x) => x + 1);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-  const resolve = async (p: PrInfo) => {
-    const target = p.threadId ?? thread.id;
-    setBusy(p.number);
-    try {
-      await rpc("thread.send", { id: target, text: `#${p.number} (${p.head}) conflicts with ${p.base}. Bring ${p.base} into it, resolve the conflicts, run the tests and push.`, mode: "queue" });
-      toast(p.threadId ? "Asked its session to resolve them" : `Asked ${agentName} to resolve them`);
-      if (p.threadId && p.threadId !== thread.id) onOpenSession(p.threadId);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div className="lc-linked">
-      <div className="lc-linked-top">
-        <Segmented
-          size="sm"
-          value={which}
-          onValueChange={setWhich}
-          options={[
-            { value: "open", label: "Open" },
-            { value: "all", label: "All" },
-          ]}
-          aria-label="Which pull requests"
-        />
-        <span className="lc-grow" />
-        <button type="button" className="lc-ib l-focus" aria-label="Look again" title="Look again" onClick={() => setN((x) => x + 1)}>
-          <I.refresh size={14} />
-        </button>
-      </div>
-      <div className="lc-linked-list">
-        {list.length === 0 && <p className="lc-quiet lc-pr-none">{which === "open" ? "No pull request is open in this project." : "This project has no pull requests yet."}</p>}
-        {list.map((p, i) => {
-          const failed = p.checks.some((c) => c.state === "fail");
-          const pending = p.checks.some((c) => c.state === "pending");
-          const conflict = p.mergeable === "CONFLICTING";
-          const ready = p.state === "OPEN" && !p.isDraft && !conflict && !failed && !pending;
-          const line = p.state === "MERGED" ? "Merged" : p.state === "CLOSED" ? "Closed" : conflict ? "Conflicts with the base branch" : failed ? "A check failed" : pending ? "Checks running" : p.reviewDecision === "CHANGES_REQUESTED" ? "Changes asked for" : ready ? "Ready to merge, and waiting for you" : prLine(p);
-          return (
-            <article key={p.number} className="lc-linked-card" style={{ animationDelay: `${i * 30}ms` }} data-mine={mine(p) || undefined}>
-              <div className="lc-linked-h">
-                <span className="lc-linked-t">
-                  <b>{p.title}</b>
-                  <small className="lc-quiet">
-                    #{p.number} ·{mine(p) ? " this session ·" : p.threadId ? " another session ·" : p.author ? ` ${p.author} ·` : ""} <Lines added={p.additions} removed={p.deletions} />
-                  </small>
-                </span>
-                {stateBadge(p)}
-              </div>
-              <div className="lc-linked-f">
-                <span className="lc-linked-line" data-tone={conflict || failed ? "danger" : pending ? "warn" : undefined}>
-                  {line}
-                </span>
-                <span className="lc-grow" />
-                {p.threadId && p.threadId !== thread.id && (
-                  <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => onOpenSession(p.threadId!)}>
-                    Open its session
-                  </button>
-                )}
-                {conflict && p.state === "OPEN" && (
-                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy !== null} onClick={() => void resolve(p)}>
-                    Resolve conflicts
-                  </button>
-                )}
-                {ready && (
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy !== null} onClick={() => void merge(p)}>
-                    {busy === p.number ? "Merging" : "Merge"}
-                  </button>
-                )}
-                <button type="button" className="lc-ib l-focus" aria-label={`Open #${p.number} on GitHub`} title={`Open #${p.number} on GitHub`} onClick={() => bridge.openExternal(p.url)}>
-                  <I.push size={14} />
-                </button>
-              </div>
-            </article>
-          );
-        })}
       </div>
     </div>
   );

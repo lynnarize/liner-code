@@ -32,106 +32,59 @@
   color: var(--l-ink);
 }
 
-/* ---------- The dock: one or two panes, a strip over each ---------- */
-.lc-dockpanes {
-  display: grid;
-  grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr));
-  grid-template-rows: auto minmax(0, 1fr);
-}
-/* The strip is the panel's header, on the top row: 44 high, its last button 10px in from the
-   paper's edge, as the session header's is. */
-.lc-dockpanes > .lc-stabs {
-  grid-row: 1;
-  min-width: 0;
-  padding: 0 10px;
-}
-/* What starts the session's header (the sidebar's button), there only while the panel's row is the
-   paper's header: the full canvas, or a session too narrow for both (app.css, 786px). */
-.lc-stabs-lead {
-  display: none;
+/* ---------- The session header's row of surfaces (Switcher.tsx) ----------
+   At the header's right end, after the Reviewer: 20px navigation icons in 32px buttons, as the sidebar's
+   own top icons; the lit one (the surface showing, the bottom panel up, the Session popup or ··· open) on
+   a wash in ink. */
+.lc-sw {
+  display: flex;
   flex: none;
   align-items: center;
   gap: 2px;
-  margin-right: 4px;
 }
-.lc-session[data-wide] .lc-stabs-lead {
-  display: inline-flex;
-}
-@container lc-session (max-width: 786px) {
-  .lc-session[data-panel] .lc-stabs-lead {
-    display: inline-flex;
-  }
-}
-@container lc-session (max-width: 946px) {
-  .lc-session[data-panel][data-panes="2"] .lc-stabs-lead {
-    display: inline-flex;
-  }
-}
-/* Changes' count of files to commit: quiet text beside its name, or its icon when the names give way. */
-.lc-stab-n {
+.lc-sw-b {
+  display: inline-grid;
   flex: none;
-  font-size: 13px;
-  font-weight: 400;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
   color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
-/* Each pane is what a surface's own narrow layouts measure, not the whole dock. */
-.lc-dockpanes > .lc-surface {
-  min-width: 0;
-  min-height: 0;
-  container-type: inline-size;
+.lc-sw-b.lc-pick {
+  display: inline-grid;
+  place-items: center;
 }
-/* A tab that isn't up stays laid out in its own pane, out of sight. */
-.lc-dockpanes > .lc-surface[hidden] {
-  inset: 0;
+.lc-sw-b > svg {
+  width: 20px;
+  height: 20px;
 }
-.lc-dockpanes > [data-pane="1"] {
-  box-shadow: inset 1px 0 0 var(--l-line);
-}
-.lc-stabs[data-drop] {
-  background: var(--l-wash);
-}
-.lc-stab[data-preview] .lc-stab-b {
+.lc-sw-b[aria-pressed="true"],
+.lc-sw-b[data-open] {
+  background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.lc-stab-tag {
-  flex: none;
-  padding: 0 5px;
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--l-accent) 12%, transparent);
-  color: var(--l-accent);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 15px;
+@media (hover: hover) {
+  .lc-sw-b:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
 }
-.lc-panel-top .lc-ib[aria-disabled] {
-  opacity: 0.4;
-  cursor: default;
-}
-/* While a chip is dragged: each pane's body takes the drop, its right half splits a lone pane. */
-.lc-dropzone {
-  position: relative;
-  z-index: 6;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 4px 8px 8px;
-  border-radius: 14px;
-  transition: background 160ms ease;
-}
-.lc-dropzone[data-on] {
-  background: color-mix(in oklch, var(--l-accent) 7%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--l-accent) 40%, transparent);
-}
-.lc-dropzone[data-split] {
-  background: none;
-  box-shadow: none;
-}
-.lc-dropzone[data-split] > .lc-dropzone-r {
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--l-accent) 9%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--l-accent) 45%, transparent);
-}
-.lc-dockpanes[data-dragging] iframe {
-  pointer-events: none;
+/* A narrow header keeps the row whole: the title and the chips give way first (app.css, lc-bar). */
+@container lc-bar (max-width: 420px) {
+  .lc-sw {
+    gap: 0;
+  }
+  .lc-sw-b {
+    width: 28px;
+  }
 }
 
 /* Two panes side by side: the dock half as wide again, the thread still keeping its 420px. */
@@ -154,23 +107,6 @@
   .lc-session[data-panes="2"] .lc-grip {
     display: none;
   }
-}
-
-/* ---------- The New tab guide ---------- */
-.lc-spick-k {
-  width: min(100%, 560px);
-  margin: 16px 0 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-  text-align: left;
-}
-.lc-spick > h2 + p + .lc-spick-k {
-  margin-top: 0;
-}
-.lc-spick-b[data-make] {
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
 }
 
 /* ---------- An add-on panel ---------- */
@@ -232,8 +168,26 @@
   font-size: 12px;
   color: var(--l-ink-3);
 }
-.lc-addon-view[data-preview] .lc-addon-strip {
+.lc-addon-view[data-preview] :is(.lc-addon-strip, .lc-addon-foot) {
   margin-top: 10px;
+}
+.lc-addon-view[data-preview] .lc-addon-banner {
+  margin-top: 10px;
+}
+/* In the panel the strip is the frame's foot: the shield and the line on the left, the model chip on the right. */
+.lc-addon-foot .lc-pane-say {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.lc-addon-foot .lc-pane-say > svg {
+  flex: none;
+}
+.lc-addon-foot .lc-pane-say > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .lc-addon-strip > span {
   flex: 1;
@@ -829,8 +783,4 @@
   /* The sidebar's 10px gap, less 8: the same 2px as between the rows above. */
   margin-top: -8px;
   padding: 0 0 4px;
-}
-/* The guide ("Open in this pane"): plain rows, no grey card and no tile, a wash as you point. */
-.lc-spick-b[data-make] {
-  box-shadow: none;
 }

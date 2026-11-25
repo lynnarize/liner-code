@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Item } from "@contracts";
 import { I, StateMark } from "../icons";
+import { PaneTool } from "../Pane";
 
 export type QuestionItem = Extract<Item, { kind: "question" }>;
 /** Where the card is: the question in view, and the answers given so far (question → answer). */
@@ -75,15 +76,12 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
         {total > 1 && (
           <>
             <span className="lc-grow" />
-            <button type="button" className="lc-ib l-focus" aria-label="The question before" title="The question before" disabled={at === 0} onClick={() => onState({ ...state, at: at - 1 })}>
-              <I.chevL size={14} />
-            </button>
-            <span className="lc-wk-tag l-num">
+            {/* The pager is a pane head's Previous and Next, with where it is in plain words between them. */}
+            <PaneTool label="The question before" icon={<I.chevL size={16} />} disabled={at === 0} onClick={() => onState({ ...state, at: at - 1 })} />
+            <span className="lsc-ask-at l-num">
               {at + 1} of {total}
             </span>
-            <button type="button" className="lc-ib l-focus" aria-label="The next question" title="The next question" disabled={at === total - 1} onClick={() => onState({ ...state, at: at + 1 })}>
-              <I.chevR size={14} />
-            </button>
+            <PaneTool label="The next question" icon={<I.chevR size={16} />} disabled={at === total - 1} onClick={() => onState({ ...state, at: at + 1 })} />
           </>
         )}
       </div>
@@ -94,8 +92,8 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
             <button key={o.label} type="button" role="radio" aria-checked={chosen === o.label} className="lsc-ask-opt l-focus" data-hl={i === hl || undefined} onMouseEnter={() => setHl(i)} onClick={() => pick(o.label)}>
               <kbd>{LETTERS[i]}</kbd>
               <span className="lsc-ask-l">{o.label}</span>
-              {o === guessOf(q) && <span className="ls-tag">My guess</span>}
-              {o.description && <span className="lsc-ask-why">{o.description}</span>}
+              {/* "My guess" and its reason are the row's value at its right end, as a menu row's value is. */}
+              {(o === guessOf(q) || o.description) && <span className="lsc-ask-why">{[o === guessOf(q) && "My guess", o.description].filter(Boolean).join(" · ")}</span>}
             </button>
           ))}
         </div>

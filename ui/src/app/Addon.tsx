@@ -8,7 +8,8 @@
   as a shown page's do (Page.tsx).
 
   Round it: the strip that says whose it is, which version, and exactly what it touches, with its
-  menu (versions, change it, its files, where it shows, off, remove); a notice when the content
+  menu (versions, pin, change it, its files, where it shows, off, remove); in the right panel the
+  strip is the frame's foot and the menu is in its head (Pane.tsx). A notice when the content
   policy blocked a request; the card that takes its place when it breaks; and its off and removed
   states. A preview (a panel whose install card is up) wears a ring and says nothing is kept yet.
 */
@@ -26,6 +27,8 @@ import { I, StateMark, StepMark } from "./icons";
 import { modelLabel } from "./model";
 import { THEME_ATTRS, theme } from "./Page";
 import { ConfirmRow, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
+import { PANE_TOOL, PaneButton, PaneFoot, PaneHead, PaneNote, usePaneFrame } from "./Pane";
+import { pin, usePins } from "./TopBar";
 import * as os from "./os";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
@@ -52,7 +55,7 @@ export function accessLine(a: PanelAsk["access"], place: PanelPlace) {
   if (a.files) out.push("reads this project's files");
   if (a.sessions === "this") out.push(place === "tab" ? "reads this session" : "reads the session it's beside");
   if (a.sessions === "all") out.push("reads your sessions' titles and changes");
-  if (a.composer) out.push("can put text in the composer");
+  if (a.composer) out.push("can put text in the message box");
   if (a.storage) out.push(`keeps its own storage, up to ${kb(a.storage)}`);
   if (a.ai) out.push("asks a model you pick");
   out.push(a.network ? `reaches ${a.network}` : "no network");
@@ -80,46 +83,82 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
   const asks = useItemsWhere(thread?.id, isPanelAsk) as Extract<Item, { kind: "approval" }>[];
   const ask = preview ? asks?.find((x) => x.id === preview && x.state === "asking")?.addon : undefined;
   const draft = ask?.kind === "panel" ? ask : undefined;
+  // In the right panel it is drawn in the panel's one frame: its name and its ··· in the head, the shield line and the model chip as the foot.
+  // On a page or a session's tab, the strip under it says the same and holds the ···.
+  const { inPanel } = usePaneFrame();
+  const head = (menu?: ReactNode) => inPanel && <PaneHead tools={menu} />;
+  const foot = (line: string, chip?: ReactNode, menu?: ReactNode) =>
+    inPanel ? (
+      <PaneFoot className="lc-addon-foot" say={<><I.shield size={14} /><span>{line}</span></>}>
+        {chip}
+      </PaneFoot>
+    ) : (
+      <div className="lc-addon-strip">
+        <I.shield size={14} />
+        <span>{line}</span>
+        {chip}
+        {menu}
+      </div>
+    );
 
   if (preview) {
-    if (!draft || !thread) return <PanelNote icon={<I.blocks size={20} />} title="This preview is over" body="Its card was answered, or the turn it was asked in ended." />;
+    if (!draft || !thread)
+      return (
+        <>
+          {head()}
+          <PaneNote icon={<I.blocks size={20} />} title="This preview is over">
+            Its card was answered, or the turn it was asked in ended.
+          </PaneNote>
+        </>
+      );
     return (
       <div className="lc-addon-view" data-preview>
+        {head()}
         <div className="lc-addon-banner" role="note">
           <I.eye size={14} />
           <span>A preview: try it. Nothing is kept until you add it.</span>
         </div>
         <Frame key={preview} source={{ threadId: thread.id, itemId: preview }} addon={addon} preview={preview} thread={thread} agentName={agentName} visible={visible} />
-        <div className="lc-addon-strip">
-          <I.shield size={14} />
-          <span>{stripOf({ by: agentName, reaches: accessLine(draft.access, draft.place), place: draft.place, preview: true })}</span>
-          {draft.access.ai && <AppModelChip addon={addon} name={draft.name} />}
-        </div>
+        {foot(stripOf({ by: agentName, reaches: accessLine(draft.access, draft.place), place: draft.place, preview: true }), draft.access.ai && <AppModelChip addon={addon} name={draft.name} />)}
       </div>
     );
   }
-  if (!info?.panel) return <PanelNote icon={<I.blocks size={20} />} title="This add-on is gone" body="It was removed, or this window doesn't have it yet." />;
-  const strip = (
-    <div className="lc-addon-strip">
-      <I.shield size={14} />
-      <span>{info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place, dsh: info.panel.dsh }) : `${info.panel.dsh ? info.panel.dsh.package : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent}`} · off`}</span>
-      {info.panel.access.ai && info.enabled && !info.removed && <AppModelChip addon={info.id} name={info.name} />}
-      <AddonMenu a={info} thread={thread} agentName={agentName} onOpenElsewhere={onOpenElsewhere} />
-    </div>
+  if (!info?.panel)
+    return (
+      <>
+        {head()}
+        <PaneNote icon={<I.blocks size={20} />} title="This add-on is gone">
+          It was removed, or this window doesn't have it yet.
+        </PaneNote>
+      </>
+    );
+  const menu = <AddonMenu a={info} thread={thread} agentName={agentName} onOpenElsewhere={onOpenElsewhere} {...(inPanel ? { triggerClass: PANE_TOOL, side: "bottom" as const } : {})} />;
+  const strip = foot(
+    info.enabled && !info.removed ? stripOf({ by: info.by.agent, version: info.version, reaches: info.reaches, place: info.panel.place, dsh: info.panel.dsh }) : `${info.panel.dsh ? info.panel.dsh.package : `${info.panel.place === "dock" ? "Add-on" : "App"} by ${info.by.agent}`} · off`,
+    info.panel.access.ai && info.enabled && !info.removed && <AppModelChip addon={info.id} name={info.name} />,
+    menu,
   );
   if (info.removed)
     return (
       <div className="lc-addon-view">
-        <PanelNote icon={<I.trash size={20} />} title={`You removed ${info.name}`} body="Its files, versions and storage are kept, so it can come back." action={<button type="button" className="lc-btn" data-kind="ghost" onClick={() => void rpc("addons.update", { id: info.id, removed: false }).catch(fail)}>Bring it back</button>} />
+        {head(menu)}
+        <PaneNote icon={<I.trash size={20} />} title={`You removed ${info.name}`} action={<PaneButton onClick={() => void rpc("addons.update", { id: info.id, removed: false }).catch(fail)}>Bring it back</PaneButton>}>
+          Its files, versions and storage are kept, so it can come back.
+        </PaneNote>
       </div>
     );
   if (!info.enabled || off)
     return (
       <div className="lc-addon-view">
+        {head(menu)}
         {off ? (
-          <PanelNote icon={<I.shieldOff size={20} />} title="Add-ons are off for now" body="Liner Code started without them this time. They're back the next time it starts." />
+          <PaneNote icon={<I.shieldOff size={20} />} title="Add-ons are off for now">
+            Liner Code started without them this time. They're back the next time it starts.
+          </PaneNote>
         ) : (
-          <PanelNote icon={<I.shieldOff size={20} />} title={`${info.name} is off`} body="Its files, versions and storage are kept. It won't open in any session until you turn it on." action={<button type="button" className="lc-btn" onClick={() => void rpc("addons.update", { id: info.id, enabled: true }).catch(fail)}>Turn it on</button>} />
+          <PaneNote icon={<I.shieldOff size={20} />} title={`${info.name} is off`} action={<PaneButton ink onClick={() => void rpc("addons.update", { id: info.id, enabled: true }).catch(fail)}>Turn it on</PaneButton>}>
+            Its files, versions and storage are kept. It won't open in any session until you turn it on.
+          </PaneNote>
         )}
         {strip}
       </div>
@@ -128,13 +167,17 @@ export function AddonView({ addon, preview, thread, agentName, visible = true, o
     const where = projects.find((p) => p.id === info.project)?.name ?? "another project";
     return (
       <div className="lc-addon-view">
-        <PanelNote icon={<I.folder size={20} />} title={`${info.name} is for ${where}`} body="It shows in that project's sessions only." action={<button type="button" className="lc-btn" data-kind="ghost" onClick={() => void rpc("addons.update", { id: info.id, project: null }).catch(fail)}>Show it in every project</button>} />
+        {head(menu)}
+        <PaneNote icon={<I.folder size={20} />} title={`${info.name} is for ${where}`} action={<PaneButton onClick={() => void rpc("addons.update", { id: info.id, project: null }).catch(fail)}>Show it in every project</PaneButton>}>
+          It shows in that project's sessions only.
+        </PaneNote>
         {strip}
       </div>
     );
   }
   return (
     <div className="lc-addon-view">
+      {head(menu)}
       <Frame key={`${info.id}:${info.version}`} source={{ id: info.id, version: info.version }} addon={info.id} thread={info.panel.place === "page" ? undefined : thread} agentName={agentName} visible={visible} info={info} />
       {strip}
     </div>
@@ -306,7 +349,12 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   }, [count, ok?.access.sessions]);
 
   if (!loaded || (ok?.dsh && !platform)) return <div className="lc-addon-frame" data-wait aria-busy />;
-  if ("error" in loaded) return <PanelNote icon={<I.alert size={20} />} title="Its files didn't open" body={loaded.error} />;
+  if ("error" in loaded)
+    return (
+      <PaneNote icon={<I.alert size={20} />} title="Its files didn't open">
+        {loaded.error}
+      </PaneNote>
+    );
   const name = loaded.name;
   const earlier = info ? info.versions.filter((v) => v < info.version).at(-1) : undefined;
   const reach = loaded.access.network;
@@ -395,16 +443,9 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
         </div>
       )}
       {ended && !crash && (
-        <PanelNote
-          icon={<I.alert size={20} />}
-          title={`${name} stopped`}
-          body={STOPPED_REASON}
-          action={
-            <button type="button" className="lc-btn" onClick={again}>
-              Retry
-            </button>
-          }
-        />
+        <PaneNote icon={<I.alert size={20} />} title={`${name} stopped`} action={<PaneButton onClick={again}>Retry</PaneButton>}>
+          {STOPPED_REASON}
+        </PaneNote>
       )}
       <iframe
         ref={frame}
@@ -421,25 +462,16 @@ function Frame({ source, addon, preview, thread, agentName, visible, info }: { s
   );
 }
 
-function PanelNote({ icon, title, body, action }: { icon: ReactNode; title: string; body: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="lc-panel-empty lc-addon-note">
-      {icon}
-      <b>{title}</b>
-      <p>{body}</p>
-      {action}
-    </div>
-  );
-}
-
 /** A panel's ⋯: its versions, change it, its files, where it shows, off and remove. */
-export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass = "lc-ib" }: { a: AddonInfo; thread?: Thread; agentName: string; onOpenElsewhere?: () => void; triggerClass?: string }) {
+export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass = "lc-ib", side = "top" }: { a: AddonInfo; thread?: Thread; agentName: string; onOpenElsewhere?: () => void; triggerClass?: string; side?: "top" | "bottom" }) {
   const projects = useEngine((s) => s.projects);
+  // Pinned apps come first in the session header's Your apps (Switcher.tsx); the panel's tab strip that pinned them went on 2026-11-25.
+  const pinned = usePins().includes(a.id);
   const set = (p: { enabled?: boolean; version?: number; removed?: boolean; project?: string | null }) => void rpc("addons.update", { id: a.id, ...p }).catch(fail);
   const here = thread ? projects.find((p) => p.id === thread.projectId) : undefined;
   const page = a.panel?.place === "page";
   return (
-    <Pop label={`More for ${a.name}`} align="end" side="top" width={290} triggerClass={triggerClass} trigger={<I.more size={14} />}>
+    <Pop label={`More for ${a.name}`} menu align="end" side={side} width={290} triggerClass={triggerClass} trigger={<I.more size={side === "bottom" ? 16 : 14} />}>
       {(close) => (
         <div className="lc-addon-menu">
           <PanelHead>Versions</PanelHead>
@@ -447,6 +479,7 @@ export function AddonMenu({ a, thread, agentName, onOpenElsewhere, triggerClass 
             <Row key={v} title={`v${v}`} note={[v === a.version ? "In use" : "", a.dates?.[v] ? dayOf(a.dates[v]) : ""].filter(Boolean).join(" · ")} end={a.dates?.[v] ? dayOf(a.dates[v]) : undefined} on={v === a.version} onPick={() => (set({ version: v }), close())} />
           ))}
           <Sep />
+          {!page && <Row title={pinned ? "Unpin" : "Pin"} note="Pinned apps come first in Your apps" icon={<I.pin size={16} />} onPick={() => (close(), pin(a.id, !pinned))} />}
           {thread && !a.panel?.dsh && <Row title={`Change it with ${agentName}`} icon={<I.edit size={16} />} onPick={() => (close(), toComposer(thread.id, `Change the ${a.name} ${page ? "app" : "panel"} so `))} />}
           <Row title={`Show in ${os.fileManager}`} note="Its files" icon={<I.folder size={16} />} onPick={() => (close(), void rpc("addons.read", { id: a.id }).then((r) => bridge.reveal(`${r.dir}/v${a.version}`)).catch(fail))} />
           {onOpenElsewhere && <Row title={page ? "Open it in the dock" : "Open it on its own"} icon={<I.panel size={16} />} onPick={() => (close(), onOpenElsewhere())} />}
@@ -514,7 +547,7 @@ export function willTouch(a: PanelAsk["access"], place: PanelPlace) {
     a.files && "read this project's files",
     a.sessions === "this" && (place === "tab" ? "read this session" : "read the session it's beside"),
     a.sessions === "all" && "read your sessions' titles and changes",
-    a.composer && "put text in the composer for you",
+    a.composer && "put text in the message box for you",
     a.storage ? `keep its entries (up to ${kb(a.storage)})` : "",
     a.ai && "ask a model you pick",
   ].filter(Boolean) as string[];

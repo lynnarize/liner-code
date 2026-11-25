@@ -71,10 +71,7 @@ export function ModeRows({ value, onPick, done }: { value: SessionMode; onPick: 
         <Row key={a.id} keepIcon icon={<ModeIcon mode={`agent:${a.id}`} agents={agents} size={16} />} title={a.name} note={`Its instructions, on the model you pick${a.role ? ` · ${a.role}` : ""}`} on={value === `agent:${a.id}`} onPick={() => (onPick(`agent:${a.id}`), done())} />
       ))}
       <Sep />
-      <button type="button" className="lc-mode-more l-focus" onClick={() => (done(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))}>
-        <I.sliders size={16} />
-        Modes in Settings…
-      </button>
+      <Row icon={<I.sliders size={16} />} title="Modes in Settings…" onPick={() => (done(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "modes" })))} />
     </div>
   );
 }
@@ -147,7 +144,7 @@ function GuideDialog({ name, guide, tab, onTab, onClose }: { name: string; guide
 
 /**
   One mode's card: its name, badge and id, what it's for; Mode details and How to use open its guide;
-  the document icon at its foot sets it as the new task default (its tooltip says so). The default
+  the document icon at its foot makes it the default for new sessions (its tooltip says so). The default
   card is filled grey, with the badge in ink.
 */
 function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: { id: string; name: string; badge: string; blurb: string; guide: Guide; isDefault: boolean; onDefault: () => void; end?: ReactNode }) {
@@ -157,7 +154,7 @@ function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: 
       <header>
         <b>{name}</b>
         <span className="lc-mode-badge" data-on={isDefault || undefined}>
-          {isDefault ? "New task default" : badge}
+          {isDefault ? "Default for new sessions" : badge}
         </span>
         <code>{id}</code>
       </header>
@@ -171,8 +168,8 @@ function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: 
         </button>
         {end}
         <span className="lc-grow" />
-        <Tooltip content={isDefault ? "The new task default" : "Set as new task default"}>
-          <button type="button" className="lc-ib l-focus lc-mode-set" aria-label={isDefault ? `${name} is the new task default` : `Set ${name} as new task default`} aria-pressed={isDefault} onClick={() => !isDefault && onDefault()}>
+        <Tooltip content={isDefault ? "The default for new sessions" : "Make it the default for new sessions"}>
+          <button type="button" className="lc-ib l-focus lc-mode-set" aria-label={isDefault ? `${name} is the default for new sessions` : `Make ${name} the default for new sessions`} aria-pressed={isDefault} onClick={() => !isDefault && onDefault()}>
             <I.notes size={14} />
           </button>
         </Tooltip>

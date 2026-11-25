@@ -2,9 +2,10 @@
   Side chat: ask about a session beside it, without stopping it or adding to it. Who you talk to
   in the session answers from a fork of its conversation (the engine's thread.side), reads what
   it needs and changes nothing, and nothing said here reaches the session. It knows the session up
-  to the turn it started from; Catch up starts it again from where the session is now. You write
-  in the same message box as everywhere (Composer), with Permissions held at Read only, and a
-  working answer is the same live line over it (LiveLine).
+  to the turn it started from, as its head says; that line's menu has Catch up, which starts it
+  again from where the session is now, and Start again. You write in the same message box as
+  everywhere (Composer), its foot, with Permissions held at Read only, and a working answer is
+  the same live line over it (LiveLine).
 */
 import { useEffect, useMemo, useRef } from "react";
 import type { Thread } from "@contracts";
@@ -15,6 +16,8 @@ import { loadItems, rpc, useEngine, useItems } from "./engine";
 import { I } from "./icons";
 import { agentOf } from "./model";
 import { LiveLine, Timeline } from "./Timeline";
+import { PANE_PICK, PaneHead, PaneNote, PaneWords } from "./Pane";
+import { MenuFoot, Pop, Row } from "./ui";
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
@@ -81,33 +84,35 @@ export function SideChat({ thread, visible }: { thread: Thread; visible: boolean
     }
   };
 
+  // How far it knows the session, the head's one picker: Catch up (when the session has moved on) and Start again.
+  const knows = `Knows up to turn ${from}${side && behind > 0 ? ` of ${thread.turns}` : ""}`;
   return (
     <div className="lc-sc">
-      <div className="lc-sc-head">
-        <span className="lc-sc-note">
-          <b>{who.name}</b> knows up to turn {from}
-          {side && behind > 0 ? ` of ${thread.turns}` : ""}
-        </span>
-        {side && (
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={running} title={behind > 0 ? `Start the side chat again from turn ${thread.turns}` : "Start the side chat again"} onClick={() => void again()}>
-            {behind > 0 ? "Catch up" : "Start again"}
-          </button>
-        )}
-      </div>
+      <PaneHead
+        shows={
+          side ? (
+            <Pop label={`${who.name} ${knows.toLowerCase()}. Catch up or start again`} menu width={260} triggerClass={PANE_PICK} trigger={<>{knows}<I.chevD size={12} /></>}>
+              {(close) => (
+                <>
+                  {/* Both start it again from where the session is now: behind it, that is catching up. */}
+                  {behind > 0 ? <Row title="Catch up" icon={<I.refresh size={14} />} end={`To turn ${thread.turns}`} disabled={running} onPick={() => (close(), void again())} /> : <Row title="Start again" icon={<I.undo size={14} />} disabled={running} onPick={() => (close(), void again())} />}
+                  <MenuFoot>{running ? `Once ${who.name} has answered` : behind > 0 ? `Starts it again from turn ${thread.turns}, where the session is now` : "Starts it again from where the session is now"}</MenuFoot>
+                </>
+              )}
+            </Pop>
+          ) : (
+            <PaneWords>{knows}</PaneWords>
+          )
+        }
+      />
       <div ref={scroller} className="lc-sc-scroll">
         <div ref={contentRef} className="lc-sc-in">
           {side && items.length ? (
             <Timeline threadId={side.id} items={items} seen={seen.current ?? new Set()} onGrow={follow} />
           ) : (
-            <div className="lc-sc-empty">
-              <span className="lc-sc-empty-i">
-                <I.comment size={20} />
-              </span>
-              <b>Ask about this session on the side</b>
-              <span>
-                {who.name} starts from the session so far and reads what it needs, but changes nothing. What you ask here stays here: the session carries on and never sees it.
-              </span>
-            </div>
+            <PaneNote icon={<I.comment size={20} />} title="Ask about this session on the side">
+              {who.name} starts from the session so far and reads what it needs, but changes nothing. What you ask here stays here: the session carries on and never sees it.
+            </PaneNote>
           )}
         </div>
       </div>

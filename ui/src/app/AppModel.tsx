@@ -107,7 +107,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
           <button type="button" className="lc-btn" data-kind="ghost" onClick={() => asking.resolve(null)}>
             Don't allow
           </button>
-          <button type="button" className="lc-btn" data-kind="primary" disabled={!pick || busy} onClick={() => void allow()}>
+          <button type="button" className="lc-btn" data-kind="ink" disabled={!pick || busy} onClick={() => void allow()}>
             {pick ? `Allow ${modelLabel(pick, providers)}` : "Allow"}
           </button>
         </>

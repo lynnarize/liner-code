@@ -31,42 +31,15 @@
   color: var(--l-ink);
 }
 /* Under the modes, the way to Settings › Modes: a plain line, its icon in line with the modes'. */
-.lc-mode-more {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 32px;
-  padding: 0 10px 0 9px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  text-align: left;
-  cursor: pointer;
-}
-.lc-mode-more > svg {
-  flex: none;
-  margin: 0 0.5px;
-  color: var(--l-ink-3);
-}
-@media (hover: hover) {
-  .lc-mode-more:hover {
-    background: var(--lc-well);
-  }
-}
-/* As tall as the message box's chips after the +, with their corner, fill and type. */
+/* A session's mode beside its title, as words with its icon: no wash, so it doesn't read as a chip that opens something,
+   as the crew chip beside it does. */
 .lc-mode-chip {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 8px;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash);
+  padding: 0 4px;
   font-size: 13px;
   color: var(--l-ink-2);
 }
@@ -98,7 +71,7 @@
   background: var(--l-surface);
   box-shadow: var(--lc-card-ring);
 }
-/* The new task default is filled grey; the rest are white. */
+/* The default for new sessions is filled grey; the rest are white. */
 .lc-mode-card[data-default] {
   background: var(--l-wash);
 }
@@ -167,7 +140,7 @@
 .lc-mode-link {
   white-space: nowrap;
 }
-/* Set as new task default: the document icon at the card's foot, its words in a tooltip. */
+/* Make it the default for new sessions: the document icon at the card's foot, its words in a tooltip. */
 .lc-mode-set {
   color: var(--l-ink-3);
 }

@@ -43,6 +43,7 @@ const Compare = lazyAgain(() => import("./Compare").then((m) => m.Compare));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
+import { askPicker } from "./pr-pick";
 import { AppPage } from "./Addon";
 import { AppModelHost } from "./AppModel";
 import { startAgentBrowser } from "./agentBrowser";
@@ -66,6 +67,8 @@ const SecurityShell = lazyAgain(() => import("./security/Shell").then((m) => m.S
 const SecuritySide = lazyAgain(() => import("./security/Side").then((m) => m.SecuritySide));
 const DesignIntro = lazyAgain(() => import("./design/Intro").then((m) => m.DesignIntro));
 import * as os from "./os";
+import { stopShows, unreadRow } from "./row-menu";
+import { toastRight } from "./toast-place";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
 type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string; wall?: true } | { kind: "wall" } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
@@ -155,7 +158,27 @@ function Boot({ label, still }: { label: string; still?: boolean }) {
   );
 }
 
+/** The right edge of the chat column of a session whose panel is open, the rightmost of two beside each other; null when no panel shows. */
+function columnRight() {
+  const cols = [...document.querySelectorAll<HTMLElement>(".lc-session[data-panel] .lc-thread")];
+  return cols.length ? Math.max(...cols.map((c) => c.getBoundingClientRect().right)) : null;
+}
+/** Keeps --lc-toast-right true (toast-place.ts): measured when a notice comes or goes, and when the window changes size. */
+function useToastPlace() {
+  useEffect(() => {
+    const place = () => document.documentElement.style.setProperty("--lc-toast-right", `${toastRight(document.documentElement.clientWidth, columnRight())}px`);
+    place();
+    const off = toast.subscribe(place);
+    window.addEventListener("resize", place);
+    return () => {
+      off();
+      window.removeEventListener("resize", place);
+    };
+  }, []);
+}
+
 export function App() {
+  useToastPlace();
   const ready = useEngine((s) => s.ready);
   const connected = useEngine((s) => s.connected);
   const onboarded = useEngine((s) => s.settings.onboarded);
@@ -500,12 +523,20 @@ export function App() {
       setFace("design");
     };
     window.addEventListener("lc:open-app", app);
+    // A chat card's agents pressed where no Code session of that thread shows (Liner Design, a side chat: Crew.tsx
+    // agentsSurface): the session in Liner Code, with that surface in its panel.
+    const surface = (e: Event) => {
+      const d = (e as CustomEvent<{ id: string; tab: Tab }>).detail;
+      openSession(d.id, d.tab);
+    };
     window.addEventListener("lc:open-session", session);
     window.addEventListener("lc:open-liner-design", inDesign);
+    window.addEventListener("lc:show-surface", surface);
     return () => {
       window.removeEventListener("lc:open-app", app);
       window.removeEventListener("lc:open-session", session);
       window.removeEventListener("lc:open-liner-design", inDesign);
+      window.removeEventListener("lc:show-surface", surface);
     };
   }, []);
   /*
@@ -602,6 +633,8 @@ export function App() {
   const showSurface = (id: string, tab: SurfaceId) => {
     if (openSurface(id, tab)) return;
     if (tab === "terminal") (showBelow(id), openSession(id));
+    // Linked pull requests is Pull request with its picker open, which it takes as it shows (pr-pick.ts).
+    else if (tab === "linked") (askPicker(id), openSession(id, "pr"));
     else openSession(id, tab);
   };
   /*
@@ -813,13 +846,28 @@ export function App() {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Open the Session popup" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
         { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, icon: <I.copy size={16} />, onSelect: () => copy(here.id, "the session id") },
-        { id: "stop", label: "Stop this session", group: "This session", keywords: ["cancel", "interrupt"], icon: <I.stop size={16} />, onSelect: () => void rpc("thread.stop", { id: here.id }) },
-        { id: "pin", label: here.pinned ? "Unpin it" : "Pin it", group: "This session", icon: <I.pin size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
-        { id: "settle", label: "Settle it", group: "This session", icon: <I.settle size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
-        { id: "archive", label: "Archive it", group: "This session", keywords: ["put away", "hide"], icon: <I.box size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
+        // A session's own rows in the words and order of its row menu in the sidebar (board RowMenu, row-menu.ts): Pin, Mark unread, Settle; Open beside, Export as Markdown; Stop it while it works, Archive.
+        { id: "pin", label: here.pinned ? "Unpin" : "Pin", group: "This session", icon: <I.pin size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, pinned: !here.pinned }) },
+        { id: "unread", label: unreadRow(here).title, group: "This session", icon: <I.bell size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, unread: unreadRow(here).unread }) },
+        { id: "settle", label: "Settle", group: "This session", keywords: ["done"], icon: <I.settle size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, done: true, unread: false }) },
+        { id: "beside", label: "Open beside", group: "This session", keywords: ["split", "two sessions"], icon: <I.split size={16} />, keepOpen: true, onSelect: () => setBesideOf(1) },
+        {
+          id: "export",
+          label: "Export as Markdown",
+          group: "This session",
+          hint: "Saved in Downloads",
+          icon: <I.download size={16} />,
+          onSelect: () =>
+            void rpc("thread.export", { id: here.id }).then(
+              ({ path }) => toast.success("Saved as Markdown", { description: os.tilde(path), action: { label: "Show", onClick: () => bridge.reveal(path) } }),
+              (e: Error) => toast.error(e.message),
+            ),
+        },
+        ...(stopShows(here) ? [{ id: "stop", label: "Stop it", group: "This session", keywords: ["cancel", "interrupt", "stop this session"], icon: <I.stop size={16} />, onSelect: () => void rpc("thread.stop", { id: here.id }) }] : []),
+        { id: "archive", label: "Archive", group: "This session", keywords: ["put away", "hide"], icon: <I.box size={16} />, onSelect: () => void rpc("thread.update", { id: here.id, archived: true }).then(() => leave(here.id)) },
         {
           id: "fork",
           label: "Fork it",
@@ -1060,7 +1108,7 @@ export function App() {
           <span className="l-shimmer">Reconnecting to the engine</span>
         </div>
       )}
-      <CommandMenu open={menu} onOpenChange={setMenu} items={besideOf === null ? commands : besidePicks} hotkey={null} placeholder={besideOf === null ? "Search sessions, projects and commands" : "Find a session to open beside it"} />
+      <CommandMenu open={menu} onOpenChange={setMenu} items={besideOf === null ? commands : besidePicks} hotkey={null} placeholder={besideOf === null ? "Search sessions, projects and commands" : "Find a session to open beside it"} footer={<span className="lc-cmd-foot">Sessions, projects and commands</span>} />
       {/* Loaded the first time it opens (or at idle before), then kept, so it closes as it always has. */}
       {agentEver.current && (
         // Its code loads apart: one that didn't load says so over the window while it's asked for, never takes the window with it.

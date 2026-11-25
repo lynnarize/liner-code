@@ -13,7 +13,8 @@ import { SEVERITIES } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "../bridge";
 import { rpc, useEngine } from "../engine";
-import { I, MARK_WORD, ModelMark, StateMark, type MarkState } from "../icons";
+import { I, MARK_WORD, ModelMark, StepMark, type StepState } from "../icons";
+import { PaneField, PaneNote, PaneTool } from "../Pane";
 import { modelLabel, plural, providerLabel, shortName, toolMarkOf } from "../model";
 import { useSec } from "./data";
 import { CountTabs, PageTop, SevBar } from "./parts";
@@ -40,9 +41,6 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
   // With nothing asked for, the first project with something open starts open, as on board G.
   const shown = open === undefined ? (list.find((p) => p.open > 0)?.projectId ?? null) : open;
   useEffect(() => setOpen(projectId), [projectId]);
-  useEffect(() => {
-    if (query !== null) find.current?.focus();
-  }, [query !== null]);
 
   const counts = { all: list.length, open: list.filter((p) => p.open > 0).length, never: list.filter(neverScanned).length };
   const q = (query ?? "").trim().toLowerCase();
@@ -59,17 +57,12 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
   return (
     <div className="ls-page">
       <PageTop title="Projects" sidebar={sidebar} onSidebar={onSidebar}>
-        {/* Search is one toggle, pressed while its field shows, as on Findings and in a scan's Found panel. The field doesn't
-            close on blur: that ran before the toggle's click, which then opened an empty search again. */}
-        {query !== null && (
-          <span className="lo-find">
-            <input ref={find} value={query} placeholder="Search the projects" aria-label="Search the projects" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery(null)} />
-          </span>
-        )}
-        <button type="button" className="lc-tb l-focus" aria-pressed={query !== null} aria-label={query === null ? "Search the projects" : "Stop searching"} title={query === null ? "Search the projects" : "Stop searching"} onClick={() => setQuery(query === null ? "" : null)}>
-          <I.search size={16} />
-        </button>
-        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void add()}>
+        {/* The find field is always there, the panel's own (PaneField), as on Findings and in a scan's Found panel: no toggle
+            to get out of step with it. Escape empties it. */}
+        <PaneField className="lo-find" icon={<I.search size={14} />}>
+          <input ref={find} value={query ?? ""} placeholder="Find a project" aria-label="Find a project" onChange={(e) => setQuery(e.target.value || null)} onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), setQuery(null))} />
+        </PaneField>
+        <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void add()}>
           Add a project
         </button>
       </PageTop>
@@ -90,21 +83,11 @@ export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; 
             />
           </div>
           {error && !data ? (
-            <div className="ls-none">
-              <b>The projects didn't load</b>
-              <span>{error}</span>
-            </div>
+            <PaneNote icon={<I.folder size={16} />} title="The projects didn't load">{error}</PaneNote>
           ) : data && !list.length ? (
-            <div className="ls-card lo-empty">
-              <span className="ls-disc"><I.folder size={16} /></span>
-              <b>No folders yet</b>
-              <span>Add a folder you work on, then scan it.</span>
-              <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => void add()}>
-                Add a project
-              </button>
-            </div>
+            <PaneNote icon={<I.folder size={16} />} title="No folders yet">Add a folder you work on, then scan it. Add a project is at the top.</PaneNote>
           ) : data && !rows.length ? (
-            <p className="lo-q lo-pad">{q ? `No project matches “${query?.trim()}”.` : tab === "open" ? "No project has anything open." : "Every project has been scanned."}</p>
+            <PaneNote icon={<I.search size={16} />} title={q ? `No project matches “${query?.trim()}”` : tab === "open" ? "No project has anything open" : "Every project has been scanned"} />
           ) : (
             <div className="ls-card lo-ptable" role="table" aria-label="Projects">
               <div className="lo-tr lo-th" role="row">
@@ -238,14 +221,11 @@ function Inside({ p }: { p: SecurityProject }) {
           <button type="button" className="lo-lk l-focus" onClick={() => (editingMd ? setEditingMd(false) : void openInlineEditor())}>
             {editingMd ? "Close editor" : p.threatModel.exists ? `Edit ${p.threatModel.file}` : `Draft ${p.threatModel.file}`}
           </button>
-          {p.threatModel.exists && (
-            <button type="button" className="lo-lk l-focus" onClick={readFile} title={`Open ${p.threatModel.file} in your editor`}>
-              Open in your editor
-            </button>
-          )}
+          {/* Open in your editor is the open-elsewhere icon, as at the end of a file's row in Changes. */}
+          {p.threatModel.exists && <PaneTool label={`Open ${p.threatModel.file} in your editor`} icon={<I.external size={14} />} onClick={readFile} />}
         </div>
         {editingMd ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          <div className="lo-md">
             <textarea
               className="lc-input lc-mono"
               rows={10}
@@ -253,11 +233,11 @@ function Inside({ p }: { p: SecurityProject }) {
               value={mdText}
               onChange={(e) => setMdText(e.target.value)}
             />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div className="lo-md-acts">
               <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={mdSaving} onClick={() => setEditingMd(false)}>
                 Cancel
               </button>
-              <button type="button" className="lc-btn l-focus" data-kind="primary" data-size="sm" disabled={mdSaving} onClick={() => void saveInlineEditor()}>
+              <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" disabled={mdSaving} onClick={() => void saveInlineEditor()}>
                 {mdSaving ? "Saving…" : `Save ${p.threatModel.file}`}
               </button>
             </div>
@@ -323,8 +303,8 @@ function AreaRow({ name, line, found, count }: { name: string; line?: string; fo
   );
 }
 
-/** A scan's state mark, as the sidebar's scan rows draw it: working, needs you, a problem when it stopped or failed, else finished. */
-const scanMark = (s: ScanRecord): MarkState => (s.state === "running" ? "working" : s.state === "asking" ? "needs" : s.state === "stopped" || s.state === "failed" ? "problem" : "done");
+/** A scan's mark in the list of its scans, as every list of steps draws it (StepMark): working, a ring while it waits on you, a cross when it stopped or failed, else the tick. */
+const scanStep = (s: ScanRecord): StepState => (s.state === "running" ? "working" : s.state === "asking" ? "waiting" : s.state === "stopped" || s.state === "failed" ? "failed" : "done");
 
 /** One of its scans: its state mark, what it read, when, and what came of it ("4 found", "1 found, dismissed"). Opens its session. */
 function ScanRow({ s, found }: { s: ScanRecord; found: SecurityFinding[] }) {
@@ -335,7 +315,7 @@ function ScanRow({ s, found }: { s: ScanRecord; found: SecurityFinding[] }) {
   const res = s.state === "running" ? MARK_WORD.working : s.state === "asking" ? MARK_WORD.needs : s.state === "stopped" ? "Stopped" : s.state === "failed" ? MARK_WORD.problem : s.counts.found ? `${s.counts.found} found${fate}` : "Nothing found";
   const body = (
     <>
-      <StateMark state={scanMark(s)} label={s.state === "stopped" ? "Stopped" : MARK_WORD[scanMark(s)]} />
+      <StepMark state={scanStep(s)} size={14} label={s.state === "stopped" ? "Stopped" : res} />
       <span className="lo-grow lo-ell">{DEPTH_SHORT[s.depth]}</span>
       <span className="lo-q lo-when">{ago}</span>
       <span className="lo-res">{res}</span>

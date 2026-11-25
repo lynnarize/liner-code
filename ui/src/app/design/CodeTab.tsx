@@ -1,5 +1,6 @@
 /*
-  The Code tab: the selected layer itself, not an export. "HTML and CSS" is its HTML with its own
+  The Code tab (HTML on its tab): the selected layer itself, not an export, under a file's strip
+  (PaneFile) that names it and picks how it is said. "HTML and CSS" is its HTML with its own
   inline styles as a rule under it, and it is editable: type, then leave the field or press
   ⌘Enter, and the layer is replaced with what you wrote (one { id, html } op, one undo step); Esc
   puts it back. A change made in Style marks the line it changed. JSX and Tailwind are the same
@@ -13,8 +14,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toks, tokensOf } from "../code";
 import { rpc } from "../engine";
+import { I } from "../icons";
+import { PANE_PICK, PaneFile } from "../Pane";
+import { Pop, Row } from "../ui";
 import { design, frameOf, useDesign } from "./store";
-import { Choice } from "./inspect/controls";
 import { backToHtml, htmlAndCss, toJsx } from "./inspect/convert";
 import { Empty } from "./inspect/Empty";
 import { useLastChange } from "./inspect/target";
@@ -25,6 +28,12 @@ const WAYS = [
   { value: "jsx" as const, label: "JSX" },
   { value: "tailwind" as const, label: "Tailwind" },
 ];
+/** What each way is, for the strip's note (its tooltip): the words that sat under the code before. */
+const WAY_NOTE: Record<Way, string> = {
+  html: "This is the layer itself, not an export. Type here and the layer redraws; move a control in Style and its line changes. Where the frame declares the lean's tokens, their names stay names (var(--space-3), not 12), so the build can map them to the project's own tokens.",
+  jsx: "Read only. The same layer said in JSX: attributes as React names them, inline styles as a style object, event attributes left out.",
+  tailwind: "Read only. A Tailwind class only where one says exactly the same, on its default scale; everything else stays in style.",
+};
 const WAY_KEY = "liner.ld.code";
 const wayAtStart = (): Way => {
   try {
@@ -54,9 +63,21 @@ export function CodeTab() {
   const html = source.from === "page" ? node.html : source.html;
   return (
     <div className="ld-body ld-code-tab">
-      <div className="ld-segs">
-        <Choice label="Say it as" options={WAYS} value={way} onPick={pick} fit />
-      </div>
+      {/* The layer as a file's strip, as Files shows a file: its name, then how it is said (Files' Preview / Source place), and what it is in the note's tooltip. */}
+      <PaneFile path={node.name}>
+        <Pop label="Say it as" menu align="end" width={200} triggerClass={PANE_PICK} trigger={<>{WAYS.find((w) => w.value === way)!.label}<I.chevD size={12} /></>}>
+          {(close) => (
+            <>
+              {WAYS.map((w) => (
+                <Row key={w.value} title={w.label} end={w.value === "html" ? undefined : "Read only"} on={w.value === way} onPick={() => (close(), pick(w.value))} />
+              ))}
+            </>
+          )}
+        </Pop>
+        <span className="ld-code-i" role="img" aria-label={WAY_NOTE[way]} title={WAY_NOTE[way]}>
+          <I.info size={14} />
+        </span>
+      </PaneFile>
       {html === undefined ? (
         source.missing ? (
           <p className="ld-note" role="status">This layer isn't in the frame's file: the page's own script draws it, so there is no HTML of it to show or change here. Change the script, or ask the agent.</p>
@@ -69,16 +90,6 @@ export function CodeTab() {
         <ReadOnly code={toJsx(html, way === "tailwind")} />
       )}
       {several > 1 && <p className="ld-note">The first of {several} selected layers.</p>}
-      {way === "html" ? (
-        <>
-          <p className="ld-note">This is the layer itself, not an export. Type here and the layer redraws; move a control in Style and its line changes.</p>
-          <p className="ld-note">Where the frame declares the lean's tokens, their names stay names (<span className="ld-mono">var(--space-3)</span>, not 12), so the build can map them to the project's own tokens.</p>
-        </>
-      ) : way === "jsx" ? (
-        <p className="ld-note">Read only. The same layer said in JSX: attributes as React names them, inline styles as a style object, event attributes left out.</p>
-      ) : (
-        <p className="ld-note">Read only. A Tailwind class only where one says exactly the same, on its default scale; everything else stays in style.</p>
-      )}
     </div>
   );
 }

@@ -390,17 +390,23 @@ export class Runtime {
         const ref = `${provider}:${model || "default"}`;
         return { provider, model: model || "default", label: this.labelOf(ref), ref };
       },
-      defaultWorkerModel: (threadId) => {
+      defaultWorkerModel: (threadId, _role, reader) => {
         const t = this.store.thread(threadId);
         const lead = this.resolve(t);
         const leadRef = `${lead.provider}:${lead.model}`;
-        return pickSwarmWorkerModel(leadRef, this.store.settings.swarmWorkerModel, (ref) => {
+        const ready = (ref: string) => {
           const { provider } = splitModel(ref);
           const info = this.providerInfo.find((p) => p.id === provider);
           return Boolean(providers[provider] && info?.available && info.signedIn !== false);
-        });
+        };
+        return pickSwarmWorkerModel(leadRef, this.store.settings.swarmWorkerModel, ready, reader ? this.store.settings.swarmReaderModel : undefined);
       },
-      openWorkerSession: ({ threadId, member, cwd, soul, resume, portOffset }) => {
+      modelEfforts: (modelRef) => {
+        const { provider, model } = splitModel(modelRef.replace(/^@/, ""));
+        const info = this.modelOf(provider, model);
+        return info ? { efforts: info.efforts, defaultEffort: info.defaultEffort } : undefined;
+      },
+      openWorkerSession: ({ threadId, member, cwd, soul, resume, portOffset, effort }) => {
         const t = this.store.thread(threadId);
         const { provider, model } = splitModel(member.model);
         const p = providers[provider];
@@ -410,7 +416,8 @@ export class Runtime {
         return p.open({
           cwd,
           model: model || "default",
-          effort: t.effort ?? "",
+          // Resolved by the swarm against the worker's own model's levels, never the session's word passed to a model without it.
+          effort: effort ?? "",
           access,
           soul: [soul, memoryNote(this.store.home, t.projectId, cwd)].filter(Boolean).join("\n\n"),
           resume,
@@ -422,7 +429,7 @@ export class Runtime {
         });
       },
       isCoordinatorBusy: (threadId) => this.isRunning(threadId),
-      wakeCoordinator: (threadId, text) => this.send(threadId, text, "queue"),
+      wakeCoordinator: (threadId, text, shown) => this.send(threadId, text, "queue", undefined, undefined, undefined, shown),
       logUsage: (rec) => this.store.logUsage(rec),
       approve: (threadId, memberName, req, signal) => {
         const t = this.store.thread(threadId);
@@ -1850,6 +1857,12 @@ export class Runtime {
         if (!hasWorkers && !text.startsWith("[Swarm board")) {
           const directive = swarmCoordinatorDirective(snap?.mode ?? t.swarm?.mode ?? "teamwork", linerName(familyOf(r.provider)));
           prompt = `${directive}\n\n${prompt}`;
+        }
+        // A turn the swarm did not start (the person's message, Carry on, Try again) is given the reports the coordinator was
+        // holding for the joined wake, so none is skipped; the person's message stays what the session shows.
+        if (!text.startsWith("[Swarm board")) {
+          const held = this.swarm.heldDigest(threadId);
+          if (held) prompt = `${held}\n\n${prompt}`;
         }
       }
       // A tool that hasn't ended its turn stopGraceMs after Stop is given up (untilStopped): its live session closes, and the turn ends as stopped.

@@ -17,7 +17,7 @@ import { ChoiceChip, Composer, type PlusChoice, type RunSettings } from "./Compo
 import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { listedProjects, pairEffortFor, since, startEffort } from "./model";
-import { PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
+import { BackRow, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 import { ProjectQuickPick } from "./Projects";
 import { ModeIcon, ModeRows } from "./Modes";
 import { HomeUpdates } from "./Updates";
@@ -254,12 +254,13 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
           <h2 className="lc-ask-h">Add a project to start</h2>
           <p className="lc-quiet">A project is a folder on {os.here}. Agents work inside it, and every turn is kept so you can undo it.</p>
           <div className="lc-noproj-acts">
-            <button type="button" className="lc-btn" data-kind="primary" onClick={() => void bridge.pickFolder().then(add)}>
+            {/* The one action here is ink (white on dark), the others quiet beside it: Add a folder stays first, as it is what most come to do. */}
+            <button type="button" className="lc-btn" data-kind="ink" onClick={() => void bridge.pickFolder().then(add)}>
               <I.folder size={14} />
               Add a folder
             </button>
             {engineSettings.showDemo && (
-              <button type="button" className="lc-btn" data-kind="plain" onClick={() => void add("@sample")}>
+              <button type="button" className="lc-btn" data-kind="ghost" onClick={() => void add("@sample")}>
                 Try the sample project
               </button>
             )}
@@ -336,7 +337,7 @@ function BaseRows({ projectId, current, onPick }: { projectId: string; current?:
     <>
       <PanelHead>Start the worktree from</PanelHead>
       {git.branches.slice(0, 14).map((b) => (
-        <Row key={b.name} title={<span className="lc-mono">{b.name}</span>} note={[b.name === git.current ? "this checkout" : "", b.name === git.base ? "the default branch" : "", b.lastCommitAt ? since(b.lastCommitAt) : ""].filter(Boolean).join(" · ")} end={b.lastCommitAt ? since(b.lastCommitAt) : undefined} on={b.name === current} onPick={() => onPick(b.name === git.current ? undefined : b.name)} />
+        <Row key={b.name} title={<span className="lc-mono">{b.name}</span>} note={[b.name === git.current ? "this checkout" : "", b.name === git.base ? "the default branch" : ""].filter(Boolean).join(" · ") || undefined} end={b.lastCommitAt ? since(b.lastCommitAt) : undefined} on={b.name === current} onPick={() => onPick(b.name === git.current ? undefined : b.name)} />
       ))}
     </>
   );
@@ -376,12 +377,12 @@ function WhereChip({ project, worktree, onWorktree, base, onBase, inWorktree, co
               New worktree from <span className="lc-mono">{from}</span>
             </span>
           ) : (
-            <span className="lc-mono lc-strip-cap" title={onDefault ? `Editing directly on ${branch} — click to isolate in a worktree` : undefined}>
+            <span className="lc-mono lc-strip-cap" title={onDefault ? `Editing directly on ${branch}: press to work in a new worktree instead` : undefined}>
               {branch ?? "HEAD"}
-              {onDefault && <span style={{ marginLeft: 5, fontSize: 11, fontFamily: "var(--l-font-sans)", color: "var(--l-amber)" }}>(direct)</span>}
+              {onDefault && <span className="lc-home-direct">directly</span>}
             </span>
           )}
-          <I.chevD size={12} />
+          <I.chevD size={14} />
         </>
       }
     >
@@ -399,10 +400,7 @@ function WhereMenu({ project, worktree, onWorktree, from, base, onBase, close }:
     <div ref={box} onKeyDown={(e) => branches && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), out())}>
       {branches ? (
         <>
-          <button type="button" role="menuitem" className="lc-who-back l-focus" aria-label="Back from the branches" onClick={out}>
-            <I.chevL size={12} />
-            From a branch
-          </button>
+          <BackRow name="From a branch" label="Back from the branches" rove={false} onBack={out} />
           <BaseRows projectId={project.id} current={base ?? project.branch} onPick={(b) => (onBase(b), close())} />
         </>
       ) : (
@@ -413,7 +411,7 @@ function WhereMenu({ project, worktree, onWorktree, from, base, onBase, close }:
           {worktree && (
             <>
               <Sep />
-              <Row title="From a branch" end={<span className="lc-mono">{from}</span>} opens="branches" onPick={() => (setBranches(true), requestAnimationFrame(() => box.current?.querySelector<HTMLElement>("[role^='menuitem'][data-on], [role^='menuitem']:not(.lc-who-back)")?.focus({ preventScroll: true })))} />
+              <Row title="From a branch" end={<span className="lc-mono">{from}</span>} opens="branches" onPick={() => (setBranches(true), requestAnimationFrame(() => box.current?.querySelector<HTMLElement>("[role^='menuitem'][data-on], [role^='menuitem']:not([data-back])")?.focus({ preventScroll: true })))} />
             </>
           )}
         </>

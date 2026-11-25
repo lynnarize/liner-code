@@ -15,7 +15,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DesignInfo, DesignSize, Item, Thread } from "@contracts";
 import { DESIGN_FRAME_STYLE, DESIGNS_FOLDER } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { langOf, linesOf, tokensOf, Toks } from "./code";
@@ -26,7 +25,8 @@ import { setFace } from "./face";
 import { agentOf } from "./model";
 import { updateLook, useLook } from "./look";
 import { SurfaceNote, useCwd } from "./Surfaces";
-import { PanelHead, Pop, Row, Sep } from "./ui";
+import { MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
+import { PANE_PICK, PANE_TOOL, PaneButton, PaneFoot, PaneHead, PaneTool } from "./Pane";
 import * as os from "./os";
 import { SendBox } from "./Composer";
 import "./design.css";
@@ -216,6 +216,8 @@ function DesignStart({ thread }: { thread: Thread }) {
     }
   };
   return (
+    <>
+    <PaneHead />
     <SurfaceNote
       icon={<I.design size={20} />}
       title="No designs yet"
@@ -235,15 +237,15 @@ function DesignStart({ thread }: { thread: Thread }) {
           <Pop label={`What it's drawn for: ${START_SIZES.find((x) => x.id === size)?.label}. Change it`} width={220} triggerClass="lc-pb" trigger={<><I.monitor size={14} /><span className="lc-strip-cap">{START_SIZES.find((x) => x.id === size)?.label}</span><I.chevD size={12} /></>} menu>
             {(close) => START_SIZES.map((x) => <Row key={x.id} title={x.label} on={x.id === size} onPick={() => (close(), setSize(x.id))} />)}
           </Pop>
-          <button type="button" className="lc-btn" data-kind="primary" disabled={making} onClick={() => void start()}>
-            <I.plus size={14} />
+          <PaneButton ink icon={<I.plus size={14} />} disabled={making} onClick={() => void start()}>
             New design
-          </button>
+          </PaneButton>
         </div>
       }
     >
       Start one here. It opens in Liner Design, where you draw it with the agent and have it built.
     </SurfaceNote>
+    </>
   );
 }
 
@@ -252,8 +254,9 @@ function DesignStart({ thread }: { thread: Thread }) {
 /**
   The session's Liner Design file, when it has one (DesignMini.tsx): a small view of its canvas,
   kept in step, with Open in Liner Design. Designs an agent showed in the chat (design_show) are
-  still there behind a two-way switch when the session has both; one you open from the timeline
-  turns the switch to them (an agent showing one doesn't). With neither, the start below, as before.
+  still there when the session has both, in the head's design picker beside the file; one you open
+  from the timeline turns the surface to them (an agent showing one doesn't). With neither, the
+  start below, as before.
 */
 export function DesignSurface({ thread, items, agentName, visible }: { thread: Thread; items: Item[]; agentName: string; visible: boolean }) {
   const cwd = useCwd(thread);
@@ -270,32 +273,14 @@ export function DesignSurface({ thread, items, agentName, visible }: { thread: T
     return () => window.removeEventListener("lc:open-design", on);
   }, [thread.id]);
   if (!file) return <OlderDesigns thread={thread} items={items} agentName={agentName} visible={visible} />;
-  const both = older > 0;
-  const pick = both ? (
-    <div className="lc-dm-switch">
-      <Segmented
-        size="sm"
-        value={show}
-        onValueChange={setShow}
-        options={[
-          { value: "canvas", label: "Canvas" },
-          { value: "older", label: older === 1 ? "Shown in chat" : `Shown in chat (${older})` },
-        ]}
-        aria-label="Which designs"
-      />
-    </div>
-  ) : null;
-  if (both && show === "older")
-    return (
-      <div className="lc-dm-both">
-        {pick}
-        <OlderDesigns thread={thread} items={items} agentName={agentName} visible={visible} />
-      </div>
-    );
-  return <DesignMini thread={thread} items={items} cwd={cwd} file={file} agentName={agentName} visible={visible} top={pick} />;
+  // Both: the head's design picker holds the canvas's file and the designs shown in chat, in place of a two-way switch.
+  const chat = older > 0 ? designsIn(items) : [];
+  if (chat.length && show === "older") return <OlderDesigns thread={thread} items={items} agentName={agentName} visible={visible} canvas={{ title: file, onPick: () => setShow("canvas") }} />;
+  return <DesignMini thread={thread} items={items} cwd={cwd} file={file} agentName={agentName} visible={visible} chat={chat.map((x) => ({ design: x.item.design, title: x.item.title }))} onChat={(design) => (setShow("older"), openInDesign(thread.id, design))} />;
 }
 
-function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; items: Item[]; agentName: string; visible: boolean }) {
+/** The designs an agent showed in the chat. `canvas`: the session's Liner Design file too, first in the head's picker. */
+function OlderDesigns({ thread, items, agentName, visible, canvas }: { thread: Thread; items: Item[]; agentName: string; visible: boolean; canvas?: { title: string; onPick: () => void } }) {
   const designs = useMemo(() => designsIn(items), [items]);
   const where = useLook().designs;
   const cwd = useCwd(thread);
@@ -521,130 +506,118 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
 
   const builtNote = built ? (built.version < latest.version ? `built v${built.version}, changed since` : `built v${built.version}`) : null;
 
+  const sizeLabel = SIZES.find((x) => x.id === size)?.label ?? size;
+  const schemeLabel = scheme === "system" ? "As the app" : scheme === "light" ? "Light" : "Dark";
   return (
     <div className="lc-dz">
-      {/* One row: which design and version, how it's drawn, and what to do with it. */}
-      <div className="lc-dz-bar">
-        <Pop label="Designs in this session" width={300} triggerClass="lc-dz-name" trigger={<><b>{latest.title}</b><I.chevD size={12} /></>}>
-          {(close) => (
-            <div className="lc-dz-menu">
-              <PanelHead>Designs in this session</PanelHead>
-              {designs.map((x) => (
-                <Row
-                  key={x.item.design}
-                  title={x.item.title}
-                  which={x.item.size}
-                  note={`${x.versions.length === 1 ? "1 version" : `${x.versions.length} versions`} · ${x.item.size} · ${ago(x.item.at)}`}
-                  end={ago(x.item.at)}
-                  on={x.item.design === latest.design}
-                  onPick={() => (setSel(x.item.design), setVersion("live"), close())}
-                />
-              ))}
-            </div>
-          )}
-        </Pop>
-        <Pop
-          label="Versions"
-          width={300}
-          triggerClass="lc-dz-ver"
-          trigger={
-            <>
-              <span>
-                {shownVersion ? `v${shownVersion.version}` : `v${latest.version}`}
-                {!shownVersion && <span className="lc-dz-wide"> · Live</span>}
-              </span>
-              <I.chevD size={12} />
-            </>
-          }
-        >
-          {(close) => (
-            <div className="lc-dz-menu">
-              <PanelHead>Versions</PanelHead>
-              <Row title="Live" note={`${latest.path}, as it is now`} on={version === "live"} onPick={() => (setVersion("live"), close())} />
-              {[...d.versions].reverse().map((v) => (
-                <Row
-                  key={v.id}
-                  title={`Version ${v.version}${built?.version === v.version ? " · built" : ""}`}
-                  note={`${v.note ?? (v.version === 1 ? "The first draft" : "Changed")} · ${ago(v.at)}`}
-                  end={ago(v.at)}
-                  on={version === v.version}
-                  onPick={() => (setVersion(v.version), close())}
-                />
-              ))}
-            </div>
-          )}
-        </Pop>
-        <span className="lc-grow" />
-        {view === "design" && version === "live" && (
-          <button
-            type="button"
-            className="lc-ib l-focus"
-            aria-label={`Pick a part to comment on for ${agentName}`}
-            title={`Pick a part to comment on for ${agentName}`}
-            aria-pressed={picking}
-            onClick={() => {
-              setPicked(null);
-              cmd(picking ? "unpick" : "pick");
-              setPicking(!picking);
-              live.current?.focus();
-            }}
-          >
-            <I.comment size={14} />
-          </button>
-        )}
-        <button type="button" className="lc-ib l-focus" aria-label={view === "code" ? "Show the design" : "Show its code"} title={view === "code" ? "Show the design" : "Show its code"} aria-pressed={view === "code"} onClick={() => setView((v) => (v === "code" ? "design" : "code"))}>
-          <I.code size={14} />
-        </button>
-        {/* The rest under one ···, as a surface's top row keeps it (Changes, the Browser): what to do with it as rows, then how it's drawn. */}
-        <Pop label="More for the design" align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
-          {(close) => (
-            <div className="lc-br-more">
-              <div className="lc-dz-menu">
-                <Row title="Open in Liner Design" icon={<I.edit size={16} />} onPick={() => (void openInLinerDesign(thread, latest), close())} />
-                <Row title="Open in your browser" icon={<I.external size={16} />} disabled={!base} onPick={() => (base && bridge.openExternal(served(base, latest.path)), close())} />
-                <Row title="Copy its HTML" icon={<I.copy size={16} />} onPick={() => (void copy(), close())} />
-                <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={16} />} disabled={!cwd} onPick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())} />
-                <Sep />
-                <Row title={where === "chat" ? "Open designs beside the chat" : "Show designs in the chat instead"} icon={where === "chat" ? <I.panel size={14} /> : <I.notes size={14} />} onPick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())} />
-              </div>
-              {view === "design" && (
+      {/* The frame's head: which design and which version, then the comment pick, the code and the rest under one ···. */}
+      <PaneHead
+        shows={
+          <>
+            <Pop label="Designs in this session" menu width={300} triggerClass={PANE_PICK} trigger={<><span className="lc-dz-pname">{latest.title}</span><I.chevD size={12} /></>}>
+              {(close) => (
+                <div className="lc-dz-menu">
+                  {canvas && (
+                    <>
+                      <PanelHead>Liner Design</PanelHead>
+                      <Row title={canvas.title} icon={<I.design size={14} />} onPick={() => (close(), canvas.onPick())} />
+                      <Sep />
+                    </>
+                  )}
+                  <PanelHead>{canvas ? "Shown in chat" : "Designs in this session"}</PanelHead>
+                  {designs.map((x) => (
+                    <Row
+                      key={x.item.design}
+                      title={x.item.title}
+                      note={`${x.versions.length === 1 ? "1 version" : `${x.versions.length} versions`} · ${x.item.size} · ${ago(x.item.at)}`}
+                      end={ago(x.item.at)}
+                      on={x.item.design === latest.design}
+                      onPick={() => (setSel(x.item.design), setVersion("live"), close())}
+                    />
+                  ))}
+                </div>
+              )}
+            </Pop>
+            <Pop
+              label="Versions"
+              menu
+              width={300}
+              triggerClass={PANE_PICK}
+              trigger={
                 <>
-                  <PanelHead>Drawn at</PanelHead>
-                  <div className="lc-br-zoomrow">
-                    <Segmented size="sm" value={size} onValueChange={(v) => (setSizes((s) => ({ ...s, [latest.design]: v as DesignSize })), setZoom(null))} options={SIZES.map((x) => ({ value: x.id, label: x.label }))} aria-label="The size it's drawn at" />
-                  </div>
+                  {shownVersion ? `v${shownVersion.version}` : `v${latest.version}`}
+                  {!shownVersion && <span className="lc-dz-wide"> · Live</span>}
+                  <I.chevD size={12} />
+                </>
+              }
+            >
+              {(close) => (
+                <div className="lc-dz-menu">
+                  <PanelHead>Versions</PanelHead>
+                  <Row title="Live" note={`${latest.path}, as it is now`} end="Now" on={version === "live"} onPick={() => (setVersion("live"), close())} />
+                  {[...d.versions].reverse().map((v) => (
+                    <Row
+                      key={v.id}
+                      title={`Version ${v.version}${built?.version === v.version ? " · built" : ""}`}
+                      note={`${v.note ?? (v.version === 1 ? "The first draft" : "Changed")} · ${ago(v.at)}`}
+                      end={ago(v.at)}
+                      on={version === v.version}
+                      onPick={() => (setVersion(v.version), close())}
+                    />
+                  ))}
+                </div>
+              )}
+            </Pop>
+          </>
+        }
+        tools={
+          <>
+            {view === "design" && version === "live" && (
+              <PaneTool
+                label={`Pick a part to comment on for ${agentName}`}
+                icon={<I.comment size={16} />}
+                pressed={picking}
+                onClick={() => {
+                  setPicked(null);
+                  cmd(picking ? "unpick" : "pick");
+                  setPicking(!picking);
+                  live.current?.focus();
+                }}
+              />
+            )}
+            <PaneTool label={view === "code" ? "Show the design" : "Show its code"} icon={<I.code size={16} />} pressed={view === "code"} onClick={() => setView((v) => (v === "code" ? "design" : "code"))} />
+            {/* The rest under one ···: what to do with it as rows, then how it's drawn, each a choice that opens to the side. */}
+            <Pop label="More for the design" menu align="end" width={260} triggerClass={PANE_TOOL} triggerAttrs={{ title: "More" }} trigger={<I.more size={16} />}>
+              {(close) => (
+                <>
+                  <Row title="Open in your browser" icon={<I.external size={14} />} disabled={!base} onPick={() => (base && bridge.openExternal(served(base, latest.path)), close())} />
+                  <Row title="Copy its HTML" icon={<I.copy size={14} />} onPick={() => (void copy(), close())} />
+                  <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={14} />} disabled={!cwd} onPick={() => (bridge.reveal(`${cwd}/${latest.path}`), close())} />
+                  <Sep />
+                  {view === "design" && (
+                    <SubMenu title="Drawn at" icon={<I.monitor size={14} />} value={sizeLabel} label="The size it's drawn at" width={200}>
+                      {() => SIZES.map((x) => <Row key={x.id} title={x.label} end={`${FRAME[x.id].width} × ${FRAME[x.id].height}`} on={x.id === size} onPick={() => (setSizes((s) => ({ ...s, [latest.design]: x.id })), setZoom(null), close())} />)}
+                    </SubMenu>
+                  )}
+                  <SubMenu title="Theme" icon={<I.contrast size={14} />} value={schemeLabel} label="The design's theme" width={200}>
+                    {() => (
+                      <>
+                        {(["system", "light", "dark"] as const).map((x) => (
+                          <Row key={x} title={x === "system" ? "As the app" : x === "light" ? "Light" : "Dark"} on={x === scheme} onPick={() => (setScheme(x), close())} />
+                        ))}
+                        <MenuFoot>Its prefers-color-scheme follows this, for designs that draw both.</MenuFoot>
+                      </>
+                    )}
+                  </SubMenu>
+                  <Sep />
+                  <Row title={where === "chat" ? "Show designs beside the chat" : "Show designs in the chat"} icon={where === "chat" ? <I.panel size={14} /> : <I.notes size={14} />} onPick={() => (switchWhere(where === "chat" ? "panel" : "chat"), close())} />
+                  <MenuFoot>Where designs open by default is in Settings › Appearance.</MenuFoot>
                 </>
               )}
-              <PanelHead>Theme</PanelHead>
-              <div className="lc-br-zoomrow">
-                <Segmented
-                  size="sm"
-                  value={scheme}
-                  onValueChange={setScheme}
-                  options={[
-                    { value: "system", label: "As the app" },
-                    { value: "light", label: "Light" },
-                    { value: "dark", label: "Dark" },
-                  ]}
-                  aria-label="The design's theme"
-                />
-              </div>
-              <p className="lc-pop-foot">Its prefers-color-scheme follows this, for designs that draw both. Where designs open by default is in Settings › Appearance.</p>
-            </div>
-          )}
-        </Pop>
-        {shownVersion ? (
-          <button type="button" className="lc-btn lc-dz-build" data-kind="plain" data-size="sm" onClick={() => void restore()} aria-label={`Bring version ${shownVersion.version} back`} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
-            <I.undo size={14} />
-            <span className="lc-dz-wide">Bring it back</span>
-          </button>
-        ) : (
-          <button type="button" className="lc-btn lc-dz-build" data-kind={built?.version === latest.version ? "plain" : "primary"} data-size="sm" onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
-            <I.tool size={14} />
-            <span>{built ? "Build again" : "Build it"}</span>
-          </button>
-        )}
-      </div>
+            </Pop>
+          </>
+        }
+      />
       {view === "code" ? (
         <div className="lc-dz-code">
           {!codeNow ? (
@@ -705,8 +678,7 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
                 </div>
               </div>
               <span className="lc-dz-cap l-num">
-                {SIZES.find((x) => x.id === size)?.label} · {W} × {H}
-                {builtNote && <span data-stale={built && built.version < latest.version ? true : undefined}> · {builtNote}</span>}
+                {sizeLabel} · {W} × {H}
               </span>
             </div>
             {picking && <span className="lc-br-hint l-glass">Point at a part of the design and click it. Escape stops.</span>}
@@ -741,6 +713,21 @@ function OlderDesigns({ thread, items, agentName, visible }: { thread: Thread; i
           </div>
         </div>
       )}
+      {/* What it is and whether it was built, then Open in Liner Design, and the one action in ink: Build it, or Bring it back for an older version. */}
+      <PaneFoot say={builtNote ? `Version ${shownVersion?.version ?? latest.version}, ${builtNote}` : shownVersion ? `Version ${shownVersion.version} of ${latest.version}` : `Version ${latest.version} · ${latest.path}`}>
+        <PaneButton onClick={() => void openInLinerDesign(thread, latest)} title="Put it on the canvas, as a frame of this folder's design file">
+          Open in Liner Design
+        </PaneButton>
+        {shownVersion ? (
+          <PaneButton ink icon={<I.undo size={14} />} onClick={() => void restore()} aria-label={`Bring version ${shownVersion.version} back`} title={`Put version ${shownVersion.version} back in ${latest.path}`}>
+            Bring it back
+          </PaneButton>
+        ) : (
+          <PaneButton ink icon={<I.tool size={14} />} onClick={() => void build()} title={`Ask ${agentName} to build version ${latest.version} into the app`}>
+            {built ? "Build again" : "Build it"}
+          </PaneButton>
+        )}
+      </PaneFoot>
     </div>
   );
 }

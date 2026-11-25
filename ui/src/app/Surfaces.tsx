@@ -1,19 +1,18 @@
 /*
-  Surfaces beside a session. The right dock holds them as tabs (dock.ts has its rules, Panel.tsx
-  draws it): Diff and Agents, Browser, Design, Terminal, Files, Pull request, Linked pull requests,
-  Device, Routines, a routine's run, and the add-on panels you have. Each has a key (⌘⇧ and its
-  letter) and a place in the + menu on the panel's tab row (Panel.tsx); the New tab guide (that
-  menu's Every surface) lists them all with what each holds. Tabs keep their state while you switch, so a terminal
-  keeps running and a page stays loaded, and each session keeps its own dock.
+  Surfaces beside a session. The right panel shows one at a time (dock.ts has its rules, Panel.tsx
+  draws it): Changes and Agents, Browser, Design, Files, Pull request (its picker holds what Linked pull
+  requests once listed, and the Linked key opens it), Device, Side chat, a routine's run, and the add-on
+  panels you have; the Terminal lives in the bottom panel and Session is a popup. Each has a key (⌘⇧ and its letter) and a place in the session header's icon row or
+  its ··· (Switcher.tsx). A surface keeps its state while another shows, so a terminal keeps running and
+  a page stays loaded, and each session keeps its own panel.
 */
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ROUTINES_ON, type AddonInfo, type Item, type Thread } from "@contracts";
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { ROUTINES_ON, type Item, type Thread } from "@contracts";
 import { closeWhere, emptyDock, readDock, type DockState, type DockTab } from "./dock";
-import { rpc, useEngine, useItemsWhere } from "./engine";
+import { useEngine } from "./engine";
 import { I } from "./icons";
-import { ago, checkpointsOf, plural, sumLines } from "./model";
-import { appIcon, appsFor } from "./Addon";
-import { Kbd, Lines, Pop, Row as PickRow, Sep } from "./ui";
+import { ago, plural, sumLines } from "./model";
+import { Lines, Pop, Row as PickRow, Sep } from "./ui";
 import "./surfaces.css";
 
 export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
@@ -230,149 +229,6 @@ export function TerminalGrip({ thread, height, onHeight, onDrag }: { thread: Ref
   );
 }
 
-/**
-  The New tab guide, the + menu's Every surface: every built-in surface with what it holds right now and its key,
-  then the panels you have, then Make one…, which asks the agent for one (DeepSeek Harness's guide
-  page, ui-sidebar-right). Picking one puts it in this pane in the guide's place.
-*/
-/** What the guide reads of the timeline: the checkpoints and the designs shown, no reply's words. */
-const isGuideView = (it: Item) => it.kind === "checkpoint" || it.kind === "design";
-export function Guide({ thread, agentName, panes, onOpen, onMake }: { thread: Thread; agentName: string; panes: number; onOpen: (t: Tab) => void; onMake: () => void }) {
-  const items = useItemsWhere(thread.id, isGuideView);
-  const routines = useEngine((s) => s.routines);
-  const runs = useEngine((s) => s.runs);
-  const addons = useEngine((s) => s.addons);
-  const projects = useEngine((s) => s.projects);
-  const [ports, setPorts] = useState<{ port: number; owner: "session" | "project" | null; web: boolean }[] | null>(null);
-  const [pr, setPr] = useState<string | null>(null);
-  const [linked, setLinked] = useState<string | null>(null);
-  const [device, setDevice] = useState<string | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let live = true;
-    void rpc("ports.list", { threadId: thread.id }).then((p) => live && setPorts(p)).catch(() => live && setPorts([]));
-    void rpc("pr.status", { threadId: thread.id })
-      .then((s) => live && setPr(s.pr ? `#${s.pr.number}, ${prLine(s.pr)}` : s.gh === "ready" ? (s.ahead ? `Open one for ${plural(s.ahead, "commit")}` : "Nothing to open yet") : ghLine(s.gh)))
-      .catch(() => live && setPr("Not available"));
-    void rpc("pr.list", { projectId: thread.projectId })
-      .then((s) => {
-        if (!live) return;
-        if (s.gh !== "ready") return setLinked(ghLine(s.gh));
-        const open = s.prs.filter((p) => p.state === "OPEN").length;
-        const merged = s.prs.filter((p) => p.state === "MERGED").length;
-        setLinked(s.prs.length ? `${open} open${merged ? `, ${merged} merged` : ""}` : "None in this project");
-      })
-      .catch(() => live && setLinked("Not available"));
-    void rpc("device.list", {})
-      .then((d) => {
-        if (!live) return;
-        const booted = d.devices.find((x) => x.state === "Booted");
-        setDevice(!d.ready ? "Needs Xcode" : booted ? `${booted.name}, booted` : d.devices.length ? plural(d.devices.length, "simulator") : "No simulators yet");
-      })
-      .catch(() => live && setDevice("Not available"));
-    box.current?.focus({ preventScroll: true });
-    return () => {
-      live = false;
-    };
-  }, [thread.id]);
-
-  const cps = checkpointsOf(items);
-  const last = cps[cps.length - 1];
-  const open = cps.filter((c) => !c.reverted && !c.committed);
-  const lines = sumLines(open.flatMap((c) => c.files));
-  const files = new Set(open.flatMap((c) => c.files.map((f) => f.path))).size;
-  const on = routines.filter((r) => r.on).length;
-  const waits = runs.filter((r) => r.status === "handed" && !r.test).length;
-  const dev = ports?.find((p) => p.owner && p.web);
-  const designs = new Set(items.filter((x) => x.kind === "design").map((x) => (x.kind === "design" ? x.design : ""))).size;
-  const apps = appsFor(addons, thread.projectId);
-  const scopeOf = (a: AddonInfo) => (a.panel?.place === "page" ? "A page of its own" : a.project ? (projects.find((p) => p.id === a.project)?.name ?? "One project") : "Every project");
-
-  const note: Record<SurfaceId, ReactNode> = {
-    browser: ports === null ? "Looking for a dev server" : dev ? `localhost:${dev.port}` : "Its dev server, or its HTML pages",
-    design: designs ? plural(designs, "design") : "Screens and prototypes, version by version",
-    terminal: `A shell in ${thread.worktree ? "its worktree" : "the project"}`,
-    files: last ? `${plural(last.files.length, "file")} changed in turn ${last.turn}` : "The project's files",
-    changes: files ? (
-      <>
-        <Lines {...lines} /> in {plural(files, "file")}
-      </>
-    ) : (
-      "Nothing to review"
-    ),
-    pr: pr ?? "Asking GitHub",
-    linked: linked ?? "Asking GitHub",
-    device: device ?? "Looking for simulators",
-    routines: routines.length ? `${on} on${waits ? `, ${waits} ${waits === 1 ? "waits" : "wait"} for you` : ""}` : "None yet",
-    agents: "Who works here, and on what",
-    session: "Where it runs, its context, what changed",
-    side: "Ask about it without stopping it",
-  };
-
-  return (
-    <div
-      ref={box}
-      className="lc-spick"
-      data-panes={panes}
-      tabIndex={-1}
-      onKeyDown={(e) => {
-        if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).tagName === "INPUT") return;
-        const s = SURFACES.find((x) => x.key === e.key.toUpperCase());
-        if (s) {
-          e.preventDefault();
-          onOpen(s.id);
-        }
-      }}
-    >
-      <h2>Open in this pane</h2>
-      <p>Built in, and the apps you've made. Press a surface's key, or pick one.</p>
-      <span className="lc-spick-k">Built in</span>
-      <div className="lc-spick-grid">
-        {SURFACES.map((s, i) => (
-          <button key={s.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${i * 18}ms` }} onClick={() => onOpen(s.id)}>
-            <span className="lc-spick-i">
-              <s.icon size={16} />
-            </span>
-            <span className="lc-spick-t">
-              <b>{s.label}</b>
-              <small>{note[s.id]}</small>
-            </span>
-            <Kbd>{s.key}</Kbd>
-          </button>
-        ))}
-      </div>
-      <span className="lc-spick-k">Your apps</span>
-      <div className="lc-spick-grid">
-        {apps.map((a, i) => {
-          const Icon = appIcon(a.panel?.icon);
-          return (
-            <button key={a.id} type="button" className="lc-spick-b l-focus" style={{ animationDelay: `${(SURFACES.length + i) * 18}ms` }} onClick={() => onOpen(`app:${a.id}`)}>
-              <span className="lc-spick-i">
-                <Icon size={16} />
-              </span>
-              <span className="lc-spick-t">
-                <b>{a.name}</b>
-                <small>{scopeOf(a)}</small>
-              </span>
-            </button>
-          );
-        })}
-        <button type="button" className="lc-spick-b l-focus" data-make style={{ animationDelay: `${(SURFACES.length + apps.length) * 18}ms` }} onClick={onMake}>
-          <span className="lc-spick-i">
-            <I.plus size={16} />
-          </span>
-          <span className="lc-spick-t">
-            <b>Make one…</b>
-            <small>Say what you'd like, and {agentName} makes it</small>
-          </span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const ghLine = (gh: string) => (gh === "missing" ? "Needs the GitHub CLI" : gh === "signed-out" ? "Sign in to GitHub first" : gh === "no-remote" ? "No GitHub remote" : "Not available");
 export function prLine(pr: { state: string; checks: { state: string }[]; isDraft?: boolean }) {
   if (pr.state === "MERGED") return "merged";
   if (pr.state === "CLOSED") return "closed";
@@ -385,23 +241,6 @@ export function prLine(pr: { state: string; checks: { state: string }[]; isDraft
 /* ---------- Changes' pieces, used by Review.tsx ---------- */
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
-
-/** How many changed files you've looked at. In a narrow panel it says "2/5 viewed", then drops its bar, so it never wraps. */
-export function Viewed({ seen, total }: { seen: number; total: number }) {
-  return (
-    <span className="lc-viewed">
-      <span className="lc-viewed-bar" aria-hidden>
-        <i style={{ width: `${total ? (seen / total) * 100 : 0}%` }} />
-      </span>
-      <span className="lc-viewed-long">
-        {seen} of {plural(total, "file")} viewed
-      </span>
-      <span className="lc-viewed-short">
-        {seen}/{total} viewed
-      </span>
-    </span>
-  );
-}
 
 /** Which turn's changes to show: one turn, all of them, or the branch against main. */
 export function TurnPicker({ cps, pick, turns, onPick }: { cps: Checkpoint[]; pick: string; turns: number; onPick: (id: string) => void }) {
@@ -449,17 +288,8 @@ export function MoreFiles({ n, turn, pick }: { n: number; turn: boolean; pick: s
   );
 }
 
-/** A surface's empty or waiting state, centred. */
-export function SurfaceNote({ icon, title, children, action }: { icon?: ReactNode; title: string; children?: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="lc-panel-empty">
-      {icon}
-      <b>{title}</b>
-      {children && <p>{children}</p>}
-      {action}
-    </div>
-  );
-}
+/** A surface's empty or waiting state, centred: the panel frame's one empty state (Pane.tsx, PaneNote), under the name the surfaces already use. */
+export { PaneNote as SurfaceNote } from "./Pane";
 
 /** Reads a CSS colour as hex, for libraries that can't read oklch. */
 export function hexOf(css: string, fallback = "#000000") {

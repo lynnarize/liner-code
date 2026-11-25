@@ -1,11 +1,11 @@
 /*
   The model picker's rules that hold without a page (ui/src/app/picker.ts): the side card waits for the pointer to rest
-  before it turns, a tool's list is grouped by maker or by purpose with the starred first, one model several sources offer
+  before it turns, a tool's list is grouped by maker (plainly for a tool of one maker) with the starred first, one model several sources offer
   is one row, and effort and price read only what the tool reported. Run with `node --test engine/test/picker.test.ts`.
 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, keptLevel, levelName, mergeOffers, pressStop, releaseStop, settingLevel, sliderNow, sourceWriter, startLevel, stopAt, stopKey, stopOf, switchAsChip, switchExtra, toggleStars, toolList, pickerWide, PICKER_WIDE, priceSaid, purposeOf, sectionsOf, settle } from "../../ui/src/app/picker.ts";
+import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, keptLevel, levelName, mergeOffers, pressStop, releaseStop, settingLevel, sliderNow, sourceWriter, startLevel, stopAt, stopKey, stopOf, switchAsChip, switchExtra, toggleStars, toolList, pickerWide, PICKER_WIDE, priceSaid, sectionsOf, settle } from "../../ui/src/app/picker.ts";
 import { lineupOf } from "../../contracts/src/lineup.ts";
 
 test("The side card turns to a row only once the pointer has rested on it, so crossing rows on the way to the card leaves it as it was", () => {
@@ -52,7 +52,7 @@ test("A tool whose models come from several makers groups them by maker, in the 
     { name: "DeepSeek V4", maker: "DeepSeek" },
     { name: "Kimi K2", maker: "Kimi" },
   ];
-  const { sections, older, makers } = sectionsOf(lineup(ms), { starred: (m) => m.name === "DeepSeek V4", purposeOf: () => "" });
+  const { sections, older, makers } = sectionsOf(lineup(ms), { starred: (m) => m.name === "DeepSeek V4" });
   assert.equal(makers, 2, "a maker all of whose models are starred still counts as a maker of the list");
   assert.deepEqual(shape(sections), [
     ["starred", "Starred", ["DeepSeek V4"]],
@@ -62,7 +62,7 @@ test("A tool whose models come from several makers groups them by maker, in the 
   assert.deepEqual(older.map((m) => m.name), ["Kimi K2"], "an older version isn't kept behind its own row");
 });
 
-test("A tool of one maker shows each model under what the tool says it is for, with no maker heading, and a model with no purpose under no label", () => {
+test("A tool of one maker lists its models plainly in the tool's order, with no maker heading and no line over a model saying what it is for", () => {
   const ms: M[] = [
     { name: "Opus 5.5", maker: "Claude", desc: "Best for everyday, complex tasks · $4/$20 per Mtok" },
     { name: "Sonnet 5.5", maker: "Claude", desc: "Efficient for routine tasks" },
@@ -70,18 +70,15 @@ test("A tool of one maker shows each model under what the tool says it is for, w
     { name: "Haiku 5.5", maker: "Claude" },
     { name: "Opus 5", maker: "Claude", desc: "An older version", legacy: true },
   ];
-  const { sections, older } = sectionsOf(lineup(ms), { starred: () => false, purposeOf: (m) => purposeOf(m.desc) });
-  assert.deepEqual(shape(sections), [
-    ["purpose", "Best for everyday, complex tasks", ["Opus 5.5"]],
-    ["purpose", "Efficient for routine tasks", ["Sonnet 5.5", "Sonnet 5.5 Long"]],
-    ["purpose", "", ["Haiku 5.5"]],
-  ]);
+  const { sections, older } = sectionsOf(lineup(ms), { starred: () => false });
+  // Claude Code's and Codex's lists carried "Best for everyday, complex tasks" over Opus and a line like it over each model.
+  assert.deepEqual(shape(sections), [["plain", "", ["Opus 5.5", "Sonnet 5.5", "Sonnet 5.5 Long", "Haiku 5.5"]]]);
   assert.deepEqual(older.map((m) => m.name), ["Opus 5"]);
 });
 
 test("A starred older version shows with the starred and is not counted again behind Older versions", () => {
   const ms: M[] = [{ name: "Opus 5.5", maker: "Claude" }, { name: "Opus 5", maker: "Claude" }];
-  const { sections, older } = sectionsOf(lineup(ms), { starred: (m) => m.name === "Opus 5", purposeOf: () => "x" });
+  const { sections, older } = sectionsOf(lineup(ms), { starred: (m) => m.name === "Opus 5" });
   assert.deepEqual(shape(sections)[0], ["starred", "Starred", ["Opus 5"]]);
   assert.deepEqual(older, []);
 });
@@ -168,7 +165,7 @@ test("The session's own model runs from the source it runs from in Find as in th
 
 type L = O & { legacy?: boolean };
 const ocAll: L[] = [...oc, { ref: "opencode:opencode/glm-4.6", name: "GLM-4.6", src: "OpenCode Zen", legacy: true }, { ref: "opencode:opencode-go/kimi-k2", name: "Kimi K2", src: "OpenCode Go", legacy: true }];
-const listOf = (source: string | null, favs: string[] = []) => toolList(ocAll, { source, sourceOf: (o) => o.src, merge: (items) => mergeOffers(items, { keyOf: (o) => `opencode/${o.name}`, refOf: (o) => o.ref, sourceOf: (o) => o.src }), nameOf: (o) => o.name, makerOf: (o) => (o.name.startsWith("Kimi") ? "Kimi" : o.name.startsWith("GLM") ? "GLM" : "OpenCode"), legacy: (o) => Boolean(o.legacy), starred: (o) => favs.includes(o.ref), purposeOf: () => "" });
+const listOf = (source: string | null, favs: string[] = []) => toolList(ocAll, { source, sourceOf: (o) => o.src, merge: (items) => mergeOffers(items, { keyOf: (o) => `opencode/${o.name}`, refOf: (o) => o.ref, sourceOf: (o) => o.src }), nameOf: (o) => o.name, makerOf: (o) => (o.name.startsWith("Kimi") ? "Kimi" : o.name.startsWith("GLM") ? "GLM" : "OpenCode"), legacy: (o) => Boolean(o.legacy), starred: (o) => favs.includes(o.ref) });
 
 test("Narrowed to one source, the older versions behind their row and the tool's count are that source's alone", () => {
   const go = listOf("OpenCode Go");
@@ -268,21 +265,30 @@ test("An extra switched on is the session's one effort, and switched off goes ba
   assert.equal(switchExtra("ultracode", false, undefined), "", "with no level known an extra switched off didn't go back to the tool's own default");
 });
 
-test("A pointer along the Effort track picks the stop it is in, for one, two, three and five stops, the ends taking what lies past them", () => {
+test("A pointer along the Effort track picks the stop nearest it, for one, two, three and five stops, the ends taking what lies past them", () => {
   assert.equal(stopAt(0, 240, 1), 0);
   assert.equal(stopAt(239, 240, 1), 0);
   assert.equal(stopAt(119, 240, 2), 0);
   assert.equal(stopAt(120, 240, 2), 1);
-  assert.equal(stopAt(79, 240, 3), 0);
-  assert.equal(stopAt(80, 240, 3), 1);
-  assert.equal(stopAt(200, 240, 3), 2);
-  assert.deepEqual([0, 47, 48, 100, 150, 239, 240].map((x) => stopAt(x, 240, 5)), [0, 0, 1, 2, 3, 4, 4]);
+  assert.equal(stopAt(59, 240, 3), 0);
+  assert.equal(stopAt(60, 240, 3), 1, "a press nearer the middle stop than the first picked the first");
+  assert.equal(stopAt(179, 240, 3), 1);
+  assert.equal(stopAt(180, 240, 3), 2);
+  assert.deepEqual([0, 29, 30, 100, 150, 239, 240].map((x) => stopAt(x, 240, 5)), [0, 0, 1, 2, 3, 4, 4]);
   assert.equal(stopAt(-30, 240, 5), 0, "a drag past the left end picked nothing");
   assert.equal(stopAt(400, 240, 5), 4, "a drag past the right end picked nothing");
   assert.equal(stopAt(10, 240, 0), -1);
+});
+
+test("The Effort pill is empty at a model's lowest level and full only at its highest, so the lowest of two never draws as half", () => {
+  // OpenCode lists two levels for some models, the lower of them "none": it drew a pill half filled beside the word None.
+  assert.equal(fillOf(0, 2), 0, "the lowest of two levels filled part of the track");
+  assert.equal(fillOf(1, 2), 1);
+  assert.deepEqual([0, 1, 2, 3, 4].map((at) => fillOf(at, 5)), [0, 0.25, 0.5, 0.75, 1]);
   assert.equal(fillOf(-1, 5), 0, "an empty track was filled");
-  assert.equal(fillOf(4, 5), 1);
-  assert.equal(fillOf(0, 1), 1);
+  assert.equal(fillOf(0, 1), 1, "a model's one level did not stand at the end");
+  // Each stop is picked from the part of the track nearest where its knob stands.
+  for (const n of [2, 3, 5]) for (let i = 0; i < n; i++) assert.equal(stopAt(fillOf(i, n) * 240, 240, n), i);
 });
 
 test("On the Effort slider Left and Right step a level, Home and End go to the ends, Delete goes back to the tool's default, and Up and Down are left to the card", () => {

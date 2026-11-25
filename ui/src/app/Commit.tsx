@@ -13,11 +13,24 @@ import { checkpointsOf, modelLabel, plural } from "./model";
 import { StateMark } from "./icons";
 import { ship } from "./Ship";
 import { Lines, Pop } from "./ui";
+import { PaneButton, PaneCheck } from "./Pane";
+import { onCommitAsk, takeCommit } from "./commit-ask";
 
+/** Changes' one action, the last button of its foot in ink (Pane.tsx PaneButton's look), opening the form above it. */
 export function CommitButton({ thread, files, disabled }: { thread: Thread; files: number; disabled?: boolean }) {
+  // The session title menu's Commit opens this form, with what it says follows the commit (commit-ask.ts); its own press commits only.
+  const [open, setOpen] = useState(false);
+  const [then, setThen] = useState<Then>("commit");
+  const take = (t: Then) => (setThen(t), setOpen(true));
+  useEffect(() => {
+    if (disabled) return;
+    const t = takeCommit(thread.id);
+    if (t) take(t);
+    return onCommitAsk(thread.id, take);
+  }, [thread.id, disabled]);
   return (
-    <Pop label={`Commit ${plural(files, "file")}`} side="top" align="end" width={420} triggerClass="lc-btn lc-commit-b" disabled={disabled} trigger={<>Commit {plural(files, "file")}</>}>
-      {(close) => <CommitForm thread={thread} files={files} onDone={close} />}
+    <Pop open={open} onOpenChange={(o) => (setOpen(o), o || setThen("commit"))} label={`Commit ${plural(files, "file")}`} side="top" align="end" width={420} triggerClass="lc-pane-btn" triggerAttrs={{ "data-ink": true }} disabled={disabled} trigger={<>Commit {plural(files, "file")}</>}>
+      {(close) => <CommitForm thread={thread} files={files} then={then} onDone={close} />}
     </Pop>
   );
 }
@@ -156,24 +169,24 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
       </div>
       {open.length > 0 && (
         <div className="lc-commit-files">
-          {open.map((f) => (
-            <label key={f.path} className="lc-commit-file" title={f.path}>
-              <input
-                type="checkbox"
-                checked={!left.has(f.path)}
-                onChange={(e) =>
-                  setLeft((s) => {
-                    const n = new Set(s);
-                    if (e.target.checked) n.delete(f.path);
-                    else n.add(f.path);
-                    return n;
-                  })
-                }
-              />
-              <span className="lc-mono">{f.path}</span>
-              <Lines added={f.added} removed={f.removed} />
-            </label>
-          ))}
+          {open.map((f) => {
+            const on = !left.has(f.path);
+            const flip = (v: boolean) =>
+              setLeft((s) => {
+                const n = new Set(s);
+                if (v) n.delete(f.path);
+                else n.add(f.path);
+                return n;
+              });
+            // The tick box is the control; a press on the row's words ticks it too, as the label round a native box did.
+            return (
+              <div key={f.path} className="lc-commit-file" title={f.path} onClick={(e) => !(e.target as HTMLElement).closest(".lc-pane-check") && flip(!on)}>
+                <PaneCheck checked={on} label={`Commit ${f.path}`} onChange={flip} />
+                <span className="lc-mono">{f.path}</span>
+                <Lines added={f.added} removed={f.removed} />
+              </div>
+            );
+          })}
         </div>
       )}
       {writing ? (
@@ -202,13 +215,14 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
         />
       )}
       <div className="lc-commit-f">
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={writing || busy} onClick={write}>
+        {/* The frame's buttons: the form's one action in ink and last (accent is Send's alone). */}
+        <PaneButton disabled={writing || busy} onClick={write}>
           Write it again
-        </button>
+        </PaneButton>
         <span className="lc-grow" />
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || writing || !message.trim() || count === 0} onClick={() => void commit()}>
-          {busy ? "Committing" : then === "push" ? "Commit and push" : then === "pr" ? "Commit, then open PR" : "Commit"}
-        </button>
+        <PaneButton ink disabled={busy || writing || !message.trim() || count === 0} onClick={() => void commit()}>
+          {busy ? "Committing" : then === "push" ? "Commit and push" : then === "pr" ? "Commit, then open a pull request" : "Commit"}
+        </PaneButton>
       </div>
     </div>
   );

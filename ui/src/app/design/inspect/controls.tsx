@@ -1,6 +1,6 @@
 /*
-  The inspector's controls, drawn the way the app draws its own: a section with its label and one
-  quiet icon button (the sliders open every control, a plus adds, a minus takes away), rows of
+  The inspector's controls, drawn the way the app draws its own: a section with the panel's label
+  and inset rule (PaneSection) and one quiet icon button at its right end (the sliders open every control, a plus adds, a minus takes away), rows of
   choices on a well, fields with a quiet prefix, swatches that say their names, and the quiet
   "Off the lean" note. Every one is a real button or input with a label. Numbers nudge by 1 with
   the arrows, 10 with shift; dragging a field's prefix scrubs it, as one undo step.
@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { I } from "../../icons";
+import { PaneSection } from "../../Pane";
+import { NamedSwitch } from "../../ui";
 import { fmt } from "./css";
 
 // ---------- Which sections are open, per window
@@ -63,18 +65,20 @@ export function Section({ id, title, action = "open", onAction, actionLabel, chi
   const isOpen = action === "open" && (open || Boolean(plain));
   const label = actionLabel ?? (action === "open" ? (isOpen ? `Fewer ${title.toLowerCase()} controls` : `Every ${title.toLowerCase()} control`) : action === "add" ? `Add ${title.toLowerCase()}` : `Take the ${title.toLowerCase()} off`);
   return (
-    <section className="ld-sec" data-open={isOpen || undefined} aria-label={title}>
-      <div className="ld-sech">
-        <span>{title}</span>
-        {!(plain && action === "open") && (more || action !== "open") && (
+    <PaneSection
+      className={isOpen ? "ld-sec ld-sec-open" : "ld-sec"}
+      label={title}
+      note={
+        !(plain && action === "open") && (more || action !== "open") ? (
           <button type="button" className="ld-ib l-focus" aria-label={label} title={label} aria-pressed={action === "open" ? isOpen : undefined} aria-expanded={action === "open" && more ? isOpen : undefined} onClick={action === "open" ? toggle : onAction}>
             {action === "open" ? <I.sliders size={14} /> : action === "add" ? <I.plus size={14} /> : <I.minus size={14} />}
           </button>
-        )}
-      </div>
+        ) : undefined
+      }
+    >
       {children}
       {isOpen && more && <div className="ld-more">{more}</div>}
-    </section>
+    </PaneSection>
   );
 }
 
@@ -271,12 +275,13 @@ export function Select<T extends string>({ name, value, options, onChange, prefi
   );
 }
 
-/** A quiet on/off, drawn as a field that says which ("Clip Off"). */
+/** An on/off with its name beside it ("Clip"), as the app's own switch: the same part Pictures' "Keep to the lean's colours" uses. */
 export const Toggle = ({ prefix, name, on, onChange }: { prefix: string; name: string; on: boolean; onChange: (on: boolean) => void }) => (
-  <button type="button" className="ld-fld ld-tog l-focus" aria-pressed={on} aria-label={name} onClick={() => onChange(!on)}>
+  <span className="ld-fld ld-tog">
     <span className="ld-pre">{prefix}</span>
-    {on ? "On" : "Off"}
-  </button>
+    <span className="lc-grow" />
+    <NamedSwitch name={name} size="sm" checked={on} onCheckedChange={onChange} />
+  </span>
 );
 
 // ---------- Swatches

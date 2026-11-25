@@ -219,13 +219,28 @@ button.lc-crp-r:hover {
   margin: 6px 0 2px 30px;
   animation: lc-row-in 180ms ease-out backwards;
 }
+/* One quiet line that opens the agents it sent (SPEC rule 6): who works now is the card at the chat's end. */
 .lc-fan-h {
   display: flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   height: 26px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
   font-size: 13px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-fan-h:hover {
+    background: var(--l-wash);
+    color: var(--l-ink-2);
+  }
 }
 /* Clean vertical indent guide only (no horizontal "L" elbows), matching nested subagent trees. */
 .lc-fan-kids {
@@ -372,32 +387,7 @@ button.lc-crp-r:hover {
   background: var(--l-wash);
 }
 
-/* ---------- the composer's line ---------- */
-/* A row of the composer tray's head (app.css .lc-trow): 36 high, on the tray's tint, no rule. */
-.lc-crs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 36px;
-  padding: 0 4px 0 12px;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  animation: l-swap-in 240ms var(--l-ease-out) backwards;
-}
-.lc-crs-faces > span {
-  width: 18px;
-  height: 18px;
-  margin-left: -5px;
-  box-shadow: 0 0 0 2px var(--lc-paper);
-}
-.lc-crs-t {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Stop for one agent at the live line's end (Crew.tsx LoneStop): the strip over the message box it came from is gone. */
 .lc-crs-stop {
   flex: none;
   height: 28px;
@@ -419,29 +409,46 @@ button.lc-crp-r:hover {
 /* ---------- the Agents surface ---------- */
 .lc-agents-panel.lc-cr {
   display: block;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   padding: 2px 16px 16px;
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
 }
+/* A section's label, as the pane's (pane.css .lc-pane-lab): 12.5, 600, the second ink, its note at the right end, an inset hairline over every one after the first. */
 .lc-cr-h {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
-  height: 28px;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
+  height: 42px;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding-bottom: 8px;
+  border-top: 1px solid var(--l-line);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
 }
 .lc-cr-h:first-child {
-  margin-top: 2px;
+  height: 40px;
+  margin-top: 0;
+  border-top: 0;
 }
+.lc-cr-h > span:last-child:not(.lc-cr-rule) {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
+}
+/* Once a drawn rule, now the room that puts the note at the label's right end. */
 .lc-cr-rule {
   flex: 1;
-  height: 1px;
-  background: var(--lc-hair);
+}
+/* A body row of the frame (Pane.tsx PaneRow) inside this padded column: its words line up with the text. */
+.lc-cr .lc-pane-row {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
 }
 .lc-cr-empty {
   margin: 10px 0;
@@ -640,51 +647,6 @@ button.lc-cr-bg:hover {
   color: var(--l-ink-3);
 }
 
-/* One agent. */
-.lc-cr-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  min-width: 0;
-  height: 28px;
-  margin: 4px 0 0 -6px;
-  padding: 0 8px 0 4px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.lc-cr-back > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-cr-back:hover {
-  background: var(--l-wash);
-  color: var(--l-ink);
-}
-.lc-cr-ah {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  min-width: 0;
-  margin-top: 8px;
-}
-.lc-cr-ah b {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .lc-cr-pill {
   display: inline-block;
   max-width: 100%;
@@ -700,42 +662,27 @@ button.lc-cr-bg:hover {
   white-space: nowrap;
   color: var(--l-ink-2);
 }
+/* One agent (board Agent): its status row, how long and its counts at the right end in mono. */
 .lc-cr-astat {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  margin-top: 8px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-  color: var(--l-ink-3);
-}
-.lc-cr-stats {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-.lc-cr-stats > span {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--l-wash);
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-cr-stats b {
-  font-size: 14px;
-  font-weight: 600;
+  height: 44px;
+  font-size: 13.5px;
   color: var(--l-ink);
 }
+.lc-cr-stats {
+  flex: none;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+/* What it was asked and what it sent back: plain words under their label, no well (SPEC rule 3). */
 .lc-cr-brief,
 .lc-cr-report {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--l-wash);
-  font-size: 13px;
+  padding: 0;
+  font-size: 13.5px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -800,9 +747,13 @@ button.lc-cr-bg:hover {
   font-size: 12px;
   color: var(--l-ink-3);
 }
-/* The box that steers an agent is the shared one (app.css, .lc-sbox): only its place here. */
+/* The box that steers an agent is the shared one (app.css, .lc-sbox): it is the surface's foot. */
+.lc-cr-foot {
+  flex: none;
+  padding: 10px 16px 14px;
+}
 .lc-cr-steer {
-  margin-top: 14px;
+  margin-top: 0;
 }
 .lc-cr-heard {
   display: flex;
@@ -919,19 +870,6 @@ button.lc-cr-bg:hover {
 }
 
 /* ---------- Swarm & Teamwork inside AgentsSurface (Liner 2.0 hairlines and quiet ink) ---------- */
-.lc-sw-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.lc-sw-opt {
-  margin-top: 8px;
-}
-.lc-sw-opt .lc-btn {
-  margin-top: 6px;
-}
 .lc-sw-node {
   display: flex;
   align-items: center;
@@ -986,11 +924,10 @@ button.lc-cr-bg:hover {
   color: var(--l-ink);
   resize: vertical;
 }
-.lc-sw-slots {
-  display: inline-flex;
-}
-.lc-sw-chans {
-  margin-bottom: 8px;
+.lc-sw-formfoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .lc-sw-posts {
   display: grid;
@@ -1110,4 +1047,328 @@ button.lc-cr-bg:hover {
   color: var(--l-ink-2);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- the agents popup (board Agents) ---------- */
+/* The menu's rows (ui.tsx Row); a level under a member hangs on a guide line from its mark. */
+.lc-ap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.lc-ap .lc-row-t .lc-quiet,
+.lc-spop .lc-row-t .lc-quiet {
+  font-weight: 400;
+  color: var(--l-ink-4);
+}
+.lc-ap-kids {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-left: 15px;
+  padding-left: 6px;
+  border-left: 1px solid var(--l-line);
+}
+.lc-ap-kids > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+/* A step mark in a menu row keeps its own colours: working is ink-2, done the fourth ink. */
+.lc-ap .lc-row-tick > .lc-stepmark,
+.lc-spop .lc-row-tick > .lc-mk {
+  color: inherit;
+}
+
+/* ---------- the Session popup (board Session) ---------- */
+.lc-spop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.lc-spop-look {
+  width: 22px;
+  height: 22px;
+  margin: -4px -4px -4px 0;
+}
+.lc-spop-doing {
+  font-weight: 400;
+}
+/* The context bar, split by source (board Session): one flat bar on the menu's inset, 6 high, with no slivers. */
+.lc-spop-bar {
+  margin: 2px 8px 8px;
+}
+.lc-spop-bar > .lc-cx-ticks {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  -webkit-mask: none;
+  mask: none;
+}
+.lc-spop-bar > .lc-cx-ticks i + i {
+  box-shadow: -2px 0 0 var(--lc-float, var(--l-wash-2));
+}
+.lc-spop-bar > .lc-cx-mark {
+  top: -2px;
+  bottom: -2px;
+}
+.lc-spop-src {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px 30px;
+}
+.lc-spop-srow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px 0 0;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-spop-srow > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.lc-spop-sn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-2);
+}
+
+/* ---------- the cards at the chat's end (SPEC rule 6, boards Swarm, Tray, Teamwork) ---------- */
+/* Bordered (1px, radius 14, no fill), 30px rows at 13.5px; the last things in the chat, over the live line. */
+.lc-cards {
+  display: grid;
+  gap: 10px;
+}
+.lc-cards:empty {
+  display: none;
+}
+.lc-ccard {
+  min-width: 0;
+  padding: 4px 0;
+  border: 1px solid var(--l-line-2);
+  border-radius: 14px;
+  font-size: 13.5px;
+  color: var(--l-ink-2);
+}
+.lc-ccard[data-open] {
+  padding-bottom: 8px;
+}
+.lc-ccard-h {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px 0 8px;
+}
+.lc-ccard-fold,
+.lc-ccard-name {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* The Plan's head is one button (fold), so it takes the line; a team's name is its own (it opens the popup). */
+.lc-ccard-h > .lc-ccard-fold:only-child {
+  flex: 1;
+  min-width: 0;
+}
+.lc-ccard-fold b,
+.lc-ccard-name b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-ccard-fold .lc-quiet,
+.lc-ccard-name .lc-quiet {
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-ccard-fold:hover,
+  .lc-ccard-name:not(:disabled):hover {
+    background: var(--l-wash);
+  }
+}
+/* A scan's card names its agents without opening them (chat-cards.ts agentsReach): the name reads as words, not a button. */
+.lc-ccard-name:disabled {
+  cursor: default;
+}
+.lc-ccard-line {
+  flex: 1;
+  min-width: 0;
+  margin-left: 10px;
+  overflow: hidden;
+  color: var(--l-ink);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ccard-act {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-ccard-act:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-ccard-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-ccard-r {
+  --d: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 16px 0 calc(16px + var(--d) * 22px);
+}
+.lc-ccard-r[data-s="done"] .lc-ccard-t {
+  color: var(--l-ink-3);
+}
+.lc-ccard-r[data-s="working"] .lc-ccard-t,
+.lc-ccard-r[data-s="waiting"] .lc-ccard-t {
+  color: var(--l-ink);
+}
+/* A member's row is a button that opens it in the panel; it spans the card. */
+.lc-ccard-rb,
+.lc-ccard-more {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 30px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-ccard-rb:disabled {
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-ccard-rb:not(:disabled):hover,
+  .lc-ccard-more:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-ccard-more > svg:last-child {
+  margin-left: auto;
+  color: var(--l-ink-4);
+}
+.lc-ccard-who {
+  flex: none;
+  width: 190px;
+  max-width: 38%;
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ccard-who .lc-quiet {
+  font-weight: 400;
+}
+.lc-ccard-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ccard-n {
+  flex: none;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-ccard-r > .lc-ccard-n {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ---------- a hand-over or report in the chat: one folded row ---------- */
+.lc-hand-list {
+  display: grid;
+  gap: 6px;
+}
+.lc-hand {
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--l-wash);
+}
+.lc-hand-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-hand-h > svg:first-child {
+  flex: none;
+  color: var(--l-ink-3);
+}
+.lc-hand-h b {
+  flex: none;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-hand-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-hand-n {
+  flex: none;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+}
+.lc-hand-body {
+  padding: 0 14px 12px 36px;
 }

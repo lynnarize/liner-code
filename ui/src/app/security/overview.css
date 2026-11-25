@@ -433,29 +433,12 @@ button.lo-rw:hover {
   color: var(--l-ink-2);
 }
 
-/* Nothing scanned yet. */
-.ls-card.lo-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 40px 24px 36px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  text-align: center;
+/* Nothing scanned yet: the one empty state (PaneNote), in the column's place with room round it, no card. */
+.lo-col > .lc-panel-empty {
+  padding: 56px 24px 40px;
 }
-.lo-empty b {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.lo-empty > span:not(.ls-disc) {
+.lo-col > .lc-panel-empty p {
   max-width: 440px;
-  line-height: 1.5;
-  text-wrap: pretty;
-}
-.lo-empty .lc-btn {
-  margin-top: 10px;
 }
 
 /* Projects: the title, its line, the tabs. */
@@ -476,24 +459,26 @@ button.lo-rw:hover {
 .lo-tabs {
   margin: 16px 0 14px;
 }
+/* Find a project: the panel's own field (PaneField), a fixed width in the top row. */
 .lo-find {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  color: var(--l-ink-3);
+  flex: 0 1 220px;
+  margin-right: 6px;
 }
-.lo-find input {
-  width: 180px;
-  border: 0;
-  outline: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
+/* SECURITY.md drafted in place: the text, then Cancel and Save at its right. */
+.lo-md {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.lo-md-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.lo-ptile .ls-blkh .lc-pane-tool {
+  width: 24px;
+  height: 24px;
 }
 
 /* Projects as one bordered table (after Devin's Repositories, in Liner's look): a header row, then a 44px row per
@@ -753,10 +738,19 @@ button.lo-rw:hover {
   margin-top: 7px;
   font-size: 12px;
 }
+/* The Overview's rows at the panel's row height, and no rule between them, as a pane's rows are. */
 .lo-ov .lo-rw {
-  min-height: 36px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  min-height: 32px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.lo-ov .lo-rw + .lo-rw::before {
+  display: none;
+}
+/* Being fixed: the working mark before the words. */
+.lo-tile small > .lc-mk {
+  margin-right: 6px;
+  vertical-align: -1px;
 }
 .lo-ov .lo-rw.lo-sm {
   min-height: 32px;

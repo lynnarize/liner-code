@@ -10,9 +10,10 @@
   it; closing the last tab hides the dock. Ours is a list rather than their split tree.
   Since 0.2.2 the panel holds one pane: nothing makes a second (split, and moveTab past the last
   pane, are kept for their tests), and readDock folds a two-pane layout 0.2.1 kept into one.
-  Since the one-row header (0.2.5) the session's header has no button for Files or the Browser, so
-  a panel that opens with nothing in it comes up with Changes, Files and the Browser as its tabs
-  (STARTERS), the one asked for in front, rather than on the guide: each stays one click away.
+  Since the one-row header (0.2.5) a panel that opens with nothing in it comes up with Changes, Files
+  and the Browser as its tabs (STARTERS), the one asked for in front. Since 2026-11-25 there is no tab
+  strip: the panel shows one surface at a time, picked from the session header's icon row
+  (Switcher.tsx); the tabs a pane holds are the surfaces kept mounted, so a page stays loaded.
 */
 
 /** A tab: a built-in surface, the New tab guide, one routine run, an add-on's panel (`app:<id>`), or one an agent asks to add (`preview:<item>`). */
@@ -173,6 +174,22 @@ export function replaceTab(d0: DockState, from: DockTab, to: DockTab): DockState
 }
 
 /**
+  What used to be a tab and isn't any more (2026-11-25): Session is a popup from the session header's
+  icon row, and the New tab guide is gone with the tab strip. A layout that still names them (kept from
+  before, or one App.tsx opened for a session not yet on screen) loses them here. When the one showing
+  was one of them, the panel is hidden rather than showing a surface nobody asked for, and `popup`
+  says the Session popup was what was asked for, so the session opens it.
+*/
+export const NOT_TABS: readonly DockTab[] = ["session", GUIDE];
+export function dropPopups(d: DockState): { dock: DockState; popup?: "session" } {
+  if (!d.panes.some((p) => p.tabs.some((t) => NOT_TABS.includes(t)))) return { dock: d };
+  const shown = d.panes[d.at]?.tab;
+  const was = d.open && shown !== undefined && NOT_TABS.includes(shown);
+  const left = settle({ ...d, panes: d.panes.map((p) => ({ tabs: p.tabs.filter((t) => !NOT_TABS.includes(t)), tab: p.tab })) });
+  return { dock: was ? { ...left, open: false, full: false } : left, popup: was && shown === "session" ? "session" : undefined };
+}
+
+/**
   A layout read back from storage, kept only if it still makes sense. Since 0.2.2 the panel shows
   one pane, so two side by side, as 0.2.1 kept them, come back as one: the left pane's tabs, then
   the right's, one guide at most, with the tab that was up in the pane you were in still up.
@@ -190,6 +207,6 @@ export function readDock(raw: unknown): DockState | null {
     if (tabs.length) panes.push({ tabs: [...new Set(tabs)], tab: tabs.includes(p.tab) ? p.tab : tabs[tabs.length - 1] });
   }
   const d = settle({ open: Boolean(r.open) && panes.length > 0, full: Boolean(r.full), panes, at: Number(r.at) || 0 });
-  if (d.panes.length < 2) return d;
-  return { ...d, panes: [{ tabs: [...new Set(d.panes.flatMap((p) => p.tabs))], tab: (d.panes[d.at] ?? d.panes[0]).tab }], at: 0 };
+  if (d.panes.length < 2) return dropPopups(d).dock;
+  return dropPopups({ ...d, panes: [{ tabs: [...new Set(d.panes.flatMap((p) => p.tabs))], tab: (d.panes[d.at] ?? d.panes[0]).tab }], at: 0 }).dock;
 }

@@ -67,42 +67,15 @@
 .lf-filt .lc-pop {
   flex: none;
 }
-.lf-tb {
-  min-width: 28px;
-  height: 28px;
-}
-.lf-filt > .lc-pop:last-child .lf-tb,
-.lf-filt > .lf-tb:last-child {
-  margin-right: 0;
-}
+/* The find field: the panel's own (PaneField), taking the row's room left. */
 .lf-search {
-  display: inline-flex;
-  flex: 1;
-  align-items: center;
-  gap: 6px;
-  min-width: 120px;
-  height: 30px;
+  flex: 1 1 160px;
+  min-width: 140px;
   margin-left: 4px;
-  padding: 0 10px;
-  border-radius: var(--l-r-sm);
-  background: var(--l-wash);
-  color: var(--l-ink-3);
 }
-.lf-search:focus-within {
-  background: var(--l-wash-2);
-}
-.lf-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.lf-search input::placeholder {
-  color: var(--l-ink-4);
+/* The picked findings' bar: the sidebar's own (lc-sb-bulk), here over the list. */
+.lf-bulk {
+  margin: 0 0 8px;
 }
 /* Bring in, over a list narrowed to GitHub's alerts or report files. */
 .lf-bring {
@@ -119,22 +92,39 @@
   color: var(--l-ink-3);
 }
 
-/* The list: a row per finding, a hairline between rows, the open one on a plate. */
+/* The list: a row per finding, as the sidebar's rows are (44 high, no rule between them), the open one on a plate. Its
+   tick box stands before it, shown on pointing, on focus and while any is picked. */
 .lf-li {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+/* In the column's margin, so the rows keep the title's edge whether it shows or not. */
+.lf-li > .lc-pane-check {
+  position: absolute;
+  left: -19px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.lf-li:hover > .lc-pane-check,
+.lf-li:focus-within > .lc-pane-check,
+.lf[data-picking] .lf-li > .lc-pane-check {
+  opacity: 1;
 }
 .lf-rw {
   position: relative;
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 12px;
-  width: calc(100% + 12px);
+  min-width: 0;
   min-height: 44px;
   box-sizing: border-box;
   margin: 0 -6px;
   padding: 7px 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: none;
   font: inherit;
   font-size: 13.5px;
@@ -145,23 +135,8 @@
 .lf-rw:hover {
   background: var(--l-wash);
 }
-.lf-li + .lf-li .lf-rw::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 6px;
-  left: 6px;
-  height: 1px;
-  background: var(--lc-hair);
-}
 .lf-rw[data-on] {
   background: var(--l-wash-2);
-}
-.lf-rw:hover::before,
-.lf-rw[data-on]::before,
-.lf-li:has(> .lf-rw[data-on]) + .lf-li .lf-rw::before,
-.lf-li:has(> .lf-rw:hover) + .lf-li .lf-rw::before {
-  display: none;
 }
 /* A row's two lines: its sentence and the line under. */
 .lf-tl2 {
@@ -212,11 +187,13 @@
   color: var(--l-ink-3);
   text-wrap: pretty;
 }
-.lf-none-b {
-  margin-top: 10px;
+/* The one empty state, in the list's place rather than filling a pane. */
+.lf-col .lc-panel-empty {
+  padding: 36px 24px 24px;
 }
 
-/* The finding, open beside the list. */
+/* The finding, open beside the list: in the panel's own frame (Pane.tsx, pane.css), its head, sections and foot. Its width
+   stays its own, and it has no Full canvas (RULING C16); one hairline down its left edge. */
 .lf-x {
   position: relative;
   display: flex;
@@ -227,41 +204,46 @@
   min-height: 0;
   box-sizing: border-box;
   border-left: 1px solid var(--lc-hair);
+  container: lf-x / inline-size;
   animation: l-swap-in 220ms var(--l-ease-out) backwards;
 }
-.lf-x-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  height: var(--lc-head);
-  box-sizing: border-box;
-  padding: 0 10px 0 22px;
-}
-.lf-x-tags {
+/* The head shows how bad and how it stands, in plain words; the place in the list gives way first when narrow. */
+.lf-x-sev {
   display: inline-flex;
-  gap: 4px;
-  margin-left: 8px;
+  padding: 0 6px 0 4px;
 }
-.lf-x-bar .lc-tb:disabled {
-  opacity: 0.35;
-  cursor: default;
+.lf-x-state {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lf-x-state[data-tone="ok"] {
+  color: var(--ls-ok);
+}
+@container lf-x (max-width: 420px) {
+  .lf-x-place {
+    display: none;
+  }
 }
 
-/* Its body scrolls, and fades at its foot over the actions. Text an agent wrote wraps, whatever its length. */
+/* Its body: the title and where it is, then the sections. Text an agent wrote wraps, whatever its length. */
 .lf-x-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden auto;
-  padding: 4px 22px 40px;
-  outline: 0;
   overflow-wrap: anywhere;
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 36px), transparent);
-  mask-image: linear-gradient(#000 calc(100% - 36px), transparent);
+}
+.lf-x-top {
+  padding: 14px 16px 2px;
+}
+.lf-x-body > .lc-pane-sec:last-child {
+  padding-bottom: 16px;
+}
+/* A section's words stand on the rows' edge, 16px in. */
+.lf-x-txt {
+  padding: 0 16px;
 }
 .lf-x-h2 {
-  margin: 6px 0 10px;
-  font-size: 18px;
+  margin: 0 0 6px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -280,30 +262,14 @@
   font-family: var(--l-font-mono);
   font-size: 12px;
 }
-.lf-x-tabs {
-  margin: 14px 0 0;
-}
+/* The one sentence that says what someone can do with it: plain text, the first section's, no well. */
 .lf-x-lead {
-  margin: 10px 0 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.45;
-  letter-spacing: -0.005em;
-  color: var(--l-ink);
-  text-wrap: balance;
-}
-.lf-x-body h3 {
-  margin: 20px 0 4px;
-  font-size: 12px;
   font-weight: 500;
-  color: var(--l-ink-3);
+  text-wrap: pretty;
 }
 .lf-x-body p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.6;
   color: var(--l-ink);
   text-wrap: pretty;
@@ -313,11 +279,15 @@
 }
 .lf-x-body ul,
 .lf-x-body ol {
-  margin: 6px 0 0;
+  margin: 0;
   padding-left: 20px;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.6;
   color: var(--l-ink);
+}
+.lf-x-body p + ul,
+.lf-x-body ul + p {
+  margin-top: 6px;
 }
 .lf-x-body li + li {
   margin-top: 2px;
@@ -335,89 +305,32 @@
   font-family: var(--l-font-mono);
   font-size: 12.5px;
 }
-.lf-x-body .lf-x-lead code {
-  font-size: 13.5px;
-}
-.lf-x-quiet {
-  margin-top: 14px !important;
-  font-size: 13px !important;
-  color: var(--l-ink-3) !important;
-}
-.lf-x-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--l-ink-2);
-  text-decoration: underline;
-  text-decoration-color: var(--ls-line);
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-/* The second look. */
-.lf-x-look {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--l-wash);
+.lf-x-body .lf-x-quiet {
   font-size: 13px;
-  line-height: 1.5;
-  color: var(--l-ink-2);
-  text-wrap: pretty;
-}
-.lf-x-look b {
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.lf-x-look > svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--ls-ok);
-}
-.lf-x-look[data-state="unconfirmed"] > svg {
   color: var(--l-ink-3);
 }
+.lf-x-body .lc-pane-row + .lf-x-txt {
+  margin-top: 2px;
+}
+/* The second look that held: its mark in the ok colour, as a check that passed. */
+.lf-x-ok {
+  display: grid;
+  color: var(--ls-ok);
+}
 
-/* Code: an excerpt with its line numbers and its lines that matter; a command; a file and Open in your editor above. */
+/* Code: each place under its file's row, its lines flush on the paper, the lines that matter tinted; a command in a well of words. */
 .lf-x-exc + .lf-x-exc {
   margin-top: 8px;
 }
-.lf-x-exh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  margin-top: 14px;
-  color: var(--l-ink-2);
-}
-.lf-x-exh .lf-x-mono {
-  flex: 1;
-  min-width: 0;
-}
-.lf-x-exh .lc-btn {
-  margin-right: -10px;
-}
-.lf-x-cap {
-  margin: 8px 0 -2px;
-  color: var(--l-ink-3);
-}
 .lf-x-ev {
-  margin-top: 6px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  overflow: hidden;
   font-family: var(--l-font-mono);
   /* Code at 13 on a 22px line, as Files, Changes and Compare show it. */
   font-size: 13px;
   line-height: 22px;
   color: var(--l-ink);
+}
+.lf-x-exc > .lf-x-ev {
+  padding: 6px 0;
 }
 .lf-x-dl {
   display: flex;
@@ -427,155 +340,42 @@
 .lf-x-dl > span:nth-child(2) {
   flex: 1;
   min-width: 0;
-  padding-right: 12px;
+  padding-right: 16px;
 }
 .lf-x-dl[data-hit] {
   background: var(--ls-hit);
+  box-shadow: inset 2px 0 0 var(--ls-sv-m);
 }
 .lf-x-n {
   flex: none;
-  width: 40px;
+  width: 44px;
   box-sizing: border-box;
-  padding-right: 10px;
+  padding-right: 12px;
   text-align: right;
-  color: var(--l-ink-3);
+  color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
 }
 .lf-x-cmd {
   margin: 6px 0;
-  padding: 5px 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--l-wash);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-/* Activity: what happened, newest first, each with who and when. */
-.lf-x-body .lf-x-acts {
-  margin: 14px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.lf-x-acts li {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  padding-bottom: 14px;
-}
-.lf-x-acts li + li {
-  margin-top: 0;
-}
-.lf-x-acts li:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 16px;
-  bottom: 0;
-  left: 3.5px;
-  width: 1px;
-  background: var(--ls-line);
-}
-.lf-x-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 7px;
-  border-radius: 50%;
-  background: var(--l-ink-4);
-}
-.lf-x-acts [data-kind="looked"] .lf-x-dot,
-.lf-x-acts [data-kind="fixed"] .lf-x-dot {
-  background: var(--ls-ok-fill);
-}
-.lf-x-acts [data-kind="found"] .lf-x-dot {
-  background: var(--l-ink);
-}
-.lf-x-act {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.5;
-}
-.lf-x-act b {
-  font-size: 13.5px;
-  font-weight: 400;
-  color: var(--l-ink);
-}
-.lf-x-act small {
-  font-size: 12.5px;
-  color: var(--l-ink-3);
+/* Activity's triage note: the shared send box, on the rows' edge. */
+.lf-x-note {
+  padding: 8px 16px 0;
 }
 
-/* The actions: they stay while the body scrolls. */
-.lf-x-act-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  row-gap: 4px;
-  min-height: 60px;
-  box-sizing: border-box;
-  padding: 8px 22px;
-  border-top: 1px solid var(--lc-hair);
-  font-size: 13px;
-}
-.lf-x-act-bar > .lc-pop:first-child,
-.lf-x-act-bar > .lc-btn:first-child {
-  margin-left: -10px;
-}
+/* The foot's Dismiss opens its menu: its chevron grey, as a picker's. */
 .lf-x-dismiss svg {
-  color: var(--l-ink-3);
+  color: var(--l-ink-4);
 }
-/* What the actions will do, in a few words: it takes the room left on the row, and when there is none the buttons go under it (the hint comes before them in the markup), never cut with "…". */
-.lf-x-hint {
-  flex: 1 1 120px;
-  min-width: 0;
-  margin-right: 6px;
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--l-ink-3);
-  text-align: right;
-  text-wrap: balance;
-}
-.lf-x-hint-l {
-  margin-right: 0;
-}
-
-/* The Dismiss menu: why, the reasons, and Other's note. */
-.lf-x-why {
-  padding: 6px 10px 4px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--l-ink-3);
-}
+/* Dismiss's Other: the note in the menu, between its back row and the rows' edge. */
 .lf-x-other {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-}
-.lf-x-other label {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lf-x-other textarea {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--l-r-sm);
-  outline: 0;
-  background: var(--l-wash);
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-  resize: none;
-}
-.lf-x-other textarea:focus {
-  background: var(--l-wash-2);
-}
-.lf-x-otherb {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
+  padding: 2px 6px 6px;
 }
 
 /* A narrow page with a finding open: the panel gives the list more room, and below 920px overlays as a drawer so the list stays usable. */
@@ -595,24 +395,11 @@
     bottom: 0;
     z-index: 20;
     width: min(440px, 92%);
+    /* A drawer over the list is the paper itself, or the rows and the page's project picker show through its words. */
+    background: var(--lc-paper);
     box-shadow: -1px 0 0 var(--ls-line), var(--l-shadow-lg);
   }
 }
-.lf-filt > .lc-grow {
-  flex: 1 0 0;
-  min-width: 0;
-}
-.lf-tools {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-.lf-tools > .lc-pop:last-child .lf-tb {
-  margin-right: 0;
-}
-
 /* A row's text sits on the column's edge; its fill reaches 6px past, inside the paper. Its focus ring is the app's
    own, drawn inside the row and only for the keyboard: a click leaves no ring. */
 .lf-rw.l-focus:focus-visible {

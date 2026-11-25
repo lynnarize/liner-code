@@ -13,6 +13,12 @@ export const PICKER_WIDE = PICKER.rail + PICKER.gap + PICKER.list + PICKER.gap +
 export const PICKER_NARROW = PICKER.rail + PICKER.gap + PICKER.list;
 /** Whether a window this wide has room for the side card beside the list, a menu's 10px kept from each edge (menu-place.ts EDGE). */
 export const pickerWide = (windowWidth: number) => windowWidth >= PICKER_WIDE + 20;
+/**
+  How far the picker hangs out past the edge of its chip it is aligned on (Pop's `out`), so that the list is the part that
+  stands over the chip: hung by its right, the side card goes past the chip's right edge (nothing does without the card);
+  hung by its left, the rail goes before the chip's left edge. The owner asked for the list over its button, the card beside.
+*/
+export const pickerOut = (align: "start" | "end", wide: boolean) => (align === "end" ? (wide ? PICKER.gap + PICKER.side : 0) : PICKER.rail + PICKER.gap);
 
 /** How long the pointer rests on a row before the side card turns to it. */
 export const DWELL_MS = 100;
@@ -33,22 +39,20 @@ export function settle(d: Dwell, now: number, overCard: boolean): Dwell {
 /** The keyboard on a row turns the card at once: there's no pointer travelling across rows to wait out. */
 export const focusAt = (key: string | null): Dwell => ({ shown: key, aim: key, at: 0 });
 
-/** What a model is for, as its tool says it: its description up to the first " · " (Claude Code's carries more after it). */
-export const purposeOf = (description: string | undefined) => (description ?? "").split(" · ")[0].trim();
-
 /**
-  A part of a tool's list: the models you starred, a maker's (its name over them), a purpose (in a tool of one maker, what
-  the tool says they are for; "" draws no label), each in the tool's order.
+  A part of a tool's list: the models you starred, a maker's (its name over them), or a tool of one maker's own models
+  ("plain": no label over them), each in the tool's order.
 */
-export type Section<T> = { kind: "starred" | "maker" | "purpose"; label: string; items: T[] };
+export type Section<T> = { kind: "starred" | "maker" | "plain"; label: string; items: T[] };
 
 /**
   A tool's list as the picker shows it. The starred first, under Starred. Then, when the tool's models come from several
   makers, one part a maker, in the order the tool first names each (`newest` comes so, contracts' lineupOf); a tool of one
-  maker instead puts each model under what it is for, models side by side that are for the same thing under one label.
-  `older` are the older versions, behind their own row; one starred is with the starred, not there.
+  maker (Claude Code, Codex) lists its models plainly in the tool's order, with no line over each saying what it is for:
+  the names say it, and a line a model made the list twice as long. `older` are the older versions, behind their own row;
+  one starred is with the starred, not there.
 */
-export function sectionsOf<T>(groups: { maker: string; newest: T[]; older: T[] }[], o: { starred: (t: T) => boolean; purposeOf: (t: T) => string }): { sections: Section<T>[]; older: T[]; makers: number } {
+export function sectionsOf<T>(groups: { maker: string; newest: T[]; older: T[] }[], o: { starred: (t: T) => boolean }): { sections: Section<T>[]; older: T[]; makers: number } {
   const all = groups.flatMap((g) => [...g.newest, ...g.older]);
   const starred = all.filter(o.starred);
   const makers = groups.filter((g) => g.newest.some((t) => !o.starred(t)) || g.older.some((t) => !o.starred(t))).length;
@@ -59,12 +63,8 @@ export function sectionsOf<T>(groups: { maker: string; newest: T[]; older: T[] }
       if (items.length) sections.push({ kind: "maker", label: g.maker, items });
     }
   } else {
-    for (const t of groups.flatMap((g) => g.newest).filter((t) => !o.starred(t))) {
-      const label = o.purposeOf(t);
-      const last = sections[sections.length - 1];
-      if (last?.kind === "purpose" && last.label === label) last.items.push(t);
-      else sections.push({ kind: "purpose", label, items: [t] });
-    }
+    const items = groups.flatMap((g) => g.newest).filter((t) => !o.starred(t));
+    if (items.length) sections.push({ kind: "plain", label: "", items });
   }
   return { sections, older: groups.flatMap((g) => g.older).filter((t) => !o.starred(t)), makers };
 }
@@ -113,13 +113,13 @@ export function mergeOffers<T>(items: T[], o: { keyOf: (t: T) => string; refOf: 
   starred when any source's id of its model is, whatever the switch, so the side card (which reads every source) says
   "Starred" exactly when the row is under Starred.
 */
-export function toolList<T>(items: T[], o: { source: string | null; sourceOf: (t: T) => string; merge: (items: T[]) => Offered<T>[]; nameOf: (t: T) => string; makerOf: (t: T) => string; legacy: (t: T) => boolean; starred: (t: T) => boolean; purposeOf: (t: T) => string }) {
+export function toolList<T>(items: T[], o: { source: string | null; sourceOf: (t: T) => string; merge: (items: T[]) => Offered<T>[]; nameOf: (t: T) => string; makerOf: (t: T) => string; legacy: (t: T) => boolean; starred: (t: T) => boolean }) {
   const all = o.merge(items);
   const rows = o.source === null ? all : o.merge(items.filter((t) => o.sourceOf(t) === o.source));
   const starredKeys = new Set(all.filter((r) => r.offers.some(o.starred)).map((r) => r.key));
   const isStarred = (r: Offered<T>) => starredKeys.has(r.key);
   const groups = lineupOf(rows, (r) => o.nameOf(r.pick), (r) => o.makerOf(r.pick), (r) => o.legacy(r.pick));
-  const { sections, older } = sectionsOf(groups, { starred: isStarred, purposeOf: (r) => o.purposeOf(r.pick) });
+  const { sections, older } = sectionsOf(groups, { starred: isStarred });
   return { all, rows, sections, older, count: rows.length, isStarred };
 }
 
@@ -261,13 +261,17 @@ export function releaseStop(levels: { id: string }[], shown: EffortShown, from: 
 export const sliderNow = (at: number) => Math.max(0, at);
 /** What a place that saves its effort in Settings stores for a pick: a level, and for the tool's own default no word (null), which Settings takes as unset where "" is refused. */
 export const settingLevel = (id: string): string | null => id || null;
-/** The stop a pointer `x` px along a track `width` px wide is in: each of the `stops` an equal part, the ends taking what lies past them. */
+/** The stop a pointer `x` px along a track `width` px wide is nearest: the stops stand at equal steps from the track's start (the lowest) to its end (the highest), the ends taking what lies past them. */
 export function stopAt(x: number, width: number, stops: number): number {
   if (stops < 1 || width <= 0) return -1;
-  return Math.min(stops - 1, Math.max(0, Math.floor((x / width) * stops)));
+  if (stops === 1) return 0;
+  return Math.min(stops - 1, Math.max(0, Math.round((x / width) * (stops - 1))));
 }
-/** How far the slider's fill reaches, as a share of the track: through the stop it runs at, nothing for none. */
-export const fillOf = (at: number, stops: number) => (at < 0 || stops < 1 ? 0 : (at + 1) / stops);
+/**
+  Where the slider's knob stands, as a share of its travel: the start for a model's lowest level and the end for its highest,
+  so the lowest of two (OpenCode's "none") is an empty track and never half of one. One level alone stands at the end; none, 0.
+*/
+export const fillOf = (at: number, stops: number) => (at < 0 || stops < 1 ? 0 : stops === 1 ? 1 : at / (stops - 1));
 /**
   A key on the slider: Left one level lower, Right one higher (from an empty track either starts at the lowest), Home and
   End the ends, Delete or Backspace the tool's own default ("own"). Up and Down are not its: they walk the card's parts.

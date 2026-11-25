@@ -16,9 +16,10 @@ import { Component, memo, useEffect, useMemo, useRef, useState, type ErrorInfo, 
 import type { Project, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "../engine";
-import { I } from "../icons";
+import { I, N } from "../icons";
 import { matches } from "../keymap";
-import { Pop, Row, Sep } from "../ui";
+import { PaneButton, PaneNote, PaneTool } from "../Pane";
+import { Pop, Row, Sep, SubMenu } from "../ui";
 import { bridge } from "../bridge";
 import { ProjectChooser } from "../Projects";
 import * as os from "../os";
@@ -95,27 +96,30 @@ function Unreadable({ thread, cwd, broken }: { thread?: Thread; cwd?: string; br
     return () => void (live = false);
   }, [thread?.id, broken.file]);
   const last = copies?.[0];
+  // The one empty state every surface has (Pane.tsx), its one action the ink button.
   return (
-    <>
-      <I.alert size={20} />
-      <b>The design file “{broken.title ?? broken.file}” can't be read</b>
-      <span>{broken.why}</span>
+    <PaneNote
+      icon={<I.alert size={20} />}
+      title={`The design file “${broken.title ?? broken.file}” can't be read`}
+      action={
+        last ? (
+          <PaneButton ink disabled={busy} onClick={() => {
+            if (!cwd || !thread) return;
+            setBusy(true);
+            void rpc("canvas.restore", { threadId: thread.id, file: broken.file, key: last.key })
+              .then(() => design.open(cwd, broken.file))
+              .catch((e: Error) => toast.error(e.message))
+              .finally(() => setBusy(false));
+          }}>
+            Bring back the copy from turn {last.turn}
+          </PaneButton>
+        ) : undefined
+      }
+    >
+      {broken.why}
       <span className="ld-mono">.liner/designs/{broken.file}/design.json</span>
-      {last ? (
-        <button type="button" className="lc-btn" data-kind="ink" disabled={busy} onClick={() => {
-          if (!cwd || !thread) return;
-          setBusy(true);
-          void rpc("canvas.restore", { threadId: thread.id, file: broken.file, key: last.key })
-            .then(() => design.open(cwd, broken.file))
-            .catch((e: Error) => toast.error(e.message))
-            .finally(() => setBusy(false));
-        }}>
-          Bring back the copy from turn {last.turn}
-        </button>
-      ) : copies ? (
-        <span>This session kept no copy of it to bring back. Its files are still in the folder as they are.</span>
-      ) : null}
-    </>
+      {copies && !last && <span>This session kept no copy of it to bring back. Its files are still in the folder as they are.</span>}
+    </PaneNote>
   );
 }
 
@@ -153,6 +157,8 @@ async function remove() {
   const s = getDesign();
   const nodes = s.sel.filter((x) => x.node);
   const whole = s.sel.filter((x) => !x.node).map((x) => x.frame);
+  // Its name is read before it goes, for the toast that says it went.
+  const named = s.file?.frames.find((f) => f.id === whole[0])?.name ?? "the frame";
   const byFrame = new Map<string, string[]>();
   for (const x of nodes) byFrame.set(x.frame, [...(byFrame.get(x.frame) ?? []), x.node!]);
   design.select([]);
@@ -160,7 +166,7 @@ async function remove() {
   if (whole.length) {
     const step = await design.removeFrames(whole);
     // Nothing went (an old turn shown, the engine refused): no toast says it did.
-    if (step) toast(whole.length === 1 ? "Took the frame away" : `Took ${whole.length} frames away`, { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } });
+    if (step) toast(whole.length === 1 ? `Deleted ${named}` : `Deleted ${whole.length} frames`, { duration: 5000, action: { label: "Undo", onClick: () => step.undo() } });
   }
 }
 
@@ -184,23 +190,13 @@ function zoomBy(el: HTMLElement | null, k: number) {
   design.view(z, { x: cx - ((cx - s.pan.x) * z) / s.zoom, y: cy - ((cy - s.pan.y) * z) / s.zoom });
 }
 
-const BUILD_IN = "Build in a project";
-/** Runs `run` when it leaves the page: a panel's content going with the panel. */
-function OnGone({ run }: { run: () => void }) {
-  const was = useRef(run);
-  was.current = run;
-  useEffect(() => () => was.current(), []);
-  return null;
-}
-
 /**
   The top row's ···, as a surface's top row keeps its everyday tools out and the rest under one: the
   live frames' server (useLiveServer), Show in Finder, and for a design on its own Build in a project,
-  which turns the menu into the project chooser in its place.
+  which opens the project chooser to the menu's side (as a sidebar row's Snooze until does).
 */
 function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
   const live = useLiveServer();
-  const [choosing, setChoosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const own = project.kind === "design";
   // On its own, the design's folder is its project's; in a project, its folder under .liner/designs.
@@ -209,7 +205,6 @@ function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
     setBusy(true);
     try {
       await buildIn(tab, to);
-      setChoosing(false);
       close();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -217,57 +212,43 @@ function TopMore({ tab, project }: { tab: DesignTab; project: Project }) {
       setBusy(false);
     }
   };
-  // Back from the chooser puts focus on the row that opened it, or it would fall to the page with the button that had it.
-  const back = (from: HTMLElement) => {
-    const panel = from.closest<HTMLElement>(".lc-pop-panel");
-    setChoosing(false);
-    requestAnimationFrame(() => [...(panel?.querySelectorAll<HTMLElement>(".lc-row") ?? [])].find((r) => r.querySelector("b")?.textContent === BUILD_IN)?.focus({ preventScroll: true }));
-  };
   return (
     <>
-      <Pop label="More for this design" menu={!choosing} align="end" width={choosing ? 420 : 280} triggerClass="lc-tb l-focus" triggerAttrs={{ title: "More" }} trigger={<I.more size={16} />}>
+      <Pop label="More for this design" menu align="end" width={280} triggerClass="lc-sw-b l-focus" triggerAttrs={{ title: "More" }} trigger={<N.more />}>
         {(close) => (
           <>
-          {/* The menu closed (Escape, a click away) leaves the chooser behind it: the next ··· opens on the menu again. */}
-          <OnGone run={() => setChoosing(false)} />
-          {choosing ? (
-            <div className="ld-own-pop">
-              <button type="button" className="ld-own-back l-focus" onClick={(e) => back(e.currentTarget)}>
-                <I.chevL size={14} />
-                Build in a project
-              </button>
-              {busy ? (
-                <p className="ld-note ld-own-note">Moving the design in</p>
-              ) : (
-                <ProjectChooser
-                  onPick={(p) => void go({ projectId: p.id }, close)}
-                  extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={16} />} onPick={() => void bridge.pickFolder().then((path) => (path ? go({ path }, close) : undefined))} />}
-                />
-              )}
-            </div>
-          ) : (
-            <>
-              {live.rows && (
+            {live.rows && (
+              <>
+                {live.rows(close)}
+                <Sep />
+              </>
+            )}
+            <Row title={`Show in ${os.fileManager}`} note={own ? ownPlace(project) : undefined} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folder))} />
+            {(() => {
+              const s = getDesign();
+              const targetFrame = s.sel[0]?.frame ?? s.file?.frames.find((f) => f.page === (s.page ?? s.file?.pages[0]?.id) && f.kind === "drawn")?.id;
+              if (!targetFrame) return null;
+              return (
                 <>
-                  {live.rows(close)}
-                  <Sep />
+                  <Row title="Copy frame HTML" icon={<I.code size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "copy"))} />
+                  <Row title="Export frame HTML…" icon={<I.download size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "download"))} />
                 </>
-              )}
-              <Row title={`Show in ${os.fileManager}`} note={own ? ownPlace(project) : undefined} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folder))} />
-              {(() => {
-                const s = getDesign();
-                const targetFrame = s.sel[0]?.frame ?? s.file?.frames.find((f) => f.page === (s.page ?? s.file?.pages[0]?.id) && f.kind === "drawn")?.id;
-                if (!targetFrame) return null;
-                return (
-                  <>
-                    <Row title="Copy frame HTML" icon={<I.code size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "copy"))} />
-                    <Row title="Export frame HTML…" icon={<I.download size={16} />} onPick={() => (close(), void exportFrameHtml(targetFrame, "download"))} />
-                  </>
-                );
-              })()}
-              {own && <Row title={BUILD_IN} note="It moves into the project, conversation and all" icon={<I.link size={16} />} onPick={() => setChoosing(true)} />}
-            </>
-          )}
+              );
+            })()}
+            {own && (
+              <SubMenu title="Build in a project" icon={<I.link size={16} />} label="Build in a project: it moves into the project, conversation and all" width={420}>
+                {() =>
+                  busy ? (
+                    <p className="ld-note ld-own-note">Moving the design in</p>
+                  ) : (
+                    <ProjectChooser
+                      onPick={(p) => void go({ projectId: p.id }, close)}
+                      extra={<Row title="Another folder" note="One that isn't a project yet" icon={<I.plus size={16} />} onPick={() => void bridge.pickFolder().then((path) => (path ? go({ path }, close) : undefined))} />}
+                    />
+                  )
+                }
+              </SubMenu>
+            )}
           </>
         )}
       </Pop>
@@ -285,25 +266,24 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
   return (
     <header className="ld-bar" data-drag>
       {!sidebar && (
-        <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-          <I.sidebar size={16} />
+        <button type="button" className="lc-sw-b l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
+          <N.sidebar />
         </button>
       )}
       <TabTitle />
+      {/* Where it came from, as a head's quiet words: a press goes back to that session. */}
       {adopted && (
         <button
           type="button"
-          className="lc-btn l-focus"
-          data-kind="ghost"
-          data-size="sm"
-          title={`Adopted from Code session “${adopted.title}” — jump back`}
+          className="ld-from l-focus"
+          title={`Adopted from Code session “${adopted.title}”: go back to it`}
           onClick={() => {
             setFace("code");
             window.dispatchEvent(new CustomEvent("lc:open-session", { detail: { id: adopted.threadId } }));
           }}
         >
-          <I.code size={12} />
           From Code
+          <I.chevR size={12} />
         </button>
       )}
       <span className="lc-grow" data-drag />
@@ -319,12 +299,13 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
           </>
         )}
       </Pop>
-      <button type="button" className="lc-tb l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
-        <I.play size={16} />
+      {/* The session header's buttons (the Code face's switcher): 32 square, 20px icons. */}
+      <button type="button" className="lc-sw-b l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
+        <I.play size={20} />
       </button>
       {!inspOpen && (
-        <button type="button" className="lc-tb l-focus" aria-label="Show inspector" title={`Show inspector (${os.keys("mod+alt+i")})`} onClick={onToggleInsp}>
-          <I.sliders size={16} />
+        <button type="button" className="lc-sw-b l-focus" aria-label="Show inspector" title={`Show inspector (${os.keys("mod+alt+i")})`} onClick={onToggleInsp}>
+          <I.panel size={20} />
         </button>
       )}
       <TopMore tab={tab} project={project} />
@@ -497,13 +478,8 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
       {inspOpen && (
         <div className="ld-insp-col">
           <FaceBoundary what="inspector">
-            <InspectorPart
-              end={
-                <button type="button" className="lc-tb l-focus" aria-label="Hide inspector" title={`Hide inspector (${os.keys("mod+alt+i")})`} onClick={toggleInsp}>
-                  <I.close size={14} />
-                </button>
-              }
-            />
+            {/* The head's Close, in the panel's own button, keeping its name and key (Pane's Close would say "Close the panel"). */}
+            <InspectorPart end={<PaneTool label={`Hide inspector (${os.keys("mod+alt+i")})`} icon={<I.close size={16} />} onClick={toggleInsp} />} />
           </FaceBoundary>
         </div>
       )}

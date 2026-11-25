@@ -33,45 +33,26 @@
   color: var(--l-ink-2);
 }
 
-/* The Build tab. */
+/* The Build tab: the panel's section, each frame a card set 16 in, an inset rule between one and the next. */
 .ld-build {
   padding-bottom: 12px;
-}
-.ld-bt-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 16px;
-  font-size: 14px;
-  color: var(--l-ink-3);
-}
-.ld-bt-top > svg {
-  flex: none;
-}
-.ld-bt-top b {
-  flex: 1;
-  min-width: 0;
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.ld-bt-top > span {
-  flex: none;
-  font-size: 13px;
 }
 .ld-bt {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 16px 14px;
-  border-top: 1px solid var(--lc-hair, var(--l-line));
+  margin: 0 16px;
+  padding: 10px 0 14px;
+}
+.ld-bt + .ld-bt {
+  border-top: 1px solid var(--l-line);
 }
 .ld-bt-h {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 .ld-bt-i {
   display: grid;
@@ -158,34 +139,28 @@ button.ld-bt-n {
 .ld-bt-live {
   padding: 12px 16px 0;
 }
+.ld-build .ld-note.ld-bt-p {
+  padding: 0 16px 8px;
+}
 .ld-bt-a {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  padding-left: 24px;
+  gap: 2px;
+  margin-top: 2px;
+  padding-left: 14px;
 }
-.ld-bt-empty {
-  padding: 16px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-
-/* The foot: what waits, and the ink action. */
-.ld-bfoot {
+/* A frame's setting rows (Screen ›) sit where the card's words do. */
+.ld-bt-rows {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
+  flex-direction: column;
+  margin: 0 -8px 0 16px;
 }
-.ld-bfoot > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ld-bt-rows > .lc-pop {
+  display: flex;
+}
+.ld-bt-rows .lc-pane-row {
+  width: 100%;
+  margin: 0;
 }
 
 /* The dock's head row. */
@@ -268,76 +243,32 @@ button.ld-bt-n {
   color: var(--l-ink-3);
 }
 
-/* Putting the running app on the canvas. */
+/* Putting the running app on the canvas: the app's one menu shape (ui.tsx Row, PanelHead, MenuFoot), floating under the top row or in Home's + menu. */
 .ld-lpick {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px;
+  display: grid;
 }
-.ld-lpick-float {
+.l-pop.ld-lpick-float {
   position: fixed;
   top: 52px;
+  right: auto;
+  bottom: auto;
   left: 50%;
   z-index: 40;
   width: 340px;
-  padding: 10px;
-  border-radius: 14px;
-  background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line)), 0 16px 40px -18px oklch(0 0 0 / 0.3);
-  transform: translateX(-50%);
-}
-.ld-lpick-float > .ld-lpick {
-  padding: 0;
-}
-.ld-lpick-h {
-  padding: 2px 4px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--l-ink);
+  translate: -50% 0;
 }
 .ld-lpick-n {
-  padding: 4px;
+  margin: 0;
+  padding: 4px 8px 6px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--l-ink-3);
-}
-.ld-lpick-l {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ld-lpick-r {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.ld-lpick-r b {
-  font-weight: 500;
-  color: var(--l-ink);
-}
-.ld-lpick-r[data-on] {
-  background: var(--l-wash-2);
-}
-@media (hover: hover) {
-  .ld-lpick-r:hover:not([data-on]) {
-    background: var(--l-wash);
-  }
-}
-.ld-lpick-r .ld-ell {
-  flex: 1;
-  min-width: 0;
 }
 .ld-lpick-ask {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin: 4px;
   padding: 8px;
   border-radius: 8px;
   background: var(--l-wash);
@@ -350,18 +281,20 @@ button.ld-bt-n {
   color: var(--l-ink);
   word-break: break-all;
 }
-.ld-lpick-ask .ld-bt-a,
 .ld-lpick-go {
-  padding-left: 0;
-}
-.ld-lpick-go {
+  display: flex;
   justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 4px 4px;
+}
+.ld-lpick-ask .ld-lpick-go {
+  padding: 4px 0 0;
 }
 .ld-lpick-f {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 4px;
+  padding: 2px 4px 4px 8px;
   font-size: 13px;
   color: var(--l-ink-3);
 }
@@ -380,29 +313,6 @@ button.ld-bt-n {
 }
 .ld-lpick-in:focus-visible {
   box-shadow: 0 0 0 1.5px var(--l-accent);
-}
-.ld-lpick-s {
-  display: flex;
-  gap: 6px;
-  padding: 0 4px;
-}
-.ld-lpick-c {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--l-wash);
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-}
-.ld-lpick-c[aria-pressed="true"] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
 }
 
 /* The kept copies, in the canvas's top row: one menu. */
@@ -572,33 +482,6 @@ button.ld-bt-n {
   display: none;
 }
 
-/* Each unbuilt frame, or each sheet, with its quiet action: Not for code, This is a screen. */
-.ld-bt-rows {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0 0 0 24px;
-  list-style: none;
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-.ld-bt-rows li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 28px;
-}
-.ld-bt-rows li:only-child {
-  justify-content: flex-start;
-}
-.ld-bt-rows .ld-live-lk {
-  margin-left: auto;
-  color: var(--l-ink-3);
-}
-.ld-bt-rows li:only-child .ld-live-lk {
-  margin-left: -6px;
-}
 /* A "before" copy's name is long: the trigger keeps to a width. */
 .ld-ver-t .ld-ell {
   max-width: 200px;

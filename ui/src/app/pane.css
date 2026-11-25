@@ -1,0 +1,437 @@
+/*
+  Liner Code · The one frame of every surface in the right panel (Pane.tsx): its head, its body's sections,
+  rows and file strips, its foot. Sizes from the approved boards (panel.css, 2026-11-25); colours are the
+  app's tokens, so the light look and the dark one both hold.
+*/
+
+/* ---------- The head ---------- */
+/* 44 high, on the session header's row, a hairline under it: the name, the one thing it shows, its tools, then Full canvas and Close. */
+.lc-pane-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: var(--lc-head);
+  box-sizing: border-box;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--l-line);
+}
+.lc-pane-name {
+  flex: none;
+  margin: 0 6px 0 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pane-shows {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+/* A field takes the room the head has left, all of it up to the tools: the head's spacer gives way to it (Files' find, the Browser's address). */
+.lc-pane-shows:has(> .lc-pane-field) {
+  flex: 1 1 auto;
+  margin-right: 6px;
+}
+.lc-pane-head:has(> .lc-pane-shows > .lc-pane-field) > .lc-grow {
+  flex: 0 0 0;
+}
+.lc-pane-tools,
+.lc-pane-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+/* Full canvas and Close, set a little apart from the surface's own tools. */
+.lc-pane-tools + .lc-pane-end {
+  margin-left: 10px;
+}
+.lc-pane-tool {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.lc-pane-tool.lc-pick {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+.lc-pane-tool[aria-pressed="true"],
+.lc-pane-tool[data-open] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-pane-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-pane-tool:hover:not(:disabled) {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+/* The head's picker: quiet words and a small chevron, washed as you point or while it is open. */
+.lc-pane-pick {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-pane-pick > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lc-pane-pick[data-open] {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-pane-pick:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.lc-pane-words {
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-pane-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-pane-field > svg {
+  flex: none;
+}
+.lc-pane-field > input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  color: var(--l-ink);
+}
+
+/* ---------- The body ---------- */
+.lc-pane-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden auto;
+}
+.lc-pane-sec {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+/* A section's label: 12.5, 600, the second ink, its note at the right end in the fourth. */
+.lc-pane-lab {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 8px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 16px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-pane-lab > span:last-child:not(:first-child) {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
+}
+/* Every section after the first: an inset hairline over its label. */
+.lc-pane-sec:not(:first-child) > .lc-pane-lab {
+  height: 42px;
+  margin: 12px 16px 0;
+  padding: 0 0 8px;
+  border-top: 1px solid var(--l-line);
+}
+/* A row: 30 high, 8 in, a 14px icon, the words, the value at the right end. */
+.lc-pane-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 16px);
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  margin: 0 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-2);
+  text-align: left;
+}
+button.lc-pane-row,
+.lc-pane-row.lc-pick {
+  display: flex;
+  cursor: pointer;
+}
+.lc-pane-row[data-open] {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  button.lc-pane-row:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.lc-pane-ri {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  color: var(--l-ink-3);
+}
+.lc-pane-ri > svg {
+  width: 14px;
+  height: 14px;
+}
+.lc-pane-rt {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pane-rv {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  max-width: 60%;
+  padding-left: 12px;
+  overflow: hidden;
+  color: var(--l-ink);
+  white-space: nowrap;
+}
+.lc-pane-rv[data-quiet] {
+  color: var(--l-ink-3);
+}
+.lc-pane-rv > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+
+/* ---------- A file's own row ---------- */
+/* The same in Changes and Files: a strip on the well, ruled above and below, 36 high, in mono. */
+.lc-pane-file {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 14px 0 12px;
+  border-top: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-line);
+  background: var(--lc-well);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0;
+  color: var(--l-ink);
+}
+.lc-pane-body > .lc-pane-file:first-child {
+  border-top: 0;
+}
+.lc-pane-fold {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink-4);
+  cursor: pointer;
+}
+.lc-pane-fold > svg {
+  transition: rotate 200ms var(--l-ease-out);
+}
+.lc-pane-fold[aria-expanded="false"] > svg {
+  rotate: -90deg;
+}
+.lc-pane-st {
+  flex: none;
+  width: 14px;
+  font-family: var(--l-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--l-ink-3);
+}
+.lc-pane-st[data-st="M"] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.lc-pane-st[data-st="A"] {
+  color: var(--l-ok-text, var(--l-ok));
+}
+.lc-pane-st[data-st="D"] {
+  color: var(--l-danger-text, var(--l-danger));
+}
+.lc-pane-pathb {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-pane-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pane-dir {
+  color: var(--l-ink-3);
+}
+.lc-pane-fend {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  font-family: var(--l-font-body);
+}
+.lc-pane-check {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1.5px solid var(--l-ink-5);
+  border-radius: 5px;
+  background: none;
+  color: var(--lc-paper);
+  cursor: pointer;
+}
+.lc-pane-check[aria-checked="true"] {
+  border-color: var(--l-ink-2);
+  background: var(--l-ink-2);
+}
+
+/* ---------- The foot ---------- */
+/* 56 high, a hairline over it: where things stand on the left, the buttons on the right, one ink button at most and last. */
+.lc-pane-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 56px;
+  box-sizing: border-box;
+  padding: 0 12px 0 16px;
+  border-top: 1px solid var(--l-line);
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-pane-say {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pane-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-pane-btn:hover:not(:disabled) {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+.lc-pane-btn[data-ink] {
+  padding: 0 12px;
+  background: var(--l-ink);
+  font-weight: 600;
+  color: var(--lc-paper);
+}
+@media (hover: hover) {
+  .lc-pane-btn[data-ink]:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--l-ink) 86%, var(--lc-paper));
+    color: var(--lc-paper);
+  }
+}
+.lc-pane-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

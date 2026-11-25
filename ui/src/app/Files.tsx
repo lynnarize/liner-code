@@ -13,7 +13,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FileDiff, Item, Thread, TreeEntry } from "@contracts";
 import { TreeView, type TreeNode } from "@liner/components/tree-view/tree-view";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { bridge } from "./bridge";
@@ -21,8 +20,10 @@ import { browseTo } from "./agentBrowser";
 import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf } from "./model";
-import { baseOf, dirOf, langOf, linesOf, marksOf, tokensOf, Toks } from "./code";
+import { baseOf, langOf, linesOf, marksOf, tokensOf, Toks } from "./code";
 import { SurfaceNote, useCwd } from "./Surfaces";
+import { PANE_TOOL, PaneButton, PaneField, PaneFile, PaneFoot, PaneHead, PaneTool } from "./Pane";
+import { Pop, Row, Sep } from "./ui";
 import { takers, takeWaiting, type Reveal } from "./reveal";
 
 const LETTER = { added: "A", modified: "M", deleted: "D", renamed: "R" } as const;
@@ -239,21 +240,12 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
     browseTo(thread.id, sel).catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
   };
 
-  // An empty folder has nothing to find or pick: one note fills the surface, not a tree over an empty file view.
-  if (tree && !tree.length && !err && !sel)
-    return (
-      <div className="lc-fsv" data-empty="">
-        <SurfaceNote icon={<I.folder size={20} />} title="This folder is empty">
-          Files the agent writes show up here.
-        </SurfaceNote>
-      </div>
-    );
-
-  return (
-    <div className="lc-fsv">
-      <div className="lc-files-side">
-        <div className="lc-files-find">
-          <I.search size={14} />
+  // The head (Pane.tsx): the find field, then "only changed files" as a pressed toggle and the one Look again,
+  // which reads the folder and the open file afresh.
+  const head = (
+    <PaneHead
+      shows={
+        <PaneField className="lc-files-field" icon={<I.search size={14} />}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -268,123 +260,118 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
               }
             }}
           />
-          <button type="button" className="lc-ib l-focus" aria-label="Refresh files" title="Refresh files" onClick={() => setTreeTick((n) => n + 1)}>
-            <I.refresh size={13} />
-          </button>
-        </div>
-        <Segmented
-          size="sm"
-          value={filter}
-          onValueChange={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "changed", label: <>Changed {changed.size > 0 && <span className="lc-files-n">{changed.size}</span>}</> },
-          ]}
-          aria-label="Which files"
-        />
-        <div className="lc-files-tree">
-          {tree === null ? (
-            <span className="l-shimmer lc-files-wait">Reading the folder</span>
-          ) : nodes.length ? (
-            <TreeView key={`${filter}:${query.trim().toLowerCase()}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
-          ) : (
-            <p className="lc-quiet lc-files-none">{err ?? (filter === "changed" ? "No turn has changed a file yet." : query ? "No file matches that." : "This folder is empty.")}</p>
-          )}
-        </div>
-      </div>
-      <section className="lc-files-view" aria-label={sel ?? "No file"}>
-        {!sel ? (
-          <SurfaceNote icon={<I.file size={20} />} title="Pick a file">
-            Files the turns changed are marked in the tree.
+        </PaneField>
+      }
+      tools={
+        <>
+          <PaneTool label={changed.size ? `Only changed files (${changed.size})` : "Only changed files"} icon={<I.filter size={16} />} pressed={filter === "changed"} onClick={() => setFilter(filter === "changed" ? "all" : "changed")} />
+          <PaneTool label="Look again" icon={<I.refresh size={16} />} onClick={() => setTreeTick((n) => n + 1)} />
+        </>
+      }
+    />
+  );
+
+  // An empty folder has nothing to find or pick: one note fills the surface, not a tree over an empty file view.
+  if (tree && !tree.length && !err && !sel)
+    return (
+      <>
+        {head}
+        <div className="lc-fsv" data-empty="">
+          <SurfaceNote icon={<I.folder size={20} />} title="This folder is empty">
+            Files the agent writes show up here.
           </SurfaceNote>
-        ) : (
-          <>
-            <div className="lc-files-head">
-              <span className="lc-mono lc-files-path lc-path" title={sel}>
-                <span className="lc-quiet">{dirOf(sel)}</span>
-                <span>{baseOf(sel)}</span>
-              </span>
-              <span className="lc-grow" />
-              {twoWays && (
-                <Segmented
-                  size="sm"
-                  value={showRendered ? "preview" : "source"}
-                  onValueChange={(v) => {
-                    setRendered(v === "preview");
-                    if (v === "preview") setGoto(null);
-                  }}
-                  options={[
-                    { value: "preview", label: "Preview" },
-                    { value: "source", label: "Source" },
-                  ]}
-                  aria-label="Show it as"
-                />
-              )}
-              {kind === "html" && (
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={openInBrowser}>
-                  <I.globe size={14} />
-                  Open in Browser
-                </button>
-              )}
-              {c && (
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => onShowChanges(c.cp, sel)}>
-                  Show changes
-                </button>
-              )}
-              <button type="button" className="lc-ib l-focus" aria-label="Copy path" title="Copy path" onClick={() => void navigator.clipboard?.writeText(sel).then(() => toast("Copied path"), () => {})}>
-                <I.copy size={14} />
-              </button>
-              {file && !file.binary && (
-                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" title="Copy file contents" onClick={() => void navigator.clipboard?.writeText(file.text).then(() => toast("Copied file"), () => {})}>
-                  Copy text
-                </button>
-              )}
-              <button type="button" className="lc-ib l-focus" aria-label="Refresh file" title="Refresh file" onClick={() => setTreeTick((n) => n + 1)}>
-                <I.refresh size={14} />
-              </button>
-              <button type="button" className="lc-ib l-focus" aria-label="Open in your editor" title="Open in your editor" onClick={() => cwd && bridge.openIn(`${cwd}/${sel}`, "editor")}>
-                <I.external size={14} />
-              </button>
-            </div>
-            <div className="lc-files-code">
-              {kind === "image" && !asSource ? (
-                // An image, on a checkerboard so a transparent one still reads (T3 Code: files/PreviewImage.tsx).
-                !image ? (
-                  <span className="l-shimmer lc-files-wait">Opening {baseOf(sel)}</span>
-                ) : image.error ? (
-                  <p className="lc-quiet lc-files-none">{image.error}</p>
-                ) : (
-                  <div className="lc-files-img">
-                    <img src={image.src} alt={baseOf(sel)} draggable={false} />
-                    {file && <span className="lc-quiet">{sizeOf(file.size)}</span>}
-                  </div>
-                )
-              ) : !file ? (
-                <span className="l-shimmer lc-files-wait">Opening {baseOf(sel)}</span>
-              ) : file.binary ? (
-                <p className="lc-quiet lc-files-none">{!file.size ? file.text : file.size > SHOWS_UP_TO ? `Too large to show here, at ${sizeOf(file.size)}. Open it in your editor.` : `A binary file, ${sizeOf(file.size)}.`}</p>
-              ) : kind === "markdown" && !asSource ? (
-                // Rendered with the app's own Markdown (T3 Code: files/FileMarkdownPreview.tsx).
-                <div className="lc-files-md">
-                  <StreamedMarkdown className="lc-md" text={file.text} streaming={false} animate={false} />
-                </div>
-              ) : (
-                <Code key={file.path} at={code} lines={lines} toks={toks} marks={marks} hl={hl} />
-              )}
-            </div>
-            {c && marks.size > 0 && asSource && (
-              <div className="lc-files-foot">
-                {/* One tint for a line the turn added or changed, as Changes tints what it added. */}
-                <span className="lc-cl-key">Changed this turn</span>
-                <span className="lc-grow" />
-                <span className="lc-quiet">
-                  {turnAgent}, turn {c.turn}
-                </span>
-              </div>
+        </div>
+      </>
+    );
+
+  const copy = (text: string, said: string) => void navigator.clipboard?.writeText(text).then(() => toast(said), () => {});
+  return (
+    <>
+      {head}
+      <div className="lc-fsv">
+        <div className="lc-files-side">
+          <div className="lc-files-tree">
+            {tree === null ? (
+              <span className="l-shimmer lc-files-wait">Reading the folder</span>
+            ) : nodes.length ? (
+              <TreeView key={`${filter}:${query.trim().toLowerCase()}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
+            ) : (
+              <p className="lc-quiet lc-files-none">{err ?? (filter === "changed" ? "No turn has changed a file yet." : query ? "No file matches that." : "This folder is empty.")}</p>
             )}
-          </>
-        )}
-      </section>
-    </div>
+          </div>
+        </div>
+        <section className="lc-files-view" aria-label={sel ?? "No file"}>
+          {!sel ? (
+            <SurfaceNote icon={<I.file size={20} />} title="Pick a file">
+              Files the turns changed are marked in the tree.
+            </SurfaceNote>
+          ) : (
+            <>
+              {/* The file's own strip, as Changes draws one: its letter, its path, Preview or Source, and ··· for the rest. */}
+              <PaneFile path={sel} status={c ? LETTER[c.status] : undefined}>
+                {twoWays && (
+                  <PaneTool
+                    label="Show the source"
+                    icon={<I.code size={14} />}
+                    pressed={!showRendered}
+                    onClick={() => {
+                      setRendered(!showRendered);
+                      if (!showRendered) setGoto(null);
+                    }}
+                  />
+                )}
+                <Pop label="More for this file" menu align="end" width={220} triggerClass={PANE_TOOL} trigger={<I.more size={14} />}>
+                  {(close) => (
+                    <>
+                      <Row title="Copy path" icon={<I.copy size={14} />} onPick={() => (close(), copy(sel, "Copied path"))} />
+                      <Row title="Copy text" icon={<I.copy size={14} />} disabled={!file || file.binary} onPick={() => (close(), file && copy(file.text, "Copied file"))} />
+                      {kind === "html" && (
+                        <>
+                          <Sep />
+                          <Row title="Open in Browser" icon={<I.globe size={14} />} onPick={() => (close(), openInBrowser())} />
+                        </>
+                      )}
+                    </>
+                  )}
+                </Pop>
+              </PaneFile>
+              <div className="lc-files-code">
+                {kind === "image" && !asSource ? (
+                  // An image, on a checkerboard so a transparent one still reads (T3 Code: files/PreviewImage.tsx).
+                  !image ? (
+                    <span className="l-shimmer lc-files-wait">Opening {baseOf(sel)}</span>
+                  ) : image.error ? (
+                    <p className="lc-quiet lc-files-none">{image.error}</p>
+                  ) : (
+                    <div className="lc-files-img">
+                      <img src={image.src} alt={baseOf(sel)} draggable={false} />
+                      {file && <span className="lc-quiet">{sizeOf(file.size)}</span>}
+                    </div>
+                  )
+                ) : !file ? (
+                  <span className="l-shimmer lc-files-wait">Opening {baseOf(sel)}</span>
+                ) : file.binary ? (
+                  <p className="lc-quiet lc-files-none">{!file.size ? file.text : file.size > SHOWS_UP_TO ? `Too large to show here, at ${sizeOf(file.size)}. Open it in your editor.` : `A binary file, ${sizeOf(file.size)}.`}</p>
+                ) : kind === "markdown" && !asSource ? (
+                  // Rendered with the app's own Markdown (T3 Code: files/FileMarkdownPreview.tsx).
+                  <div className="lc-files-md">
+                    <StreamedMarkdown className="lc-md" text={file.text} streaming={false} animate={false} />
+                  </div>
+                ) : (
+                  <Code key={file.path} at={code} lines={lines} toks={toks} marks={marks} hl={hl} />
+                )}
+              </div>
+              {/* Where it stands, then what to do with it: the turn that changed it (its lines are tinted as Changes tints what it added), Show changes, your editor. */}
+              <PaneFoot say={c ? <span title={`${turnAgent}, turn ${c.turn}`}>Changed in turn {c.turn}</span> : undefined}>
+                {c && <PaneButton onClick={() => onShowChanges(c.cp, sel)}>Show changes</PaneButton>}
+                <PaneButton icon={<I.external size={14} />} disabled={!cwd} onClick={() => cwd && bridge.openIn(`${cwd}/${sel}`, "editor")}>
+                  Open in editor
+                </PaneButton>
+              </PaneFoot>
+            </>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

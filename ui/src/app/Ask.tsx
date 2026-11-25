@@ -18,7 +18,7 @@ import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm
 import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I, StateMark } from "./icons";
 import { accessOf, agentOf, plural } from "./model";
-import { Kbd, Pop, Row, Sep } from "./ui";
+import { BackRow, Kbd, MenuFoot, Pop, Row, Sep } from "./ui";
 import { askKey, bitsOf, rowsOf } from "./ask-text";
 import * as os from "./os";
 
@@ -239,46 +239,54 @@ function Command({ text, whole }: { text: string; whole: boolean }) {
   );
 }
 
-/** What this session no longer asks about (approval.rules), each with a way to take it back. */
+/**
+  What this session no longer asks about (approval.rules), each with a way to take it back, in the menu's shape
+  (board Menus): the shared way back, a row each with the word that takes it back at its end (Forget, Ask again), and
+  how things stand as the grey foot line. Only that word is a button: a stray press on the row would drop a grant.
+*/
+function GrantRow({ title, note, which, icon, word, onForget }: { title: ReactNode; note?: string; which?: string; icon: ReactNode; word: string; onForget: () => void }) {
+  return (
+    <div className="lc-row lc-dask-rule" title={note}>
+      <span className="lc-row-tick">{icon}</span>
+      <span className="lc-row-t">
+        {which ? (
+          <span className="lc-row-line">
+            <b>{title}</b>
+            <span className="lc-row-which" data-path title={which}>
+              <bdi>{which}</bdi>
+            </span>
+          </span>
+        ) : (
+          <b>{title}</b>
+        )}
+      </span>
+      <span className="lc-row-end">
+        <button type="button" className="lc-dask-forget l-focus" role="menuitem" aria-label={typeof title === "string" ? `${word}: ${title}` : word} onClick={onForget}>
+          {word}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function Rules({ threadId, onBack }: { threadId: string; onBack: () => void }) {
   const [rules, setRules] = useState<{ grants: ApprovalGrant[]; turn: boolean } | null>(null);
   const load = () => void rpc("approval.rules", { threadId }).then(setRules, fail);
   useLayoutEffect(load, [threadId]);
   const forget = (kind: GrantKind | "turn", label: string) => void rpc("approval.forget", { threadId, kind, label }).then(load, fail);
+  const none = rules && !rules.grants.length && !rules.turn;
   return (
-    <div className="lc-dask-rules">
-      <button type="button" className="lc-dask-rules-h l-focus" onClick={onBack}>
-        <I.chevL size={12} />
-        What this session no longer asks about
-      </button>
-      {!rules ? (
-        <p className="lc-quiet">Reading…</p>
-      ) : !rules.grants.length && !rules.turn ? (
-        <p className="lc-quiet">Nothing: every ask comes to you.</p>
-      ) : (
-        <ul>
-          {rules.turn && (
-            <li>
-              <span>This turn runs as Auto would: what Auto asks about still comes to you.</span>
-              <button type="button" className="lc-trow-lk l-focus" onClick={() => forget("turn", "")}>
-                Ask again
-              </button>
-            </li>
-          )}
-          {rules.grants.map((g) => (
-            <li key={`${g.kind}:${g.label}`}>
-              <span>
-                {grantWords(g).what}
-                {g.kind === "skill" && <> in <code className="lc-code">{g.label}</code></>}
-              </span>
-              <button type="button" className="lc-trow-lk l-focus" onClick={() => forget(g.kind, g.label)}>
-                Forget
-              </button>
-            </li>
-          ))}
-        </ul>
+    <>
+      <BackRow name="What this session no longer asks about" label="Back to the ways to answer" onBack={onBack} />
+      {rules?.turn && <GrantRow title="This turn runs as Auto would" note="What Auto asks about still comes to you" icon={<I.bolt size={14} />} word="Ask again" onForget={() => forget("turn", "")} />}
+      {rules?.grants.map((g) => <GrantRow key={`${g.kind}:${g.label}`} title={grantWords(g).what} which={g.kind === "skill" ? g.label : undefined} icon={<I.check size={14} />} word="Forget" onForget={() => forget(g.kind, g.label)} />)}
+      {(!rules || none) && (
+        <>
+          {rules && <Sep />}
+          <MenuFoot>{!rules ? "Reading" : "Nothing: every ask comes to you"}</MenuFoot>
+        </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -321,7 +329,7 @@ function Ways({ dock, yes, close }: { dock: DockAsk; yes: string; close: () => v
       })}
       {offersTurn(it) && <Row title="Don't ask again this turn" note={`Until ${who} answers, this turn runs as Auto would. What Auto asks about still comes to you.`} keepNote onPick={() => pick("turn")} />}
       <Sep />
-      <Row title={<span className="lc-quiet">What this session no longer asks about…</span>} icon={<I.lock size={16} />} onPick={() => setRules(true)} />
+      <Row title="What this session no longer asks about" icon={<I.lock size={14} />} opens="rules" onPick={() => setRules(true)} />
     </>
   );
 }
@@ -379,7 +387,7 @@ export function AskDock({ dock }: { dock: DockAsk }) {
         {dock.total > 1 && (
           <>
             <span className="lc-grow" />
-            <span className="lc-wk-tag l-num">
+            <span className="lc-dask-n l-num">
               {dock.index} of {dock.total}
             </span>
           </>

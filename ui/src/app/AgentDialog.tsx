@@ -13,7 +13,7 @@ import { keptLevel } from "./picker";
 import { accessOf, AGENT_LEVELS, allModels, effortsFor, markOf, modelLabel, onClaude, plural } from "./model";
 import { ACCESS_ICONS, PermissionRows } from "./Composer";
 import { EffortPick, ModelPicker, usePickerWide } from "./Models";
-import { PICKER_NARROW, PICKER_WIDE } from "./picker";
+import { PICKER_NARROW, PICKER_WIDE, pickerOut } from "./picker";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
@@ -223,6 +223,7 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
                 <Pop
                   label="Its model"
                   width={pickerWide ? PICKER_WIDE : PICKER_NARROW}
+                  out={pickerOut("start", pickerWide)}
                   bare
                   triggerClass="lc-ad-dd"
                   trigger={
@@ -370,7 +371,8 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
           <button type="button" className="lc-btn" data-kind="ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="lc-btn" data-kind="accent" onClick={() => void save()}>
+          {/* The dialog's one action is ink and last (RULING 1); Remove and Cancel stay quiet before it. */}
+          <button type="button" className="lc-btn" data-kind="ink" onClick={() => void save()}>
             {agent ? "Save" : "Add to the team"}
           </button>
         </div>

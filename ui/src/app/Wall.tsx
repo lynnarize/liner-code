@@ -25,6 +25,8 @@ import { isStep, LiveLine, trailSteps } from "./Timeline";
 import { pairOf } from "./Crew";
 import { rowWords, SideFacts, SideMark } from "./SideList";
 import { Lines, ShowSidebar } from "./ui";
+import { PaneButton, PaneNote, PaneStatus } from "./Pane";
+import { CardLines } from "./CardLines";
 import * as os from "./os";
 import { wordRead, wordWrite } from "./kept";
 import "./wall.css";
@@ -65,6 +67,10 @@ const ROOMY = 320;
 const GAP = 12;
 /** The grid's padding, top and bottom (wall.css). */
 const PAD = 20;
+
+/** A changed file's status as Changes' letter, and as the word its tooltip says. */
+const STATUS_LETTER: Record<string, string> = { added: "A", deleted: "D", modified: "M", renamed: "R" };
+const STATUS_WORD: Record<string, string> = { added: "New", deleted: "Deleted", modified: "Changed", renamed: "Renamed" };
 
 const firstLine = (s: string) => s.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 
@@ -177,11 +183,13 @@ function Done({ info, roomy }: { info: Info; roomy: boolean }) {
             const cut = f.path.lastIndexOf("/");
             return (
               <li key={f.path} data-status={f.status}>
-                <I.file size={14} />
+                {/* The status as Changes and Files show it (Pane.tsx PaneFile): its coloured letter, the word in its tooltip. */}
+                <span className="lc-wt-fst" title={STATUS_WORD[f.status] ?? f.status}>
+                  <PaneStatus status={STATUS_LETTER[f.status] ?? "M"} />
+                </span>
                 <span className="lc-wt-fname">{f.path.slice(cut + 1)}</span>
                 {cut > 0 && <span className="lc-wt-fdir">{f.path.slice(0, cut)}</span>}
                 <span className="lc-grow" />
-                {f.status === "deleted" ? <span className="lc-wt-fdel">Deleted</span> : f.status === "added" && !f.removed ? <span className="lc-wt-fnew">New</span> : null}
                 <Lines added={f.added} removed={f.removed} />
               </li>
             );
@@ -352,7 +360,7 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
     for (const id of [...drafts.keys()]) {
       if (onWall(id) || !toComposer(id)) continue;
       if (id === picked) setAdrift(true);
-      toast(`Kept what you wrote to ${threads.find((t) => t.id === id)?.title ?? "a session"}`, { description: "It left the Wall. Your words wait in its composer." });
+      toast(`Kept what you wrote to ${threads.find((t) => t.id === id)?.title ?? "a session"}`, { description: "It left the Wall. Your words wait in its message box." });
     }
   }, [every]);
 
@@ -465,21 +473,15 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
       </header>
       <div ref={grid} className="lc-wall-grid" style={{ "--lc-wall-row": `${rowH}px` } as CSSProperties} onPointerEnter={(e) => e.pointerType === "mouse" && hold(true)} onPointerLeave={() => hold(false)}>
         {empty ? (
+          // The one empty state (Pane.tsx PaneNote), in the grid's whole row.
           <div className="lc-wall-empty">
-            <I.wall size={20} />
-            <b>Nothing on the Wall yet</b>
-            <span>Sessions come here while they work, wait on you, or wait for you to settle them.</span>
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onNew}>
-              New session
-            </button>
+            <PaneNote icon={<I.wall size={20} />} title="Nothing on the Wall yet" action={<PaneButton onClick={onNew}>New session</PaneButton>}>
+              Sessions come here while they work, wait on you, or wait for you to settle them.
+            </PaneNote>
           </div>
         ) : !shown.length ? (
           <div className="lc-wall-empty">
-            <I.wall size={20} />
-            <b>{filter === "all" ? "Nothing here" : none[filter]}</b>
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setFilter("all")}>
-              Show them all
-            </button>
+            <PaneNote icon={<I.wall size={20} />} title={filter === "all" ? "Nothing here" : none[filter]} action={<PaneButton onClick={() => setFilter("all")}>Show them all</PaneButton>} />
           </div>
         ) : (
           shown.map((t, i) => <Tile key={t.id} t={t} n={i + 1} picked={t.id === pick} now={now} project={projectOf.get(t.projectId) ?? ""} roomy={rowH >= ROOMY} onPick={choose} onOpen={open} field={field} />)
@@ -590,7 +592,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
       >
         {/* The sidebar's mark, in the mark's place: an answer you haven't read is fresh here as there, under Finished. */}
         <span className="lc-wt-mark">
-          <SideMark state={mark} brand={ref ? markOf(ref) : undefined} label={seenAsk(t) ? "Waits for your answer" : markLabelOf(t, mark)} />
+          <SideMark state={mark} label={seenAsk(t) ? "Waits for your answer" : markLabelOf(t, mark)} />
         </span>
         <span className="lc-wt-title">{t.title}</span>
         <span className="lc-wt-ago">{ago(t.updatedAt, now)}</span>
@@ -616,6 +618,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
           <>
             {/* The session's own live line (Timeline.tsx LiveLine): the same mark, step count, newest step and clock, and "Waiting for you" where its clock stopped. */}
             {kind !== "done" && <LiveLine threadId={t.id} items={items} className="lc-wt-ll" />}
+            {/* The Plan and the team at work, folded to a line each as the chat's cards fold (board Tray). */}
+            {kind !== "done" && <CardLines thread={t} items={items} className="lc-wt-cards" />}
             {t.status === "error" && <p className="lc-wt-error">{firstLine(info.error ?? "") || "It ran into a problem and stopped."}</p>}
             {t.status === "limited" && <p className="lc-wt-error" data-tone="warn">{firstLine(t.limit?.message ?? info.limit?.message ?? "") || "It reached its usage limit."}</p>}
             {ask && (
@@ -633,12 +637,12 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                       <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" disabled={busy} onClick={() => answer(false)}>
                         Not this
                       </button>
-                      <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy} onClick={() => answer(true)}>
+                      <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy} onClick={() => answer(true)}>
                         {shell ? "Run it" : "Allow"}
                       </button>
                     </>
                   ) : (
-                    <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
+                    <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => onOpen(t.id)}>
                       Open it
                     </button>
                   )}
@@ -663,7 +667,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                 ) : (
                   !q && (
                     <div className="lc-wt-acts">
-                      <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
+                      <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => onOpen(t.id)}>
                         Open it
                       </button>
                     </div>
@@ -679,7 +683,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                 </span>
                 <b className="lc-wt-what">{plan.title}</b>
                 <div className="lc-wt-acts">
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
+                  <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => onOpen(t.id)}>
                     Open it
                   </button>
                 </div>
@@ -692,7 +696,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
                   Needs you
                 </span>
                 <div className="lc-wt-acts">
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onOpen(t.id)}>
+                  <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => onOpen(t.id)}>
                     Open it
                   </button>
                 </div>

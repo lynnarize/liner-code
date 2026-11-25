@@ -73,9 +73,6 @@
 .lsc-choice[data-off] .lsc-choice-r {
   cursor: default;
 }
-.lsc-add {
-  margin-top: 10px;
-}
 .lsc-boxes {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -130,36 +127,6 @@
   margin-right: 4px;
   color: var(--l-ink-3);
 }
-.lsc-pb {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink);
-  cursor: pointer;
-}
-.lsc-pb:hover {
-  background: var(--lc-paper);
-}
-.lsc-pb:disabled {
-  color: var(--l-ink-3);
-  cursor: default;
-}
-.lsc-pb[aria-pressed="true"] {
-  background: var(--l-ink);
-  box-shadow: none;
-  color: var(--l-on-ink);
-}
-
 /* A name and its value, in rows that part with a hairline (the "And" rows, the panel's areas). */
 .lsc-kvr {
   display: flex;
@@ -242,6 +209,7 @@
 .lsc-go {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   margin-top: 16px;
 }
@@ -274,7 +242,6 @@
   right: 0;
   /* Ends above the composer, so its Send stays in reach. */
   bottom: calc(var(--lsc-dock-h, 132px) + 8px);
-  border-bottom-left-radius: 14px;
   width: min(420px, 100%);
   border-left: 0;
   background: var(--lc-paper);
@@ -415,11 +382,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 36px;
+  min-height: 30px;
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: none;
   font: inherit;
   font-size: 13.5px;
@@ -460,6 +427,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.lsc-ask-at {
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
 .lsc-ask-free {
   margin: 0;
   font-size: 13px;
@@ -467,6 +439,7 @@
 }
 
 /* ---------- Found so far: the panel beside the chat ---------- */
+/* Its head, sections, rows and foot are the panel's own frame (pane.css); only its column and what is the scan's own are here. */
 .lsc-found {
   grid-area: 1 / 2;
   display: flex;
@@ -478,60 +451,9 @@
   border-left: 1px solid var(--lc-hair, var(--ls-line));
   animation: lc-paper-in 320ms var(--l-ease-enter) backwards;
 }
-/* The panel's own header: the height of the top row beside it, but not a page's top row, so nothing that moves a page's
-   row out from under the traffic lights reaches it. */
-.lsc-found-top {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  min-height: var(--lc-head);
-  box-sizing: border-box;
-  padding: 6px 10px 6px 22px;
-}
-.lsc-found-t {
-  font-size: 14.5px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--l-ink-2);
-}
-.lsc-found-q {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  color: var(--l-ink);
-}
-.lsc-found-b {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden auto;
-  padding: 0 22px 20px;
-  scrollbar-width: thin;
-}
-.lsc-fmeta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: -2px;
-  font-size: 12.5px;
-  color: var(--l-ink-3);
-}
-.lsc-fmeta > span {
-  display: inline-flex;
-  gap: 8px;
-}
-.lsc-found-tabs {
-  margin-top: 14px;
-}
-.lsc-found .ls-blkh.lsc-sp {
-  margin-top: 18px;
+/* Words and the severity bar inside a section stand on the rows' edge, 16px in. */
+.lsc-found-txt {
+  padding: 0 16px;
 }
 .lsc-found .ls-sevbar {
   display: flex;
@@ -541,53 +463,28 @@
 .lsc-found .ls-leg {
   font-size: 13px;
 }
-.lsc-found-n {
-  font-weight: 400;
+.lsc-found .lc-pane-body > .lc-pane-sec:last-child {
+  padding-bottom: 16px;
 }
-.lsc-filt {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 20px 0 6px;
-}
-.lsc-rws {
-  display: flex;
-  flex-direction: column;
-}
-.lsc-found .lsc-rw .ls-sev[data-dot] {
-  align-self: flex-start;
-  margin-top: 6px;
-}
-.lsc-found .lsc-kvr {
-  min-height: 36px;
-  font-size: 13px;
-}
-.lsc-found .lsc-k {
-  width: 104px;
-}
-.lsc-found .lsc-v {
-  color: var(--l-ink-3);
-}
-.lsc-found .lsc-v[data-on] {
-  color: var(--l-ink);
-}
-.lsc-found .ls-none {
-  padding: 30px 0 22px;
+/* The empty state inside a section: the one part, without the room it takes when it fills a whole pane. */
+.lsc-found .lc-pane-sec > .lc-panel-empty {
+  padding: 22px 24px 14px;
 }
 .lsc-found-lead {
-  margin: 10px 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.45;
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--l-ink);
 }
 .lsc-found-look {
-  margin: 0 0 14px;
+  margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--l-ink-2);
+}
+.lsc-found-look > [data-tone="ok"] {
+  color: var(--ls-ok);
 }
 .lsc-voice-wait {
   display: flex;

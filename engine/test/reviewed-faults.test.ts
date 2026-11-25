@@ -92,9 +92,9 @@ test("A phone or tablet drawn smaller to fit needs saying in the top row; one dr
   assert.equal(widthUnseen(390, 300), true);
 });
 
-test("Offline shows as a chip in the Browser's top row while it is on, and the chip's cross turns it off", () => {
+test("Offline shows as a chip in the Browser's address field while it is on, and the chip's cross turns it off", () => {
   const browser = app("Browser.tsx");
-  const bar = span(browser, '<div className="lc-br-bar">', '<Pop label="More for the page"');
+  const bar = span(browser, '<div className="lc-pane-field lc-br-field">', '<Pop label="More for the page"');
   assert.ok(/\{offline && <ChoiceChip className="lc-br-chip" icon=\{<I\.offline size=\{14\} \/>\} label="Offline" clear=\{\{ label: "Go back online", onClear: \(\) => setOff\(false\) \}\} \/>\}/.test(bar), "Offline shows nowhere once its menu is shut");
   assert.ok(/widthUnseen\(w, room\) && <ChoiceChip/.test(bar), "a width the page doesn't show has no chip");
   const off = span(browser, "const setOff = (on: boolean) => {", "};");
@@ -182,4 +182,14 @@ test("A working tile on The Wall says its step count once, on the live line, not
 test("Settings' empty Archive says a session's row archives, before the command menu", () => {
   const archive = span(app("Settings.tsx"), "function Archive()", "/* ----------------------------------- Updates");
   assert.ok(/Archive a session from its row's ··· or the command menu \(\{os\.mod\}K\)/.test(archive), "the empty Archive names only the command menu");
+});
+
+/* 2026-11-25: Settings › Projects broke with "Maximum update depth exceeded" whenever no worktree hook was trusted. */
+
+test("No engine selector in the app hands back a fresh [] or {} as its fallback, so a page never loops on its own snapshot", () => {
+  // useSyncExternalStore reads the selector again and again; a new [] each read is a new snapshot each time, and React gives up.
+  for (const file of ["Settings.tsx", "Models.tsx", "Usage.tsx", "Setup.tsx", "AddonsPage.tsx", "AppModel.tsx", "Session.tsx", "Composer.tsx"]) {
+    const fresh = app(file).match(/useEngine\(\(\w+\) => [^;\n]*\?\? (\[\]|\{\})\)/g) ?? [];
+    assert.deepEqual(fresh, [], `${file} has a selector whose fallback is made anew on every read`);
+  }
 });

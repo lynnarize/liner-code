@@ -9,7 +9,7 @@
   checks theirs (engine/src/sources.ts), it's shown on the same card with the network held, and
   only that card's yes adds it. It runs where every add-on does: never inside Liner Code itself.
 */
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AddonAsk, AddonInfo, ConnectionAsk, DshInfo, PanelAccess, PanelAsk, PanelIcon, PanelPlace } from "@contracts";
 import { addonKey, summaryOf } from "@contracts";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
@@ -18,11 +18,12 @@ import { toast } from "@liner/components/toast/toast";
 import { appIcon, dayOf, openApp, openSession } from "./Addon";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, StateMark } from "./icons";
+import { I, StepMark } from "./icons";
 import { plural, since } from "./model";
 import { startCreator } from "./Modes";
 import { STOPPED_REASON, useStoppedPanels } from "./panelLife";
-import { HoverNote, LookAgain, NamedSwitch, Pop, Row, ShowSidebar } from "./ui";
+import { ConfirmRow, HoverNote, LookAgain, NamedSwitch, Pop, Row, Sep, ShowSidebar } from "./ui";
+import { PANE_TOOL, PaneBody, PaneButton, PaneFoot, PaneHead, PaneNote, PaneRow, PaneSection, PaneWords } from "./Pane";
 import * as os from "./os";
 import "./addons-page.css";
 
@@ -60,14 +61,15 @@ function Tile({ a, size = 52 }: { a: { kind?: string; panel?: { icon?: PanelIcon
   );
 }
 
-const SHOWS: Record<PanelPlace, string> = { page: "Its own page, from the sidebar", tab: "A tab beside Chat in your sessions", dock: "A panel in the right dock, beside your sessions" };
-const KIND: Record<PanelPlace, string> = { page: "App · its own page", tab: "App · a tab beside Chat", dock: "Panel · beside the session" };
+// A tab and a dock panel both open in the panel now, under ··· › Your apps (Switcher.tsx), so they are told the same way.
+const SHOWS: Record<PanelPlace, string> = { page: "Its own page, from the sidebar", tab: "In the panel beside your sessions, under ··· › Your apps", dock: "In the panel beside your sessions, under ··· › Your apps" };
+const KIND: Record<PanelPlace, string> = { page: "App · its own page", tab: "App · beside your sessions", dock: "Panel · beside your sessions" };
 
 /** What a panel can touch, in a few plain words: "This project's files · no internet". */
 function touches(a: PanelAccess, place: PanelPlace, dsh?: DshInfo) {
   // A ported plugin's program reaches what its page can't: its card said how far.
   if (dsh?.host) return ["Its own program on this Mac: your files and the internet, as its card said", a.ai && "a model you pick"].filter(Boolean).join(" · ");
-  const reads = [a.files && "This project's files", a.sessions === "this" && (place === "tab" ? "This session" : "The session it's beside"), a.sessions === "all" && "Your sessions' titles and changes", a.composer && "The composer, to put text in for you"].filter(Boolean) as string[];
+  const reads = [a.files && "This project's files", a.sessions === "this" && (place === "tab" ? "This session" : "The session it's beside"), a.sessions === "all" && "Your sessions' titles and changes", a.composer && "The message box, to put text in for you"].filter(Boolean) as string[];
   if (a.storage) reads.push(reads.length ? "its own storage" : "Only its own storage");
   if (a.ai) reads.push("a model you pick");
   reads.push(a.network ? `${a.network}, and no other address` : "no internet");
@@ -144,27 +146,16 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
             <span className="lc-ao-split">
               <button type="button" className="l-focus" onClick={() => setAdding("source")}>
                 <I.plus size={14} />
-                Add add-on
+                Add one
               </button>
-              <Pop label="More ways to add one" align="end" width={290} triggerClass="lc-ao-split-more" trigger={<I.chevD size={12} />}>
+              {/* The other ways, in the one menu shape: each way's note is its row's tooltip. */}
+              <Pop label="More ways to add one" menu align="end" width={260} triggerClass="lc-ao-split-more" trigger={<I.chevD size={12} />}>
                 {(close) => (
-                  <div className="lc-ao-ways" role="menu" aria-label="Ways to add one">
-                    {(
-                      [
-                        { icon: I.turn, label: "Make one with an agent", note: "Describe it, and Workshop builds it", pick: onMake },
-                        { icon: I.link, label: "From GitHub, npm or a folder", note: "One someone else made, or a DeepSeek Harness plugin", pick: () => setAdding("source") },
-                        { icon: I.plug, label: "Connect a service", note: "Linear, Sentry and others, with a key", pick: () => setAdding("connect") },
-                      ] as const
-                    ).map((w) => (
-                      <button key={w.label} type="button" role="menuitem" className="l-focus" onClick={() => (close(), w.pick())}>
-                        <w.icon size={16} />
-                        <span>
-                          <b>{w.label}</b>
-                          <small>{w.note}</small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <Row title="Make one with an agent" note="Describe it, and Workshop builds it" icon={<I.turn size={14} />} onPick={() => (close(), onMake())} />
+                    <Row title="From GitHub, npm or a folder" note="One someone else made, or a DeepSeek Harness plugin" icon={<I.link size={14} />} onPick={() => (close(), setAdding("source"))} />
+                    <Row title="Connect a service" note="Linear, Sentry and others, with a key" icon={<I.plug size={14} />} onPick={() => (close(), setAdding("connect"))} />
+                  </>
                 )}
               </Pop>
             </span>
@@ -180,7 +171,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                     <b>
                       {a.name}
                       {/* It stopped: the problem mark, and why in red under its name. */}
-                      {a.enabled && stopped.has(a.id) && <StateMark state="problem" size={12} label="Ran into a problem" className="lc-ao-mk" />}
+                      {a.enabled && stopped.has(a.id) && <StepMark state="failed" size={12} label="Ran into a problem" className="lc-ao-mk" />}
                     </b>
                     <small>{a.enabled && stopped.has(a.id) ? STOPPED_REASON : summaryOf(a)}</small>
                   </span>
@@ -193,20 +184,21 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 <NamedSwitch name={a.enabled ? `Turn off ${a.name}` : `Turn on ${a.name}`} checked={a.enabled} onCheckedChange={(enabled) => update(a.id, { enabled })} />
               </div>
             ))}
+            {/* The one empty state; one made by someone else is the Add one beside the title, and its menu. */}
             {!shown.length && (
-              <div className="lc-ao-empty">
-                <b>Nothing added yet</b>
-                <p>Say what you'd like, and an agent makes it in Workshop: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made.</p>
-                <span>
-                  <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onMake}>
+              <PaneNote
+                icon={<I.blocks size={20} />}
+                title="Nothing added yet"
+                action={
+                  // Add one, beside the title, is the page's one ink action, so this one is plain.
+                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onMake}>
                     <I.turn size={14} />
                     Make one with an agent
                   </button>
-                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding("source")}>
-                    From GitHub, npm or a folder
-                  </button>
-                </span>
-              </div>
+                }
+              >
+                Say what you'd like, and an agent makes it in Workshop: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made, from Add one.
+              </PaneNote>
             )}
           </section>
           {removed.length > 0 && (
@@ -221,7 +213,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                       <small>Removed {since(a.removed!)}. Its files are kept, so it can come back.</small>
                     </span>
                   </span>
-                  <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => update(a.id, { removed: false })}>
+                  <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => update(a.id, { removed: false })}>
                     Bring it back
                   </button>
                 </div>
@@ -262,15 +254,16 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
   const threads = useEngine((x) => x.threads);
   const home = useEngine((x) => x.home);
   const [files, setFiles] = useState<{ path: string; size: number }[] | null>(null);
-  const [sure, setSure] = useState(false);
+  const sheet = useRef<HTMLElement>(null);
   useEffect(() => {
-    const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const on = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && onClose();
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
+  // The keyboard starts on Close, as it did when the sheet drew its own head.
+  useEffect(() => sheet.current?.querySelector<HTMLElement>(".lc-pane-end button")?.focus({ preventScroll: true }), [a.id]);
   // Another version has other files: the list shown was the old one's.
   useEffect(() => setFiles(null), [a.id, a.version]);
-  useEffect(() => setSure(false), [a.id]);
   const update = (p: { version?: number; removed?: boolean }) => rpc("addons.update", { id: a.id, ...p });
   const prev = Math.max(0, ...a.versions.filter((v) => v < a.version));
   const latest = Math.max(...a.versions);
@@ -314,85 +307,65 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
     onClose();
     void startCreator({ title: `Change ${a.name}`, text: `I'd like to change the ${a.name} add-on (${a.id}). Read how it is now with liner_inspect, then ask me what to change.` });
   };
+  // Built from the panel's frame (Pane.tsx), so it reads as the panel does: a head with its name and ···, rows with their
+  // value at the right end, and a foot for its one action. Remove asks in the ··· (it keeps the files, so it isn't red).
+  const remove = () => void update({ removed: true }).then(() => (toast(`Removed ${a.name}`, { description: "Its files are kept: Bring it back, under Removed, returns it." }), onClose()), fail);
+  const page = a.panel?.place === "page" && a.enabled;
   return (
     <div className="lc-ao-sheet" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside aria-label={a.name}>
-        <header>
-          <Tile a={a} size={48} />
-          <div>
-            <b>{a.name}</b>
-            <span>{a.panel ? KIND[a.panel.place] : "Connection"}</span>
-          </div>
-          <button type="button" className="lc-ib l-focus" aria-label="Close" title="Close" autoFocus onClick={onClose}>
-            <I.close size={14} />
-          </button>
-        </header>
-        <div className="lc-ao-sheet-body">
-          <p>{summaryOf(a)}</p>
-          <dl>
-            {facts.map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-          </dl>
-          {/* Its main action, then the rest under one ···: its versions, changing it, and its files (a row that stays ticked while the list shows). */}
-          <div className="lc-ao-acts">
-            {a.panel?.place === "page" && a.enabled && (
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (onClose(), openApp({ id: a.id, place: "page" }))}>
-                Open it
-              </button>
-            )}
-            <Pop label={`More for ${a.name}`} menu align="start" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+      <aside ref={sheet} aria-label={a.name}>
+        <PaneHead
+          name={a.name}
+          shows={<PaneWords>{a.panel ? KIND[a.panel.place] : "Connection"}</PaneWords>}
+          tools={
+            <Pop label={`More for ${a.name}`} menu align="end" width={260} triggerClass={PANE_TOOL} triggerAttrs={{ title: "More" }} trigger={<I.more size={16} />}>
               {(close) => (
                 <>
-                  {prev > 0 && <Row title={`Back to v${prev}`} icon={<I.undo size={16} />} onPick={() => (close(), void update({ version: prev }).then(() => toast(`${a.name} is back to v${prev}`), fail))} />}
-                  {a.version < latest && <Row title={`Up to v${latest}`} icon={<I.download size={16} />} onPick={() => (close(), void update({ version: latest }).then(() => toast(`${a.name} is on v${latest}`), fail))} />}
+                  {prev > 0 && <Row title={`Back to v${prev}`} icon={<I.undo size={14} />} onPick={() => (close(), void update({ version: prev }).then(() => toast(`${a.name} is back to v${prev}`), fail))} />}
+                  {a.version < latest && <Row title={`Up to v${latest}`} icon={<I.download size={14} />} onPick={() => (close(), void update({ version: latest }).then(() => toast(`${a.name} is on v${latest}`), fail))} />}
                   {/* Someone else's package: it changes with its next version from npm, not by an agent's edit. */}
-                  {!a.panel?.dsh && <Row title="Ask an agent to change it" icon={<I.turn size={16} />} onPick={() => (close(), change())} />}
-                  <Row title="Its files" note="The list, here in the sheet" icon={<I.file size={16} />} keepIcon on={Boolean(files)} onPick={() => (close(), void showFiles())} />
+                  {!a.panel?.dsh && <Row title="Ask an agent to change it" icon={<I.turn size={14} />} onPick={() => (close(), change())} />}
+                  <Row title="Its files" note="The list, here in the sheet" icon={<I.file size={14} />} on={Boolean(files)} onPick={() => (close(), void showFiles())} />
+                  <Sep />
+                  <ConfirmRow title="Remove" sure="Remove it" sureNote="It turns off everywhere. Its files are kept, so it can come back." icon={<I.trash size={14} />} onConfirm={() => (close(), remove())} />
                 </>
               )}
             </Pop>
-          </div>
+          }
+          canvas={false}
+          onClose={onClose}
+        />
+        <PaneBody className="lc-ao-sheet-body">
+          <p className="lc-ao-sum">{summaryOf(a)}</p>
+          <PaneSection label="About">
+            {facts.map(([k, v]) => (
+              <PaneRow key={k} value={v} quiet title={typeof v === "string" ? v : undefined}>
+                {k}
+              </PaneRow>
+            ))}
+          </PaneSection>
           {files && (
-            <div className="lc-ao-files">
-              <ul>
-                {files.map((f) => (
-                  <li key={f.path}>
-                    <code>{f.path}</code>
-                    {f.size > 0 && <small>{f.size < 1000 ? `${f.size} B` : `${Math.round(f.size / 1000)} KB`}</small>}
-                  </li>
-                ))}
-              </ul>
-              <span className="lc-quiet lc-mono">{os.tilde(`${home}/addons/${a.id}/v${a.version}`)}</span>
+            <PaneSection label="Its files" note={<span className="lc-mono">{os.tilde(`${home}/addons/${a.id}/v${a.version}`)}</span>}>
+              {files.map((f) => (
+                <PaneRow key={f.path} icon={<I.file size={14} />} value={f.size > 0 ? (f.size < 1000 ? `${f.size} B` : `${Math.round(f.size / 1000)} KB`) : undefined} quiet>
+                  <code>{f.path}</code>
+                </PaneRow>
+              ))}
               {isNative() && (
-                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.reveal(`${home}/addons/${a.id}/v${a.version}`)}>
+                <PaneRow icon={<I.folder size={14} />} opens onClick={() => bridge.reveal(`${home}/addons/${a.id}/v${a.version}`)}>
                   Show in {os.fileManager}
-                </button>
+                </PaneRow>
               )}
-            </div>
+            </PaneSection>
           )}
-        </div>
-        <footer>
-          {sure ? (
-            <>
-              <span className="lc-quiet">It turns off everywhere. Its files are kept, so it can come back.</span>
-              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setSure(false)}>
-                Keep it
-              </button>
-              {/* A confirm is Remove, then Remove it, as everywhere. */}
-              <button type="button" className="lc-btn lc-ao-remove" data-kind="plain" data-size="sm" autoFocus onClick={() => void update({ removed: true }).then(() => (toast(`Removed ${a.name}`, { description: "Its files are kept: Bring it back, under Removed, returns it." }), onClose()), fail)}>
-                Remove it
-              </button>
-            </>
-          ) : (
-            <button type="button" className="lc-ao-remove l-focus" onClick={() => setSure(true)}>
-              Remove
-            </button>
-          )}
-        </footer>
+        </PaneBody>
+        {page && (
+          <PaneFoot say="A page of its own, from the sidebar">
+            <PaneButton ink onClick={() => (onClose(), openApp({ id: a.id, place: "page" }))}>
+              Open it
+            </PaneButton>
+          </PaneFoot>
+        )}
       </aside>
     </div>
   );
@@ -474,7 +447,7 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
             <I.alert size={16} />
             <span>Add only what you trust. Before it's turned on, you'll see what it can touch, and it never runs inside Liner Code itself.</span>
           </div>
-          <button type="submit" className="lc-btn lc-ao-go" data-kind="primary" disabled={!source.trim() || busy}>
+          <button type="submit" className="lc-btn lc-ao-go" data-kind="ink" disabled={!source.trim() || busy}>
             {busy ? (/github/i.test(source) ? "Fetching it from GitHub…" : /^\s*[~/.]|^\s*[A-Za-z]:\\/.test(source) ? "Reading it…" : "Fetching it from npm…") : "Add"}
           </button>
           <button type="button" className="lc-ao-quiet lc-ao-make l-focus" onClick={onMake}>
@@ -556,7 +529,7 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
       : []),
     ...(d.left.length ? [{ label: "Left out", value: <span className="lc-addon-wrap">{d.left.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}</span> }] : []),
     ...(a.replaces ? [{ label: "Replaces", value: `v${a.replaces}, which stays kept` }] : []),
-    { label: "Where", value: !p ? "Every agent tool (Claude Code, Codex, OpenCode and Hermes), in every project" : p.place === "page" ? "Under Add-ons, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
+    { label: "Where", value: !p ? "Every agent tool (Claude Code, Codex, OpenCode and Hermes), in every project" : p.place === "page" ? "Under Add-ons, in the left sidebar" : "In the panel, under ··· › Your apps, in every project" },
     ...(more
       ? [
           ...(a.description ? [{ label: "About", value: <span className="lc-addon-wrap">{a.description}</span> }] : []),
@@ -568,7 +541,7 @@ function DshCard({ o, p: a, more, aside, yes, no }: { o: Opened; p: PanelAsk | C
     <div className="lc-addon lc-ao-card" data-kind={p ? "panel" : "connection"} data-net={d.host ? true : undefined}>
       <ApprovalCard
         agent={`An add-on from ${o.from}`}
-        title={!p ? `${a.name}, tools for your agents` : p.place === "page" ? `${a.name}, a page of its own` : p.place === "tab" ? `${a.name}, a tab beside Chat` : `${a.name}, beside your sessions`}
+        title={!p ? `${a.name}, tools for your agents` : p.place === "page" ? `${a.name}, a page of its own` : `${a.name}, beside your sessions`}
         ask={`A DeepSeek Harness plugin${d.host ? " with a program of its own" : ""}`}
         icon={d.host ? <I.chip size={16} /> : <I.blocks size={16} />}
         description={!p ? "Its program runs in a process of its own, never in Liner Code's engine, and does each call your agents make to its tools. A program runs as you, so add it only if you trust where it's from." : d.host ? `Its page runs in a sealed frame, and its program in a process of its own, never in Liner Code's engine${gives.length ? "; your agents' calls to its tools run there too" : ""}. A program runs as you, so add it only if you trust where it's from.` : `It runs in a sealed frame ${p.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine.`}
@@ -643,12 +616,12 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
     const fields = [
       ...(net ? [{ label: "Network", value: <code className="lc-addon-mono">{net}</code> }] : []),
       { label: "Reads", value: <span className="lc-addon-wrap">{reads}</span> },
-      { label: "Can do", value: p.access.composer ? "Put text in the composer, for you to send" : "Nothing but show itself" },
+      { label: "Can do", value: p.access.composer ? "Put text in the message box, for you to send" : "Nothing but show itself" },
       ...(p.access.ai ? [{ label: "Model", value: "Asks a model you pick when it first asks, billed to that model's account. Just a model: no tools or files" }] : []),
       { label: "Keeps", value: p.access.storage ? `Its own storage, up to ${kbWords(p.access.storage)}` : "Nothing" },
       ...(net ? [] : [{ label: "Network", value: "None" }]),
       ...(p.replaces ? [{ label: "Replaces", value: `v${p.replaces}, which stays kept` }] : []),
-      { label: "Where", value: p.place === "page" ? "Under Add-ons, in the left sidebar" : p.place === "tab" ? "A tab beside Chat, in every project" : "The right dock, in every project" },
+      { label: "Where", value: p.place === "page" ? "Under Add-ons, in the left sidebar" : "In the panel, under ··· › Your apps, in every project" },
       ...(more
         ? [
             { label: "Files", value: <span className="lc-addon-files">{p.files.map((f) => <span key={f.path}><code>{f.path}</code> <small>{f.size < 1000 ? `${f.size} B` : `${Math.round(f.size / 1000)} KB`}</small></span>)}</span> },
@@ -660,7 +633,7 @@ function SourceCard({ o, onAdded, onNo }: { o: Opened; onAdded: (a: AddonInfo) =
       <div className="lc-addon lc-ao-card" data-kind="panel" data-net={net ? true : undefined}>
         <ApprovalCard
           agent={`An add-on ${from.toLowerCase()}`}
-          title={p.place === "page" ? `${p.name}, a page of its own` : p.place === "tab" ? `${p.name}, a tab beside Chat` : `${p.name}, beside your sessions`}
+          title={p.place === "page" ? `${p.name}, a page of its own` : `${p.name}, beside your sessions`}
           ask={`${from}: ${p.place === "dock" ? "a panel" : "an app"}${net ? " that reaches the internet" : ""}`}
           icon={<Icon size={16} />}
           description={net ? `Whatever it reads could leave ${os.here} through ${net}. It can reach that one, and no other.` : `It runs in a sealed frame ${p.place === "page" ? "of its own" : "beside the session"}, never in Liner Code's engine, and gets only what it lists below.`}

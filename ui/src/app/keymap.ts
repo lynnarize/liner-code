@@ -27,6 +27,9 @@ const SURFACE_KEYS: [string, string, string][] = [
   ["agents", "Agents", "a"],
 ].filter(([id]) => ROUTINES_ON || id !== "routines") as [string, string, string][];
 
+/** What a surface key does where it no longer shows or hides a surface. */
+const SURFACE_SAID: Record<string, string> = { session: "Open the Session popup", agents: "Open the agents", linked: "Pull request, with the project's pull requests to pick from" };
+
 export const COMMANDS: Command[] = [
   { id: "new", label: "New session (in Liner Design, a new design)", group: "Anywhere", keys: ["mod+n"] },
   { id: "commands", label: "Command menu: sessions, projects, everything", group: "Anywhere", keys: ["mod+k"] },
@@ -41,8 +44,10 @@ export const COMMANDS: Command[] = [
   // T3 Code's workspace areas (docs/user/keyboard-focus.md): the sidebar, the thread, the composer, the panel.
   { id: "focus.next", label: "Move to the next area: sidebar, thread, composer, panel", group: "Anywhere", keys: ["f6"] },
   { id: "focus.prev", label: "Move to the area before", group: "Anywhere", keys: ["shift+f6"] },
-  { id: "find", label: "Find in the session, or in the diff", group: "In a session", keys: ["mod+f"], when: "session || review" },
-  ...SURFACE_KEYS.map(([id, label, k]) => ({ id: `surface.${id}`, label: `Show or hide ${label}`, group: "In a session", keys: [`mod+shift+${k}`], when: "session" })),
+  { id: "find", label: "Find in the session, or in Changes", group: "In a session", keys: ["mod+f"], when: "session || review" },
+  // Linked pull requests went into Pull request's picker (2026-11-25): its key keeps its id, so a binding of yours still works, and opens that.
+  // Session and Agents open popups now (SPEC rules 1 and 5), not surfaces: their keys say so. Agents opens the panel's surface when its chip isn't in the header.
+  ...SURFACE_KEYS.map(([id, label, k]) => ({ id: `surface.${id}`, label: SURFACE_SAID[id] ?? `Show or hide ${label}`, group: "In a session", keys: [`mod+shift+${k}`], when: "session" })),
   { id: "stash", label: "Put the draft aside, or bring it back", group: "Writing a message", keys: ["mod+s"], when: "composer" },
 ];
 
@@ -63,7 +68,7 @@ export const FIXED: { group: string; label: string; keys: string[] }[] = [
   { group: "When an agent asks", label: "Run it, and don't ask again for the first thing it offers", keys: [MOD, "Enter"] },
   { group: "When an agent asks", label: "Not this: say what to do instead, or send it back", keys: ["Esc"] },
   { group: "In the sessions list", label: "Move between sessions", keys: ["↑", "↓"] },
-  { group: "In the sessions list", label: "Pin, snooze, mark done", keys: ["P", "S", "D"] },
+  { group: "In the sessions list", label: "Pin, snooze, settle", keys: ["P", "S", "D"] },
   { group: "In the sessions list", label: "Rename", keys: ["F2"] },
   { group: "In Settings", label: "Back to sessions", keys: ["Esc"] },
   { group: "On the Wall", label: "Open the session on that tile", keys: ["1–9"] },

@@ -7,6 +7,8 @@
 */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { retryChunks } from "./early";
+import { I } from "./icons";
+import { PaneButton, PaneNote, usePaneFrame } from "./Pane";
 
 type Props = {
   children: ReactNode;
@@ -53,21 +55,38 @@ export class Boundary extends Component<Props, State> {
     if (!error) return this.props.children;
     if (this.props.shown === false) return null;
     const away = unloaded(error);
+    return <Broke label={this.props.label} error={error} away={away} quiet={this.props.quiet} place={this.props.place} onRetry={this.retry} onClose={this.props.onClose} />;
+  }
+}
+
+/**
+  What a broken part shows. In a surface of the panel it is the one empty state every surface has (PaneNote: what
+  broke, why, Try again), with no box, since a pane has none (F49); elsewhere the tinted notice in its place.
+*/
+function Broke({ label, error, away, quiet, place, onRetry, onClose }: { label: string; error: Error; away: boolean; quiet?: boolean; place?: Props["place"]; onRetry: () => void; onClose?: () => void }) {
+  const { inPanel } = usePaneFrame();
+  if (inPanel)
     return (
-      <div className="lc-broke" role="alert" data-quiet={this.props.quiet || undefined} data-place={this.props.place} data-away={away || undefined}>
-        <b>{away ? "Couldn't open this." : `${this.props.label} couldn't show.`}</b>
-        <span className="lc-quiet">{away ? `${this.props.label} didn't load, perhaps as Liner Code's engine restarted.` : error.message || String(error)}</span>
-        <span className="lc-broke-do">
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={this.retry}>
-            Try again
-          </button>
-          {this.props.onClose && (
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={this.props.onClose}>
-              Close
-            </button>
-          )}
-        </span>
+      <div className="lc-broke-pane" role="alert">
+        <PaneNote icon={<I.alert size={16} />} title={away ? "Couldn't open this" : `${label} couldn't show`} action={<PaneButton onClick={onRetry}>Try again</PaneButton>}>
+          {away ? `${label} didn't load, perhaps as Liner Code's engine restarted.` : error.message || String(error)}
+        </PaneNote>
       </div>
     );
-  }
+  return (
+    <div className="lc-broke" role="alert" data-quiet={quiet || undefined} data-place={place} data-away={away || undefined}>
+      <b>{away ? "Couldn't open this." : `${label} couldn't show.`}</b>
+      <span className="lc-quiet">{away ? `${label} didn't load, perhaps as Liner Code's engine restarted.` : error.message || String(error)}</span>
+      <span className="lc-broke-do">
+        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onRetry}>
+          Try again
+        </button>
+        {onClose && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onClose}>
+            Close
+          </button>
+        )}
+      </span>
+    </div>
+  );
 }

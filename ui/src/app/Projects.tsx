@@ -15,7 +15,8 @@ import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { listedProjects, since } from "./model";
 import { BackRow, FindField, rove } from "./Models";
-import { Row, Sep } from "./ui";
+import { MenuFoot, Row, Sep } from "./ui";
+import { PaneNote } from "./Pane";
 import * as os from "./os";
 import "./models.css";
 
@@ -74,7 +75,7 @@ export function ProjectQuickPick({ value, onPick, more = [], close }: { value?: 
     body = (
       <>
         <BackRow name={view === "github" ? "From GitHub" : `Find on ${os.here}`} label="Back to the ways to add a project" onBack={() => go("add")} />
-        <ProjectChooser value={value} onPick={onPick} initialTab={view} />
+        <ProjectChooser value={value} onPick={onPick} initialTab={view} only />
       </>
     );
   else if (view === "add")
@@ -82,7 +83,7 @@ export function ProjectQuickPick({ value, onPick, more = [], close }: { value?: 
       <>
         <BackRow name="Add a project" label="Back to your projects" onBack={() => go("")} />
         <Row rove title={`A folder on ${os.here}`} end="Choose it" icon={<I.folderPlus size={16} />} onPick={() => void bridge.pickFolder().then(add)} />
-        <Row rove title="From GitHub" end="Clone one" icon={<I.pr size={16} />} opens="github" onPick={() => go("github")} />
+        <Row rove title="From GitHub" end="Clone one" icon={<I.box size={16} />} opens="github" onPick={() => go("github")} />
         <Row rove title={`Find on ${os.here}`} end="Repositories" icon={<I.laptop size={16} />} opens="mac" onPick={() => go("mac")} />
         {more.length > 0 && <Sep />}
         {more.map((m) => (
@@ -117,7 +118,11 @@ export function ProjectQuickPick({ value, onPick, more = [], close }: { value?: 
   );
 }
 
-export function ProjectChooser({ value, onPick, need, extra, initialTab = "here" }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode; initialTab?: Tab }) {
+/**
+  The full chooser. `only`: it shows the one list it opened on, with no switch between lists over it (Home's quick pick,
+  where From GitHub and Find on this Mac each open their own list with a way back, as a menu's rows do).
+*/
+export function ProjectChooser({ value, onPick, need, extra, initialTab = "here", only }: { value?: string; onPick: (p: Project) => void; need?: "github"; extra?: ReactNode; initialTab?: Tab; only?: boolean }) {
   // A design on its own is Liner Design's, never one of the projects to choose here.
   const all = useEngine((s) => s.projects);
   const projects = useMemo(() => listedProjects(all), [all]);
@@ -165,6 +170,7 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
 
   return (
     <div className="lc-pc">
+      {!only && (
       <Segmented
         size="sm"
         full
@@ -177,6 +183,7 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
         ]}
         aria-label="Where to choose from"
       />
+      )}
       {/* The one find line every picker has (the model picker's): no box, a hairline under it. */}
       <div className="lc-pk-top lc-pc-find">
         <label className="lc-mp-find">
@@ -198,7 +205,7 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
             <p className="l-shimmer lc-mp-none">Looking through your code folders</p>
           ) : (
             <>
-              {mac.detail && <p className="lc-pr-warn lc-pc-warn">{mac.detail}</p>}
+              {mac.detail && <p className="lc-pc-warn">{mac.detail}</p>}
               {mac.repos
                 .filter((r) => match(r.name, r.path, r.remote))
                 .map((r) => {
@@ -232,29 +239,38 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
           (gh === null ? (
             <p className="l-shimmer lc-mp-none">Asking GitHub</p>
           ) : gh.gh === "missing" ? (
-            <div className="lc-pc-note">
-              <b>Connecting GitHub needs the GitHub CLI</b>
-              <p>Liner Code reads your repositories through it, signed in as you, and keeps no token of its own.</p>
-              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal(ghInstall())}>
-                Install it in Terminal
-              </button>
-            </div>
+            // Pull request's own not-ready notes (Pr.tsx): the one empty state, its one action in ink.
+            <PaneNote
+              icon={<I.pr size={20} />}
+              title="Connecting GitHub needs the GitHub CLI"
+              action={
+                <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => bridge.runInTerminal(ghInstall())}>
+                  Install it in Terminal
+                </button>
+              }
+            >
+              Liner Code reads your repositories through it, signed in as you, and keeps no token of its own.
+            </PaneNote>
           ) : gh.gh === "signed-out" ? (
-            <div className="lc-pc-note">
-              <b>Connect GitHub</b>
-              <p>Sign the GitHub CLI in once; your repositories show here{ROUTINES_ON ? ", and routines can watch their pull requests" : ""}.</p>
-              <span className="lc-noproj-acts">
-                <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => bridge.runInTerminal("gh auth login")}>
-                  Sign in in Terminal
-                </button>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => loadGh(true)}>
-                  I've signed in
-                </button>
-              </span>
-            </div>
+            <PaneNote
+              icon={<I.pr size={20} />}
+              title="Connect GitHub"
+              action={
+                <span className="lc-pc-acts">
+                  <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => loadGh(true)}>
+                    I've signed in
+                  </button>
+                  <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => bridge.runInTerminal("gh auth login")}>
+                    Sign in in Terminal
+                  </button>
+                </span>
+              }
+            >
+              Sign the GitHub CLI in once; your repositories show here{ROUTINES_ON ? ", and routines can watch their pull requests" : ""}.
+            </PaneNote>
           ) : (
             <>
-              {gh.detail && <p className="lc-pr-warn lc-pc-warn">{gh.detail}</p>}
+              {gh.detail && <p className="lc-pc-warn">{gh.detail}</p>}
               {gh.repos
                 .filter((r) => match(r.fullName, r.description))
                 .map((r) => {
@@ -270,7 +286,7 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                       }
                       note={[r.description, r.pushedAt ? `pushed ${since(r.pushedAt)}` : ""].filter(Boolean).join(" · ")}
                       on={Boolean(p && p.id === value)}
-                      icon={<I.pr size={16} />}
+                      icon={<I.box size={16} />}
                       end={busy === r.fullName ? <span className="l-shimmer">Cloning</span> : p ? <span className="lc-quiet">Added</span> : <span className="lc-pc-clone">Clone</span>}
                       disabled={busy !== null}
                       onPick={() => (p ? onPick(p) : void add(r.fullName, () => rpc("project.clone", { url: r.fullName })))}
@@ -278,12 +294,11 @@ export function ProjectChooser({ value, onPick, need, extra, initialTab = "here"
                   );
                 })}
               {gh.repos.length === 0 ? !gh.detail && <p className="lc-quiet lc-mp-none">No repositories on this account yet.</p> : !gh.repos.some((r) => match(r.fullName, r.description)) && <p className="lc-quiet lc-mp-none">No repository matches that.</p>}
-              <p className="lc-pc-foot lc-quiet">
-                {gh.login ? `Signed in as ${gh.login}. ` : ""}Clones go to {tilde(root ?? "~/Code")}.{" "}
-                <button type="button" className="lc-link l-focus" onClick={() => loadGh(true)}>
-                  Look again
-                </button>
-              </p>
+              <Sep />
+              <Row title="Look again" icon={<I.refresh size={16} />} onPick={() => loadGh(true)} />
+              <MenuFoot>
+                {gh.login ? `Signed in as ${gh.login}. ` : ""}Clones go to {tilde(root ?? "~/Code")}.
+              </MenuFoot>
             </>
           ))}
       </div>

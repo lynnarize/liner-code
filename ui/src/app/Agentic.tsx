@@ -487,8 +487,21 @@ function Teamwork({ c }: { c: Pair }) {
       </span>
     ),
   };
+  const readerModel = c.settings.swarmReaderModel?.trim() || "";
+  const readerEffort = c.settings.swarmReaderEffort === "lower" ? "lower" : "same";
+  const sameAsWorkers = {
+    id: "same",
+    title: "Same as workers",
+    note: "Readers use the default worker model",
+    show: (
+      <span className="lc-ag-who">
+        <span className="lc-quiet">Default</span>
+        <b>Same as workers</b>
+      </span>
+    ),
+  };
   return (
-    <Part title="Teamwork & Swarm" note="Liner Code's own multi-agent board and worker pool, working across every CLI and API endpoint. Waiting workers hibernate to 0 MB RAM until mentioned again.">
+    <Part title="Multi-agent: Teamwork and Swarm" note="Liner Code's own multi-agent board and worker pool, working across every CLI and API endpoint. Waiting workers hibernate to 0 MB RAM until mentioned again.">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
           <Line
@@ -505,6 +518,15 @@ function Teamwork({ c }: { c: Pair }) {
               choices={[sameChoice]}
               onPick={(v) => save({ swarmWorkerModel: v === "same" ? "" : v })}
             />
+          </Line>
+          <Line
+            title="Reader model"
+            note={readerModel && gone(c, readerModel) ? "Your picked tool isn't ready right now, so readers use the worker model instead." : "Used for read-only workers other than the auditor, which stays on your session's model."}
+          >
+            <ModelPop label="Reader model" value={readerModel || "same"} choices={[sameAsWorkers]} onPick={(v) => save({ swarmReaderModel: v === "same" ? "" : v })} />
+          </Line>
+          <Line title="Reader effort" note="One lower runs read-only workers, the auditor aside, one effort level under your session's.">
+            <Segmented size="sm" value={readerEffort} onValueChange={(v) => save({ swarmReaderEffort: v as "same" | "lower" })} options={[{ value: "same", label: "Same" }, { value: "lower", label: "One lower" }]} aria-label="Reader effort" />
           </Line>
           <Line title="Active worker processes" note="How many CLI workers run at the same time in a Swarm. Larger rosters queue at 0 MB until a slot opens.">
             <Segmented size="sm" value={String(maxActive)} onValueChange={(v) => save({ swarmMaxActive: Number(v) })} options={[1, 2, 3, 4].map((v) => ({ value: String(v), label: String(v) }))} aria-label="Active worker processes" />

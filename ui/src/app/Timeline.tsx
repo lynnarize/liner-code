@@ -24,7 +24,8 @@ import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
 import { agentOf, clock, designPart, duration, isModelAgent, markOf, mergeFiles, modelLabel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, useSteady } from "./ui";
-import { agentName, Fanout, isSidekick } from "./Crew";
+import { agentName, CrewCard, Fanout, isSidekick, useCardFold } from "./Crew";
+import { firstSentence, lineCount, planCard, planCount, planLine, reportHead, type Report } from "./chat-cards";
 import { toast } from "@liner/components/toast/toast";
 import { Boundary } from "./Boundary";
 import { EtaLeft } from "./EtaLeft";
@@ -149,24 +150,97 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "i
   const steady = useSteady(onReview);
   const review = onReview ? steady : undefined;
   const grow = useSteady(onGrow);
+  // The newest plan is a card at the chat's end (ChatCards), so its turn leaves it out. Every turn is told its id, not only
+  // the one of its number: a Liner Design build, refine or fix turn folds into the turn before it (model.ts turnsOf).
+  const card = useMemo(() => planCard(items, (t) => planEnd(planStatus(items, t)) === "stopped"), [items]);
   return (
     <ReviewIn.Provider value={reviewIn}>
     <div className="lc-tl">
       {turns.map(({ turn, n, items: list }) => (
         // One turn that can't show says so in its place; the rest of the thread stays (T3 Code's RenderErrorBoundary).
         <Boundary key={turn} label="This turn" quiet>
-          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} />
+          <Turn threadId={threadId} n={n} items={list} agents={agents} providers={providers} seen={seen} onReview={review} reviewing={reviewing} onGrow={grow} docked={docked} draw={draw} hidePlan={card?.plan.id} />
         </Boundary>
       ))}
+      <Boundary label="The cards" quiet>
+        <ChatCards threadId={threadId} items={items} card={card} />
+      </Boundary>
     </div>
     </ReviewIn.Provider>
   );
 }
 
+/**
+  The cards that are the last things in the chat (SPEC rule 6, boards Swarm, Tray and Teamwork): the Plan, then the team
+  at work (a Swarm, Teamwork, or a plain crew of agents, Crew.tsx CrewCard). They sit under the newest message, and over
+  the live line at the chat's foot; a newer answer comes in above them. Every face that draws a Timeline has them: the
+  session, Liner Design's chat, a Liner Security scan and the side chat.
+*/
+function ChatCards({ threadId, items, card }: { threadId: string; items: Item[]; card: ReturnType<typeof planCard> }) {
+  return (
+    <div className="lc-cards">
+      {card && <PlanCard threadId={threadId} it={card.plan} foldDone={card.foldDone} end={planEnd(planStatus(items, card.plan.turn))} />}
+      <CrewCard threadId={threadId} />
+    </div>
+  );
+}
+
+/**
+  The Plan card: "Plan · N of M done" with a fold chevron, a row a step (its mark, the step, who owns it at the right end).
+  Folded, one line: the step at work. Once you have sent a newer message, the finished steps fold to "N finished ›". It
+  remembers folded or open per session. `end` reads as Todo's: a run that stopped leaves the steps it never reached skipped.
+*/
+function PlanCard({ threadId, it, foldDone, end }: { threadId: string; it: Extract<Item, { kind: "plan" }>; foldDone: boolean; end?: PlanEnd }) {
+  const [open, setOpen] = useCardFold(threadId, "plan");
+  const [doneOpen, setDoneOpen] = useState(false);
+  const shown = (s: PlanEntry["status"]): StepState => (s === "completed" ? "done" : end ? "skipped" : s === "in_progress" ? "working" : "waiting");
+  const owned = it.entries.some((e) => e.owner);
+  const done = it.entries.filter((e) => e.status === "completed");
+  const fold = foldDone && done.length > 1 && !doneOpen;
+  const row = (e: PlanEntry, i: number) => (
+    <li key={i} className="lc-ccard-r" data-s={shown(e.status)}>
+      <StepMark size={14} state={shown(e.status)} label={e.status !== "completed" && end === "open" ? "Left open" : undefined} />
+      <span className="lc-ccard-t">{e.title}</span>
+      {e.owner ? <span className="lc-ccard-n">{e.owner}</span> : owned && e.status === "pending" ? <span className="lc-ccard-n">no one yet</span> : null}
+    </li>
+  );
+  return (
+    <section className="lc-ccard" aria-label="Plan" data-open={open || undefined}>
+      <div className="lc-ccard-h">
+        <button type="button" className="lc-ccard-fold l-focus" aria-expanded={open} aria-label={open ? "Fold the plan" : "Open the plan"} onClick={() => setOpen(!open)}>
+          <I.chevR size={12} className="lc-sum-chev" />
+          <b>Plan</b>
+          <span className="lc-quiet">{planCount(it.entries)}</span>
+          {!open && <span className="lc-ccard-line">{planLine(it.entries)}</span>}
+        </button>
+      </div>
+      {open && (
+        <ol className="lc-ccard-rows">
+          {fold ? (
+            <>
+              <li className="lc-ccard-r">
+                <button type="button" className="lc-ccard-more l-focus" onClick={() => setDoneOpen(true)}>
+                  <StepMark size={14} state="done" />
+                  <span className="lc-ccard-t">{done.length} finished</span>
+                  <I.chevR size={14} />
+                </button>
+              </li>
+              {it.entries.map((e, i) => (e.status === "completed" ? null : row(e, i)))}
+            </>
+          ) : (
+            it.entries.map(row)
+          )}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+
 /** Where the timeline's onReview opens a file, for its rows' labels (Props, reviewIn). */
 const ReviewIn = createContext("in Changes");
 
-const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked, draw }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[] } & Omit<Props, "items" | "threadId">) {
+const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, onReview, reviewing, onGrow, docked, draw, hidePlan }: { threadId: string; n: number; items: Item[]; agents: AgentProfile[]; providers: ProviderInfo[]; /** The plan the chat's Plan card shows, left out here. */ hidePlan?: string } & Omit<Props, "items" | "threadId">) {
   const latestTurn = useEngine((s) => threadOf(s, threadId)?.turns);
   // Your turn, and any parts that carried it on (a build, a refine, a fix): one turn, one foot, and
   // a head for each model's part, so who did what reads in order.
@@ -274,6 +348,8 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
     else {
       flush();
       if (it.kind === "approval") blocks.push({ key: it.id, node: it.addon?.kind === "panel" ? <PanelAddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : it.addon ? <AddonCard threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> : <Approval threadId={threadId} it={it} who={whoOf(at ?? marker, agents, providers)} /> });
+      // A team's reports woken into its coordinator are no message of yours: each is one folded row (SPEC rule 6).
+      else if (it.kind === "user" && it.shown?.reports?.length) blocks.push({ key: it.id, node: <Reports reports={it.shown.reports} /> });
       else if (it.kind === "user") blocks.push({ key: it.id, node: <You threadId={threadId} it={it} fresh={fresh(it.id)} onReview={onReview} /> });
       else if (it.kind === "turn") {
         at = it;
@@ -294,7 +370,9 @@ const Turn = memo(function Turn({ threadId, n, items, agents, providers, seen, o
           if (draft.after) blocks.push({ key: `${it.id}-after`, node: <StreamedMarkdown className="lc-md" text={draft.after} streaming={it.streaming} animate={fresh(it.id)} onGrow={onGrow} /> });
         }
       }
-      else if (it.kind === "plan") blocks.push({ key: it.id, node: <Todo it={it} end={planEnd(planStatus(items, it.turn))} /> });
+      else if (it.kind === "plan") {
+        if (it.id !== hidePlan) blocks.push({ key: it.id, node: <Todo it={it} end={planEnd(planStatus(items, it.turn))} /> });
+      }
       else if (it.kind === "page") blocks.push({ key: it.id, node: <PageCard threadId={threadId} it={it} /> });
       else if (it.kind === "design") blocks.push({ key: it.id, node: <DesignCard threadId={threadId} it={it} /> });
       else if (it.kind === "pr") blocks.push({ key: it.id, node: <PrChatCard threadId={threadId} it={it} fresh={fresh(it.id)} run={prRun} ask={prAsk && ((w) => <Approval key={prAsk.id} threadId={threadId} it={prAsk} who={w} />)} /> });
@@ -708,7 +786,7 @@ function Live({ threadId, turn, marks, entries, rows, sent, asks, quiet, end, ex
   // Its ETA, as its sidebar row says it (Thread.eta): read as numbers, so a new thread object with the same one redraws nothing.
   const etaFrom = useEngine((s) => threadOf(s, threadId)?.eta?.from);
   const etaMs = useEngine((s) => threadOf(s, threadId)?.eta?.ms);
-  const { steps, n, failed, tools } = countOf(rows, sent);
+  const { steps, n, failed } = countOf(rows, sent);
   // The newest of what it's at: thinking since its last step, else its newest step or agent sent.
   const step = steps.at(-1);
   const agent = sent.at(-1);
@@ -728,64 +806,61 @@ function Live({ threadId, turn, marks, entries, rows, sent, asks, quiet, end, ex
         : null;
   // The open list: every step so far with the thinking between them, as the folded line's list has it once the part ends.
   const list = rows;
-  // The model at work gives the mark its colour; waiting on you, it is the needs-you mark.
-  const at = marks.findLast((m) => m.status === "running") ?? marks[marks.length - 1];
+  // The model at work no longer tints the mark (rule 7): it is the working mark, or the needs-you mark while it waits on you.
   const state = waiting ? "needs" : "working";
   // "opencode hasn't said anything new for 1 minute": the notice's first clause; the rest is its title.
   const hush = !waiting && quiet ? quiet.text.split(/:\s/)[0] : undefined;
+  // The time, after the step: the whole turn's work, or where the clock stopped while it waits on you.
   const clock = (
     <span className="lc-ll-clock l-num" data-wait={waiting || undefined} title={hush ? quiet!.text : undefined}>
       {waiting ? (
-        <span>
-          <b>Waiting for you</b> · the clock stopped at <Tick text={fine} />
-        </span>
+        <>
+          <b>Waiting for you</b> <Tick text={fine} />
+        </>
       ) : (
-        <span>
-          {/* The newest step says it's thinking; the clock is the whole turn's work. */}
-          {word === "Thinking" ? "Working" : word} for <Tick text={fine} every={100} />
+        <>
+          <Tick text={fine} every={100} />
           {hush && ` · ${hush}`}
           {etaFrom !== undefined && etaMs !== undefined && <EtaLeft eta={{ from: etaFrom, ms: etaMs }} lead=" · " />}
-        </span>
+        </>
       )}
       {extra}
-      {hush && (
-        <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.stop", { id: threadId })}>
-          Stop
-        </button>
-      )}
     </span>
   );
-  // No step yet and not thinking: the mark and its clock alone. Thinking before the first step has the line, so its words show.
+  const stop = hush && (
+    <button type="button" className="lc-notice-stop l-focus" onClick={() => void rpc("thread.stop", { id: threadId })}>
+      Stop
+    </button>
+  );
+  // No step yet and not thinking: the mark, the word and its clock alone. Thinking before the first step has the line, so its words show.
   if (!n && !newest)
     return (
       <div className={className ? `lc-ll ${className}` : "lc-ll"} role="group" aria-label="The turn at work" data-alone>
         <div className="lc-ll-row">
-          <StateMark state={state} brand={markOf(at.model)} label={MARK_WORD[state]} />
-          {clock}
+          <span className="lc-ll-head" data-still>
+            <StateMark state={state} label={MARK_WORD[state]} />
+            {!waiting && <span className="lc-ll-verb">{word === "Thinking" ? "Working" : word}</span>}
+            {clock}
+          </span>
+          {stop}
           {end && <span className="lc-ll-end">{end}</span>}
         </div>
       </div>
     );
+  // One line under the cards (SPEC rule 6): the newest step, its time and ›; pressed, the steps so far open over it.
   return (
     <div className={className ? `lc-ll ${className}` : "lc-ll"} role="group" aria-label="The turn at work">
+      {open && list.length > 0 && <StepList rows={list} asks={asks} live />}
       <div className="lc-ll-row">
         <button type="button" className="lc-ll-head l-focus" aria-expanded={list.length ? open : undefined} disabled={!list.length} aria-label={`${MARK_WORD[state]}. ${n ? `${plural(n, "step")} so far` : "Thinking"}${failed ? `, ${failed} didn't work` : ""}${list.length ? `. ${open ? "Hide them" : "Show them"}` : ""}`} onClick={() => setOpen(!open)}>
-          <StateMark state={state} brand={markOf(at.model)} />
-          {n > 0 && <span className="lc-ll-n l-num">{plural(n, "step")}</span>}
-          <Kinds tools={tools} failed={failed} />
+          <StateMark state={state} />
+          <span className="lc-ll-now">{newest ? <Slide id={newest.key}>{newest.node}</Slide> : <span className="lc-ll-verb">{word}</span>}</span>
+          {clock}
+          {list.length > 0 && <I.chevR size={12} className="lc-sum-chev" />}
         </button>
+        {stop}
         {end && <span className="lc-ll-end">{end}</span>}
       </div>
-      {open && list.length ? (
-        <StepList rows={list} asks={asks} live />
-      ) : (
-        newest && (
-          <div className="lc-ll-under">
-            <Slide id={newest.key}>{newest.node}</Slide>
-          </div>
-        )
-      )}
-      {clock}
     </div>
   );
 }
@@ -1245,6 +1320,35 @@ function AskRow({ it, fresh }: { it: Ask; fresh: boolean }) {
 }
 
 /**
+  What one agent handed to another, as the engine said it (UserShown.reports, never read from a message's words): a row
+  each, "<from> reported to <to>" or "handed over to", its first sentence, how many lines, and ›; it opens in place.
+*/
+function Reports({ reports }: { reports: Report[] }) {
+  return (
+    <div className="lc-hand-list">
+      {reports.map((r, i) => (
+        <HandOver key={i} r={r} />
+      ))}
+    </div>
+  );
+}
+function HandOver({ r }: { r: Report }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="lc-hand" data-open={open || undefined}>
+      <button type="button" className="lc-hand-h l-focus" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <I.notes size={14} />
+        <b>{reportHead(r)}</b>
+        <span className="lc-hand-t">{firstSentence(r.text)}</span>
+        <span className="lc-hand-n l-num">{plural(lineCount(r), "line")}</span>
+        <I.chevR size={12} className="lc-sum-chev" />
+      </button>
+      {open && <StreamedMarkdown className="lc-md lc-hand-body" text={r.text} streaming={false} animate={false} />}
+    </div>
+  );
+}
+
+/**
   The turn's plan. `end` is how the run that owns it ended (model.ts planEnd, read from the turn
   item of the plan's own `turn`, so a lead's plan stays as it was when a fix part starts). Stopped
   or failed: a step still waiting or under way was never reached, so it reads as skipped, the count
@@ -1531,7 +1635,7 @@ function AddonCard({ threadId, it, who }: { threadId: string; it: Ask; who: stri
   );
 }
 
-const PLACE = { dock: "the right dock", tab: "a tab beside Chat", page: "a page of its own" } as const;
+const PLACE = { dock: "the panel", tab: "the panel, under ··· › Your apps", page: "a page of its own" } as const;
 const kbWords = (n: number) => (n >= 1024 && n % 1024 === 0 ? `${n / 1024} MB` : `${n} KB`);
 
 /**
@@ -2501,7 +2605,7 @@ function Picture({ path, all, onPath, onClose }: { path: string; all: string[]; 
             Show in {os.fileManager}
           </button>
           <span className="lc-grow" />
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onClose}>
+          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={onClose}>
             Done
           </button>
         </>

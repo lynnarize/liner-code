@@ -399,10 +399,10 @@ button.lc-ledger-r {
 }
 
 /* ---------- A working turn: one live line at the chat's foot ----------
-   The working mark, how many steps, the kinds used so far; under a hairline on the left only the
-   newest step, which slides up into place as the next one starts (Timeline.tsx, Slide); then the
-   clock. Pressed, the steps so far open in the same place. It sits over the message box in every
-   place a turn is shown (Session.tsx, design/Chat.tsx, security/ScanSession.tsx, SideChat.tsx). */
+   One line under the cards (SPEC rule 6, 2026-11-25): the working mark, the newest step, which slides
+   up into place as the next one starts (Timeline.tsx, Slide), its time and a ›. Pressed, the steps so
+   far open over it. It sits over the message box in every place a turn is shown (Session.tsx,
+   design/Chat.tsx, security/ScanSession.tsx, SideChat.tsx) and on the Wall's tiles. */
 .lc-ll {
   display: grid;
   min-width: 0;
@@ -433,8 +433,39 @@ button.lc-ledger-r {
   cursor: pointer;
   transition: background-color 160ms ease;
 }
-.lc-ll-head:disabled {
+.lc-ll-head {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.lc-ll-head:disabled,
+.lc-ll-head[data-still] {
   cursor: default;
+}
+/* The newest step takes the room its words need, so its time follows it on the line. */
+.lc-ll-now {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 400;
+}
+.lc-ll-now > .lc-ll-tick {
+  min-width: 0;
+  height: 28px;
+}
+.lc-ll-now .lc-ll-step {
+  position: relative;
+  inset: auto;
+  height: 28px;
+  overflow: hidden;
+}
+.lc-ll-now .lc-ll-step[data-ph="out"] {
+  position: absolute;
+  inset: 0;
+}
+.lc-ll-now .lc-wk-r {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @media (hover: hover) and (pointer: fine) {
   .lc-ll-head:not(:disabled):hover {
@@ -520,14 +551,14 @@ button.lc-ledger-r {
 }
 .lc-ll-clock {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  min-height: 22px;
-  margin-left: 7px;
-  padding-left: 16px;
   color: var(--l-ink-3);
+  font-family: var(--l-font-mono);
   font-size: 12.5px;
+  font-weight: 400;
   white-space: nowrap;
 }
 .lc-ll-clock > span {
@@ -536,6 +567,7 @@ button.lc-ledger-r {
   text-overflow: ellipsis;
 }
 .lc-ll-clock b {
+  font-family: var(--l-font-body);
   font-weight: 500;
   color: var(--l-warn-text);
 }
@@ -543,11 +575,9 @@ button.lc-ledger-r {
   flex: none;
   margin-left: 0;
 }
-/* No step yet: the mark and the clock on one line. */
-.lc-ll[data-alone] .lc-ll-clock {
-  margin-left: 0;
-  padding-left: 0;
-  font-size: 13.5px;
+/* The steps so far, opened over the line. */
+.lc-ll > .lc-steps {
+  margin: 0 0 4px 7px;
 }
 /* Over the conversation, which scrolls on under the message box: on the paper, so what passes under
    it doesn't show through its words, lined up with the text's column. */

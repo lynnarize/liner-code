@@ -14,16 +14,17 @@
   later: until then it counts wherever agents at work do, whichever message is the latest.
 */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import { Segmented } from "@liner/components/segmented/segmented";
 import { toast } from "@liner/components/toast/toast";
-import { agentState, isPair, isSwarm, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type SwarmMember, type SwarmPost, type SwarmSnapshot, type Thread } from "@contracts";
-import { rpc, useEngine, useItemsWhere, useSwarm } from "./engine";
+import { SWARM_SELF_TURNS_MAX, agentState, isPair, isSwarm, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type SwarmMember, type SwarmPost, type SwarmSnapshot, type Thread } from "@contracts";
+import { getState, rpc, threadOf, useEngine, useItemsWhere, useSwarm } from "./engine";
 import { I, ModelMark, StateMark, StepMark, type StepState } from "./icons";
 import { useLaunch } from "./launch";
 import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, planEnd, planStatus, plural, sumLines, type PlanEnd } from "./model";
 import { ModelPop } from "./Models";
 import { openSurface } from "./TopBar";
-import { Lines, Num, Pop, Row, Sep } from "./ui";
+import { ConfirmRow, Lines, MenuFoot, NamedSwitch, Num, PanelHead, Pop, Row, Sep } from "./ui";
+import { PANE_PICK, PANE_ROW, PANE_TOOL, PaneButton, PaneHead, PaneNote, PaneRow, PaneRowIn, PaneWords } from "./Pane";
+import { agentsReach, crewCounts, teamCounts, teamLine, teamTree, type TeamLevel } from "./chat-cards";
 import { SendBox } from "./Composer";
 import "./crew.css";
 
@@ -218,7 +219,16 @@ const watchers = new Set<() => void>();
 export function showAgent(threadId: string, itemId: string | null) {
   shown.set(threadId, itemId);
   for (const w of watchers) w();
-  if (itemId !== null) openSurface(threadId, "agents");
+  if (itemId !== null) agentsSurface(threadId);
+}
+/**
+  The Agents surface of this session's panel. The chat cards show in Liner Design and in a side chat too, where no Code
+  session of this thread is on screen to open it (openSurface finds none): there App opens the session in Liner Code with
+  the surface showing (chat-cards.ts agentsReach), so the press is never lost.
+*/
+function agentsSurface(threadId: string) {
+  const t = getState().threads.find((x) => x.id === threadId);
+  if (agentsReach(openSurface(threadId, "agents"), Boolean(t?.security)) === "code") window.dispatchEvent(new CustomEvent("lc:show-surface", { detail: { id: threadId, tab: "agents" } }));
 }
 function useShownAgent(threadId: string) {
   return useSyncExternalStore(
@@ -253,21 +263,80 @@ export function Mark({ state, waiting }: { state: State; waiting?: boolean }) {
   return <StepMark className="lc-cr-mark" size={14} state={waiting ? "waiting" : STEP_OF[state]} label={waiting ? "Waiting" : STATE_WORD[state]} />;
 }
 
-/* ---------- the header's crew chip ---------- */
+/* ---------- the header's chip and the agents popup ---------- */
+
+/** The agents popup, open or not, by session: its chip in the header holds it, and the Session popup and the cards in the chat open it. */
+const popOpen = new Map<string, boolean>();
+const popWatchers = new Set<() => void>();
+/** The sessions whose chip is on screen now, so a row that opens the popup opens the Agents surface where there is none. */
+const chipsShown = new Set<string>();
+function setPop(threadId: string, open: boolean) {
+  popOpen.set(threadId, open);
+  for (const w of popWatchers) w();
+}
+function usePopOpen(threadId: string) {
+  return useSyncExternalStore(
+    (w) => (popWatchers.add(w), () => void popWatchers.delete(w)),
+    () => popOpen.get(threadId) ?? false,
+  );
+}
+/**
+  Opens the agents popup from its chip in the header; where the header shows no chip (nobody at work and no team on),
+  the Agents surface in the panel, which lists the same.
+*/
+export function openAgents(threadId: string) {
+  if (chipsShown.has(threadId)) setPop(threadId, true);
+  else (showAgent(threadId, null), agentsSurface(threadId));
+}
+
+/** The chip's Pop, wired to the session's popup state: one place for a crew's chip and a team's. */
+function ChipPop({ threadId, label, trigger, children }: { threadId: string; label: string; trigger: ReactNode; children: (close: () => void) => ReactNode }) {
+  const open = usePopOpen(threadId);
+  useEffect(() => {
+    chipsShown.add(threadId);
+    // The chip goes when the work ends: a popup left open then would drop open by itself with the next chip.
+    return () => void (chipsShown.delete(threadId), popOpen.delete(threadId));
+  }, [threadId]);
+  return (
+    <Pop label={label} width={340} align="start" className="lc-crew-pop" triggerClass="lc-crew l-focus" open={open} onOpenChange={(o) => setPop(threadId, o)} trigger={trigger}>
+      {children}
+    </Pop>
+  );
+}
 
 /**
-  Who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents"), only while two
-  or more are at work in this session right now: the lead's turn running counts one, and each agent
-  it sent that still works (its sidekick, a fan-out's agents) one more. At rest the header holds
-  nothing between the title and the Reviewer: who works is the message box's chip, and the split of
-  tokens and the whole list are the Agents surface. A pair is named as one ("Opus 5.5 + Sol"). Opens
-  the crew as a list.
+  The header's chip: who leads your latest message and how many work for it ("Sonnet 5.5 · 3 agents") while two or more
+  are at work in this session right now (the lead's turn running counts one, each agent it sent that still works one
+  more), and always while Teamwork or a Swarm is on ("Swarm 2 of 5 working"). At rest the header holds nothing between
+  the title and the Reviewer. A pair is named as one ("Opus 5.5 + Sol"). It opens the agents popup (board Agents).
 */
 export function CrewChip({ thread }: { thread: Thread }) {
   const crew = useCrew(thread);
   const swarmOn = isSwarm(thread);
   const swarm = useSwarm(thread.id, swarmOn);
-  if (swarmOn && swarm) return <SwarmChip thread={thread} swarm={swarm} />;
+  if (swarmOn && swarm) {
+    const live = swarm.members.filter((m) => m.state !== "killed");
+    const working = live.filter((m) => m.state === "working").length;
+    const label = swarm.mode === "swarm" ? "Swarm" : "Teamwork";
+    return (
+      <ChipPop
+        threadId={thread.id}
+        label={`${label}: who works, the board and the worktrees`}
+        trigger={
+          <>
+            <StateMark state={working ? "working" : "done"} size={12} />
+            <span className="lc-crew-t">
+              {label}
+              <span className="lc-quiet"> {swarm.paused ? "paused" : working ? `${working} of ${live.length} working` : live.length > 1 ? `${live.length - 1} parked` : "ready"}</span>
+            </span>
+            <I.chevD size={12} />
+          </>
+        }
+      >
+        {(close) => <TeamPop thread={thread} swarm={swarm} close={close} />}
+      </ChipPop>
+    );
+  }
   if (!crew) return null;
   const working = atWork(crew);
   if ((thread.status === "running" ? 1 : 0) + working.length < 2) return null;
@@ -276,11 +345,9 @@ export function CrewChip({ thread }: { thread: Thread }) {
   // A pair's sidekick is in its name; the agents besides it are counted.
   const others = [...crew.agents, ...crew.earlier].filter((t) => !isSidekick(t)).length;
   return (
-    <Pop
+    <ChipPop
+      threadId={thread.id}
       label="Who's on this session"
-      width={400}
-      className="lc-crew-pop"
-      triggerClass="lc-crew l-focus"
       trigger={
         <>
           {/* It shows only while two or more work: the working mark says so, as everywhere, and the faces say who. */}
@@ -319,102 +386,429 @@ export function CrewChip({ thread }: { thread: Thread }) {
         </>
       }
     >
-      {(close) => <CrewList thread={thread} crew={crew} close={close} />}
-    </Pop>
+      {(close) => <CrewPop thread={thread} crew={crew} close={close} />}
+    </ChipPop>
   );
 }
 
-/** The crew as a list, in the chip's popover: who leads, who works for it, what runs in the background. */
-function CrewList({ thread, crew, close }: { thread: Thread; crew: Crew; close: () => void }) {
+/** A team member's mark in a list (rule 7): the working mark at work, a ring while it waits or is parked, a tick once it ended, a cross when it was stopped by a problem. */
+function memberStep(m: SwarmMember): StepState {
+  if (m.state === "working") return "working";
+  if (m.state === "stopped") return m.now && /^Could not start/.test(m.now) ? "failed" : "done";
+  if (m.state === "skipped") return "skipped";
+  return "waiting";
+}
+/** What a member's row says at its end: its clock at work, else how it waits. */
+function memberEnd(m: SwarmMember, now: number) {
+  if (m.state === "working") return m.startedAt ? duration(Math.max(0, (now - m.startedAt) / 1000)) : "working";
+  if (m.state === "queued") return "waits for a slot";
+  if (m.state === "waiting") return "waits";
+  if (m.state === "hibernated") return "parked";
+  if (m.state === "skipped") return "skipped";
+  return m.landed ? "landed" : "finished";
+}
+/** "@scout" in a Swarm, "Scene builder" in Teamwork: peers go by name, a team's agents by their part. */
+const memberName = (m: SwarmMember, swarmMode: boolean) => (swarmMode ? `@${m.name}` : m.role || `@${m.name}`);
+
+/** Which of a team's views the Agents surface shows when it opens: the whole list, the board, the worktrees, or the add-worker form. */
+export type TeamView = "all" | "board" | "worktrees" | "add";
+const teamViews = new Map<string, TeamView>();
+const viewWatchers = new Set<() => void>();
+/** Opens a team's view in the Agents surface (the popup's Board and Worktrees rows, Add a worker). */
+export function showTeamView(threadId: string, view: TeamView) {
+  teamViews.set(threadId, view);
+  shown.set(threadId, null);
+  for (const w of [...viewWatchers, ...watchers]) w();
+  agentsSurface(threadId);
+}
+function useTeamView(threadId: string): [TeamView, (v: TeamView) => void] {
+  const v = useSyncExternalStore(
+    (w) => (viewWatchers.add(w), () => void viewWatchers.delete(w)),
+    () => teamViews.get(threadId) ?? "all",
+  );
+  return [v, (to) => (teamViews.set(threadId, to), viewWatchers.forEach((w) => w()))];
+}
+
+/**
+  The agents popup for Teamwork and a Swarm (board Agents): the coordinator "(N agents)" with a fold chevron, its agents
+  on a guide line under it, an agent's own agents nested the same way, finished ones folded to "N finished ›"; then the
+  Board and the Worktrees; then the actions (a Swarm: Add a worker, Hibernate all, Pause, Turn it off behind a confirm;
+  Teamwork: Pause, Turn it off); a grey foot line of slots or counts. An agent opens in the panel.
+*/
+function TeamPop({ thread, swarm, close }: { thread: Thread; swarm: SwarmSnapshot; close: () => void }) {
+  const providers = useEngine((s) => s.providers);
+  const swarmMode = swarm.mode === "swarm";
+  const live = swarm.members.filter((m) => m.state !== "killed");
+  const coord = live.find((m) => m.name === "coordinator");
+  const workers = live.filter((m) => m.name !== "coordinator");
+  const now = useNow(workers.some((m) => m.state === "working"));
+  const tree = useMemo(() => teamTree(swarm.members), [swarm.members]);
+  const [shut, setShut] = useState(false);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  const worktrees = workers.filter((m) => m.workspace === "share");
+  const landed = worktrees.filter((m) => m.landed).length;
+  const label = swarmMode ? "Swarm" : "Teamwork";
+  const open = (m: SwarmMember) => (close(), m.itemId ? showAgent(thread.id, m.itemId) : showTeamView(thread.id, "all"));
+  const row = (m: SwarmMember, kids: number) => (
+    <Row
+      key={m.name}
+      title={
+        <>
+          {memberName(m, swarmMode)}
+          {swarmMode && m.role ? <span className="lc-quiet"> {m.role}</span> : null}
+          {kids > 0 ? <span className="lc-quiet"> ({plural(kids, "agent")})</span> : null}
+        </>
+      }
+      icon={<StepMark size={14} state={memberStep(m)} />}
+      end={memberEnd(m, now)}
+      onPick={() => open(m)}
+    />
+  );
+  // A level of the tree on a guide line; its members that ended fold to one row that opens them in place.
+  const branch = (lv: TeamLevel<SwarmMember>, at: string): ReactNode => (
+    <div className="lc-ap-kids">
+      {lv.kids.map((n) => (
+        <div key={n.m.name}>
+          {row(n.m, n.kids.length + n.finished.length)}
+          {(n.kids.length > 0 || n.finished.length > 0) && branch(n, n.m.name)}
+        </div>
+      ))}
+      {lv.finished.length > 0 && (unfolded.has(at) ? lv.finished.map((m) => row(m, 0)) : <Row title={`${lv.finished.length} finished`} icon={<StepMark size={14} state="done" />} chevron onPick={() => setUnfolded((was) => new Set([...was, at]))} />)}
+    </div>
+  );
+  const coordWorking = coord?.state === "working" || swarm.activeSlots > 0;
+  return (
+    <div className="lc-ap">
+      <PanelHead end={[coord ? shortModel(modelLabel(coord.model, providers)) : "", swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : ""].filter(Boolean).join(" · ") || undefined}>{swarm.title || label}</PanelHead>
+      <Row
+        title={
+          <>
+            Coordinator<span className="lc-quiet"> ({plural(workers.length, "agent")})</span>
+          </>
+        }
+        icon={<StepMark size={14} state={coordWorking ? "working" : swarm.paused ? "waiting" : "done"} />}
+        end={
+          <>
+            {coordWorking && coord?.startedAt ? duration((now - coord.startedAt) / 1000) : swarm.paused ? "paused" : ""}
+            {shut ? <I.chevR size={14} /> : <I.chevD size={14} />}
+          </>
+        }
+        onPick={() => setShut(!shut)}
+      />
+      {!shut && workers.length > 0 && branch(tree, "coordinator")}
+      <Sep />
+      {swarmMode && <Row title="Board" icon={<I.comment size={14} />} end={plural(swarm.posts.length, "post")} chevron onPick={() => (close(), showTeamView(thread.id, "board"))} />}
+      {(swarmMode || worktrees.length > 0) && <Row title="Worktrees" icon={<I.branch size={14} />} end={worktrees.length ? `${worktrees.length}, ${landed ? `${landed} landed` : "none landed"}` : "none yet"} chevron onPick={() => (close(), showTeamView(thread.id, "worktrees"))} />}
+      <Row title="Every agent, in the panel" icon={<I.panel size={14} />} chevron onPick={() => (close(), showTeamView(thread.id, "all"))} />
+      <Sep />
+      {swarmMode && <Row title="Add a worker" icon={<I.plus size={14} />} onPick={() => (close(), showTeamView(thread.id, "add"))} />}
+      {swarmMode && workers.some((m) => m.state === "working" || m.state === "waiting") && <Row title="Hibernate all" icon={<I.snooze size={14} />} onPick={() => (close(), void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail))} />}
+      {swarm.paused ? (
+        <Row title="Carry on" icon={<I.play size={14} />} onPick={() => (close(), void rpc("swarm.resume", { threadId: thread.id }).catch(fail))} />
+      ) : (
+        <Row title={swarmMode ? "Pause the swarm" : "Pause Teamwork"} icon={<I.stop size={14} />} disabled={!workers.some((m) => m.state === "working" || m.state === "queued" || m.state === "waiting")} onPick={() => (close(), void rpc("swarm.stopAll", { threadId: thread.id }).catch(fail))} />
+      )}
+      <ConfirmRow title={swarmMode ? "Turn the swarm off" : "Turn Teamwork off"} sure="Turn it off: every worker stops" icon={<I.close size={14} />} red onConfirm={() => (close(), void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail))} />
+      <Sep />
+      <MenuFoot>{swarm.paused ? pausedWords(swarm) : swarmMode ? `${swarm.activeSlots} of ${swarm.maxActive} slots busy${swarm.queuedCount ? `, ${plural(swarm.queuedCount, "agent")} ${swarm.queuedCount === 1 ? "waits" : "wait"}` : ""}` : teamCounts(swarm.members) || "No agent yet: say what to do in the chat"}</MenuFoot>
+    </div>
+  );
+}
+/** Why a team waits for you, in a few words. */
+const pausedWords = (swarm: SwarmSnapshot) => (swarm.paused?.reason === "limit" ? `Paused after ${swarm.paused.turns ?? SWARM_SELF_TURNS_MAX} turns it started by itself` : swarm.paused?.reason === "restart" ? "Paused: Liner Code restarted" : "Paused by you");
+
+/**
+  The agents popup for a plain crew (board Agents, in a session with no team): who leads your latest message with the
+  agents it sent under it on a guide line, agents of agents nested, finished ones folded to "N finished ›", the Reviewer,
+  those still at work from an earlier message; then Stop and the panel; a grey foot line of counts.
+*/
+function CrewPop({ thread, crew, close }: { thread: Thread; crew: Crew; close: () => void }) {
   const providers = useEngine((s) => s.providers);
   const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length + crew.reviews.filter((r) => r.status === "running").length;
   const now = useNow(working > 0);
-  const [launch] = useLaunch(thread.id);
-  const servers = launch?.servers.filter((s) => s.status !== "stopped") ?? [];
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const open = (t: Tool) => (close(), showAgent(thread.id, t.id));
-  const rows = (nodes: AgentNode[], depth: number): ReactNode[] =>
-    nodes.flatMap((n) => [
-      <button key={n.it.id} type="button" className="lc-crp-r l-focus" style={{ paddingLeft: 8 + depth * 22 }} onClick={() => open(n.it)}>
-        <Mark state={stateOf(n.it)} />
-        <b>{whoIs(n.it, providers)}</b>
-        {isSidekick(n.it) && <span className="lc-crp-role">Sidekick</span>}
-        <span className="lc-crp-t">{agentNow(n.it)}</span>
-        <span className="lc-crp-n">{duration(secsOf(n.it, now))}</span>
-      </button>,
-      ...rows(n.kids, depth + 1),
-    ]);
-  return (
-    <div className="lc-crp">
-      <div className="lc-crp-h">
-        <b>{crew.mode}</b>
-        <span className="lc-quiet">· {working ? `${working} of ${countOf(crew)} working` : `${countOf(crew)} worked on it`}</span>
+  const agentRow = (t: Tool, kids: number) => (
+    <Row
+      key={t.id}
+      title={
+        <>
+          {whoIs(t, providers)}
+          {isSidekick(t) ? <span className="lc-quiet"> Sidekick</span> : kids > 0 ? <span className="lc-quiet"> ({plural(kids, "agent")})</span> : null}
+        </>
+      }
+      icon={<StepMark size={14} state={STEP_OF[stateOf(t)]} />}
+      end={duration(secsOf(t, now))}
+      onPick={() => open(t)}
+    />
+  );
+  const branch = (nodes: AgentNode[], key: string): ReactNode => {
+    const done = nodes.filter((n) => !running(n.it) && !n.kids.some((k) => running(k.it)));
+    const fold = done.length > 1 && !unfolded.has(key);
+    return (
+      <div className="lc-ap-kids">
+        {nodes.map((n) =>
+          fold && done.includes(n) ? null : (
+            <div key={n.it.id}>
+              {agentRow(n.it, n.kids.length)}
+              {n.kids.length > 0 && branch(n.kids, n.it.id)}
+            </div>
+          ),
+        )}
+        {fold && <Row title={`${done.length} finished`} icon={<StepMark size={14} state="done" />} chevron onPick={() => setUnfolded((was) => new Set([...was, key]))} />}
       </div>
-      {crew.pair && <PairShares thread={thread} />}
+    );
+  };
+  const memberState = (m: Member): StepState => (m.status === "running" ? "working" : m.status === "error" ? "failed" : m.status === "stopped" ? "skipped" : "done");
+  return (
+    <div className="lc-ap">
+      <PanelHead end={working ? `${working} of ${countOf(crew)} working` : `${countOf(crew)} worked on it`}>{crew.pair ? "Fusion" : "Agents"}</PanelHead>
       {crew.members.map((m) => (
         <div key={m.key}>
-          <div className="lc-crp-r">
-            <Mark state={m.status === "running" ? "running" : m.status === "error" ? "failed" : m.status === "stopped" ? "stopped" : "done"} />
-            <b>{m.name}</b>
-            {m.role && <span className="lc-crp-role">{m.role}</span>}
-            <span className="lc-crp-t">{memberWord(m, now, m === crew.lead ? crew.earlier.length : 0)}</span>
-            <span className="lc-crp-n">{duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}</span>
-          </div>
-          {rows(m.agents, 1)}
-          {crew.pair && m === crew.lead && !crew.agents.some(isSidekick) && (
-            <div className="lc-crp-r" style={{ paddingLeft: 30 }}>
-              <Mark state="running" waiting />
-              <b>{crew.pair.side}</b>
-              <span className="lc-crp-role">Sidekick</span>
-              <span className="lc-crp-t">{m.status === "running" ? "waits for a brief" : "no brief this message"}</span>
-            </div>
-          )}
+          <Row
+            title={
+              <>
+                {m.name}
+                {m.role ? <span className="lc-quiet"> {m.role}</span> : null}
+              </>
+            }
+            icon={<StepMark size={14} state={memberState(m)} />}
+            end={duration(m.status === "running" ? (now - m.at) / 1000 : m.seconds)}
+            onPick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}
+          />
+          {m.agents.length > 0 && branch(m.agents, m.key)}
         </div>
       ))}
       {crew.earlier.length > 0 && (
-        <div>
-          <div className="lc-crp-r lc-quiet">Still at work from an earlier message</div>
-          {rows(
+        <>
+          <PanelHead>Still at work from an earlier message</PanelHead>
+          {branch(
             crew.earlier.map((it) => ({ it, kids: [] })),
-            1,
+            "earlier",
           )}
-        </div>
+        </>
       )}
       {crew.reviews.slice(-1).map((r) => (
-        <div key={r.id} className="lc-crp-r">
-          <Mark state={r.status === "running" ? "running" : r.status === "blocked" || r.status === "error" ? "failed" : "done"} />
-          <b>{modelLabel(r.reviewer, providers)}</b>
-          <span className="lc-crp-role">Reviewer</span>
-          <span className="lc-crp-t">{reviewWord(r)}</span>
-        </div>
+        <Row key={r.id} title={<>{modelLabel(r.reviewer, providers)}<span className="lc-quiet"> Reviewer</span></>} icon={<StepMark size={14} state={r.status === "running" ? "working" : r.status === "blocked" || r.status === "error" ? "failed" : "done"} />} end={reviewWord(r)} />
       ))}
-      <div className="lc-crp-sep" />
-      {servers.length ? (
-        servers.map((s) => (
-          <div key={s.name} className="lc-crp-r">
-            <I.server size={14} />
-            <span className="lc-crp-t lc-mono">{s.name}</span>
-            <span className="lc-crp-n">{s.at ? `localhost:${s.at}` : s.status}</span>
-          </div>
-        ))
-      ) : (
-        <div className="lc-crp-r lc-quiet">
-          <I.server size={14} />
-          Nothing in the background
-        </div>
-      )}
-      <div className="lc-crp-sep" />
-      <div className="lc-crp-foot">
-        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
-          Show in the panel
-        </button>
-        <span className="lc-grow" />
-        {atWork(crew).some((t) => t.agent?.taskId) && (
-          <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => stopAll(thread.id, atWork(crew))}>
-            {stopWord(atWork(crew), "Stop all agents")}
-          </button>
-        )}
-      </div>
+      <Sep />
+      <Row title="Every agent, in the panel" icon={<I.panel size={14} />} chevron onPick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))} />
+      {atWork(crew).some((t) => t.agent?.taskId) && <Row title={stopWord(atWork(crew), "Stop all agents")} icon={<I.stop size={14} />} red onPick={() => (close(), stopAll(thread.id, atWork(crew)))} />}
+      <Sep />
+      <MenuFoot>{waitWords(atWork(crew).filter(holding), atWork(crew).filter(behind).length) || (working ? `${working} working` : "Nobody works now")}</MenuFoot>
     </div>
+  );
+}
+
+/* ---------- the card in the chat ---------- */
+
+/** Each card's folded or open, by session and card, kept in this browser (a per-viewer convenience; it may come back empty). */
+const FOLD_KEY = "lc-card-fold";
+const folds: Record<string, boolean> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(FOLD_KEY) ?? "{}") as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+})();
+const foldWatchers = new Set<() => void>();
+/** A card's open state for this session, remembered: open until you fold it. */
+export function useCardFold(threadId: string, card: string): [boolean, (open: boolean) => void] {
+  const key = `${threadId}:${card}`;
+  const shut = useSyncExternalStore(
+    (w) => (foldWatchers.add(w), () => void foldWatchers.delete(w)),
+    () => folds[key] === true,
+  );
+  return [
+    !shut,
+    (open) => {
+      if (open) delete folds[key];
+      else folds[key] = true;
+      try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify(folds));
+      } catch {}
+      for (const w of foldWatchers) w();
+    },
+  ];
+}
+
+/**
+  The team at work, as a card at the chat's end under the Plan (SPEC rule 6, boards Swarm and Teamwork): its name, its
+  counts, the model and memory and Pause in its head; an agent a row (its mark, its name, what it does now, its time);
+  Teamwork as a tree. Folded: the name, the counts and what one working agent is doing. Its name opens the agents popup.
+  A plain crew (agents a model sent) has the same card while two or more work, or one goes on past its turn: one agent
+  while the turn runs is the live line's to say. It took the place of the strips over the message box.
+*/
+export function CrewCard({ threadId }: { threadId: string }) {
+  const thread = useEngine((s) => threadOf(s, threadId));
+  if (!thread) return null;
+  return <CrewCardOf thread={thread} />;
+}
+function CrewCardOf({ thread }: { thread: Thread }) {
+  const crew = useCrew(thread);
+  const swarmOn = isSwarm(thread);
+  const swarm = useSwarm(thread.id, swarmOn);
+  if (swarmOn && swarm) {
+    const workers = swarm.members.filter((m) => m.name !== "coordinator" && m.state !== "killed");
+    const busy = workers.some((m) => m.state === "working" || m.state === "queued") || swarm.members.some((m) => m.name === "coordinator" && m.state === "working");
+    if (workers.length && (busy || swarm.paused || thread.status === "running")) return <TeamCard thread={thread} swarm={swarm} />;
+    return null;
+  }
+  const working = crew ? atWork(crew) : [];
+  if (!crew || !working.length || lone(thread, working)) return null;
+  return <AgentsCard thread={thread} crew={crew} working={working} />;
+}
+
+/** A card's head: the fold chevron, its name (which opens the agents popup), the counts, the folded line, and its end. */
+function CardHead({ threadId, open, onOpen, name, counts, line, end, still }: { threadId: string; open: boolean; onOpen: (o: boolean) => void; name: string; counts: string; line?: string; end?: ReactNode; still?: boolean }) {
+  return (
+    <div className="lc-ccard-h">
+      <button type="button" className="lc-ccard-fold l-focus" aria-expanded={open} aria-label={open ? `Fold the ${name} card` : `Open the ${name} card`} onClick={() => onOpen(!open)}>
+        <I.chevR size={12} className="lc-sum-chev" />
+      </button>
+      <button type="button" className="lc-ccard-name l-focus" title={still ? undefined : "Who works, in the agents popup"} disabled={still} onClick={() => openAgents(threadId)}>
+        <b>{name}</b>
+        {counts && <span className="lc-quiet">{counts}</span>}
+      </button>
+      {!open && line && <span className="lc-ccard-line">{line}</span>}
+      <span className="lc-grow" />
+      {end}
+    </div>
+  );
+}
+
+function TeamCard({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot }) {
+  const providers = useEngine((s) => s.providers);
+  const [open, setOpen] = useCardFold(thread.id, "team");
+  // A scan's card has nowhere to open its agents (agentsReach): its rows say who works and are not buttons.
+  const still = agentsReach(false, Boolean(thread.security)) === "none";
+  const swarmMode = swarm.mode === "swarm";
+  const live = swarm.members.filter((m) => m.state !== "killed");
+  const coord = live.find((m) => m.name === "coordinator");
+  const now = useNow(live.some((m) => m.state === "working"));
+  const tree = useMemo(() => teamTree(swarm.members), [swarm.members]);
+  const name = swarmMode ? "Swarm" : "Teamwork";
+  const busy = live.some((m) => m.name !== "coordinator" && (m.state === "working" || m.state === "queued" || m.state === "waiting"));
+  const pause = swarm.paused ? (
+    <button type="button" className="lc-ccard-act l-focus" onClick={() => void rpc("swarm.resume", { threadId: thread.id }).catch(fail)}>
+      Carry on
+    </button>
+  ) : (
+    busy && (
+      <button type="button" className="lc-ccard-act l-focus" onClick={() => void rpc("swarm.stopAll", { threadId: thread.id }).catch(fail)}>
+        Pause
+      </button>
+    )
+  );
+  const row = (m: SwarmMember, depth: number, kids = 0) => (
+    <li key={m.name} className="lc-ccard-r" style={{ "--d": depth } as CSSProperties}>
+      <button type="button" className="lc-ccard-rb l-focus" disabled={still || !m.itemId} onClick={() => m.itemId && showAgent(thread.id, m.itemId)}>
+        <StepMark size={14} state={m.name === "coordinator" ? (m.state === "working" || swarm.activeSlots > 0 ? "working" : "waiting") : memberStep(m)} />
+        <span className="lc-ccard-who">
+          {m.name === "coordinator" ? "Coordinator" : memberName(m, swarmMode)}
+          {kids > 0 && !swarmMode && <span className="lc-quiet"> ({kids})</span>}
+        </span>
+        <span className="lc-ccard-t">{m.name === "coordinator" ? (swarm.paused ? pausedWords(swarm) : swarm.activeSlots > 0 ? `Coordinating ${swarm.activeSlots} active` : (m.now ?? "Ready")) : m.state === "queued" ? "Waits for a slot" : (m.now ?? SWARM_STATE_WORD[m.state])}</span>
+        <span className="lc-ccard-n l-num">{m.name === "coordinator" ? (m.startedAt && m.state === "working" ? duration((now - m.startedAt) / 1000) : "") : memberEnd(m, now)}</span>
+      </button>
+    </li>
+  );
+  const rows = (lv: TeamLevel<SwarmMember>, depth: number): ReactNode[] => [
+    ...lv.kids.flatMap((n) => [row(n.m, depth, n.kids.length + n.finished.length), ...rows(n, depth + 1)]),
+    ...(lv.finished.length
+      ? [
+          <li key={`done-${depth}-${lv.finished[0].name}`} className="lc-ccard-r" style={{ "--d": depth } as CSSProperties}>
+            <button type="button" className="lc-ccard-rb l-focus" disabled={still} onClick={() => openAgents(thread.id)}>
+              <StepMark size={14} state="done" />
+              <span className="lc-ccard-who">{lv.finished.length} finished</span>
+              <span className="lc-grow" />
+              <I.chevR size={14} />
+            </button>
+          </li>,
+        ]
+      : []),
+  ];
+  return (
+    <section className="lc-ccard" aria-label={name} data-open={open || undefined}>
+      <CardHead
+        threadId={thread.id}
+        open={open}
+        onOpen={setOpen}
+        name={name}
+        counts={swarm.paused ? "paused" : teamCounts(swarm.members)}
+        line={teamLine(live)}
+        still={still}
+        end={
+          <>
+            {open && <span className="lc-ccard-n l-num">{[coord ? shortModel(modelLabel(coord.model, providers)) : "", swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : ""].filter(Boolean).join(" · ")}</span>}
+            {pause}
+          </>
+        }
+      />
+      {open && (
+        <ul className="lc-ccard-rows" data-tree={!swarmMode || undefined}>
+          {coord && row(coord, 0)}
+          {rows(tree, swarmMode ? 0 : 1)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** A plain crew's card: every agent at work, and those of this message that finished, a row each under who sent it. */
+function AgentsCard({ thread, crew, working }: { thread: Thread; crew: Crew; working: Tool[] }) {
+  const providers = useEngine((s) => s.providers);
+  const [open, setOpen] = useCardFold(thread.id, "crew");
+  const still = agentsReach(false, Boolean(thread.security)) === "none";
+  const now = useNow(true);
+  const all = [...everyAgent(crew.members.flatMap((m) => m.agents)), ...crew.earlier];
+  const done = all.filter((t) => !running(t)).length;
+  const counts = crewCounts(working.length, done);
+  const busy = working.find((t) => t.agent?.now) ?? working[0];
+  const line = busy ? `${isSidekick(busy) ? shortModel(whoIs(busy, providers)) : agentName(busy)}: ${doing(agentNow(busy))}` : "";
+  const rows = (nodes: AgentNode[], depth: number): ReactNode[] =>
+    nodes.flatMap((n) => [
+      <li key={n.it.id} className="lc-ccard-r" style={{ "--d": depth } as CSSProperties}>
+        <button type="button" className="lc-ccard-rb l-focus" disabled={still} onClick={() => showAgent(thread.id, n.it.id)}>
+          <Mark state={stateOf(n.it)} />
+          <span className="lc-ccard-who">{whoIs(n.it, providers)}</span>
+          <span className="lc-ccard-t">{agentNow(n.it)}</span>
+          <span className="lc-ccard-n l-num">{duration(secsOf(n.it, now))}</span>
+        </button>
+      </li>,
+      ...rows(n.kids, depth + 1),
+    ]);
+  return (
+    <section className="lc-ccard" aria-label="Agents" data-open={open || undefined}>
+      <CardHead
+        threadId={thread.id}
+        open={open}
+        onOpen={setOpen}
+        name={crew.pair ? "Fusion" : "Agents"}
+        counts={counts}
+        line={line}
+        still={still}
+        end={
+          working.some((t) => t.agent?.taskId) && (
+            <button type="button" className="lc-ccard-act l-focus" onClick={() => stopAll(thread.id, working)}>
+              {stopWord(working, "Stop agents")}
+            </button>
+          )
+        }
+      />
+      {open && (
+        <ul className="lc-ccard-rows">
+          {rows(
+            crew.members.flatMap((m) => m.agents),
+            0,
+          )}
+          {rows(
+            crew.earlier.map((it) => ({ it, kids: [] })),
+            0,
+          )}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -525,6 +919,8 @@ function reviewWord(r: Review) {
 */
 export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] }) {
   const providers = useEngine((s) => s.providers);
+  // One quiet line until it is opened (SPEC rule 6): who works is the card at the chat's end; this is what was sent here.
+  const [open, setOpen] = useState(false);
   // The rows opened in place, by item id: kept while the trail is on screen.
   const [peeked, setPeeked] = useState<ReadonlySet<string>>(() => new Set());
   const peek = (id: string) => setPeeked((was) => {
@@ -614,13 +1010,14 @@ export function Fanout({ threadId, tools }: { threadId: string; tools: Tool[] })
   const whom = onWhom(tools);
   const handed = tools.every(isSidekick);
   return (
-    <div className="lc-fan" role="group" aria-label={handed ? "Handed to its sidekick" : `${plural(tools.length, "agent")} sent`}>
-      <div className="lc-fan-h">
+    <div className="lc-fan" role="group" aria-label={handed ? "Handed to its sidekick" : `${plural(tools.length, "agent")} sent`} data-open={open || undefined}>
+      <button type="button" className="lc-fan-h l-focus" aria-expanded={open} onClick={() => setOpen(!open)}>
         <StepMark size={14} state={head} label={HEAD_WORD[head]} />
         {ongoing ? (handed ? "Handed work to its sidekick" : `Started ${whom}`) : handed ? `Handed ${plural(tools.length, "brief")} to its sidekick` : `With ${whom}`}
         <span className="lc-quiet">· {ongoing ? (handed && tools.length === 1 ? "at work" : [done && `${done} finished`, working && `${working} working`, back && `${back} in the background`].filter(Boolean).join(", ")) : tools.length === 1 ? "what it sent back" : "what each sent back"}</span>
-      </div>
-      <div className="lc-fan-kids">{branch(roots)}</div>
+        <I.chevR size={12} className="lc-sum-chev" />
+      </button>
+      {open && <div className="lc-fan-kids">{branch(roots)}</div>}
     </div>
   );
 }
@@ -664,61 +1061,7 @@ function Peek({ threadId, t }: { threadId: string; t: Tool }) {
   );
 }
 
-/* ---------- the composer's line ---------- */
-
-/**
-  While agents work: who waits on how many, how many go on in the background, and what one of
-  them is doing, with Stop. Up while any is at work, an earlier message's and with no turn running too.
-  A pair's lead waits on its sidekick, which is named by its model.
-*/
-export function CrewStrip({ thread }: { thread: Thread }) {
-  const crew = useCrew(thread);
-  const swarmOn = isSwarm(thread);
-  const swarm = useSwarm(thread.id, swarmOn);
-  const providers = useEngine((s) => s.providers);
-  if (swarmOn && swarm) {
-    const active = swarm.members.filter((m) => m.name !== "coordinator" && (m.state === "working" || m.state === "queued"));
-    if (active.length) return <SwarmStrip thread={thread} swarm={swarm} active={active} />;
-  }
-  const working = crew ? atWork(crew) : [];
-  // One agent while the turn runs is the live line's to say (its newest step, and LoneStop at its end), as the crew chip shows only for two or more.
-  if (!crew || !working.length || lone(thread, working)) return null;
-  const waited = working.filter(holding);
-  const back = working.length - waited.length;
-  const latest = working.reduce((a, b) => (b.at > a.at ? b : a));
-  const waitLine = waited.length ? `${crew.lead!.name} is ${waitWords(waited, back)}` : `${plural(back, "agent")} at work in the background`;
-  return (
-    // Only who waits on whom is live: what the agent is doing changes at every step, and read out each time it would drown the session.
-    <div className="lc-crs">
-      <span className="lc-cr-faces lc-crs-faces" aria-hidden>
-        {working.slice(0, 3).map((t) => (
-          <span key={t.id}>
-            <Face t={t} size={12} />
-          </span>
-        ))}
-      </span>
-      {/* The live words sit in a block of their own: as a span beside the step, WebKit joined the two into one text and read out every step. */}
-      <div className="l-sr-only" aria-live="polite">
-        {waitLine}
-      </div>
-      <span className="lc-crs-t">
-        <span aria-hidden>{waitLine}</span>
-        <span className="lc-quiet">
-          {" "}
-          · {isSidekick(latest) ? shortModel(whoIs(latest, providers)) : agentName(latest)} is {doing(agentNow(latest))}
-        </span>
-      </span>
-      <button type="button" className="lc-ib l-focus" aria-label="Who's on this session" title="Who's on this session" onClick={() => (showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
-        <I.info size={14} />
-      </button>
-      {working.some((t) => t.agent?.taskId) && (
-        <button type="button" className="lc-crs-stop l-focus" onClick={() => stopAll(thread.id, working)}>
-          {stopWord(working, "Stop agents")}
-        </button>
-      )}
-    </div>
-  );
-}
+/* ---------- one agent while the turn runs ---------- */
 
 /** Exactly one agent at work while the turn runs: the live line says what it does, so the strip stays away. */
 const lone = (thread: Thread, working: Tool[]) => working.length === 1 && thread.status === "running";
@@ -740,7 +1083,11 @@ export function LoneStop({ thread }: { thread: Thread }) {
 
 /* ---------- the Agents surface ---------- */
 
-/** The Agents surface: the whole crew, or one agent when one was opened. */
+/**
+  The Agents surface, in the panel's frame (board Agent): one agent when one was opened (from the agents popup, a card in
+  the chat or the list), a team's list, board or worktrees, or the whole crew with its timeline lanes, its tasks, what
+  runs in the background and what the session used.
+*/
 export function AgentsSurface({ thread }: { thread: Thread }) {
   // The crew's own items (turns, agents, reviews, the plan): a streamed word of a reply changes none of them.
   const crew = useCrew(thread);
@@ -748,11 +1095,17 @@ export function AgentsSurface({ thread }: { thread: Thread }) {
   const picked = useShownAgent(thread.id);
   const swarmOn = isSwarm(thread);
   const swarm = useSwarm(thread.id, swarmOn);
+  const [view, setView] = useTeamView(thread.id);
   const agent = picked ? items.find((x): x is Tool => x.id === picked && isAgent(x)) : undefined;
+  if (agent) return <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} />;
+  if (swarmOn && swarm) return <SwarmSurface thread={thread} swarm={swarm} view={view} onView={setView} />;
   return (
-    <div className="lc-agents-panel lc-cr">
-      {agent ? <AgentView key={agent.id} thread={thread} crew={crew} it={agent} items={items} /> : swarmOn && swarm ? <SwarmSurface thread={thread} swarm={swarm} /> : <CrewView thread={thread} crew={crew} />}
-    </div>
+    <>
+      <PaneHead name="Agents" shows={crew ? <PaneWords>{crew.members.some((m) => m.status === "running") || atWork(crew).length ? `${countOf(crew)} on it` : `${countOf(crew)} worked on it`}</PaneWords> : undefined} />
+      <div className="lc-agents-panel lc-cr">
+        <CrewView thread={thread} crew={crew} />
+      </div>
+    </>
   );
 }
 
@@ -808,26 +1161,11 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
             </div>
           </>
         ) : (
-          <p className="lc-cr-empty">Nobody has worked here yet. When a model takes your message, and when it sends agents off, they show here with who sent whom.</p>
+          <PaneNote icon={<I.agents size={20} />} title="No agents yet">
+            When a model takes your message and sends agents off, they show here with who sent whom. Teamwork and Swarm start from the Session popup's Multi-agent row.
+          </PaneNote>
         )}
         <SessionUse thread={thread} />
-        {!thread.sideOf && !thread.security && (
-          <div className="lc-sw-opt">
-            <div className="lc-cr-h">
-              Multi-agent<span className="lc-cr-rule" />
-              <span>0 MB parked</span>
-            </div>
-            <p className="lc-cr-none">Run a structured Teamwork tree or a peer-to-peer Swarm board across any CLI or API. Parked workers hibernate to 0 MB RAM.</p>
-            <div className="lc-sw-addbar">
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "teamwork" }).catch(fail)}>
-                Start Teamwork
-              </button>
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "swarm" }).catch(fail)}>
-                Start Swarm
-              </button>
-            </div>
-          </div>
-        )}
       </>
     );
   const working = crew.members.filter((m) => m.status === "running").length + atWork(crew).length;
@@ -862,7 +1200,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
     <>
       <div className="lc-cr-h">
         Who's on it<span className="lc-cr-rule" />
-        <span>{working ? `${countOf(crew)} on it, ${working} working` : `${countOf(crew)} worked on it`}</span>
+        <span>{working ? `${working} working` : "finished"}</span>
       </div>
       <div className="lc-cr-tree">
         <div className="lc-cr-row" data-root>
@@ -968,32 +1306,23 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
                 <b className="lc-mono">{s.name}</b>
                 <small>{[s.at ? `localhost:${s.at}` : s.status === "starting" ? "Starting" : undefined, s.startedAt ? duration((now - s.startedAt) / 1000) : undefined].filter(Boolean).join(" · ")}</small>
               </span>
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("launch.stop", { threadId: thread.id, name: s.name }).then(again).catch(fail)}>
-                Stop
-              </button>
+              <PaneButton onClick={() => void rpc("launch.stop", { threadId: thread.id, name: s.name }).then(again).catch(fail)}>Stop</PaneButton>
             </div>
           ))}
         </>
       )}
 
-      <SessionUse thread={thread} />
-      {!thread.sideOf && !thread.security && (
-        <div className="lc-sw-opt">
+      {crew.pair && (
+        <>
           <div className="lc-cr-h">
-            Multi-agent<span className="lc-cr-rule" />
-            <span>0 MB parked</span>
+            Use by model<span className="lc-cr-rule" />
           </div>
-          <p className="lc-cr-none">Run a structured Teamwork tree or a peer-to-peer Swarm board across any CLI or API. Parked workers hibernate to 0 MB RAM.</p>
-          <div className="lc-sw-addbar">
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "teamwork" }).catch(fail)}>
-              Start Teamwork
-            </button>
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: "swarm" }).catch(fail)}>
-              Start Swarm
-            </button>
+          <div className="lc-crp">
+            <PairShares thread={thread} />
           </div>
-        </div>
+        </>
       )}
+      <SessionUse thread={thread} />
     </>
   );
 }
@@ -1127,59 +1456,51 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         .catch(fail);
     else void rpc("thread.send", { id: thread.id, text: side ? `About the brief you gave your sidekick${a?.task ? ` (${a.task})` : ""}: ${text}` : `About the ${name} agent you sent${a?.task ? ` (${a.task})` : ""}: ${text}`, mode: "steer" }).catch(fail);
   };
+  const stop = st === "running" && a?.taskId && (
+    <PaneButton icon={<I.stop size={12} />} onClick={() => void rpc("thread.stopAgent", { id: thread.id, item: it.id }).then((ok) => !ok && toast.error(`${name} has already stopped.`)).catch(fail)}>
+      Stop
+    </PaneButton>
+  );
+  // Who it is and who sent it, in the head's quiet words: "Haiku 5.5, sent by Demo".
+  const said = [side ? "Sidekick" : a?.model ? modelLabel(a.model, providers) : "", `${side ? "briefed" : "sent"} by ${parent ? agentName(parent) : sender}`].filter(Boolean).join(", ");
+  const steerable = st === "running" && (direct || (!parent && (thread.status === "running" || it.status !== "running")));
   return (
     <>
-      {/* Named for where it goes: "Agents" alone was also the panel tab's name. */}
-      <button type="button" className="lc-cr-back l-focus" aria-label="Back to all agents" onClick={() => showAgent(thread.id, null)}>
-        <I.chevL size={14} />
-        Agents
-        {parent && (
-          <>
-            <I.chevR size={12} />
-            <span>{agentName(parent)}</span>
-          </>
-        )}
-      </button>
-      <div className="lc-cr-ah">
-        <span className="lc-cr-tile" data-big>
-          <Face t={it} size={16} />
-        </span>
-        <b>{name}</b>
-        {side ? <span className="lc-cr-pill">Sidekick</span> : a?.model && <span className="lc-cr-pill">{modelLabel(a.model, providers)}</span>}
-        <span className="lc-grow" />
-        {st === "running" && a?.taskId && (
-          <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("thread.stopAgent", { id: thread.id, item: it.id }).then((ok) => !ok && toast.error(`${name} has already stopped.`)).catch(fail)}>
-            <I.stop size={12} />
-            Stop
+      <PaneHead
+        lead={
+          // Named for where it goes: back to the list, or to the agent that sent it.
+          <button type="button" className="lc-pane-tool l-focus" aria-label={parent ? `Back to ${agentName(parent)}` : "Back to all agents"} title={parent ? `Back to ${agentName(parent)}` : "Back to all agents"} onClick={() => showAgent(thread.id, parent ? parent.id : null)}>
+            <I.chevL size={16} />
           </button>
-        )}
-      </div>
+        }
+        name={name}
+        shows={<PaneWords>{said}</PaneWords>}
+        tools={stop || undefined}
+      />
+      <div className="lc-agents-panel lc-cr">
       <div className="lc-cr-astat">
         <Mark state={st} />
-        {[unstarted(it) ? "Never started" : st === "running" && it.status !== "running" ? "In the background" : STATE_WORD[st], duration(secsOf(it, now)), side ? `briefed by ${sender}` : `sent by ${sender}`].filter(Boolean).join(" · ")}
+        <span className="lc-grow">{[unstarted(it) ? "Never started" : st === "running" && it.status !== "running" ? "In the background" : st === "running" ? "Working" : STATE_WORD[st], st === "running" ? `for ${duration(secsOf(it, now))}` : duration(secsOf(it, now))].filter(Boolean).join(" ")}</span>
+        {(a?.tools || a?.tokens) && (
+          <span className="lc-cr-stats">
+            {/* The figures as words for a screen reader: the rolling digits beside them aren't read in Chromium, so they're hidden and said here. */}
+            <span className="l-sr-only">{[a?.tools ? plural(a.tools, "tool") : null, a?.tokens ? `${compact(a.tokens)} tokens` : null].filter(Boolean).join(", ")}</span>
+            <span aria-hidden>
+              {a?.tools ? (
+                <>
+                  <Num value={a.tools} /> {a.tools === 1 ? "tool" : "tools"}
+                </>
+              ) : null}
+              {a?.tools && a?.tokens ? ", " : null}
+              {a?.tokens ? (
+                <>
+                  <Num as="compact" value={a.tokens} /> tokens
+                </>
+              ) : null}
+            </span>
+          </span>
+        )}
       </div>
-      {(a?.tools || a?.tokens) && (
-        <div className="lc-cr-stats">
-          {/* The figures as words for a screen reader: the rolling digits below aren't read in Chromium, so they're hidden and said here (a p, which the cards' span rule leaves alone). */}
-          <p className="l-sr-only">{[a?.tools ? plural(a.tools, "tool") : null, a?.tokens ? `${compact(a.tokens)} tokens` : null].filter(Boolean).join(", ")}</p>
-          {a?.tools ? (
-            <span aria-hidden>
-              <b>
-                <Num value={a.tools} />
-              </b>
-              {a.tools === 1 ? "tool" : "tools"}
-            </span>
-          ) : null}
-          {a?.tokens ? (
-            <span aria-hidden>
-              <b>
-                <Num as="compact" value={a.tokens} />
-              </b>
-              tokens
-            </span>
-          ) : null}
-        </div>
-      )}
 
       {/* Its parts are headings, so a screen reader can go from the brief to the report to the files. */}
       <div className="lc-cr-h" role="heading" aria-level={3}>{side ? "The brief" : "Asked to"}</div>
@@ -1210,7 +1531,7 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
         {st === "running" && steps.length > 0 ? (
           <span className="lc-cr-follow">
             Follows the newest
-            <button type="button" role="switch" aria-checked={follow} aria-label="Keep the newest step in view" className="lc-sinfo-switch l-focus" onClick={() => setFollow((f) => !f)} />
+            <NamedSwitch name="Keep the newest step in view" size="sm" checked={follow} onCheckedChange={setFollow} />
           </span>
         ) : (
           <span>{steps.filter((s) => s.toolKind !== "think").length + earlier || ""}</span>
@@ -1242,24 +1563,25 @@ function AgentView({ thread, crew, it, items }: { thread: Thread; crew: Crew | n
 
       {side && !unstarted(it) && <Measured threadId={thread.id} files={st === "running" ? undefined : a?.files} frames={a?.frames} running={st === "running"} />}
 
-      {/* One at work in the background past its turn takes a word too: to the model that sent it, as your next message. */}
-      {st === "running" && (direct || (!parent && (thread.status === "running" || it.status !== "running"))) && (
-        <>
+      {heard.map((w, i) => (
+        <div key={i} className="lc-cr-heard">
+          <Mark state="done" />
+          <span>“{w}”</span>
+          <span className="lc-quiet">at its next step</span>
+        </div>
+      ))}
+      </div>
+      {/* One at work in the background past its turn takes a word too: to the model that sent it, as your next message. The box is the surface's foot. */}
+      {steerable && (
+        <div className="lc-cr-foot">
           {/* The message box's field and Send, as every place that writes to an agent has them. */}
-          <SendBox className="lc-cr-steer" value={say} onChange={setSay} label={direct ? `Tell ${name} something` : `Tell ${sender} what ${name} should do instead`} placeholder={direct ? `Tell ${name} something…` : `Tell ${sender} what ${name} should do instead…`} onSend={send} />
-          {heard.map((w, i) => (
-            <div key={i} className="lc-cr-heard">
-              <Mark state="done" />
-              <span>“{w}”</span>
-              <span className="lc-quiet">at its next step</span>
-            </div>
-          ))}
+          <SendBox className="lc-cr-steer" value={say} onChange={setSay} label={direct ? `Tell ${name} something` : `Tell ${sender} what ${name} should do instead`} placeholder={direct ? `Tell ${name} something` : `Tell ${sender} what ${name} should do instead`} onSend={send} />
           <p className="lc-cr-hint">
             {direct
               ? "Goes in at its next step, without stopping it."
-              : `${name}'s tool can't take a word mid-run, so this goes to ${sender} now, without stopping it; it can stop ${name} and send a new one.${a?.taskId ? " Stop it works on the agent directly." : ""}`}
+              : `${name}'s tool can't take a word mid-run, so this goes to ${sender} now, without stopping it; it can stop ${name} and send a new one.${a?.taskId ? " Stop works on the agent directly." : ""}`}
           </p>
-        </>
+        </div>
       )}
     </>
   );
@@ -1351,36 +1673,14 @@ function SessionUse({ thread }: { thread: Thread }) {
       <div className="lc-cr-h">
         This session<span className="lc-cr-rule" />
       </div>
-      <dl className="lc-fields lc-fields-quiet">
-        <div>
-          <dt>Tokens</dt>
-          <dd>
-            <Num as="compact" value={u.inputTokens + u.outputTokens + u.cacheReadTokens} />
-          </dd>
-        </div>
-        <div>
-          <dt>From cache</dt>
-          <dd>{u.inputTokens + u.cacheReadTokens ? <Num as="percent" value={u.cacheReadTokens / (u.inputTokens + u.cacheReadTokens)} /> : "–"}</dd>
-        </div>
-        <div>
-          <dt>Cost</dt>
-          <dd>{u.costUsd ? <Num as="money" value={u.costUsd} /> : unpriced}</dd>
-        </div>
-        {u.contextWindow ? (
-          <div>
-            <dt>Context</dt>
-            <dd>
-              <Num as="compact" value={u.contextTokens ?? 0} /> of {compact(u.contextWindow)}
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Tools used</dt>
-          <dd>
-            <Num value={tools} />
-          </dd>
-        </div>
-      </dl>
+      {/* Rows of the frame (PaneRow), not a table: the pane's body has no boxes or wells (SPEC rule 3). */}
+      <PaneRow icon={<I.usage size={14} />} value={<Num as="compact" value={u.inputTokens + u.cacheReadTokens + u.outputTokens} />}>Tokens</PaneRow>
+      <PaneRow icon={<I.layers size={14} />} value={u.inputTokens + u.cacheReadTokens ? <Num as="percent" value={u.cacheReadTokens / (u.inputTokens + u.cacheReadTokens)} /> : "–"}>From cache</PaneRow>
+      <PaneRow icon={<I.speed size={14} />} value={u.costUsd ? <Num as="money" value={u.costUsd} /> : unpriced} quiet={!u.costUsd}>Cost</PaneRow>
+      {u.contextWindow ? (
+        <PaneRow icon={<I.chip size={14} />} value={<>{compact(u.contextTokens ?? 0)} of {compact(u.contextWindow)}</>}>Context</PaneRow>
+      ) : null}
+      <PaneRow icon={<I.tool size={14} />} value={<Num value={tools} />}>Tools used</PaneRow>
     </>
   );
 }
@@ -1404,119 +1704,19 @@ function swarmMark(s: SwarmMember["state"]): { state: State; waiting?: boolean }
   return { state: "stopped" };
 }
 
-/** Header chip for a Teamwork or Swarm session: stacked model marks, active/hibernated summary and RAM estimate. */
-function SwarmChip({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot }) {
-  const providers = useEngine((s) => s.providers);
-  const live = swarm.members.filter((m) => m.state !== "killed");
-  const workers = live.filter((m) => m.name !== "coordinator");
-  const active = swarm.activeSlots;
-  const label = swarm.mode === "swarm" ? "Swarm" : "Teamwork";
-  return (
-    <Pop
-      label={`${label} roster and RAM pool`}
-      width={400}
-      className="lc-crew-pop"
-      triggerClass="lc-crew l-focus"
-      trigger={
-        <>
-          <StateMark state={active > 0 ? "working" : "done"} size={12} />
-          <span className="lc-cr-faces" aria-hidden>
-            {live.slice(0, 3).map((m) => (
-              <span key={m.name}>
-                <ModelMark kind={markOf(m.model)} size={12} />
-              </span>
-            ))}
-          </span>
-          <span className="lc-crew-t">
-            {label}
-            <span className="lc-quiet">
-              {" "}
-              · {active > 0 ? `${active} active` : workers.length ? `${workers.length} parked` : "ready"}
-              {swarm.rssMb > 0 ? ` · ~${swarm.rssMb} MB` : " · 0 MB"}
-            </span>
-          </span>
-          <I.chevD size={12} />
-        </>
-      }
-    >
-      {(close) => (
-        <div className="lc-crp">
-          <div className="lc-crp-h">
-            <b>{swarm.title || label}</b>
-            <span className="lc-quiet">
-              · {swarm.activeSlots}/{swarm.maxActive} active slots · {swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : "0 MB"}
-            </span>
-          </div>
-          {live.map((m) => {
-            const mk = swarmMark(m.state);
-            return (
-              <div key={m.name} className="lc-crp-r">
-                <Mark state={mk.state} waiting={mk.waiting} />
-                <b>@{m.name}</b>
-                <span className="lc-crp-role">{m.role}</span>
-                <span className="lc-crp-t">{m.now || SWARM_STATE_WORD[m.state]}</span>
-                <span className="lc-crp-n">{m.state === "working" && m.rssMb ? `~${m.rssMb} MB` : shortModel(modelLabel(m.model, providers))}</span>
-              </div>
-            );
-          })}
-          <div className="lc-crp-sep" />
-          <div className="lc-crp-foot">
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => (close(), showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
-              Show in the panel
-            </button>
-            <span className="lc-grow" />
-            {workers.some((m) => m.state === "working" || m.state === "waiting") && (
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
-                Hibernate all
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </Pop>
-  );
-}
-
-/** Composer strip while swarm workers are running or queued for an active RAM slot. */
-function SwarmStrip({ thread, swarm, active }: { thread: Thread; swarm: SwarmSnapshot; active: SwarmMember[] }) {
-  const working = active.filter((m) => m.state === "working");
-  const lead = working[0] ?? active[0];
-  const names = working.map((m) => `@${m.name}`).join(" and ");
-  const line = working.length ? `${names} working (${swarm.activeSlots}/${swarm.maxActive} slots)` : `${plural(active.length, "worker")} queued`;
-  return (
-    <div className="lc-crs">
-      <span className="lc-cr-faces lc-crs-faces" aria-hidden>
-        {active.slice(0, 3).map((m) => (
-          <span key={m.name}>
-            <ModelMark kind={markOf(m.model)} size={12} />
-          </span>
-        ))}
-      </span>
-      <span className="lc-crs-t">
-        <span>{line}</span>
-        <span className="lc-quiet">
-          {swarm.hibernatedCount > 0 ? ` · ${swarm.hibernatedCount} hibernated (0 MB)` : ""}
-          {lead?.now ? ` · ${lead.now}` : ""}
-        </span>
-      </span>
-      <button type="button" className="lc-ib l-focus" aria-label="Open Swarm panel" title="Open Swarm panel" onClick={() => (showAgent(thread.id, null), openSurface(thread.id, "agents"))}>
-        <I.info size={14} />
-      </button>
-      <button type="button" className="lc-crs-stop l-focus" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
-        Pause swarm
-      </button>
-    </div>
-  );
-}
+/** A worker's effort after its model, only when it differs from the session's (a reader one lower, a model without that level). */
+const effortNote = (m: SwarmMember, thread: Thread) => (m.effort && m.effort !== (thread.effort ?? "") ? ` · ${m.effort}` : "");
 
 /** Native Liner Code Agents surface in Teamwork (hierarchy tree) or Swarm (peer board + Overview) mode. */
-function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot }) {
+function SwarmSurface({ thread, swarm, view, onView }: { thread: Thread; swarm: SwarmSnapshot; view: TeamView; onView: (v: TeamView) => void }) {
   const providers = useEngine((s) => s.providers);
   const isSwarmMode = swarm.mode === "swarm";
-  const [tab, setTab] = useState<"overview" | "board" | "worktrees">("overview");
+  const tab = view === "board" ? "board" : view === "worktrees" ? "worktrees" : "overview";
   const [channel, setChannel] = useState("all");
   const [draft, setDraft] = useState("");
-  const [adding, setAdding] = useState(false);
+  // The add-worker form shows when the agents popup's Add a worker opened the surface, or its own row was pressed.
+  const adding = view === "add";
+  const setAdding = (on: boolean | ((was: boolean) => boolean)) => onView((typeof on === "function" ? on(adding) : on) ? "add" : "all");
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const toggleFold = (key: string) =>
     setFolded((was) => {
@@ -1569,10 +1769,11 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
                   <span>
                     {m.now || SWARM_STATE_WORD[m.state]}
                     {m.workspace === "share" && m.branch ? ` · ${m.branch}` : ""}
+                    {m.audit && m.auditOf ? ` · audits @${m.auditOf}` : ""}
                   </span>
                 </small>
               </span>
-              <span className="lc-cr-n l-num">{m.state === "working" && m.rssMb ? `~${m.rssMb} MB` : shortModel(modelLabel(m.model, providers))}</span>
+              <span className="lc-cr-n l-num">{m.state === "working" && m.rssMb ? `~${m.rssMb} MB` : `${shortModel(modelLabel(m.model, providers))}${effortNote(m, thread)}`}</span>
             </button>
             {kids.length > 0 && (
               <button type="button" className="lc-ib l-focus lc-sw-fold" aria-label={isFolded ? `Expand ${m.role}` : `Collapse ${m.role}`} aria-expanded={!isFolded} onClick={() => toggleFold(m.name)}>
@@ -1641,43 +1842,53 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
     return { state, waiting: !anyWorking && !allDone, statusWord: anyWorking ? "working" : allDone ? "ready" : "pending", lastPost };
   };
 
+  const label = isSwarmMode ? "Swarm" : "Teamwork";
+  const VIEW_WORD: Record<"overview" | "board" | "worktrees", string> = { overview: isSwarmMode ? "Overview" : "Agents", board: swarm.posts.length ? `Board, ${plural(swarm.posts.length, "post")}` : "Board", worktrees: worktrees.length ? `Worktrees, ${worktrees.length}` : "Worktrees" };
+  const views = (isSwarmMode ? ["overview", "board", "worktrees"] : worktrees.length ? ["overview", "worktrees"] : []) as ("overview" | "board" | "worktrees")[];
+  const busy = workers.some((m) => m.state === "working" || m.state === "queued" || m.state === "waiting");
   return (
     <>
-      <div className="lc-sw-top">
-        {isSwarmMode ? (
-          <Segmented
-            size="sm"
-            value={effectiveTab}
-            onValueChange={(v) => setTab(v as "overview" | "board" | "worktrees")}
-            options={[
-              { value: "overview", label: "Overview" },
-              { value: "board", label: swarm.posts.length ? `Board (${swarm.posts.length})` : "Board" },
-              { value: "worktrees", label: worktrees.length ? `Worktrees (${worktrees.length})` : "Worktrees" },
-            ]}
-            aria-label="Swarm views"
-          />
-        ) : worktrees.length > 0 ? (
-          <Segmented
-            size="sm"
-            value={effectiveTab}
-            onValueChange={(v) => setTab(v as "overview" | "worktrees")}
-            options={[
-              { value: "overview", label: "Subagents" },
-              { value: "worktrees", label: `Worktrees (${worktrees.length})` },
-            ]}
-            aria-label="Teamwork views"
-          />
-        ) : (
-          <span className="lc-cr-pill">Teamwork</span>
-        )}
-        <span className="lc-grow" />
-        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail)}>
-          Turn off
-        </button>
-      </div>
+      <PaneHead
+        name={swarm.title || label}
+        shows={
+          views.length > 1 ? (
+            <Pop menu triggerClass={PANE_PICK} label={`${label} views`} width={220} trigger={<>{VIEW_WORD[effectiveTab]} <I.chevD size={12} /></>}>
+              {(close) => views.map((v) => <Row key={v} title={VIEW_WORD[v]} on={effectiveTab === v} onPick={() => (close(), onView(v === "overview" ? "all" : v))} />)}
+            </Pop>
+          ) : (
+            <PaneWords>{teamCounts(swarm.members) || "No agent yet"}</PaneWords>
+          )
+        }
+        tools={
+          <Pop menu align="end" triggerClass={PANE_TOOL} label={`${label}: pause, hibernate or turn off`} width={240} trigger={<I.more size={16} />}>
+            {(close) => (
+              <>
+                {isSwarmMode && <Row title="Add a worker" icon={<I.plus size={14} />} onPick={() => (close(), onView("add"))} />}
+                {workers.some((m) => m.state === "working" || m.state === "waiting") && <Row title="Hibernate all" icon={<I.snooze size={14} />} onPick={() => (close(), void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail))} />}
+                {swarm.paused ? (
+                  <Row title="Carry on" icon={<I.play size={14} />} onPick={() => (close(), void rpc("swarm.resume", { threadId: thread.id }).catch(fail))} />
+                ) : (
+                  <Row title={isSwarmMode ? "Pause the swarm" : "Pause Teamwork"} icon={<I.stop size={14} />} disabled={!busy} onPick={() => (close(), void rpc("swarm.stopAll", { threadId: thread.id }).catch(fail))} />
+                )}
+                <Sep />
+                <ConfirmRow title={isSwarmMode ? "Turn the swarm off" : "Turn Teamwork off"} sure="Turn it off: every worker stops" icon={<I.close size={14} />} red onConfirm={() => (close(), void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail))} />
+              </>
+            )}
+          </Pop>
+        }
+      />
+      <div className="lc-agents-panel lc-cr">
 
       {effectiveTab === "overview" && (
         <>
+          {/* The person's own Stop needs no line: they know they pressed it. */}
+          {swarm.paused && swarm.paused.reason !== "stopped" && (
+            <div className="lc-sw-addbar">
+              <span className="lc-cr-none">{swarm.paused.reason === "limit" ? `Paused after ${swarm.paused.turns ?? SWARM_SELF_TURNS_MAX} turns the team started by itself.` : "Paused: Liner Code restarted."}</span>
+              <span className="lc-grow" />
+              <PaneButton onClick={() => void rpc("swarm.resume", { threadId: thread.id }).catch(fail)}>Carry on</PaneButton>
+            </div>
+          )}
           {isSwarmMode && swarm.plan && (
             <>
               <div className="lc-cr-h">
@@ -1793,18 +2004,12 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
             )}
           </div>
 
-          <div className="lc-sw-addbar">
-            {isSwarmMode && (
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setAdding((a) => !a)}>
-                {adding ? "Cancel" : "Add worker"}
-              </button>
-            )}
-            {workers.some((m) => m.state === "working" || m.state === "waiting") && (
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail)}>
-                Hibernate all
-              </button>
-            )}
-          </div>
+          {/* Hibernate all, Pause and Turn off are the head's ··· (and the agents popup's); adding a worker is a row that opens its form. */}
+          {isSwarmMode && (
+            <PaneRow icon={<I.plus size={14} />} opens={!adding} value={adding ? "Cancel" : undefined} quiet onClick={() => setAdding((a) => !a)}>
+              Add a worker
+            </PaneRow>
+          )}
 
           {isSwarmMode && adding && (
             <div className="lc-sw-form">
@@ -1812,21 +2017,34 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
                 <input type="text" className="lc-sw-in l-focus" placeholder="Name (backend, tester…)" value={wName} onChange={(e) => setWName(e.target.value)} />
                 <input type="text" className="lc-sw-in l-focus" placeholder="Role (Writer, Verifier…)" value={wRole} onChange={(e) => setWRole(e.target.value)} />
               </div>
-              <Segmented size="sm" value={wWs} onValueChange={(v) => setWWs(v as "share" | "inherit")} options={[{ value: "share", label: "Worktree (write)" }, { value: "inherit", label: "Shared (read-only)" }]} aria-label="Worker workspace" />
+              {/* A choice among several is a row with its value and a menu, never a segmented control or a native select. */}
+              <Pop menu triggerClass={PANE_ROW} label="Where the worker works" width={260} trigger={<PaneRowIn icon={<I.branch size={14} />} value={wWs === "share" ? "Its own worktree, writes" : "The shared folder, reads"} quiet opens>Workspace</PaneRowIn>}>
+                {(close) => (
+                  <>
+                    <Row title="Its own worktree" note="Writes on a branch of its own" on={wWs === "share"} onPick={() => (close(), setWWs("share"))} />
+                    <Row title="The shared folder" note="Reads only" on={wWs === "inherit"} onPick={() => (close(), setWWs("inherit"))} />
+                  </>
+                )}
+              </Pop>
               {live.length > 0 && (
-                <select className="lc-sw-in l-focus" value={wFork} onChange={(e) => setWFork(e.target.value)} aria-label="Fork context from member">
-                  <option value="">Start fresh (no fork)</option>
-                  {live.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      Fork context from @{m.name}
-                    </option>
-                  ))}
-                </select>
+                <Pop menu triggerClass={PANE_ROW} label="Context to start from" width={260} trigger={<PaneRowIn icon={<I.fork size={14} />} value={wFork ? `From @${wFork}` : "Fresh"} quiet opens>Context</PaneRowIn>}>
+                  {(close) => (
+                    <>
+                      <Row title="Start fresh" on={!wFork} onPick={() => (close(), setWFork(""))} />
+                      {live.map((m) => (
+                        <Row key={m.name} title={`Fork from @${m.name}`} on={wFork === m.name} onPick={() => (close(), setWFork(m.name))} />
+                      ))}
+                    </>
+                  )}
+                </Pop>
               )}
               <textarea rows={2} className="lc-sw-in l-focus" placeholder="Brief: what this worker owns and what done looks like…" value={wBrief} onChange={(e) => setWBrief(e.target.value)} />
-              <button type="button" className="lc-btn l-focus" data-kind="primary" data-size="sm" onClick={addWorker}>
-                Add to swarm
-              </button>
+              <div className="lc-sw-formfoot">
+                <PaneButton onClick={() => setAdding(false)}>Cancel</PaneButton>
+                <PaneButton ink onClick={addWorker}>
+                  Add to swarm
+                </PaneButton>
+              </div>
             </div>
           )}
 
@@ -1834,24 +2052,11 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
             RAM pool<span className="lc-cr-rule" />
             <span className="l-num">{swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : "0 MB"}</span>
           </div>
-          <dl className="lc-fields lc-fields-quiet">
-            <div>
-              <dt>Active slots</dt>
-              <dd className="lc-sw-slots">
-                <Segmented size="sm" value={String(swarm.maxActive)} onValueChange={(v) => void rpc("swarm.config", { threadId: thread.id, maxActive: Number(v) }).catch(fail)} options={[1, 2, 3, 4].map((v) => ({ value: String(v), label: String(v) }))} aria-label="Active worker slots" />
-              </dd>
-            </div>
-            <div>
-              <dt>Hibernated</dt>
-              <dd>
-                <Num value={swarm.hibernatedCount} /> (0 MB)
-              </dd>
-            </div>
-            <div>
-              <dt>Auto-hibernate</dt>
-              <dd>{swarm.hibernateSec === 0 ? "Immediately" : `${swarm.hibernateSec} s`}</dd>
-            </div>
-          </dl>
+          <Pop menu triggerClass={PANE_ROW} label="Active worker slots" width={220} trigger={<PaneRowIn icon={<I.chip size={14} />} value={`${swarm.activeSlots} of ${swarm.maxActive} busy`} quiet opens>Active slots</PaneRowIn>}>
+            {(close) => [1, 2, 3, 4].map((v) => <Row key={v} title={plural(v, "slot")} on={swarm.maxActive === v} onPick={() => (close(), void rpc("swarm.config", { threadId: thread.id, maxActive: v }).catch(fail))} />)}
+          </Pop>
+          <PaneRow icon={<I.snooze size={14} />} value={`${swarm.hibernatedCount}, 0 MB`} quiet>Hibernated</PaneRow>
+          <PaneRow icon={<I.clock size={14} />} value={swarm.hibernateSec === 0 ? "at once" : `after ${swarm.hibernateSec} s`} quiet>Auto-hibernate</PaneRow>
           <SessionUse thread={thread} />
         </>
       )}
@@ -1859,9 +2064,9 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
       {effectiveTab === "board" && (
         <>
           {channels.length > 1 && (
-            <div className="lc-sw-chans">
-              <Segmented size="sm" value={channel} onValueChange={setChannel} options={[{ value: "all", label: "All" }, ...channels.map((c) => ({ value: c, label: `#${c}` }))]} aria-label="Board channels" />
-            </div>
+            <Pop menu triggerClass={PANE_ROW} label="Board channel" width={220} trigger={<PaneRowIn icon={<I.comment size={14} />} value={channel === "all" ? "All" : `#${channel}`} quiet opens>Channel</PaneRowIn>}>
+              {(close) => [{ value: "all", label: "All" }, ...channels.map((c) => ({ value: c, label: `#${c}` }))].map((c) => <Row key={c.value} title={c.label} on={channel === c.value} onPick={() => (close(), setChannel(c.value))} />)}
+            </Pop>
           )}
           <div className="lc-cr-h">
             Board<span className="lc-cr-rule" />
@@ -1913,11 +2118,7 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
                   {m.landed ? (
                     <span className="lc-crp-role">Landed</span>
                   ) : (
-                    <button
-                      type="button"
-                      className="lc-btn l-focus"
-                      data-kind="ghost"
-                      data-size="sm"
+                    <PaneButton
                       disabled={m.state === "working"}
                       onClick={() =>
                         void rpc("swarm.land", { threadId: thread.id, name: m.name })
@@ -1926,7 +2127,7 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
                       }
                     >
                       Land into checkout
-                    </button>
+                    </PaneButton>
                   )}
                 </div>
                 {m.worktreePath && <div className="lc-mono lc-quiet lc-sw-wtp">{m.worktreePath}</div>}
@@ -1950,6 +2151,7 @@ function SwarmSurface({ thread, swarm }: { thread: Thread; swarm: SwarmSnapshot 
           )}
         </>
       )}
+      </div>
     </>
   );
 }

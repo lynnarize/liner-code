@@ -1,19 +1,23 @@
 /*
-  The Checks tab, and where the checks show on the canvas: what checks.ts found, one finding a card
-  (its number, its frame, its kind, the sentence, the evidence where it helps, and Fix), what
-  passed, and Fix all at the foot. On the canvas each finding is a numbered mark where it is, and
+  The Checks tab, and where the checks show on the canvas: what checks.ts found, in the panel's
+  sections (To fix, one finding a card: its number, its frame, its kind, the sentence, the evidence
+  where it helps, and Fix; then Passed, folded to its count), and Fix all as the inspector's foot
+  while the tab shows (the one ink action, in Build's place). On the canvas each finding is a numbered mark where it is, and
   each frame's name says how it stands ("2 to fix", "passed", or why it isn't checked); Layers
   shows the count beside the frame, and the dock a row with Fix all. Finding is free; a fix that
   the finding carries (contrast: a lean colour) is made here, the rest goes to the agent.
 */
 import { useMemo, useState } from "react";
 import type { DesignFrame } from "@contracts";
-import { Segmented } from "@liner/components/segmented/segmented";
-import { I, StateMark } from "../icons";
+import { I, StepMark } from "../icons";
 import { plural } from "../model";
+import { PaneButton, PaneFoot, PaneNote, PaneRow, PaneSection } from "../Pane";
+import { Row } from "../ui";
 import { srcDocOf } from "./Frame";
 import { fixAll, fixerName, fixOne, KIND_NAME, notAScreen, show, toFix, useChecks, watchChecks, type Finding } from "./checks";
 import { design, getDesign, useDesign } from "./store";
+import { FOOT } from "./inspect/slots";
+import { useInkClaim, useTrayInk } from "./tray-ink";
 import "./checks.css";
 
 watchChecks();
@@ -74,18 +78,10 @@ function Card({ f, n }: { f: Finding; n: number }) {
       <p className="ld-ck-t">{f.text}</p>
       {f.kind === "fit" && <Evidence f={f} />}
       <div className="ld-ck-acts">
-        <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={busy} onClick={() => void run(() => fixOne(f))}>
+        <PaneButton disabled={busy} onClick={() => void run(() => fixOne(f))}>
           {f.fixLabel ?? "Fix"}
-        </button>
-        {f.kind === "fit" && f.at && frame && f.at !== frame.w ? (
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => showAt(f.at!)}>
-            Show at {f.at}
-          </button>
-        ) : (
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => show(f)}>
-            Show
-          </button>
-        )}
+        </PaneButton>
+        {f.kind === "fit" && f.at && frame && f.at !== frame.w ? <PaneButton onClick={() => showAt(f.at!)}>Show at {f.at}</PaneButton> : <PaneButton onClick={() => show(f)}>Show</PaneButton>}
       </div>
     </article>
   );
@@ -96,77 +92,82 @@ export function ChecksTab() {
   const byFrame = useChecks((s) => s.byFrame);
   const running = useChecks((s) => s.running > 0);
   const ms = useChecks((s) => s.ms);
-  const [view, setView] = useState<"fix" | "passed">("fix");
+  const [passedOpen, setPassedOpen] = useState(false);
   const all = useMemo(() => toFix(), [byFrame, file]);
   const passed = useMemo(() => (file?.frames ?? []).flatMap((f) => (byFrame[f.id]?.passed ?? []).map((p) => ({ frame: f, p }))), [byFrame, file]);
   const checked = (file?.frames ?? []).filter((f) => byFrame[f.id] && !byFrame[f.id].skipped && !byFrame[f.id].failed).length;
   const failed = (file?.frames ?? []).filter((f) => byFrame[f.id]?.failed);
-  const busy = useState(false);
-  if (!file) return <div className="ld-insp-empty">Open a design file to check its screens.</div>;
-  const frames = new Set(all.map((f) => f.frame)).size;
+  if (!file) return <PaneNote icon={<I.shield size={20} />} title="No design file open">Open a design file to check its screens.</PaneNote>;
+  // Where the checks stand is the first section's note, as a pull request's Checks says "3 of 3 passed".
+  const stand = running ? (
+    <span className="ld-ck-q" aria-live="polite">
+      <StepMark state="working" size={12} />
+      {checked ? `${plural(checked, "screen")} checked` : "Checking"}
+    </span>
+  ) : (
+    <span className="ld-ck-q" aria-live="polite">
+      {plural(checked, "screen")} checked{ms !== undefined ? ` · ${(ms / 1000).toFixed(1)} s` : ""}
+    </span>
+  );
   return (
     <div className="ld-body ld-ck">
-      <div className="ld-ck-top" aria-live="polite">
-        <I.shield size={16} />
-        <b>{running && !checked ? "Checking the screens" : `${plural(checked, "screen")} checked`}</b>
-        <span className="lc-grow" />
-        {running ? (
-          <span className="ld-ck-q">
-            <StateMark state="working" size={12} />
-            Checking
-          </span>
-        ) : (
-          ms !== undefined && <span className="ld-ck-q">{(ms / 1000).toFixed(1)} s</span>
-        )}
-      </div>
-      <p className="ld-ck-lede">Run on this Mac, on the frames as real pages. No agent and no tokens, so they run again each time a frame changes.</p>
-      <div className="ld-ck-seg">
-        <Segmented
-          size="sm"
-          value={view}
-          onValueChange={(v) => setView(v as "fix" | "passed")}
-          aria-label="Findings"
-          options={[
-            { value: "fix", label: `To fix ${all.length}` },
-            { value: "passed", label: `Passed ${passed.length}` },
-          ]}
-        />
-      </div>
-      {view === "fix" ? (
-        all.length ? (
+      <PaneSection label={all.length ? `To fix ${all.length}` : "To fix"} note={stand}>
+        {all.length ? (
           all.map((f, i) => <Card key={f.key} f={f} n={i + 1} />)
         ) : (
-          <p className="ld-note">{running ? "Looking at each screen at the widths it is for." : "Nothing to fix. Each screen passed every check."}</p>
-        )
-      ) : (
-        <div className="ld-ck-pass">
-          {passed.map(({ frame, p }) => (
-            <div key={`${frame.id}:${p}`} className="ld-ck-pr">
-              <I.check size={14} />
-              <span className="ld-ell">{frame.name}</span>
-              <span className="lc-grow" />
-              <small>{p}</small>
-            </div>
-          ))}
-          {!passed.length && <p className="ld-note">Nothing has passed yet.</p>}
-        </div>
-      )}
-      {failed.map((f) => (
-        <p key={f.id} className="ld-note">
-          {f.name} couldn't be checked: {byFrame[f.id].failed}
-        </p>
-      ))}
-      {all.length > 0 && view === "fix" && (
-        <div className="ld-ck-foot">
-          <span className="ld-ck-q">A fix goes to {fixerName()}</span>
-          <span className="lc-grow" />
-          <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={busy[0]} onClick={() => (busy[1](true), void fixAll().finally(() => busy[1](false)))} title={`${all.length} to fix in ${plural(frames, "frame")}`}>
-            Fix all {all.length}
-          </button>
-        </div>
-      )}
+          <p className="ld-note ld-ck-none">{running ? "Looking at each screen at the widths it is for." : "Nothing to fix. Each screen passed every check."}</p>
+        )}
+        {failed.map((f) => (
+          <p key={f.id} className="ld-note ld-ck-none">
+            {f.name} couldn't be checked: {byFrame[f.id].failed}
+          </p>
+        ))}
+      </PaneSection>
+      <PaneSection className="ld-ck-passed" label="Passed" note={passed.length ? undefined : "None yet"}>
+        {passed.length > 0 && (
+          <>
+            <PaneRow icon={<I.check size={14} />} value={passedOpen ? "Fold" : undefined} quiet opens={!passedOpen} onClick={() => setPassedOpen(!passedOpen)}>
+              {plural(passed.length, "check")} passed
+            </PaneRow>
+            {passedOpen &&
+              passed.map(({ frame, p }) => (
+                <PaneRow key={`${frame.id}:${p}`} icon={<I.check size={14} />} value={p} quiet>
+                  {frame.name}
+                </PaneRow>
+              ))}
+          </>
+        )}
+      </PaneSection>
+      <p className="ld-note ld-ck-lede">Run on this Mac, on the frames as real pages. No agent and no tokens, so they run again each time a frame changes.</p>
     </div>
   );
+}
+
+/** The inspector's foot while Checks shows and something waits to be fixed: where a fix goes, and Fix all, the tab's one ink action. */
+function ChecksFoot() {
+  const byFrame = useChecks((s) => s.byFrame);
+  const frames_ = useDesign((s) => s.file?.frames);
+  const all = useMemo(() => toFix(), [byFrame, frames_]);
+  const [busy, setBusy] = useState(false);
+  // While this foot shows, its Fix all is the face's one ink action and the dock's row keeps the same action quiet (tray-ink.ts).
+  useInkClaim("foot", all.length ? "fix" : undefined);
+  if (!all.length) return null;
+  const frames = new Set(all.map((f) => f.frame)).size;
+  return (
+    <PaneFoot say={`A fix goes to ${fixerName()}`}>
+      <PaneButton ink disabled={busy} onClick={() => (setBusy(true), void fixAll().finally(() => setBusy(false)))} title={`${all.length} to fix in ${plural(frames, "frame")}`}>
+        Fix all {all.length}
+      </PaneButton>
+    </PaneFoot>
+  );
+}
+
+// The foot is the inspector's slot: one entry, kept once across reloads of this module. Build's foot gives way to it on Checks.
+{
+  const i = FOOT.findIndex((x) => x.id === "checks");
+  const entry = { id: "checks", render: (tab: string) => (tab === "checks" ? <ChecksFoot /> : null) };
+  if (i >= 0) FOOT[i] = entry;
+  else FOOT.push(entry);
 }
 
 /** The tab's count: what there is to fix. */
@@ -256,12 +257,9 @@ export function CheckMarks({ frames, boxOf }: { frames: DesignFrame[]; boxOf: (f
               {rest.length > 0 && <small>+{rest.length}</small>}
             </button>
             {open === p.key && rest.length > 0 && (
-              <div className="ld-ck-spot-list" role="list">
+              <div className="ld-ck-spot-list" role="menu" aria-label="The findings here">
                 {p.items.map((x) => (
-                  <button key={x.f.key} type="button" role="listitem" className="ld-ck-spot-row l-focus" onClick={() => (show(x.f), setOpen(null))}>
-                    <span className="ld-ck-n">{x.n}</span>
-                    <span className="ld-ell">{x.f.text}</span>
-                  </button>
+                  <Row key={x.f.key} title={x.f.text} icon={<span className="ld-ck-n">{x.n}</span>} onPick={() => (show(x.f), setOpen(null))} />
                 ))}
               </div>
             )}
@@ -286,19 +284,19 @@ export function ChecksRow() {
   const frames_ = useDesign((s) => s.file?.frames);
   const all = useMemo(() => toFix(), [byFrame, frames_]);
   const [busy, setBusy] = useState(false);
+  const ink = useTrayInk(all.length ? "fix" : undefined);
   if (!all.length) return null;
   const frames = new Set(all.map((f) => f.frame)).size;
   return (
     <div className="lc-trow ld-ck-row" role="status">
-      <span className="ld-ck-n" aria-hidden>
-        {all.length}
-      </span>
+      <I.shield size={16} />
       <span className="lc-trow-t">
         {/* "N to fix", as each frame's chip and the tab say it. */}
         {all.length} to fix in {plural(frames, "frame")}
       </span>
       <span className="lc-grow" />
-      <button type="button" className="lc-trow-lk l-focus" disabled={busy} onClick={() => (setBusy(true), void fixAll().finally(() => setBusy(false)))}>
+      {/* The shape of the Code face's "N files to commit" row: an icon, the words, one button, ink only as tray-ink.ts allows. */}
+      <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind={ink ? "ink" : "ghost"} disabled={busy} onClick={() => (setBusy(true), void fixAll().finally(() => setBusy(false)))}>
         Fix all {all.length}
       </button>
     </div>

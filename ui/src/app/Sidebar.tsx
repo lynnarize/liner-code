@@ -32,13 +32,13 @@ import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark, N, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
-import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep } from "./ui";
+import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
+import { groupValue, stopShows, unreadRow } from "./row-menu";
 import type { Box } from "./menu-place";
 import { rowWords, SideCounts, SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused } from "./SideList";
 import { asksYou, markLabelOf, markStateOf, needsYou, newsForYou, prSaid, seenAsk, waitsOnYou, worksNow } from "./session-state";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
-import { BackRow } from "./Models";
 import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import { FACE_NAME, type Face } from "./face";
@@ -340,15 +340,15 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     // Again when the list comes back from Design's body.
   }, [Boolean(faceBody)]);
 
-  const act = async (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => {
+  const act = async (t: Thread, what: "pin" | "settle" | "snooze" | "wake" | "unread", at?: Date) => {
     const settled = bucketOf(t, now) === "settled";
     // A snooze for a time, or waking it now, ends one that waited on a pull request (else that one still wakes it, and the row reads it).
     const patch =
-      what === "pin" ? { pinned: !t.pinned } : what === "settle" ? { done: !settled, unread: false, pinned: false } : what === "snooze" ? { snoozedUntil: at!.getTime(), wake: null } : { snoozedUntil: null, wake: null };
+      what === "pin" ? { pinned: !t.pinned } : what === "settle" ? { done: !settled, unread: false, pinned: false } : what === "snooze" ? { snoozedUntil: at!.getTime(), wake: null } : what === "unread" ? { unread: unreadRow(t).unread } : { snoozedUntil: null, wake: null };
     const before = { pinned: t.pinned ?? false, done: t.done ?? false, snoozedUntil: t.snoozedUntil ?? null, unread: t.unread ?? false, wake: t.wake ?? null };
     await rpc("thread.update", { id: t.id, ...patch });
     const where = what === "pin" ? (t.pinned ? "out of Pinned" : "to Pinned") : what === "settle" ? (settled ? "back to its project" : "to Settled") : what === "snooze" ? `to Snoozed, until ${at!.toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "back";
-    toast(`Moved ${t.title} ${where}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, ...before }) }, duration: 5000 });
+    toast(what === "unread" ? `Marked ${t.title} ${t.unread ? "read" : "unread"}` : `Moved ${t.title} ${where}`, { action: { label: "Undo", onClick: () => void rpc("thread.update", { id: t.id, ...before }) }, duration: 5000 });
   };
 
   const moveTo = async (t: Thread, groupId: string | null) => {
@@ -840,12 +840,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                     <Row
                       title="Carry on"
                       icon={<I.carry size={16} />}
-                      end={
-                        <span className="lc-sb-carry-n">
-                          <Num value={carryCount} />
-                          <I.chevR size={12} />
-                        </span>
-                      }
+                      end={<Num value={carryCount} />}
+                      opens="carry"
                       onPick={() => {
                         close();
                         // Once the menu has gone and given the keyboard back, the panel opens and takes it.
@@ -979,7 +975,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           <Pop label="Move them to a group" side="top" align="center" width={230} triggerClass="lc-sb-a" trigger={<I.label size={14} />}>
             {(close) => (
               <>
-                <PanelHead>Move them to</PanelHead>
+                <PanelHead>Group</PanelHead>
                 {groups.map((g) => (
                   <Row key={g.id} title={g.name} onPick={() => (close(), void bulk("Moved", { group: g.id }, `To ${g.name}`))} />
                 ))}
@@ -987,7 +983,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                 {pickedThreads.some((t) => t.group) && (
                   <>
                     <Sep />
-                    <Row title="Out of their groups" icon={<I.minus size={16} />} onPick={() => (close(), void bulk("Moved", { group: null }, "Out of their groups"))} />
+                    <Row title="Take them out of their group" icon={<I.minus size={16} />} onPick={() => (close(), void bulk("Moved", { group: null }, "Out of their groups"))} />
                   </>
                 )}
               </>
@@ -1552,14 +1548,14 @@ function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").T
 }
 
 /*
-  A session's ··· and right-click menu, one line a row as every menu's: Open beside, Pin (P), Settle (D),
-  Snooze until ›, Move to a group ›, Rename (F2), Export as Markdown, and past a line Archive. The
-  snooze times and the groups are lists that open in the menu's place with a way back on top (as
-  Home's From a branch and the who panel's Tool do): the keyboard lands on the list's first row, and
-  back (or Escape) on the row that opened it. The list goes when the menu closes, as this part does.
-  A row's states keep their rows: a settled one's Bring it back in Settle's place, Wake it now with
-  the snooze times, Take it out of its group with the groups, and an archived one's Bring it back in
-  Archive's. S still snoozes for an hour from the row itself (rowKeys); the hour's row says so.
+  A session's ··· and right-click menu (board RowMenu, SPEC rule 9, 2026-11-25), one line a row as every menu's:
+  Pin (P), Mark unread, Settle (D), Snooze until ›, Group › (its value the group it is in); a rule; Open beside,
+  Rename (F2), Export as Markdown; a rule; Stop it, in red and only while it works (the message box's own stop,
+  row-menu.ts stopShows), and Archive. Snooze until and Group open to their side (ui.tsx SubMenu), the keyboard
+  on their first row, and ← or Escape back on the row that opened them.
+  A row's states keep their rows: a settled one's Bring it back in Settle's place, Wake it now with the snooze
+  times, Take it out of its group with the groups, and an archived one's Bring it back in Archive's. S still
+  snoozes for an hour from the row itself (rowKeys); the hour's row says so.
 */
 function SessionMenu({ t, now, groups, close, beside, act, wake, moveTo, newGroup, rename, archive, unarchive }: {
   t: Thread;
@@ -1567,7 +1563,7 @@ function SessionMenu({ t, now, groups, close, beside, act, wake, moveTo, newGrou
   groups: { id: string; name: string }[];
   close: () => void;
   beside?: () => void;
-  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => Promise<void>;
+  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake" | "unread", at?: Date) => Promise<void>;
   wake: (t: Thread, kind: "checks" | "reply") => Promise<void>;
   moveTo: (t: Thread, groupId: string | null) => Promise<void>;
   newGroup: () => void;
@@ -1575,60 +1571,61 @@ function SessionMenu({ t, now, groups, close, beside, act, wake, moveTo, newGrou
   archive: (t: Thread) => Promise<void>;
   unarchive: (t: Thread) => Promise<void>;
 }) {
-  const [list, setList] = useState<"" | "snooze" | "group">("");
-  const box = useRef<HTMLDivElement>(null);
-  const focus = (sel: string) => requestAnimationFrame(() => box.current?.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true }));
-  const open = (which: "snooze" | "group") => (setList(which), focus("button:not(:disabled):not(.lc-who-back)"));
-  const back = () => {
-    const was = list;
-    setList("");
-    focus(`[data-opens="${was}"]`);
-  };
   const settled = bucketOf(t, now) === "settled";
   const snoozed = Boolean(t.snoozedUntil && t.snoozedUntil > now);
+  const day = (d: Date) => d.toLocaleDateString("en-GB", { weekday: "short" });
   return (
-    <div ref={box} className="lc-sb-menu" onKeyDown={(e) => list && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), back())}>
-      {list === "snooze" ? (
+    <div className="lc-sb-menu">
+      {!t.archived && (
         <>
-          <BackRow name="Snooze until" menu onBack={back} />
-          {snoozeTimes().map((s, i) => (
-            // The hour's key is the row's own S (rowKeys), so its clock time is the tooltip; the others say theirs at the end.
-            <Row key={s.label} title={s.label} note={i === 0 ? s.note : undefined} end={i === 0 ? "S" : s.note} onPick={() => (close(), void act(t, "snooze", s.at))} />
-          ))}
-          {t.pr?.state === "OPEN" && (
-            <>
-              <Row title="Its checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
-              <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
-            </>
-          )}
-          {snoozed ? <Row title="Wake it now" icon={<I.undo size={16} />} onPick={() => (close(), void act(t, "wake"))} /> : null}
-        </>
-      ) : list === "group" ? (
-        <>
-          <BackRow name="Move to a group" menu onBack={back} />
-          {groups.map((g) => (
-            <Row key={g.id} title={g.name} on={t.group === g.id} onPick={() => (close(), void moveTo(t, t.group === g.id ? null : g.id))} />
-          ))}
-          <Row title="New group" icon={<I.plus size={16} />} onPick={() => (close(), newGroup())} />
-          {t.group && <Row title="Take it out of its group" icon={<I.minus size={16} />} onPick={() => (close(), void moveTo(t, null))} />}
-        </>
-      ) : (
-        <>
-          {beside && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={16} />} onPick={() => (close(), beside())} />}
-          {!t.archived && (
-            <>
-              <Row title={t.pinned ? "Unpin" : "Pin"} icon={<I.pin size={16} />} end="P" onPick={() => (close(), void act(t, "pin"))} />
-              <Row title={settled ? "Bring it back" : "Settle"} note={settled ? "Back to its project" : "Out of the way until it's busy again"} icon={settled ? <I.undo size={16} /> : <I.settle size={16} />} end="D" onPick={() => (close(), void act(t, "settle"))} />
-              <Row title="Snooze until" icon={<I.snooze size={16} />} opens="snooze" onPick={() => open("snooze")} />
-              <Row title="Move to a group" icon={<I.label size={16} />} opens="group" onPick={() => open("group")} />
-            </>
-          )}
-          <Row title="Rename" icon={<I.edit size={16} />} end="F2" onPick={() => (close(), rename())} />
-          <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" icon={<I.download size={16} />} onPick={() => (close(), exportSession(t.id))} />
+          <Row title={t.pinned ? "Unpin" : "Pin"} icon={<I.pin size={14} />} end="P" onPick={() => (close(), void act(t, "pin"))} />
+          <Row title={unreadRow(t).title} icon={<I.dot size={14} />} onPick={() => (close(), void act(t, "unread"))} />
+          <Row title={settled ? "Bring it back" : "Settle"} note={settled ? "Back to its project" : "Out of the way until it's busy again"} icon={settled ? <I.undo size={14} /> : <I.settle size={14} />} end="D" onPick={() => (close(), void act(t, "settle"))} />
+          <SubMenu title="Snooze until" icon={<I.snooze size={14} />} label="Snooze until" width={250}>
+            {() => (
+              <>
+                {snoozeTimes().map((s, i) => (
+                  // The hour's key is the row's own S (rowKeys), said before its clock time; the others say their day and time.
+                  <Row key={s.label} title={s.label} end={i === 0 ? `S  ${s.note}` : `${day(s.at)} ${s.note}`} onPick={() => (close(), void act(t, "snooze", s.at))} />
+                ))}
+                {t.pr?.state === "OPEN" && (
+                  <>
+                    <Sep />
+                    <PanelHead>Or until, on its pull request</PanelHead>
+                    <Row title="Its checks finish" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "checks"))} />
+                    <Row title="Someone replies" end={`#${t.pr.number}`} onPick={() => (close(), void wake(t, "reply"))} />
+                  </>
+                )}
+                {snoozed && (
+                  <>
+                    <Sep />
+                    <Row title="Wake it now" icon={<I.undo size={14} />} onPick={() => (close(), void act(t, "wake"))} />
+                  </>
+                )}
+              </>
+            )}
+          </SubMenu>
+          <SubMenu title="Group" icon={<I.label size={14} />} value={groupValue(t, groups)} label="Group" width={240}>
+            {() => (
+              <>
+                {groups.map((g) => (
+                  <Row key={g.id} title={g.name} on={t.group === g.id} onPick={() => (close(), void moveTo(t, t.group === g.id ? null : g.id))} />
+                ))}
+                {groups.length > 0 && <Sep />}
+                <Row title="New group" icon={<I.plus size={14} />} onPick={() => (close(), newGroup())} />
+                {t.group && <Row title="Take it out of its group" icon={<I.minus size={14} />} onPick={() => (close(), void moveTo(t, null))} />}
+              </>
+            )}
+          </SubMenu>
           <Sep />
-          {t.archived ? <Row title="Bring it back" note="Out of Archive, back in the list" icon={<I.undo size={16} />} onPick={() => (close(), void unarchive(t))} /> : <Row title="Archive" icon={<I.box size={16} />} onPick={() => (close(), void archive(t))} />}
         </>
       )}
+      {beside && <Row title="Open beside" note="Next to the session on screen" icon={<I.split size={14} />} onPick={() => (close(), beside())} />}
+      <Row title="Rename" icon={<I.edit size={14} />} end="F2" onPick={() => (close(), rename())} />
+      <Row title="Export as Markdown" note="Asks, plans, answers and diffs, saved in Downloads" icon={<I.download size={14} />} onPick={() => (close(), exportSession(t.id))} />
+      <Sep />
+      {stopShows(t) && <Row title="Stop it" icon={<I.stop size={14} />} red onPick={() => (close(), void rpc("thread.stop", { id: t.id }).catch((e: Error) => toast.error(e.message)))} />}
+      {t.archived ? <Row title="Bring it back" note="Out of Archive, back in the list" icon={<I.undo size={14} />} onPick={() => (close(), void unarchive(t))} /> : <Row title="Archive" icon={<I.box size={14} />} onPick={() => (close(), void archive(t))} />}
     </div>
   );
 }
@@ -1649,7 +1646,7 @@ function exportSession(threadId: string) {
   states with its checks, else done); its title, and the time since it last did something at its
   end; under it what it is doing now, what it waits on you for in its own words, or how it ended
   (rowWords), with the project's name first where no folder says it, and at the line's end its facts
-  (SideFacts: its own worktree, its model, its pull request's number). Pointing at it, Settle, Archive
+  (SideFacts: its own worktree, its model, its pull request's number). Pointing at it, Pin, Settle
   and the ··· that opens its menu take the time's place at the title's end. A question is amber until you open the session, grey after
   and while you look at it (seenAsk). Who works on it by name, where, when it started and what it
   has used are in the card a resting pointer brings.
@@ -1657,7 +1654,7 @@ function exportSession(threadId: string) {
   reached through `ctl`, which the sidebar keeps current, so the row takes no new callbacks.
 */
 type RowCtl = {
-  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake", at?: Date) => Promise<void>;
+  act: (t: Thread, what: "pin" | "settle" | "snooze" | "wake" | "unread", at?: Date) => Promise<void>;
   unarchive: (t: Thread) => Promise<void>;
   archive: (t: Thread) => Promise<void>;
   wake: (t: Thread, kind: "checks" | "reply") => Promise<void>;
@@ -1752,8 +1749,8 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
   const facts = <SideFacts branch={t.worktree?.branch} model={markOf(on.ref)} modelName={modelLabel(on.ref, providers)} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />;
   // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink, and so does one that left files for you to review.
   const quiet = !busy && said.tone !== "strong" && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
-  // At the title's end while you point at it or it has the keyboard: Settle (D), Archive and the ··· that opens the row's menu (the right-click's), hung under it.
-  // Settle and Archive do what the menu's rows do, with the same Undo. An archived row has one, its way back.
+  // At the title's end while you point at it or it has the keyboard (board RowMenu): Pin (P), Settle (D) and the ··· that opens the row's menu (the right-click's), hung under it.
+  // Pin and Settle do what the menu's rows do, with the same Undo; Archive is in the menu. An archived row has one, its way back.
   const settled = bucketOf(t, now) === "settled";
   const acts = t.archived ? (
     <button type="button" className="lc-sb-a l-focus" aria-label="Bring it back" title="Bring it back from Archive" onClick={() => void ctl.current.unarchive(t)}>
@@ -1761,17 +1758,17 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
     </button>
   ) : (
     <>
+      <button type="button" className="lc-sb-a l-focus" aria-label={t.pinned ? `Unpin ${t.title || "New session"}` : `Pin ${t.title || "New session"}`} aria-pressed={Boolean(t.pinned)} title={t.pinned ? "Unpin (P)" : "Pin (P)"} onClick={() => (ctl.current.hideCard(), void ctl.current.act(t, "pin"))}>
+        <I.pin size={14} />
+      </button>
       <button type="button" className="lc-sb-a l-focus" aria-label={settled ? `Bring ${t.title || "New session"} back` : `Settle ${t.title || "New session"}`} title={settled ? "Bring it back (D)" : "Settle (D)"} onClick={() => (ctl.current.hideCard(), void ctl.current.act(t, "settle"))}>
         {settled ? <I.undo size={14} /> : <I.settle size={14} />}
-      </button>
-      <button type="button" className="lc-sb-a l-focus" aria-label={`Archive ${t.title || "New session"}`} title="Archive" onClick={() => (ctl.current.hideCard(), void ctl.current.archive(t))}>
-        <I.box size={14} />
       </button>
       <button
         type="button"
         className="lc-sb-a l-focus"
-        aria-label={`Pin, snooze, rename and more for ${t.title || "New session"}`}
-        title="Pin, snooze, rename and more"
+        aria-label={`Snooze, group, rename, archive and more for ${t.title || "New session"}`}
+        title="Snooze, group, rename, archive and more"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         data-open={menuOpen || undefined}

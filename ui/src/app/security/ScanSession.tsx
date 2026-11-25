@@ -8,7 +8,7 @@
   the scan stays paused on them until you answer or skip: nothing here ever answers for you. A working turn is the
   app's live line at the chat's foot (Timeline.tsx LiveLine), as in any session; under it the tray's status row says
   how far the scan is (Stop) or how it ended (Fix the confirmed one, Open the findings); the panel beside the chat is what it
-  has found (FoundPanel). The top row has its name, the Read only tag, Scan again once it's done, and the panel's toggle.
+  has found (FoundPanel). The top row has its name, the panel's toggle in the switcher's shape, and Scan again in a ··· once it's done.
 
   A fix is a session in a worktree that changes code: it gets the app's whole session view (Session.tsx), with its
   changes, its Reviewer and its terminal. A question about a finding reads like a scan, with that finding beside it.
@@ -22,11 +22,11 @@ import { toast } from "@liner/components/toast/toast";
 import { AskDock, useDockAsk } from "../Ask";
 import { Composer, type Outgoing, type RunSettings } from "../Composer";
 import { getState, loadItems, rpc, threadOf, useEngine, useItems } from "../engine";
-import { I, MARK_WORD, ModelMark, StateMark } from "../icons";
+import { I, MARK_WORD, ModelMark, N, StateMark, StepMark } from "../icons";
+import { Pop, Row, ShowSidebar } from "../ui";
 import { agentOf, duration, markOf, plural, turnsOf } from "../model";
 import { Session } from "../Session";
 import { LiveLine, Timeline } from "../Timeline";
-import * as os from "../os";
 import { FoundPanel, placeOf, type FoundData } from "./FoundPanel";
 import { SevMark, Tag, TwoLines } from "./parts";
 import { guessOf, onward, ScanQuestions, type QState, type QuestionItem } from "./Questions";
@@ -285,17 +285,20 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
     <ScanQuestions key={q.id} it={q} state={qState} onState={setQState} onDone={answer} note={writing ? "Enter sends what you are writing as a message, after the questions. Empty the box to answer here." : undefined} />
   ) : asking ? (
     <AskDock dock={asking} />
-  ) : isScan && scan && !finished ? (
+  ) : isScan && scan && !finished && (!liveShown || scan.looking) ? (
+    // The Plan card in the chat (Timeline's cards) carries "N of M done", and the live line the step and the time left:
+    // while the live line shows, this row would only repeat them, so it goes, and Stop is the message box's own (the same
+    // stop). Between turns, and during the second look, it says what runs and keeps Stop in reach.
     <div className="lc-trow" role="status">
-      {!liveShown && <StateMark state="working" brand={markOf(scan.looking ? (look?.by ?? scan.secondLook ?? thread.model ?? coder.model) : (thread.model ?? coder.model))} label={MARK_WORD.working} />}
-      <span className="lc-trow-t lc-grow">{scan.looking ? `Second look · ${lookName ?? "another maker's model"} reads what it found` : [liveShown ? "" : "Working", total ? `${done} of ${total} done` : "", left ?? ""].filter(Boolean).join(" · ")}</span>
+      {!liveShown && <StepMark state="working" size={14} />}
+      <span className="lc-trow-t lc-grow">{scan.looking ? `Second look · ${lookName ?? "another maker's model"} reads what it found` : ["Working", left ?? ""].filter(Boolean).join(" · ")}</span>
       <button type="button" className="lc-trow-lk l-focus" onClick={stop}>
         Stop
       </button>
     </div>
   ) : isScan && scan && finished ? (
     <div className="lc-trow" role="status">
-      <StateMark state={scan.state === "done" ? "done" : "problem"} label={scan.state === "done" ? MARK_WORD.done : scan.state === "stopped" ? "Stopped" : MARK_WORD.problem} />
+      <StepMark state={scan.state === "done" ? "done" : scan.state === "stopped" ? "skipped" : "failed"} size={14} label={scan.state === "done" ? MARK_WORD.done : scan.state === "stopped" ? "Stopped" : MARK_WORD.problem} />
       <span className="lc-trow-t lc-grow">
         {scan.error ? scan.error.replace(/\.$/, "") : scan.state === "done" ? "Finished" : scan.state === "stopped" ? "Stopped" : "Ran into a problem"} · {newCount ? `${plural(newCount, "new finding")}${scan.secondLook || look ? `, ${heldCount} confirmed` : ""}` : "nothing new found"}
       </span>
@@ -318,23 +321,22 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
         <div className="lc-body">
           <section ref={threadRef} className="lc-thread" aria-label={isScan ? "The scan" : "Session"}>
             <header className="lc-top" data-drag>
-              {!sidebar && (
-                <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-                  <I.sidebar size={16} />
-                </button>
-              )}
+              {!sidebar && <ShowSidebar onShow={onSidebar} />}
               <h1 className="lc-title">{thread.title}</h1>
               {/* That it only reads is the message box's Permissions, locked at Read only: said once, there. */}
               <span className="lc-grow" data-drag />
-              {/* Scan again, once: here in the top row, for a scan that finished, stopped or ran into a problem. */}
-              {isScan && finished && (
-                <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => goSecurity({ kind: "start", projectId: thread.projectId })}>
-                  Scan again
+              {/* The panel's toggle in the switcher's shape (Code's session header): its 20px icon in a 32px button, lit while
+                  the Found panel shows. Scan again, once a scan finished, stopped or ran into a problem, is the ··· beside it. */}
+              <div className="lc-sw" role="toolbar" aria-label="Panels">
+                <button type="button" className="lc-sw-b l-focus" aria-pressed={panel} aria-label={panel ? "Found: showing. Press to hide the panel" : "Show what the scan has found"} title={panel ? "Hide what the scan has found" : "Show what the scan has found"} onClick={() => setPanel(!panel)}>
+                  <N.findings />
                 </button>
-              )}
-              <button type="button" className="lc-tb l-focus" aria-pressed={panel} aria-label={panel ? "Hide what the scan has found" : "Show what the scan has found"} title={panel ? "Hide what the scan has found" : "Show what the scan has found"} onClick={() => setPanel(!panel)}>
-                <I.panel size={16} />
-              </button>
+                {isScan && finished && (
+                  <Pop label="More for this scan" menu align="end" width={220} triggerClass="lc-sw-b" triggerAttrs={{ title: "More for this scan" }} trigger={<N.more />}>
+                    {(close) => <Row title="Scan again" icon={<I.refresh size={14} />} onPick={() => (close(), goSecurity({ kind: "start", projectId: thread.projectId }))} />}
+                  </Pop>
+                )}
+              </div>
             </header>
             <div className="lc-stage">
               <div ref={scroller} className="lc-scroll">
@@ -374,7 +376,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
               )}
             </div>
           </section>
-          {panel && <FoundPanel scanId={isScan ? (scan?.id ?? tag?.scan) : undefined} finding={tag?.finding} threadId={thread.id} projectId={thread.projectId} paused={Boolean(q)} left={left} data={data} onClose={narrow ? () => setPanel(false) : undefined} />}
+          {panel && <FoundPanel scanId={isScan ? (scan?.id ?? tag?.scan) : undefined} finding={tag?.finding} threadId={thread.id} projectId={thread.projectId} paused={Boolean(q)} left={left} data={data} onClose={() => setPanel(false)} />}
         </div>
       </div>
     </View.Provider>
@@ -519,11 +521,12 @@ function Voice({ ev }: { ev: Extract<SecurityItem, { type: "look" }> }) {
       <div className="lc-head">
         <ModelMark kind={markOf(ev.by)} size={16} />
         <b>{name}</b>
-        <span className="lc-head-meta">· Second look · Read only{ev.state === "done" && ev.seconds ? ` · ${duration(ev.seconds)}` : ""}</span>
+        {/* One meta line, as a Code turn's: which voice this is, then how long it worked. Read only is the message box's to say. */}
+        <span className="lc-head-meta">· Second look{ev.state === "done" && ev.seconds ? ` · Worked for ${duration(ev.seconds)}` : ""}</span>
       </div>
       {ev.state === "running" ? (
         <p className="lsc-voice-wait">
-          <StateMark state="working" brand={markOf(ev.by)} label={MARK_WORD.working} />
+          <StateMark state="working" label={MARK_WORD.working} />
           <span>Reading what the scan found</span>
         </p>
       ) : ev.state === "failed" ? (

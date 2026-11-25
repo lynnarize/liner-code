@@ -415,21 +415,12 @@ html[data-motion="quick"] .ld-lp {
   align-self: flex-start;
   margin-left: 16px;
 }
+/* Nothing to read yet: the one empty state (PaneNote), in the column's middle. */
 .ld-lp-empty {
-  align-items: center;
   margin: 48px auto 0;
-  max-width: 320px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--l-ink-3);
 }
-.ld-lp-empty > svg {
+.ld-lp-empty > .lc-panel-empty > svg {
   color: var(--l-ink-4);
-}
-.ld-lp-empty > b {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
 }
 
 /* ---------- Design Home: the row over the box, the chips ---------- */

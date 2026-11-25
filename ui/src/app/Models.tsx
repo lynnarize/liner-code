@@ -15,8 +15,8 @@ import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { allModels, effortsFor, everyModel, isGoModel, makerName, markOf, modelLabel, pairReady, shortName, sourceMarkOf, toolMarkOf, type ModelChoice } from "./model";
-import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, PICKER, PICKER_NARROW, PICKER_WIDE, pickerWide, priceSaid, purposeOf, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
-import { ModelTag, NamedSwitch, Pop } from "./ui";
+import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut, pickerWide, priceSaid, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
+import { BackRow, ModelTag, NamedSwitch, Pop } from "./ui";
 import "./models.css";
 
 /** A tool with two sources or more shows them as a switch (OpenCode's Zen and Go); one with a source and models of no source does past this many. */
@@ -148,15 +148,8 @@ export function rove(e: KeyEvent<HTMLElement>, within?: HTMLElement | null) {
   e.preventDefault();
 }
 
-/** The way back from a list opened in a place of its own (older versions, your agents, Fusion's Lead): its name, and a chevron back. In a menu (`menu`) it is one of the menu's items. */
-export function BackRow({ name, label, menu, onBack }: { name: string; label?: string; menu?: boolean; onBack: () => void }) {
-  return (
-    <button type="button" className="lc-who-back l-focus" data-rove role={menu ? "menuitem" : undefined} aria-label={label ?? `Back from ${name}`} onClick={onBack}>
-      <I.chevL size={12} />
-      {name}
-    </button>
-  );
-}
+/** The way back from a list opened in a place of its own (older versions, your agents, Fusion's Lead): the app's one back row (ui.tsx BackRow), one of the rows the arrows walk. */
+export { BackRow };
 
 /** The search over every tool and source. `autoFocus` marks it as where the keyboard starts when its panel opens (Pop). */
 export function FindField({ value, onChange, field, label = "Find a model", autoFocus }: { value: string; onChange: (q: string) => void; field: RefObject<HTMLInputElement | null>; label?: string; autoFocus?: boolean }) {
@@ -390,8 +383,8 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
 }
 
 /**
-  The levels as one pill: a stop a level, filled from the left through the one it runs at with the knob at its end, a tick
-  on each stop past it. A press in a stop picks that level (its own again, the tool's default); a drag moves through the
+  The levels as one pill: the stops stand from its start (the lowest) to its end (the highest), the knob on the one it runs
+  at and the fill up to the knob, a tick on each stop past it. A press by a stop picks that level (its own again, the tool's default); a drag moves through the
   stops and picks on release. One focus stop: Left and Right change the level, Home and End go to the ends, Delete goes
   back to the tool's default, and Up and Down are left to the card, which walks its parts with them (rove).
 */
@@ -421,6 +414,7 @@ function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels
       tabIndex={0}
       data-rove
       data-drag={drag !== null || undefined}
+      data-empty={at < 0 || undefined}
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={n - 1}
@@ -454,7 +448,7 @@ function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels
     >
       <span className="lc-pk-slide-fill" aria-hidden />
       {levels.map((e, i) => (
-        <span key={e.id} className="lc-pk-slide-stop" aria-hidden data-tick={i > at || undefined} title={stopTitle(e, i, shown, fallback)} />
+        <span key={e.id} className="lc-pk-slide-stop" aria-hidden data-tick={i > at || undefined} data-end={i === n - 1 ? "end" : i === 0 ? "start" : undefined} data-half={(n > 1 && (i === 0 || i === n - 1)) || undefined} style={{ "--lc-pk-at": fillOf(i, n) } as CSSProperties} title={stopTitle(e, i, shown, fallback)} />
       ))}
       {at >= 0 && <span className="lc-pk-slide-knob" aria-hidden />}
     </div>
@@ -563,7 +557,8 @@ function ModelLine({ row, effort, onEffort }: { row: Offered<ModelChoice>; effor
         <button type="button" className="lc-pk-chip l-focus" data-rove data-view="effort" aria-label={`${effort.label ?? "Effort"}: ${level ? levelName(level.label) : "the tool's own default"}. Change it`} onClick={onEffort}>
           <span>{effort.label ?? "Effort"}</span>
           <b>{level ? levelName(level.label) : "Its own"}</b>
-          <I.chevD size={12} />
+          {/* It opens its levels in the picker's place, so its mark is the › every such row has. */}
+          <I.chevR size={12} />
         </button>
       )}
       <button type="button" className="lc-pk-ib l-focus" data-rove aria-pressed={fav} aria-label={fav ? "Starred" : "Star this model"} title={fav ? "Starred" : "Star this model"} onClick={() => star(row.offers.map((x) => x.ref))}>
@@ -644,7 +639,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   const nameOf = (m: ModelChoice) => modelLabel(m.ref, providers);
   // Narrowed to one source, a row is that source's; across all, one row a model however many sources offer it. The older
   // versions and the count follow the switch too (picker.ts toolList).
-  const { all: rowsAll, rows, sections, older, count, isStarred } = toolList(toolModels, { source: stepped ? source : null, sourceOf, merge: (list) => offered(list, tabOf), nameOf, makerOf: (m) => makerName(m.ref), legacy: (m) => Boolean(m.legacy), starred: (m) => favs.includes(m.ref), purposeOf: (m) => purposeOf(m.description) });
+  const { all: rowsAll, rows, sections, older, count, isStarred } = toolList(toolModels, { source: stepped ? source : null, sourceOf, merge: (list) => offered(list, tabOf), nameOf, makerOf: (m) => makerName(m.ref), legacy: (m) => Boolean(m.legacy), starred: (m) => favs.includes(m.ref) });
   const rowOf = (ref: string) => offered(models.filter((m) => m.ref === ref || (tabOf(m) === tabOfModel(ref) && nameOf(m) === labelOf(ref))), tabOf).find((r) => r.offers.some((m) => m.ref === ref));
   const every = useMemo(() => everyModel(providers), [providers]);
   const tabOfModel = (ref: string) => {
@@ -697,7 +692,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   const shown = shownOf(dwell.shown) ?? shownOf(cardKey(null, fallback ?? value ?? null, toolId, home));
 
   const refocus = (el: () => HTMLElement | null | undefined) => requestAnimationFrame(() => el()?.focus({ preventScroll: true }));
-  const enter = (v: string) => (setView(v), refocus(() => mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove][data-on]:not(.lc-who-back), .lc-pk-scroll [data-rove]:not(.lc-who-back)")));
+  const enter = (v: string) => (setView(v), refocus(() => mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove][data-on]:not([data-back]), .lc-pk-scroll [data-rove]:not([data-back])")));
   const leave = () => {
     const was = view;
     setView("");
@@ -968,6 +963,7 @@ export function ModelPop({ label, value, onPick, only, choices = [], align = "en
     <Pop
       label={`${label}: ${now}. Change it`}
       width={wide ? PICKER_WIDE : PICKER_NARROW}
+      out={pickerOut(align, wide)}
       bare
       align={align}
       triggerClass="lc-mpop"

@@ -17,6 +17,7 @@ import { toast } from "@liner/components/toast/toast";
 import { onStream, rpc, useEngine } from "../engine";
 import { I } from "../icons";
 import { Pop, Row, Sep } from "../ui";
+import { PaneButton } from "../Pane";
 import * as os from "../os";
 import { design, getDesign, onCanvasEvent, useDesign } from "./store";
 import "./build.css";
@@ -143,7 +144,7 @@ export function Versions() {
             <Row title="Now" note="As it is" on={!now} onPick={() => (close(), design.scrub(undefined))} />
             <Sep />
             {[...list].reverse().map((v) => (
-              <Row key={v.key} title={nameOf(v)} which={`${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} note={`${when(v.at)} · ${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} end={when(v.at)} on={now?.key === v.key} disabled={busy} onPick={() => (close(), void look(list.indexOf(v)))} />
+              <Row key={v.key} title={nameOf(v)} which={`${v.frames} ${v.frames === 1 ? "frame" : "frames"}`} end={when(v.at)} on={now?.key === v.key} disabled={busy} onPick={() => (close(), void look(list.indexOf(v)))} />
             ))}
           </>
         )}
@@ -176,12 +177,11 @@ function ScrubBar({ v, shown, threadId, file }: { v: CanvasVersion; shown: boole
         <b>{nameOf(v)}</b>
         {shown ? `, as it was at ${when(v.at)}. Looking only.` : `, kept at ${when(v.at)}, ${v.frames} ${v.frames === 1 ? "frame" : "frames"}. Bring it back to see it here.`}
       </span>
-      <button type="button" className="lc-btn" data-size="sm" data-kind="ghost" onClick={() => design.scrub(undefined)}>
-        Back to now
-      </button>
-      <button type="button" className="lc-btn" data-size="sm" data-kind="ink" disabled={busy} onClick={() => void back()}>
+      {/* The frame's buttons, as Code's Design surface's foot has Bring it back: the one ink action, last. */}
+      <PaneButton onClick={() => design.scrub(undefined)}>Back to now</PaneButton>
+      <PaneButton ink disabled={busy} onClick={() => void back()}>
         Bring it back
-      </button>
+      </PaneButton>
     </div>,
     host,
   );

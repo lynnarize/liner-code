@@ -115,7 +115,7 @@ export function Layout({ t }: { t: Target }) {
         <Row label="Spacing">
           <span className="ld-plainbox">
             A plain box: spacing works in a stack.
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setFlow("down")}>
+            <button type="button" className="l-focus" onClick={() => setFlow("down")}>
               Make it a stack
             </button>
           </span>

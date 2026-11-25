@@ -24,7 +24,7 @@ import { ago, codeProjects, markOf, modelLabel, threadModel } from "../model";
 import * as os from "../os";
 import { ProjectChooser } from "../Projects";
 import { SideFacts, SideHead, SideLabel, SideMark, SideRow } from "../SideList";
-import { ConfirmRow, ContextMenu, Pop, Row, Sep } from "../ui";
+import { ConfirmRow, ContextMenu, MenuFoot, PanelHead, Pop, Row, Sep, ShowSidebar, SubMenu } from "../ui";
 import type { Box } from "../menu-place";
 import { HomeLive } from "./Live";
 import { PicturesPanel, usePicturesNow } from "./Pictures";
@@ -91,54 +91,26 @@ const OWN = "";
 /** The composer needs a project to read; a design on its own has none yet, so it reads this stand-in (no git, no files). */
 const NOWHERE: Project = { id: "", name: "On its own", path: "", git: false, createdAt: 0, kind: "design" };
 
-/** Where this design lives: the name over the box, as Home's project name (press it to change it). */
+/** Where this design lives: the name over the box, as Home's project name (press it to change it). A menu in the app's one shape; Another folder opens the chooser to its side. */
 function PlaceChip({ place, onPlace }: { place: string; onPlace: (id: string) => void }) {
   const projects = codeProjects(useEngine((s) => s.projects));
   const here = projects.find((p) => p.id === place);
-  const [other, setOther] = useState(false);
   return (
-    <Pop label={`Where this design lives: ${here?.name ?? "on its own"}. Change it`} width={420} triggerClass="lc-home-name" keep trigger={<><span>{here?.name ?? "On its own"}</span><I.chevD size={14} /></>}>
-      {(close) =>
-        other ? (
-          <div className="ld-own-pop">
-            <button type="button" className="ld-own-back l-focus" onClick={() => setOther(false)}>
-              <I.chevL size={14} />
-              Another folder
-            </button>
-            <ProjectChooser value={here?.id} onPick={(p) => (setOther(false), close(), onPlace(p.id))} />
-          </div>
-        ) : (
-          <div className="ld-own-pop">
-            <div className="ld-way-mh">Where this design lives</div>
-            <button type="button" className="ld-wl l-focus" data-on={!here || undefined} onClick={() => (close(), onPlace(OWN))}>
-              <I.folder size={16} />
-              <span>
-                <b>On its own</b>
-                <small>In {DESIGNS_FOLDER}. No project needed</small>
-              </span>
-              {!here && <I.check size={14} className="ld-ok" />}
-            </button>
-            {projects.slice(0, 6).map((p) => (
-              <button key={p.id} type="button" className="ld-wl l-focus" data-on={p.id === place || undefined} onClick={() => (close(), onPlace(p.id))}>
-                <I.folder size={16} />
-                <span>
-                  <b>{p.name}</b>
-                  <small>Beside its code, ready to build</small>
-                </span>
-                {p.id === place && <I.check size={14} className="ld-ok" />}
-              </button>
-            ))}
-            <Sep />
-            <button type="button" className="ld-wl l-focus" onClick={() => setOther(true)}>
-              <I.plus size={16} />
-              <span>
-                <b>Another folder</b>
-              </span>
-            </button>
-            <p className="ld-note ld-own-note">On its own is never a Scratch session. You can move it into a project later, when you want code.</p>
-          </div>
-        )
-      }
+    <Pop label={`Where this design lives: ${here?.name ?? "on its own"}. Change it`} menu width={300} triggerClass="lc-home-name" keep trigger={<><span>{here?.name ?? "On its own"}</span><I.chevD size={14} /></>}>
+      {(close) => (
+        <>
+          <PanelHead>Where this design lives</PanelHead>
+          <Row title="On its own" note={`In ${DESIGNS_FOLDER}. No project needed`} icon={<I.folder size={16} />} on={!here} onPick={() => (close(), onPlace(OWN))} />
+          {projects.slice(0, 6).map((p) => (
+            <Row key={p.id} title={p.name} note="Beside its code, ready to build" icon={<I.folder size={16} />} on={p.id === place} onPick={() => (close(), onPlace(p.id))} />
+          ))}
+          <Sep />
+          <SubMenu title="Another folder" icon={<I.plus size={16} />} label="Another folder" width={400}>
+            {() => <ProjectChooser value={here?.id} onPick={(p) => (close(), onPlace(p.id))} />}
+          </SubMenu>
+          <MenuFoot>On its own is never a Scratch session. You can move it into a project later, when you want code.</MenuFoot>
+        </>
+      )}
     </Pop>
   );
 }
@@ -186,7 +158,7 @@ function useLean(cwd?: string) {
 /** What the lean means here, in the + menu's place or under its chip. It's changed from the design's sidebar, not here. */
 const LeanNote = ({ name }: { name: string | null }) => (
   <div className="ld-own-pop">
-    <div className="ld-way-mh">{name ? `The lean: ${name}` : "No lean"}</div>
+    <PanelHead>{name ? `The lean: ${name}` : "No lean"}</PanelHead>
     <p className="ld-note ld-own-note">
       {name
         ? "The design follows it: its colours, type and steps, and the rules it never breaks. Change it from the design's sidebar."
@@ -285,11 +257,7 @@ export function DesignHome({ sidebar, onSidebar, onNewAgent }: { sidebar: boolea
   return (
     <div className="lc-home ld-home">
       <header className="ld-bar" data-drag>
-        {!sidebar && (
-          <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={`Show the sidebar (${os.mod}\\)`} onClick={onSidebar}>
-            <I.sidebar size={16} />
-          </button>
-        )}
+        {!sidebar && <ShowSidebar onShow={onSidebar} />}
         <TabTitle />
         <span className="lc-grow" data-drag />
       </header>
@@ -485,7 +453,8 @@ export function DesignFiles() {
           "aria-current": tabs.some((t) => tabKey(t) === k) || undefined,
           onClick: () => renaming !== k && open(project, f),
           onDoubleClick: () => setRenaming(k),
-          onKeyDown: (e) => e.target === e.currentTarget && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(project, f)),
+          // F2 renames, as a session's row in Code's sidebar does.
+          onKeyDown: (e) => e.target === e.currentTarget && (e.key === "F2" ? (e.preventDefault(), setRenaming(k)) : (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(project, f))),
         }}
         acts={
           <button
@@ -562,7 +531,7 @@ export function DesignFiles() {
           ) : m && (
             <>
               <Row title="Open" icon={<D.frame size={16} />} onPick={() => (close(), open(m.project, m.file))} />
-              <Row title="Rename" icon={<I.edit size={16} />} onPick={() => (close(), setRenaming(mk))} />
+              <Row title="Rename" icon={<I.edit size={16} />} end="F2" onPick={() => (close(), setRenaming(mk))} />
               <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={16} />} onPick={() => (close(), bridge.reveal(folderOf(m.project, m.file)))} />
               {m.project.kind === "design" && (
                 <>
@@ -576,6 +545,11 @@ export function DesignFiles() {
                 </>
               )}
               <Sep />
+              {/* While its session draws, the same stop as the message box's, in red (a session's row menu in Code has it too). */}
+              {(() => {
+                const t = sessionOf({ projectId: m.project.id, file: m.file.id }, threads);
+                return t?.status === "running" ? <Row title="Stop it" icon={<I.stop size={16} />} red onPick={() => (close(), void rpc("thread.stop", { id: t.id }).catch(fail))} /> : null;
+              })()}
               {m.project.kind === "design" ? (
                 // On its own: out of Liner Design, asked once more as every Remove is ("Remove", then "Remove it"); its folder stays where it is.
                 // Through the confirm row, so the second click of a double-click on Remove doesn't remove it; keyed by the design, so
@@ -587,6 +561,7 @@ export function DesignFiles() {
                   note="From Liner Design; its files stay"
                   sureNote={`Its sessions go. Its files stay in its folder in ${DESIGNS_FOLDER}`}
                   icon={<I.trash size={16} />}
+                  red
                   onConfirm={() => {
                     close();
                     void rpc("design.remove", { projectId: m.project.id, file: m.file.id })
@@ -599,6 +574,7 @@ export function DesignFiles() {
                 <Row
                   title="Delete"
                   icon={<I.trash size={16} />}
+                  red
                   onPick={() => {
                     close();
                     const { project, file } = m;

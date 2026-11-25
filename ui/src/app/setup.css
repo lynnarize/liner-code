@@ -348,18 +348,12 @@ html[data-native="mac"] .lc-wel {
   color: var(--l-ink);
 }
 
-/* Every repository, ticked to add. */
-.lc-wel input[type="checkbox"] {
+/* Every repository, ticked to add with the panel's tick box (Pane.tsx's PaneCheck). */
+.lc-wel-repo > .lc-pane-check {
   justify-self: center;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--l-accent);
-  cursor: inherit;
 }
-.lc-wel input[type="checkbox"]:focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
-  outline-offset: 2px;
+.lc-wel-repo[data-added] > .lc-pane-check {
+  cursor: default;
 }
 .lc-wel-repo {
   display: grid;

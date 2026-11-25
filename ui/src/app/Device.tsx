@@ -11,6 +11,8 @@ import { onStream, rpc } from "./engine";
 import { I } from "./icons";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 import { SurfaceNote } from "./Surfaces";
+import { SendBox } from "./Composer";
+import { PANE_PICK, PANE_TOOL, PaneButton, PaneHead, PaneTool } from "./Pane";
 import { textRead, wordWrite } from "./kept.ts";
 
 export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
@@ -149,86 +151,98 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
     a.click();
   };
 
-  if (!list) return <SurfaceNote icon={<I.device size={20} />} title="Looking for simulators" />;
-  if (!list.ready) return <SurfaceNote icon={<I.device size={20} />} title="The Device surface needs Xcode">{list.detail ?? "Install Xcode from the App Store, then open it once so it finishes setting up."}</SurfaceNote>;
+  // Before there is a simulator to show, the frame's head alone (its name, Full canvas, Close) over the one note.
+  if (!list)
+    return (
+      <>
+        <PaneHead />
+        <SurfaceNote icon={<I.device size={20} />} title="Looking for simulators" />
+      </>
+    );
+  if (!list.ready)
+    return (
+      <>
+        <PaneHead />
+        <SurfaceNote icon={<I.device size={20} />} title="The Device surface needs Xcode">
+          {list.detail ?? "Install Xcode from the App Store, then open it once so it finishes setting up."}
+        </SurfaceNote>
+      </>
+    );
   if (!list.devices.length)
     return (
-      <SurfaceNote icon={<I.device size={20} />} title="No simulators yet" action={<button type="button" className="lc-btn" data-kind="plain" onClick={() => void load()}>Look again</button>}>
-        Add an iOS runtime in Xcode, under Settings, Components. Its simulators show up here.
-      </SurfaceNote>
+      <>
+        <PaneHead />
+        <SurfaceNote icon={<I.device size={20} />} title="No simulators yet" action={<PaneButton icon={<I.refresh size={14} />} onClick={() => void load()}>Look again</PaneButton>}>
+          Add an iOS runtime in Xcode, under Settings, Components. Its simulators show up here.
+        </SurfaceNote>
+      </>
     );
 
   const byRuntime = [...new Set(list.devices.map((d) => d.runtime))];
 
   return (
     <div className="lc-dev">
-      <div className="lc-dev-bar">
-        <Pop
-          label="Pick a simulator"
-          width={300}
-          triggerClass="lc-turnpick"
-          trigger={
-            <>
-              {dev?.name ?? "Pick a simulator"}
-              {dev && <span className="lc-dev-state" data-on={booted || undefined}>{booted ? "Booted" : dev.state}</span>}
-              <I.chevD size={12} />
-            </>
-          }
-        >
-          {(close) => (
-            <>
-              {byRuntime.map((rt, i) => (
-                <div key={rt}>
-                  {i > 0 && <Sep />}
-                  <PanelHead>{rt}</PanelHead>
-                  {list.devices
-                    .filter((d) => d.runtime === rt)
-                    .map((d) => (
-                      <Row key={d.udid} title={d.name} end={d.state === "Booted" ? "Booted" : undefined} on={d.udid === udid} onPick={() => (setUdid(d.udid), setShot(null), close())} />
-                    ))}
-                </div>
-              ))}
-            </>
-          )}
-        </Pop>
-        <span className="lc-grow" />
-        {/* Light or Dark, both offered: the simulator doesn't say which it's in, so one button that flipped did nothing the first time on a dark one. */}
-        <Pop label="Appearance" align="end" width={200} menu triggerClass="lc-ib" triggerAttrs={{ title: "Light or dark appearance" }} disabled={!booted} trigger={<I.contrast size={14} />}>
-          {(close) => (
-            <>
-              {(["light", "dark"] as const).map((mode) => (
-                <Row
-                  key={mode}
-                  title={mode === "light" ? "Light appearance" : "Dark appearance"}
-                  on={look === mode}
-                  onPick={() => {
-                    close();
-                    setLook(mode);
-                    if (udid) void rpc("device.appearance", { udid, mode }).catch((e) => toast.error(String(e?.message ?? e)));
-                  }}
-                />
-              ))}
-            </>
-          )}
-        </Pop>
-        <button type="button" className="lc-ib l-focus" aria-label="Save a screenshot" title="Save a screenshot" disabled={!shot} onClick={save}>
-          <I.camera size={14} />
-        </button>
-        <button type="button" className="lc-ib l-focus" aria-label={`Point at something on screen to ask ${agentName}`} title={`Point at something to ask ${agentName}`} aria-pressed={point !== null} disabled={!shot} onClick={() => setPoint((p) => (p ? null : { x: 0.5, y: 0.5 }))}>
-          <I.target size={14} />
-        </button>
-      </div>
-      <div className="lc-dev-stage">
-        {!booted ? (
-          <SurfaceNote
-            icon={<I.device size={20} />}
-            title={`${dev?.name ?? "The simulator"} is off`}
-            action={
-              <button type="button" className="lc-btn" data-kind="primary" disabled={booting} onClick={() => void boot()}>
-                {booting ? "Starting it" : "Start it"}
-              </button>
+      {/* The head (Pane.tsx): the simulator picker, then appearance, a screenshot and pointing to ask. */}
+      <PaneHead
+        shows={
+          <Pop
+            label="Pick a simulator"
+            width={300}
+            triggerClass={PANE_PICK}
+            trigger={
+              <>
+                {dev?.name ?? "Pick a simulator"}
+                {dev && <span className="lc-dev-state" data-on={booted || undefined}>{booted ? "Booted" : dev.state}</span>}
+                <I.chevD size={12} />
+              </>
             }
           >
+            {(close) => (
+              <>
+                {byRuntime.map((rt, i) => (
+                  <div key={rt}>
+                    {i > 0 && <Sep />}
+                    <PanelHead>{rt}</PanelHead>
+                    {list.devices
+                      .filter((d) => d.runtime === rt)
+                      .map((d) => (
+                        <Row key={d.udid} title={d.name} end={d.state === "Booted" ? "Booted" : undefined} on={d.udid === udid} onPick={() => (setUdid(d.udid), setShot(null), close())} />
+                      ))}
+                  </div>
+                ))}
+              </>
+            )}
+          </Pop>
+        }
+        tools={
+          <>
+            {/* Light or Dark, both offered: the simulator doesn't say which it's in, so one button that flipped did nothing the first time on a dark one. */}
+            <Pop label="Appearance" align="end" width={200} menu triggerClass={PANE_TOOL} triggerAttrs={{ title: "Light or dark appearance" }} disabled={!booted} trigger={<I.contrast size={16} />}>
+              {(close) => (
+                <>
+                  {(["light", "dark"] as const).map((mode) => (
+                    <Row
+                      key={mode}
+                      title={mode === "light" ? "Light appearance" : "Dark appearance"}
+                      on={look === mode}
+                      onPick={() => {
+                        close();
+                        setLook(mode);
+                        if (udid) void rpc("device.appearance", { udid, mode }).catch((e) => toast.error(String(e?.message ?? e)));
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            </Pop>
+            <PaneTool label="Save a screenshot" icon={<I.camera size={16} />} disabled={!shot} onClick={save} />
+            <PaneTool label={`Point at something on screen to ask ${agentName}`} icon={<I.target size={16} />} pressed={point !== null} disabled={!shot} onClick={() => setPoint((p) => (p ? null : { x: 0.5, y: 0.5 }))} />
+          </>
+        }
+      />
+      <div className="lc-dev-stage">
+        {!booted ? (
+          <SurfaceNote icon={<I.device size={20} />} title={`${dev?.name ?? "The simulator"} is off`} action={<PaneButton ink disabled={booting} onClick={() => void boot()}>{booting ? "Starting it" : "Start it"}</PaneButton>}>
             Starting it opens the Simulator app too; the screen shows here.
           </SurfaceNote>
         ) : (
@@ -247,27 +261,29 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
             {point && <span className="lc-dev-dot" style={{ left: `${point.x * 100}%`, top: `${point.y * 100}%` }} />}
           </div>
         )}
+        {/* The Browser's ask, the same shape: where you pointed and a way to close, then the message box's field and Send. */}
         {point && (
-          <div className="lc-dev-ask l-glass" role="dialog" aria-label={`Ask ${agentName} about the screen`}>
-            <input
-              className="lc-input"
-              autoFocus
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={`Click the screen, then ask ${agentName}`}
-              aria-label={`Ask ${agentName} about the screen`}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void ask();
-                if (e.key === "Escape") setPoint(null);
-              }}
-            />
-            <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!question.trim() || asking} onClick={() => void ask()}>
-              Ask
-            </button>
+          <div className="lc-br-ask lc-dev-ask l-glass" role="dialog" aria-label={`Ask ${agentName} about the screen`}>
+            <div className="lc-br-ask-h">
+              <I.target size={14} />
+              <span className="lc-quiet lc-br-ask-p">
+                {Math.round(point.x * 100)}% across, {Math.round(point.y * 100)}% down · click the screen to move it
+              </span>
+              <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => setPoint(null)}>
+                <I.close size={14} />
+              </button>
+            </div>
+            <SendBox autoFocus value={question} onChange={setQuestion} disabled={asking} label={`Ask ${agentName} about the screen. Sends a screenshot and where you pointed`} placeholder={`Ask ${agentName} about this`} onSend={() => void ask()} onEscape={() => setPoint(null)} />
           </div>
         )}
       </div>
+      {/* The foot: the Device log's toggle, shaped as the Browser's Console; it opens upward. */}
       <div className="lc-dev-log" data-open={logOn || undefined}>
+        {logOn && (
+          <div ref={logBox} className="lc-br-logs lc-mono" role="log" aria-label="Device log">
+            {lines.length ? lines.map((l, i) => <div key={i} className="lc-br-log">{l}</div>) : <p className="lc-quiet">Waiting for the device to say something.</p>}
+          </div>
+        )}
         <div className="lc-dev-log-h">
           <button type="button" className="lc-br-console-h l-focus" aria-expanded={logOn} disabled={!booted} onClick={() => (setLogOn((o) => !o), setLines([]))}>
             <I.chevU size={12} />
@@ -276,11 +292,6 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
           </button>
           {logOn && <input className="lc-dev-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter, like your app's name" aria-label="Filter the log" />}
         </div>
-        {logOn && (
-          <div ref={logBox} className="lc-br-logs lc-mono" role="log" aria-label="Device log">
-            {lines.length ? lines.map((l, i) => <div key={i} className="lc-br-log">{l}</div>) : <p className="lc-quiet">Waiting for the device to say something.</p>}
-          </div>
-        )}
       </div>
     </div>
   );

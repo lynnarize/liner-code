@@ -3,23 +3,37 @@
   rows on a rail under "Merge into main", the base's line beside them, what reached the base in
   the meantime on it, each clash with its two lines, the checks in a list, and one status line
   that cross-blurs from step to step with the one thing to press beside it. In the thread it is a
-  white card; in the panel it sits on the paper. It runs the same PR agent Liner's PR flow does
+  white card; in the panel it is the Pull request surface itself, in the panel's one frame (board
+  PullRequest, 2026-11-25): its head says the state, its body is sections of rows, and its foot has the
+  status line with the one thing to press, in ink. It runs the same PR agent Liner's PR flow does
   (create, resolve, merge), reported as events.
 */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { PrAgent, PrCheck, PrCommit, PrConflict, PrEvent, PrStage } from "@liner/pro/pr-flow/pr-flow";
 import { useSeen } from "@liner/lib/hooks";
-import { I, StateMark } from "./icons";
+import { I, StateMark, StepMark } from "./icons";
 import { plural } from "./model";
+import { PaneBody, PaneButton, PaneFoot, PaneRow, PaneSection } from "./Pane";
+import { bridge } from "./bridge";
+import { Lines } from "./ui";
 
 const BUSY: PrStage[] = ["creating", "checking", "resolving", "testing", "merging"];
 const STATE: Record<PrCheck["state"], string> = { queued: "Queued", running: "Running", passed: "Passed", failed: "Failed" };
+/** A check's mark: a step's shapes, the passed one's tick green (RULING 3), in the chat card and the panel alike. */
+const CHECK_STEP = { queued: "waiting", running: "working", passed: "done", failed: "failed" } as const;
 /** What the head says at each stage. */
 const SAYS: Record<PrStage, string> = { idle: "Not opened", creating: "Opening", checking: "Checking", conflicts: "Conflicts", resolving: "Resolving", testing: "Testing", ready: "Ready", merging: "Merging", merged: "Merged" };
 
 type Act = "open" | "resolve" | "merge" | "resume" | "view";
+/** What the panel's head is told: the pull request's number and address once there is one, and the state as one word in its tone. */
+export type PrHeadOf = { number?: number; url?: string; word: string; tone?: "ok" | "warn" };
 
-export function PrCard({ title, branch, base = "main", agent, diff, start, variant = "chat" }: { title: string; branch: string; base?: string; agent: PrAgent; diff?: { add: number; del: number }; start?: boolean; variant?: "chat" | "panel" }) {
+/**
+  In the panel (`variant="panel"`) the card draws the whole surface: `head` draws the head with the state it
+  is handed, `what` is the section before the commits (the title and description, before one exists), `more`
+  the sections after the checks (Reviews), and `by` who opened it.
+*/
+export function PrCard({ title, branch, base = "main", agent, diff, start, variant = "chat", head, what, more, by }: { title: string; branch: string; base?: string; agent: PrAgent; diff?: { add: number; del: number }; start?: boolean; variant?: "chat" | "panel"; head?: (s: PrHeadOf) => ReactNode; what?: ReactNode; more?: ReactNode; by?: string }) {
   const [stage, setStage] = useState<PrStage>("idle");
   const [commits, setCommits] = useState<PrCommit[]>([]);
   const [conflicts, setConflicts] = useState<PrConflict[]>([]);
@@ -77,6 +91,121 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
   // Ready with a check failed is yours to decide, not a green tick: the note says you can merge anyway.
   const failing = stage === "ready" && checks.some((k) => k.state === "failed");
   const tone = stage === "conflicts" || failing ? "warn" : stage === "ready" || merged ? "ok" : undefined;
+  const stop = () => {
+    abort.current?.abort();
+    setPaused(true);
+  };
+
+  if (variant === "panel") {
+    const passed = checks.filter((k) => k.state === "passed").length;
+    // The one thing to press, in ink and last; merged, Open on GitHub is the head's tool.
+    const act =
+      want === "open" ? { say: "Open a pull request", go: begin } : want === "resolve" ? { say: "Resolve conflicts", go: () => void run("resolve") } : want === "merge" ? { say: "Squash and merge", go: () => void run("merge") } : want === "resume" ? { say: "Continue", go: () => void run(step.current) } : null;
+    return (
+      <section ref={ref} className="lc-pr-card" data-stage={stage} data-busy={busy || undefined} aria-label={`Pull request: ${title}`}>
+        {head?.({ number: pr?.number, url: pr?.url, word: merged ? "Merged" : stage === "ready" ? "Open" : SAYS[stage], tone: stage === "conflicts" || failing ? "warn" : stage === "ready" || merged || (pr && !busy) ? "ok" : undefined })}
+        <PaneBody>
+          <div className="lc-pr-top">
+            <b className="lc-pr-name">{title}</b>
+            <span className="lc-pr-way">
+              <code title={branch}>{branch}</code>
+              <I.forward size={12} />
+              <code>{base}</code>
+              {by && <span className="lc-pr-by">by {by}</span>}
+              <span className="lc-grow" />
+              {diff && diff.add + diff.del > 0 && <Lines added={diff.add} removed={diff.del} />}
+            </span>
+          </div>
+          {note && (
+            <p className="lc-pr-note" key={note}>
+              {note.split(/(`[^`]+`)/).map((part, i) => (part.startsWith("`") ? <code key={i}>{part.slice(1, -1)}</code> : part))}
+            </p>
+          )}
+          {what}
+          {conflicts.length > 0 && (
+            <PaneSection label="Conflicts" note={settled ? `${plural(conflicts.length, "conflict")} resolved` : `${conflicts.length - open} of ${conflicts.length} resolved, in ${plural(files.length, "file")}`}>
+              {settled && !showFix ? (
+                <PaneRow icon={<StepMark state="done" size={14} />} opens onClick={() => setShowFix(true)}>
+                  Show how each was resolved
+                </PaneRow>
+              ) : (
+                <ul className="lc-prc-hunks lc-pr-hunks">
+                  {conflicts.map((k) => (
+                    <li key={k.id} data-done={k.resolved !== undefined || undefined} data-active={k.active || undefined}>
+                      <span className="lc-prc-file">
+                        {k.file}:{k.line}
+                      </span>
+                      {k.resolved !== undefined ? (
+                        <code data-side="both">{k.resolved}</code>
+                      ) : (
+                        <>
+                          <code data-side="base">
+                            {k.base}
+                            <em>{base}</em>
+                          </code>
+                          <code data-side="yours">
+                            {k.yours}
+                            <em>yours</em>
+                          </code>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PaneSection>
+          )}
+          <PaneSection label="Commits" note={mine.length || undefined}>
+            {mine.length ? (
+              mine.map((c) => (
+                <PaneRow key={c.id} icon={<I.commit size={14} />} value={c.hash} quiet>
+                  {c.title}
+                </PaneRow>
+              ))
+            ) : (
+              <PaneRow icon={<I.commit size={14} />} quiet>
+                <span className="lc-quiet">Nothing pushed yet</span>
+              </PaneRow>
+            )}
+          </PaneSection>
+          {landed.length > 0 && (
+            <PaneSection label={`Reached ${base} meanwhile`} note={landed.length}>
+              {landed.map((c) => (
+                <PaneRow key={c.id} icon={<I.merge size={14} />} value={[c.who ?? c.hash?.slice(0, 7), c.when].filter(Boolean).join(" · ")} quiet>
+                  {c.title}
+                </PaneRow>
+              ))}
+            </PaneSection>
+          )}
+          {checks.length > 0 && (
+            <PaneSection label="Checks" note={`${passed} of ${checks.length} passed`}>
+              {checks.map((k) => (
+                <PaneRow key={k.id} title={k.detail} icon={<StepMark state={CHECK_STEP[k.state]} tone={k.state === "passed" ? "ok" : undefined} size={14} />} value={k.result ?? STATE[k.state]} quiet>
+                  {k.label}
+                </PaneRow>
+              ))}
+            </PaneSection>
+          )}
+          {more}
+        </PaneBody>
+        <PaneFoot
+          say={
+            <span className="lc-pr-say" data-tone={tone} role="status">
+              <span key={line.replace(/\d+/g, "#")}>{stage === "ready" && !status ? "Ready to merge" : line}</span>
+            </span>
+          }
+        >
+          {/* A merge asked for can't be called back, so there's nothing for Stop to stop. */}
+          {busy && stage !== "merging" && <PaneButton onClick={stop}>Stop</PaneButton>}
+          {act && (
+            <PaneButton ink onClick={act.go}>
+              {act.say}
+            </PaneButton>
+          )}
+        </PaneFoot>
+      </section>
+    );
+  }
 
   return (
     <section ref={ref} className="lc-prc" data-variant={variant} data-stage={stage} data-busy={busy || undefined} aria-label={`Pull request: ${title}`}>
@@ -86,8 +215,8 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
         <span className="lc-ship-tag" title={branch}>
           {branch}
         </span>
+        {/* The state is its coloured word alone, as the panel's head has it (board PullRequest). */}
         <span className="lc-prc-state" data-tone={tone} key={stage}>
-          {(stage === "ready" || merged || (pr && !busy && stage !== "conflicts")) && <StateMark state={merged ? "merged" : stage === "ready" ? "ready" : "pr"} size={12} />}
           {merged ? "Merged" : stage === "ready" ? "Open" : SAYS[stage]}
         </span>
       </div>
@@ -160,7 +289,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
           <button type="button" className="lc-prc-sum l-focus" data-done={settled || undefined} aria-expanded={!settled || showFix} onClick={() => setShowFix((s) => !s)}>
             {settled ? <I.check size={14} /> : <I.alert size={14} />}
             {settled ? `${plural(conflicts.length, "conflict")} resolved` : `${plural(conflicts.length, "conflict")} in ${plural(files.length, "file")}`}
-            <span className="lc-prc-aside">{settled ? (showFix ? "Hide" : "Show") : `${conflicts.length - open} of ${conflicts.length} resolved`}</span>
+            <span className="lc-prc-aside">{settled ? showFix ? <I.chevD size={14} /> : <I.chevR size={14} /> : `${conflicts.length - open} of ${conflicts.length} resolved`}</span>
           </button>
           {(!settled || showFix) && (
             <ul className="lc-prc-hunks">
@@ -196,7 +325,7 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
             {checks.map((k) => (
               <li key={k.id} data-state={k.state} title={k.detail}>
                 <span className="lc-prc-ck" aria-hidden>
-                  <StateMark state={k.state === "passed" ? "done" : k.state === "failed" ? "problem" : k.state === "running" ? "checks" : "new"} size={12} />
+                  <StepMark state={CHECK_STEP[k.state]} tone={k.state === "passed" ? "ok" : undefined} size={12} />
                 </span>
                 {k.label}
                 <span className="lc-prc-cm" key={k.state}>
@@ -214,47 +343,33 @@ export function PrCard({ title, branch, base = "main", agent, diff, start, varia
           <span key={line.replace(/\d+/g, "#")}>{stage === "ready" && !status ? "Ready to merge" : line}</span>
         </span>
         <span className="lc-grow" />
+        {/* The one thing to press is ink, in the frame's button, as the panel's foot has it (RULING 1 and 2). */}
         {want === "open" && (
-          <button type="button" className="lc-btn" data-kind="accent" data-size="sm" onClick={begin}>
-            <I.pr size={14} />
+          <PaneButton ink icon={<I.pr size={14} />} onClick={begin}>
             Open a pull request
-          </button>
+          </PaneButton>
         )}
         {want === "resolve" && (
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => void run("resolve")}>
+          <PaneButton ink onClick={() => void run("resolve")}>
             Resolve conflicts
-          </button>
+          </PaneButton>
         )}
         {want === "merge" && (
-          <button type="button" className="lc-btn" data-kind="accent" data-size="sm" onClick={() => void run("merge")}>
+          <PaneButton ink onClick={() => void run("merge")}>
             Squash and merge
-          </button>
+          </PaneButton>
         )}
         {want === "resume" && (
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void run(step.current)}>
+          <PaneButton ink onClick={() => void run(step.current)}>
             Continue
-          </button>
+          </PaneButton>
         )}
-        {want === "view" && (
-          <a className="lc-btn" data-kind="plain" data-size="sm" href={pr?.url} target="_blank" rel="noreferrer">
-            View pull request
-          </a>
+        {want === "view" && pr?.url && (
+          <PaneButton ink icon={<I.external size={14} />} onClick={() => bridge.openExternal(pr.url!)}>
+            Open on GitHub
+          </PaneButton>
         )}
         {/* A merge asked for can't be called back, so there's nothing for Stop to stop. */}
-        {busy && variant === "panel" && stage !== "merging" && (
-          <button
-            type="button"
-            className="lc-btn"
-            data-kind="ghost"
-            data-size="sm"
-            onClick={() => {
-              abort.current?.abort();
-              setPaused(true);
-            }}
-          >
-            Stop
-          </button>
-        )}
       </div>
     </section>
   );

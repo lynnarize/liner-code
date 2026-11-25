@@ -12,14 +12,14 @@
   min-width: 0;
   min-height: 0;
 }
-/* A tab you aren't on stays laid out, out of sight: a terminal keeps its size, a page keeps running. */
+/* A surface you aren't on stays laid out, out of sight: a terminal keeps its size, a page keeps running. */
 .lc-panel {
   position: relative;
 }
 .lc-surface[hidden] {
   display: flex;
   position: absolute;
-  inset: var(--lc-head) 0 0;
+  inset: 0;
   visibility: hidden;
   pointer-events: none;
 }
@@ -216,86 +216,8 @@
   }
 }
 
-/* ---------- Open a surface ---------- */
-.lc-spick {
-  display: grid;
-  align-content: safe center;
-  justify-items: center;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 20px 22px 32px;
-  outline: none;
-  text-align: center;
-}
-.lc-spick h2 {
-  margin: 0;
-  font-family: var(--l-font-display);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  animation: l-unblur 420ms var(--l-ease-out) backwards;
-}
-.lc-spick > p {
-  margin: 6px 0 18px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-spick-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: min(100%, 560px);
-}
-@container (max-width: 420px) {
-  .lc-spick-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 .lc-panel {
   container-type: inline-size;
-}
-.lc-spick-b {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  border: 0;
-  background: var(--lc-plate);
-  box-shadow: none;
-  text-align: left;
-  cursor: pointer;
-  animation: l-blur-in 360ms var(--l-ease-out) backwards;
-  transition: box-shadow 160ms ease;
-}
-@media (hover: hover) {
-  .lc-spick-b:hover {
-    box-shadow:
-      0 0 0 1px var(--l-line-2),
-      0 2px 8px var(--l-drop);
-  }
-}
-.lc-spick-i {
-  display: grid;
-  flex: none;
-  place-items: center;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-}
-.lc-spick-t {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-.lc-spick-t b {
-  font-size: 13px;
-  font-weight: 500;
-}
-.lc-spick-t small {
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---------- Session: environment, context, changes ----------
@@ -521,10 +443,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-term-err {
-  margin: 0 4px 8px;
-  font-size: 13px;
-  color: var(--l-danger-text);
+/* Hidden while the shell couldn't start: its note stands in its place. */
+.lc-term-box[hidden] {
+  display: none;
 }
 .lc-term-box {
   flex: 1;
@@ -552,42 +473,94 @@
   flex-direction: column;
   min-height: 0;
 }
-.lc-br-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
+/* The head's one field (Pane.tsx .lc-pane-field): Back, Forward, Reload, a dot while its server runs, the
+   address (a press opens its list), then the chips of what differs from the default. */
+.lc-br-field {
   gap: 2px;
-  padding: var(--lc-card-top, 0px) 10px 6px;
+  padding: 0 4px;
 }
-.lc-br-addrf {
+.lc-br-nav {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-br-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-br-nav:hover:not(:disabled) {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-br-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px 0 6px;
+  border-radius: 50%;
+  background: var(--l-ok);
+}
+.lc-br-addrpop {
   flex: 1;
   min-width: 0;
-  margin: 0 4px;
+}
+.lc-br-addrb {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--l-ink);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-br-addr0 {
+  font-family: var(--l-font-body);
+  color: var(--l-ink-3);
+}
+@media (hover: hover) {
+  .lc-br-addrb:hover {
+    background: var(--l-wash-2);
+  }
+}
+/* The address to type into, the list's first line (board Menus): mono, on the menu's glass, a rule under it. */
+.lc-br-addrf {
+  padding: 2px 4px;
 }
 .lc-br-addr {
   width: 100%;
-  height: 30px;
+  height: 32px;
   box-sizing: border-box;
-  padding: 0 12px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 999px;
   outline: none;
-  background: var(--l-wash-2);
-  font-size: 12px;
-  color: var(--l-ink-2);
-  transition: box-shadow 160ms ease;
+  background: none;
+  font-size: 13px;
+  color: var(--l-ink);
 }
 /* Offline, or a phone or tablet drawn smaller to fit: the message box's chip, beside the address, never squeezed by it. */
-.lc-br-bar .lc-br-chip {
+.lc-br-field .lc-br-chip {
   flex: none;
-  margin-right: 2px;
+  margin-left: 2px;
 }
-.lc-br-addr:focus {
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 4px var(--l-accent-soft);
-  color: var(--l-ink);
+/* In a narrow panel a chip keeps its icon and its cross, and the address keeps the room. */
+@container (max-width: 480px) {
+  .lc-br-field .lc-br-chip .lc-chip-name {
+    display: none;
+  }
 }
 /* The stage doesn't clip: the page never runs past it (the zoom box is at most its size), and a
    rounded clip round a live page had each of its frames drawn into a layer of its own first,
@@ -598,10 +571,7 @@
   flex: 1;
   justify-content: center;
   min-height: 0;
-  margin: 0 10px;
-  border-radius: 14px;
   background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
 }
 .lc-br-frame {
   flex: none;
@@ -658,15 +628,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The surface's foot: the Console's (or the Device log's) toggle, flush, a hairline over it; its drawer opens upward over the toggle. */
 .lc-br-console,
 .lc-dev-log {
   flex: none;
   display: flex;
   flex-direction: column;
   max-height: 40%;
-  margin: 8px 10px 10px;
-  border-radius: 14px;
-  background: var(--l-wash);
+  border-top: 1px solid var(--l-line);
 }
 .lc-br-console-h {
   display: flex;
@@ -675,13 +644,12 @@
   gap: 8px;
   min-width: 0;
   width: 100%;
-  height: 34px;
-  padding: 0 12px;
+  height: 40px;
+  padding: 0 16px;
   border: 0;
-  border-radius: 14px;
   background: none;
   font-size: 13px;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
   text-align: left;
   cursor: pointer;
 }
@@ -717,7 +685,7 @@
 .lc-br-logs {
   min-height: 0;
   overflow: auto;
-  padding: 0 12px 10px;
+  padding: 10px 16px 6px;
   font-size: 12px;
   line-height: 17px;
   scrollbar-width: thin;
@@ -739,245 +707,14 @@
   flex: none;
   color: var(--l-ink-4);
 }
-/* What else could open: a labelled list of plain rows, as wide as the note, not pills. */
-.lc-br-ports {
-  display: grid;
-  justify-self: center;
-  width: 100%;
-  margin: 10px 0 0;
-  text-align: left;
-}
-.lc-br-ports-h {
-  display: flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--l-ink-3);
-}
-.lc-br-port {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 30px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-2);
-  text-align: left;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-br-port:hover {
-    background: var(--l-wash);
-    color: var(--l-ink);
-  }
-}
-/* The address: a field with a hairline ring on the paper, and Open in ink, both 30 high. */
-.lc-br-first {
-  display: flex;
-  justify-self: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-.lc-br-first .lc-input {
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--l-line);
-  font-size: 13px;
-}
-.lc-br-first .lc-input:focus {
-  box-shadow:
-    0 0 0 1.5px var(--l-accent),
-    0 0 0 4px var(--l-accent-soft);
-}
-.lc-br-first .lc-btn {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-/* The first page when launch.json lists servers: the list in the middle, what it is underneath,
-   as Claude Code's New tab shows it. */
+/* A Run's ask in the page's place, while nothing is open yet: the card in the middle of the column. */
 .lc-br-start {
   display: grid;
   flex: 1;
-  grid-template-rows: 1fr auto;
+  place-items: center;
   min-height: 0;
   padding: 24px 16px 18px;
   overflow: auto;
-}
-.lc-br-start-in {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 360px;
-  margin: 0 auto;
-}
-.lc-br-start-in .lc-br-first {
-  max-width: none;
-  margin-top: 6px;
-}
-.lc-br-start-in .lc-br-ports {
-  max-width: none;
-  margin: 4px 0 0;
-}
-.lc-br-start-foot {
-  margin: 16px 0 0;
-  color: var(--l-ink-3);
-  font-size: 12px;
-  line-height: 18px;
-  text-align: center;
-}
-.lc-br-launch {
-  display: grid;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  border-radius: var(--lc-r-card);
-  background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
-  list-style: none;
-}
-.lc-br-lrow {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 46px;
-  padding-right: 8px;
-}
-.lc-br-lrow + .lc-br-lrow {
-  box-shadow: inset 0 1px 0 var(--l-line);
-}
-.lc-br-lmain {
-  display: flex;
-  flex: 1;
-  align-self: stretch;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 6px 8px 6px 14px;
-  border: 0;
-  background: none;
-  color: var(--l-ink-3);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-br-lmain:disabled {
-  cursor: default;
-}
-.lc-br-lmain > svg {
-  flex: none;
-}
-.lc-br-ltext {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-.lc-br-lname,
-.lc-br-lnote {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-br-lname {
-  color: var(--l-ink-2);
-  font-size: 13px;
-  line-height: 18px;
-}
-.lc-br-lrow[data-status="running"] .lc-br-lname {
-  color: var(--l-ink);
-}
-.lc-br-lnote {
-  color: var(--l-ink-3);
-  font-size: 12px;
-  line-height: 15px;
-}
-.lc-br-lrow[data-bad] .lc-br-lnote {
-  color: var(--l-danger-text);
-}
-.lc-br-lport {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  color: var(--l-ink-3);
-  font-size: 12px;
-}
-.lc-br-lrow[data-status="running"] .lc-br-lport::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--l-ok);
-}
-.lc-br-lgo {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: var(--l-wash-2);
-  color: var(--l-ink-2);
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    color 140ms ease;
-}
-.lc-br-lgo[data-quiet] {
-  background: none;
-  color: var(--l-ink-3);
-}
-.lc-br-lgo:disabled {
-  cursor: default;
-}
-.lc-br-lgo:disabled:not(:has(.lc-br-lspin)) {
-  opacity: 0.45;
-}
-.lc-br-lstop {
-  display: grid;
-}
-/* Starting: the working mark (.lc-mk, class lc-br-lspin), which a pointer over it turns to Stop. */
-.lc-br-lspin + .lc-br-lstop {
-  display: none;
-}
-.lc-br-seeall {
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--l-ink-3);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.lc-br-lfoot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 28px;
-  padding: 8px 2px 0;
-  font-size: 12px;
-}
-.lc-br-more .lc-br-launch {
-  margin-top: 4px;
-  border-radius: 10px;
 }
 /* The page's launch.json server isn't up: why, and Run, where the page would be. */
 .lc-br-down {
@@ -1016,9 +753,6 @@
   padding: 16px;
   overflow: auto;
   background: color-mix(in oklab, var(--lc-paper) 86%, transparent);
-}
-.lc-br-start-in:has(.lc-br-ask) {
-  max-width: 460px;
 }
 .lc-br-ask {
   width: min(460px, 100%);
@@ -1067,30 +801,10 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-@media (hover: hover) {
-  .lc-br-lmain:not(:disabled):hover .lc-br-lname {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .lc-br-lgo:not(:disabled):hover {
-    background: var(--l-wash-3);
-    color: var(--l-ink);
-  }
-  .lc-br-lgo:not(:disabled):hover .lc-br-lspin {
-    display: none;
-  }
-  .lc-br-lgo:not(:disabled):hover .lc-br-lspin + .lc-br-lstop {
-    display: grid;
-  }
-  .lc-br-seeall:hover {
-    color: var(--l-ink);
-  }
-}
-
 /* ---------- Files ----------
-   Rows on the paper, no well: the find field (a wash), All and Changed as text-button segments, the
-   tree in 28px rows, and the open file edge to edge: its path row with Show changes, the code, and
-   what the marks mean at the foot. With room (over 520px: a panel dragged wide, the full canvas) the
+   Under the frame's head (the find field, Only changed files, Look again; Pane.tsx): the tree in 28px
+   rows, and the open file edge to edge: its strip, the code, and the frame's foot (the turn that changed
+   it, Show changes, your editor). With room (over 520px: a panel dragged wide, the full canvas) the
    tree and the file sit side by side, a hairline between; in the usual panel the file is under the
    tree, a hairline over it, the tree taking what it needs up to 45% and scrolling past that. */
 .lc-fsv {
@@ -1109,61 +823,11 @@
   min-width: 0;
   min-height: 0;
 }
-.lc-files-find {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  margin: var(--lc-card-top, 2px) 12px 6px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--l-wash);
-  color: var(--l-ink-3);
-}
-.lc-files-find input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.lc-files-find input::placeholder {
-  color: var(--l-ink-3);
-}
-/* All and Changed: text buttons, a wash under the one that's on (Segmented, without its well). */
-.lc-files-side > .l-seg {
-  --sg-r: 8px;
-  --sg-pad: 0px;
-  flex: none;
-  align-self: flex-start;
-  margin: 0 12px 4px;
-  background: none;
-  box-shadow: none;
-}
-.lc-files-side > .l-seg .l-seg__track {
-  gap: 2px;
-}
-.lc-files-side > .l-seg .l-seg__pill {
-  background: var(--l-wash-2);
-  box-shadow: none;
-}
-.lc-files-side > .l-seg :is(.l-seg__text, .l-seg__text-on) {
-  font-weight: 500;
-}
-.lc-files-n {
-  margin-left: 2px;
-  font-weight: 400;
-  color: var(--l-ink-3);
-}
 .lc-files-tree {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 8px 8px;
+  padding: 8px;
   scrollbar-width: thin;
   font-size: 13px;
 }
@@ -1227,34 +891,6 @@
     border-left: 0;
   }
 }
-.lc-files-head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  height: 40px;
-  padding: 0 10px 0 16px;
-}
-.lc-files-head .lc-btn {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: none;
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-@media (hover: hover) {
-  .lc-files-head .lc-btn:hover:not(:disabled) {
-    background: var(--l-wash-2);
-    color: var(--l-ink);
-  }
-}
-.lc-files-path {
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .lc-files-code {
   flex: 1;
   min-height: 0;
@@ -1309,29 +945,6 @@
   padding-right: 16px;
   white-space: pre;
 }
-.lc-files-foot {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 14px;
-  height: 36px;
-  padding: 0 16px;
-  font-size: 12px;
-}
-.lc-cl-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--l-ink-3);
-}
-.lc-cl-key::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--l-ok);
-}
-
 /* ---------- Device ---------- */
 .lc-dev {
   display: flex;
@@ -1339,13 +952,7 @@
   flex-direction: column;
   min-height: 0;
 }
-.lc-dev-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  padding: var(--lc-card-top, 0px) 10px 8px 12px;
-}
+/* Booted or not, inside the head's simulator picker. */
 .lc-dev-state {
   padding: 1px 7px;
   border-radius: 999px;
@@ -1364,10 +971,8 @@
   flex: 1;
   place-items: center;
   min-height: 0;
-  margin: 0 10px;
   padding: 14px;
   overflow: hidden;
-  border-radius: 14px;
   background: var(--l-wash);
 }
 .lc-dev-screen {
@@ -1409,26 +1014,21 @@
     left 260ms var(--l-spring-smooth),
     top 260ms var(--l-spring-smooth);
 }
+/* The Browser's ask card (.lc-br-ask), held at the stage's foot rather than under an element. */
 .lc-dev-ask {
-  position: absolute;
   right: 12px;
   bottom: 12px;
   left: 12px;
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 14px;
-  animation: l-pop-in 240ms var(--l-ease-enter) backwards;
-}
-.lc-dev-ask .lc-input {
-  flex: 1;
-  height: 32px;
+  width: auto;
+  max-width: 460px;
+  margin: 0 auto;
 }
 .lc-dev-log-h {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
-  padding-right: 8px;
+  padding-right: 12px;
 }
 .lc-dev-log-h .lc-br-console-h {
   flex: 1;
@@ -1451,14 +1051,12 @@
 }
 
 /* ---------- Pull request and runs ---------- */
-.lc-pr,
 .lc-run {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
 }
-.lc-pr-scroll,
 .lc-run-scroll {
   flex: 1;
   min-height: 0;
@@ -1562,29 +1160,6 @@
     opacity: 0.45;
   }
 }
-.lc-pr-person {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 0 4px;
-  font-size: 13px;
-}
-.lc-pr-person + .lc-pr-person {
-  border-top: 1px solid var(--l-line);
-}
-.lc-pr-person b {
-  font-weight: 500;
-}
-.lc-pr-person .lc-me-av {
-  width: 24px;
-  height: 24px;
-  font-size: 10px;
-}
-.lc-pr-none {
-  margin: 4px 2px;
-  font-size: 13px;
-}
 .lc-pr-status {
   display: inline-flex;
   align-items: center;
@@ -1610,24 +1185,6 @@
   border-radius: 50%;
   animation: l-spin 900ms linear infinite;
 }
-.lc-pr-new {
-  display: grid;
-  gap: 10px;
-  width: min(100%, 520px);
-  margin: 8px auto;
-  padding: 0 16px 16px;
-}
-.lc-pr-new h2 {
-  margin: 8px 0 0;
-  font-family: var(--l-font-display);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-}
-.lc-pr-new > p {
-  margin: 0;
-  font-size: 13px;
-}
 .lc-pr-warn {
   padding: 10px 12px;
   border-radius: var(--lc-r-card);
@@ -1635,13 +1192,6 @@
   font-size: 13px;
   line-height: 18px;
   color: var(--l-warn-text);
-}
-.lc-pr-field {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--l-ink-2);
 }
 .lc-pr-body {
   height: 120px;
@@ -1691,85 +1241,6 @@
   flex-basis: 100%;
   font-size: 12px;
   color: var(--l-ink-3);
-}
-
-/* ---------- Linked pull requests ---------- */
-.lc-linked {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-.lc-linked-top {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: var(--lc-card-top, 0px) 10px 8px 12px;
-}
-.lc-linked-list {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 10px 12px;
-}
-.lc-linked-card {
-  display: grid;
-  gap: 8px;
-  padding: 12px 12px 10px;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
-  animation: l-blur-in 360ms var(--l-ease-out) backwards;
-}
-.lc-linked-card[data-mine] {
-  box-shadow:
-    0 0 0 1.5px color-mix(in oklab, var(--l-accent) 55%, transparent),
-    0 1px 2px var(--l-drop);
-}
-.lc-linked-h {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.lc-linked-t {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-.lc-linked-t b {
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-linked-t small {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-}
-.lc-linked-f {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.lc-linked-line {
-  font-size: 13px;
-  color: var(--l-ink-2);
-}
-.lc-linked-line[data-tone="danger"] {
-  color: var(--l-danger-text);
-}
-.lc-linked-line[data-tone="warn"] {
-  color: var(--l-warn-text);
 }
 
 /* ---------- Routines ---------- */
@@ -2285,11 +1756,6 @@
     background: var(--l-wash);
   }
 }
-.lc-rv-f input {
-  flex: none;
-  margin: 0;
-  accent-color: var(--l-ok);
-}
 .lc-rv-fb {
   flex: 1;
   min-width: 0;
@@ -2329,84 +1795,46 @@
   min-width: 0;
   min-height: 0;
 }
-/* The diff's own row, as the panel's: the picker as a text button 16px in, the tools at the right.
-   It never wraps: from about 480px up it holds them all, and "Change N of M" and the branch give way first. */
-.lc-rv-strip {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  height: 44px;
-  min-width: 0;
-  padding: 0 10px 0 8px;
+/* The head's totals, and in the full canvas "Change N of M" and the branch: they give way first as the panel narrows,
+   so the turn, the files and the tools stay on the one row (Pane.tsx PaneHead). */
+.lc-rv .lc-pane-shows {
   overflow: hidden;
 }
-.lc-rv-strip > .lc-lines {
-  flex: none;
+.lc-rv .lc-pane-shows > .lc-branch {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: 4px;
 }
 .lc-rv-count {
-  flex: none;
-  margin-right: 4px;
-  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 @container (max-width: 640px) {
   .lc-rv-count,
-  .lc-rv-strip .lc-branch {
+  .lc-rv .lc-pane-shows > .lc-branch {
     display: none;
   }
 }
-/* The files as a menu: the tick, what happened, the path (its folder grey), its lines. */
-.lc-rv-fmenu {
-  display: grid;
-  gap: 1px;
-}
-.lc-rv-fm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
-}
-@media (hover: hover) {
-  .lc-rv-fm:hover {
-    background: var(--l-wash);
+@container (max-width: 400px) {
+  .lc-rv-tot {
+    display: none;
   }
 }
-.lc-rv-fm[data-on] .lc-path {
+/* The turn picker reads as the head's other picker, quiet words with a small chevron. */
+.lc-rv .lc-pane-shows .lc-turnpick {
+  padding: 0 4px 0 8px;
+  border-radius: var(--lc-r-row);
+  font-weight: 400;
   color: var(--l-ink-3);
 }
-.lc-rv-fm > input {
-  flex: none;
-  margin: 0;
-  accent-color: var(--l-ok);
-}
-.lc-rv-fm > .lc-lines {
-  flex: none;
-}
-/* Under the files, the hidden tests' and the more-files lines start where the files' ticks do. */
-.lc-rv-fmenu > .lc-rv-more,
-.lc-rv-fmenu > .lc-rv-hidden {
-  padding-inline: 10px;
-}
-.lc-rv-fmb {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  background: none;
+.lc-rv .lc-pane-shows .lc-turnpick .lc-quiet {
   color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-rv .lc-pane-shows .lc-turnpick:hover,
+  .lc-rv .lc-pane-shows .lc-turnpick[data-open] {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
 }
 .lc-rv-files {
   display: grid;
@@ -2421,95 +1849,22 @@
 .lc-rv-file {
   overflow: clip;
 }
-.lc-rv-file + .lc-rv-file {
-  border-top: 1px solid var(--l-line);
-}
+/* A file's strip (Pane.tsx PaneFile) stays over its lines as they scroll; the strips' own rules part the files. */
 .lc-rv-fh {
   position: sticky;
   top: 0;
   z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 16px;
-  background: var(--lc-paper);
-  color: var(--l-ink-2);
+}
+.lc-rv-file:not(:first-child) > .lc-rv-fh {
+  margin-top: 8px;
+}
+.lc-rv-file:first-child > .lc-rv-fh {
+  border-top: 0;
+}
+.lc-rv-from {
   font-size: 12px;
-}
-/* The fold: the chevron (turned while folded), what happened to the file, and its path, as one press. */
-.lc-rv-ff {
-  display: flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 28px;
-  margin-left: -8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .lc-rv-ff:hover {
-    background: var(--l-wash);
-  }
-}
-.lc-rv-chev {
-  flex: none;
-  color: var(--l-ink-3);
-  transition: rotate 160ms var(--l-ease-out);
-}
-.lc-rv-ff[aria-expanded="false"] .lc-rv-chev {
-  rotate: -90deg;
-}
-/* What happened to a file, in a tinted square: modified, added, deleted, renamed. A mark smaller than a
-   row's 8px corner takes the small marks' own (a key cap's 5px, as .lc-kbd), not a size off the scale. */
-.lc-rv-st {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
-  background: color-mix(in oklab, var(--l-warn) 16%, transparent);
-  color: var(--l-warn-text);
-  font-family: var(--l-font-body);
-  font-size: 10.5px;
-  font-weight: 500;
-  line-height: 1;
-}
-.lc-rv-st[data-st="A"] {
-  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
-  color: var(--l-ok-text);
-}
-.lc-rv-st[data-st="D"] {
-  background: color-mix(in oklab, var(--l-danger) 14%, transparent);
-  color: var(--l-danger-text);
-}
-.lc-rv-st[data-st="R"] {
-  background: var(--l-accent-soft);
-  color: var(--l-accent-text);
-}
-/* Viewed, the same mark the files keep. */
-.lc-rv-seen {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 6px;
-  font-family: var(--l-font-body);
-  font-size: 12.5px;
-  color: var(--l-ink-3);
+  color: var(--l-ink-4);
   white-space: nowrap;
-  cursor: pointer;
-}
-.lc-rv-seen > input {
-  margin: 0;
-  accent-color: var(--l-ok);
 }
 /* A grid, so every row is as wide as the widest line and its fill reaches the end when scrolled sideways.
    13px on a 22px line, in the panel and the full canvas alike. */
@@ -2697,15 +2052,6 @@
 .lc-rv-note[data-sev="blocking"] b {
   color: var(--l-danger-text);
 }
-.lc-rv-hint {
-  margin-left: 6px;
-  font-size: 12px;
-}
-@container (max-width: 700px) {
-  .lc-rv-hint {
-    display: none;
-  }
-}
 
 /* ---------- Comparing models ---------- */
 .lc-cmp-cols {
@@ -2713,92 +2059,57 @@
   flex: 1;
   /* The columns fill the height and scroll inside, so the stats and Keep this one stay in view. */
   grid-auto-rows: minmax(0, 1fr);
-  gap: 10px;
   min-height: 0;
   overflow-x: auto;
-  padding: 12px;
+  border-top: 1px solid var(--l-line);
 }
 .lc-cmp-n {
   flex: none;
   white-space: nowrap;
 }
+/* A column is the pane frame, flush on the paper: no card, a hairline between it and the one before. */
 .lc-cmp-col {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-card);
-  box-shadow: var(--lc-card-ring);
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
-.lc-cmp-h {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  height: 46px;
-  padding: 0 12px 0 14px;
-  border-bottom: 1px solid var(--l-line);
-  font-size: 13px;
+.lc-cmp-col + .lc-cmp-col {
+  border-left: 1px solid var(--l-line);
 }
-.lc-cmp-h .lc-model {
-  font-size: 14px;
+.lc-cmp-col .lc-pane-name .lc-model {
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--l-ink);
-}
-.lc-cmp-h > .lc-quiet {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .lc-cmp-s {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding-right: 6px;
   font-size: 13px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
 }
 .lc-cmp-stats {
-  display: grid;
   flex: none;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 10px 14px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--l-line);
 }
-.lc-cmp-stats dt {
-  font-size: 12px;
-  color: var(--l-ink-3);
-}
-.lc-cmp-stats dd {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 2px 0 0;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
 .lc-cmp-body {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   overflow: auto;
-  padding: 12px 14px;
+  padding: 12px 16px;
   scrollbar-width: thin;
 }
 /* A diff reads the same everywhere: 13px on a 22px line, as Changes draws it. */
 .lc-cmp-body .l-cdiff__rows {
   font-size: 13px;
   line-height: 22px;
-}
-.lc-cmp-f {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--l-line);
 }
 
 /* ---------- Timeline additions ---------- */
@@ -3096,7 +2407,6 @@
 @media (prefers-reduced-motion: reduce) {
   .lc-spick h2,
   .lc-spick-b,
-  .lc-linked-card,
   .lc-rt-card,
   .lc-rv-thread,
   .lc-rv-ask,
@@ -3498,11 +2808,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-mention-wait {
-  display: block;
-  padding: 7px 9px;
-  font-size: 13px;
-}
 
 /* A goal the agent works toward across turns. */
 .lc-goal {
@@ -3641,8 +2946,7 @@
   min-width: 240px;
 }
 
-/* Committing, with a written message. Its button is ink on the paper, beside Undo in the diff's foot
-   (app.css, .lc-panel-foot). */
+/* Committing, with a written message. Its button is the frame's ink one, last in Changes' foot (Pane.tsx PaneFoot). */
 /* The commit form, as the session tray opens it: who wrote the message, the files with a tick
    each, the message in a well, Write it again and Commit and push. */
 .lc-commit {
@@ -3674,13 +2978,6 @@
   min-height: 28px;
   font-size: 12px;
   cursor: pointer;
-}
-.lc-commit-file input {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--l-accent);
 }
 .lc-commit-file .lc-mono {
   flex: 1;
@@ -3779,18 +3076,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-}
-/* With nothing to commit: the app's menu rows (app.css .lc-row), one line each. */
-.lc-ship-menu {
-  display: grid;
-  gap: 2px;
-}
-.lc-pr-write {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
 }
 
 /* Settings, Models: other accounts, agents you added, model ids you added. The forms fold to one column when the paper is narrow. */
@@ -4332,44 +3617,141 @@
   font-size: 13px;
 }
 
-/* The Pull request surface: what Liner's PR flow card doesn't draw. */
-.lc-pr-edit {
-  margin-top: 4px;
+/* ---------- The Pull request surface, in the panel's one frame (Pr.tsx, PrCard.tsx; board PullRequest) ---------- */
+/* The card's view stays mounted while another pull request is picked, so the steps it runs carry on. */
+.lc-pr-view,
+.lc-pr-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
-.lc-pr-fold {
-  width: 100%;
-  padding: 6px 2px;
+.lc-pr-view[hidden] {
+  display: none;
+}
+/* The state word beside the picker: green while it is open and fine, amber for conflicts, red for a failed check. */
+.lc-pr-word {
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-pane-shows > .lc-pr-word {
+  padding: 0 8px 0 4px;
+}
+.lc-pr-word[data-tone="ok"] {
+  color: var(--l-ok-text, var(--l-ok));
+}
+.lc-pr-word[data-tone="warn"] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+.lc-pr-word[data-tone="danger"] {
+  color: var(--l-danger-text, var(--l-danger));
+}
+/* Over the sections: the title, then the branch into its base in mono, with the lines at the right end. */
+.lc-pr-top {
+  display: grid;
+  gap: 6px;
+  padding: 16px 16px 4px;
+}
+.lc-pr-name {
+  font-family: var(--l-font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 21px;
+  color: var(--l-ink);
+}
+.lc-pr-way {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-pr-way > code {
+  overflow: hidden;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pr-way > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lc-pr-by {
+  white-space: nowrap;
+}
+/* What the card's agent last said: a quiet paragraph under the title. */
+.lc-pr-note {
+  margin: 8px 16px 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--l-ink-2);
+}
+.lc-pr-note code {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lc-pr-hunks {
+  margin: 0 16px;
+}
+/* The title and description before it is opened: the app's fields, stacked under Write it for me. */
+.lc-pr-fields {
+  display: grid;
+  gap: 8px;
+  padding: 6px 16px 6px;
+}
+.lc-pr-fields .lc-pr-body {
+  height: 96px;
+}
+.lc-pr-say {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-pr-say[data-tone="warn"] {
+  color: var(--l-warn-text, var(--l-warn));
+}
+/* A reviewer's letter in a small disc, in the row's icon place. */
+.lc-pr-av {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 -2px;
+  border-radius: 50%;
+  background: var(--l-wash-2);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+/* The head's picker: its find line, then this session's and the others, each "#N" grey before its title. */
+.lc-pr-pick {
+  display: grid;
+}
+.lc-pr-find {
+  height: 28px;
+  margin: 0 4px 2px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
+  outline: none;
   background: none;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-.lc-pr-fold svg {
-  flex: none;
-  align-self: center;
-  color: var(--l-ink-3);
-  transition: rotate 240ms var(--l-spring-smooth);
-}
-.lc-pr-edit[data-open] .lc-pr-fold svg {
-  rotate: 90deg;
-}
-.lc-pr-edit .lc-pr-new {
-  display: grid;
-  gap: 12px;
-  padding: 6px 2px 4px;
-}
-.lc-pr-out {
-  margin: 4px 2px 0;
   font-size: 13px;
+  color: var(--l-ink);
 }
-@media (prefers-reduced-motion: reduce) {
-  .lc-pr-fold svg {
-    transition: none;
-  }
+.lc-pr-find::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-pr-num {
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--l-ink-4);
 }
 
 /* Approvals: Liner's approval card, with commands shown whole and the session rule on a strip under it. */
@@ -4519,35 +3901,13 @@
 }
 
 /* ---------- Side chat ---------- */
-/* Its own small thread in the panel: who answers and how far they know the session, the
-   answers, and the app's one message box to ask in (Composer). */
+/* Its own small thread in the panel's frame: how far it knows the session in the head, the
+   answers, and the app's one message box to ask in (Composer) as its foot. */
 .lc-sc {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-}
-.lc-sc-head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 8px 0 14px;
-  box-shadow: inset 0 -1px 0 var(--lc-hair);
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-sc-head b {
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-sc-note {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .lc-sc-scroll {
   flex: 1;
@@ -4557,33 +3917,6 @@
 }
 .lc-sc-in {
   padding: 16px 16px 20px;
-}
-.lc-sc-empty {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  max-width: 320px;
-  margin: 10vh auto 0;
-  font-size: 13px;
-  line-height: 19px;
-  text-align: center;
-  color: var(--l-ink-3);
-  animation: l-unblur 420ms var(--l-ease-out) backwards;
-}
-.lc-sc-empty b {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-sc-empty-i {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 4px;
-  border-radius: 50%;
-  background: var(--lc-well);
-  color: var(--l-ink-2);
 }
 
 /* The Browsers kept for sessions an agent drives off screen: in the window, so their pages run at
@@ -4864,6 +4197,35 @@
 .lc-tray:has(> .lc-tray-head > .lc-dask[data-high]) {
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-danger) 45%, transparent);
 }
+/* A grant in "What this session no longer asks about" (Ask.tsx GrantRow): only its word at the end takes it back, so the row itself is still. */
+.lc-row.lc-dask-rule {
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-row.lc-dask-rule:hover:not([data-danger]):not(:disabled) {
+    background: none;
+  }
+}
+.lc-dask-forget {
+  height: 22px;
+  margin-right: -4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  color: var(--l-ink-2);
+  cursor: pointer;
+}
+.lc-dask-forget:focus-visible {
+  background: var(--l-wash-2);
+}
+@media (hover: hover) {
+  .lc-dask-forget:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
 .lc-dask {
   display: flex;
   flex-direction: column;
@@ -4960,8 +4322,10 @@ html[data-motion="quick"] .lc-dask {
   margin: 0;
   font-size: 13px;
 }
+/* Each a row: its label, then its value at the right end, as a pane's rows have it. */
 .lc-dask-fields > div {
   display: flex;
+  justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
@@ -4972,6 +4336,7 @@ html[data-motion="quick"] .lc-dask {
 .lc-dask-fields dd {
   min-width: 0;
   margin: 0;
+  text-align: right;
   color: var(--l-ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -5089,15 +4454,14 @@ html[data-motion="quick"] .lc-dask {
   background: none;
   color: var(--l-ink-3);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
 }
-/* The one grant, as a quiet button beside Run it, while there's room for it. */
+/* The one grant, as a quiet button beside Run it, while there's room for it: no fill, as Undo beside Commit. */
 .lc-dask-also {
   flex: 0 1 auto;
   min-width: 0;
-  background: var(--l-wash);
   color: var(--l-ink-2);
 }
 .lc-dask-also-t {
@@ -5119,7 +4483,7 @@ html[data-motion="quick"] .lc-dask {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Run it and its arrow are one button of two halves: the outer corners are its 10, the halves meet square, a hairline of gap between. */
+/* Run it and its arrow are one button of two halves, the frame's ink button (Pane.tsx PaneButton): the outer corners are its 8, the halves meet square, a hairline of gap between. */
 .lc-dask-split {
   display: inline-flex;
   flex: none;
@@ -5131,23 +4495,23 @@ html[data-motion="quick"] .lc-dask {
   align-items: center;
   gap: 8px;
   height: 30px;
-  padding: 0 13px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 10px 0 0 10px;
+  border-radius: var(--lc-r-row) 0 0 var(--lc-r-row);
   background: var(--l-ink);
   color: var(--lc-paper);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 .lc-dask-run[data-solo] {
-  border-radius: 10px;
+  border-radius: var(--lc-r-row);
 }
 .lc-pick.lc-dask-arrow {
   padding: 0 9px;
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 var(--lc-r-row) var(--lc-r-row) 0;
 }
 @media (hover: hover) {
   .lc-dask-ghost:hover,
@@ -5156,7 +4520,7 @@ html[data-motion="quick"] .lc-dask {
     color: var(--l-ink-2);
   }
   .lc-dask-also:hover {
-    background: var(--l-wash-2);
+    background: var(--l-wash);
   }
   .lc-dask-run:hover,
   .lc-pick.lc-dask-arrow:hover {
@@ -5166,49 +4530,10 @@ html[data-motion="quick"] .lc-dask {
 .lc-dask-hold {
   flex: none;
 }
-/* The menu behind the arrow's last row: what this session no longer asks about, each with a way back. */
-.lc-dask-rules {
-  display: grid;
-  gap: 4px;
-  padding: 4px;
+/* Which of several asks this is ("1 of 3"): plain words in the third ink. */
+.lc-dask-n {
   font-size: 13px;
-}
-.lc-dask-rules-h {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  justify-self: start;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: none;
-  color: var(--l-ink-2);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.lc-dask-rules > p {
-  margin: 0;
-  padding: 4px 6px 6px;
-}
-.lc-dask-rules ul {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.lc-dask-rules li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 2px 0 2px 6px;
-}
-.lc-dask-rules li > span {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  color: var(--l-ink-3);
 }
 
 /* A turn's last line: changes and the Reviewer, as two chips; findings under them. */
@@ -5402,6 +4727,17 @@ html:not([data-bg]) .lc-br-zoom {
     inset 0 0 0 1px var(--lc-br-edge),
     var(--lc-br-caps);
 }
+/* At the desktop width the page fills the panel's column flush to its edges (SPEC rule 2): no corner, no ring. */
+.lc-br-stage[data-width="desktop"] .lc-br-zoom {
+  --lc-br-edge: transparent;
+  --lc-br-caps: 0 0 #0000;
+  border-radius: 0;
+}
+.lc-br-stage[data-width="desktop"] .lc-br-zoom::before,
+.lc-br-stage[data-width="desktop"] .lc-br-zoom::after {
+  inset: 0;
+  border-radius: 0;
+}
 .lc-br-stage[data-width="tablet"] .lc-br-zoom,
 .lc-br-stage[data-width="phone"] .lc-br-zoom {
   --lc-br-edge: var(--l-line-2);
@@ -5423,21 +4759,6 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   box-shadow: none;
   transform-origin: 0 0;
   transition: none;
-}
-.lc-br-more {
-  display: grid;
-  gap: 2px;
-}
-.lc-br-zoomrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 2px 9px 6px;
-}
-.lc-br-zoomrow > .lc-btn {
-  min-width: 64px;
-  font-variant-numeric: tabular-nums;
 }
 /* The agent's pointer (T3 Code: preview/AgentBrowserCursor.tsx): it glides to each point, bright
    for a moment after it acts, faint between; a click rings out from its tip. */
@@ -5770,18 +5091,13 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-rv-fh > :not(.lc-rv-ff, .lc-grow) {
-  flex: none;
-}
-.lc-rv-strip .lc-branch {
-  flex: 0 1 auto;
-  min-width: 0;
+.lc-rv .lc-pane-shows > .lc-branch {
   max-width: 40%;
 }
-.lc-rv-strip .lc-branch > svg {
+.lc-rv .lc-pane-shows > .lc-branch > svg {
   flex: none;
 }
-.lc-rv-strip .lc-branch > span {
+.lc-rv .lc-pane-shows > .lc-branch > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5814,20 +5130,11 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
 .lc-br-ask {
   max-width: calc(100% - 16px);
 }
-.lc-br-ports {
-  max-width: 300px;
-}
-/* The rows and the address are one column, the note's width or a little over. */
-.lc-br-first,
-.lc-panel-empty > .lc-br-ports {
-  width: 100%;
-  max-width: 340px;
-}
-.lc-br-first .lc-input {
-  flex: 1;
+/* Device's ask card takes the Browser's card look but keeps its own cap, or it spans the whole stage in the full canvas. */
+.lc-dev-ask.lc-br-ask {
+  max-width: min(460px, calc(100% - 24px));
 }
 /* A field drawn as its wrapper shows its focus there. */
-.lc-files-find:focus-within,
 .lc-rb-test:focus-within {
   box-shadow:
     0 0 0 1.5px var(--l-accent),

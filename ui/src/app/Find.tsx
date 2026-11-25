@@ -1,7 +1,8 @@
 /*
-  Find, in a thread or a diff: ⌘F opens it, Enter and ⇧Enter step through the matches, Escape
-  closes it. Matches are painted with the CSS Custom Highlight API, so the page's own text is
-  never rewritten; the current one scrolls into view.
+  Find, in a thread, a diff or a terminal: ⌘F opens it, Enter and ⇧Enter step through the matches,
+  Escape closes it. In a page's text the matches are painted with the CSS Custom Highlight API, so the
+  page's own text is never rewritten, and the current one scrolls into view. What isn't the page's text
+  (a terminal's scrollback, drawn by xterm) hands in its own `search`: it counts the matches and shows one.
 */
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { prefersReducedMotion } from "@liner/lib/spring";
@@ -38,7 +39,10 @@ function rangesIn(root: HTMLElement, query: string) {
   return out;
 }
 
-export function FindBar({ root, onClose, label = "Find in this session", onQuery, onMove, asked }: { root: RefObject<HTMLElement | null>; onClose: () => void; label?: string; onQuery?: (q: string) => void; /** The current match is about to be scrolled to. */ onMove?: () => void; asked?: number }) {
+/** Matches that aren't the page's text: `count` finds them for a query, `show` brings the i-th into view. */
+export type FindSearch = { count: (query: string) => number; show: (i: number) => void };
+
+export function FindBar({ root, search, onClose, label = "Find in this session", onQuery, onMove, asked }: { root?: RefObject<HTMLElement | null>; /** Instead of `root`'s text. */ search?: FindSearch; onClose: () => void; label?: string; onQuery?: (q: string) => void; /** The current match is about to be scrolled to. */ onMove?: () => void; asked?: number }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const [count, setCount] = useState(0);
@@ -48,6 +52,9 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
   // Whether the next match shown scrolls to it: a thread that grows mustn't move you.
   const go = useRef(false);
   const field = useRef<HTMLInputElement>(null);
+  // The page's highlights are the thread's (or a diff's) own: a terminal's Find, which paints nothing, leaves them alone,
+  // or opening it would wipe the thread's matches.
+  const paint = () => (search ? undefined : registry());
   // Into the field when it opens, and again each time ⌘F asks while it's open (`asked` counts them).
   useEffect(() => {
     field.current?.focus();
@@ -58,8 +65,8 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
   useEffect(() => {
     const was = before.current;
     return () => {
-      registry()?.delete("lc-find");
-      registry()?.delete("lc-find-on");
+      paint()?.delete("lc-find");
+      paint()?.delete("lc-find-on");
       if (document.activeElement === document.body && was instanceof HTMLElement && was.isConnected) was.focus({ preventScroll: true });
     };
   }, []);
@@ -67,13 +74,13 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
   useEffect(() => {
     onQuery?.(query);
     const run = () => {
-      const el = root.current;
-      ranges.current = el ? rangesIn(el, query.trim()) : [];
-      const n = ranges.current.length;
+      const el = root?.current;
+      ranges.current = el && !search ? rangesIn(el, query.trim()) : [];
+      const n = search ? (query.trim() ? search.count(query.trim()) : 0) : ranges.current.length;
       setCount(n);
       setAt((a) => Math.min(a, Math.max(0, n - 1)));
       setPass((p) => p + 1);
-      const reg = registry();
+      const reg = paint();
       if (reg && Highlight) reg.set("lc-find", new Highlight(...ranges.current));
     };
     const t = window.setTimeout(() => ((go.current = true), run()), 60);
@@ -83,7 +90,7 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
       if (later || !query.trim()) return;
       later = window.setTimeout(() => ((later = 0), run()), 250);
     });
-    if (root.current) grown.observe(root.current, { childList: true, characterData: true, subtree: true });
+    if (root?.current) grown.observe(root.current, { childList: true, characterData: true, subtree: true });
     return () => {
       window.clearTimeout(t);
       window.clearTimeout(later);
@@ -91,8 +98,14 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
     };
   }, [query]);
   useEffect(() => {
+    if (search) {
+      const asked = go.current;
+      go.current = false;
+      if (asked && count) search.show(at);
+      return;
+    }
     const r = ranges.current[at];
-    const reg = registry();
+    const reg = paint();
     if (reg && Highlight) {
       if (r) reg.set("lc-find-on", new Highlight(r));
       else reg.delete("lc-find-on");
@@ -105,9 +118,12 @@ export function FindBar({ root, onClose, label = "Find in this session", onQuery
   }, [at, pass]);
   useEffect(() => setAt(0), [query]);
   const step = (d: number) => {
-    if (!count) return;
+    // A terminal's lines go on coming after you typed: each step counts its matches again, as its own find did.
+    const n = search ? (query.trim() ? search.count(query.trim()) : 0) : count;
+    if (search) setCount(n);
+    if (!n) return;
     go.current = true;
-    setAt((a) => (a + d + count) % count);
+    setAt((a) => (a + d + n) % n);
     setPass((p) => p + 1);
   };
   return (

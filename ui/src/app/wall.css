@@ -61,30 +61,11 @@
   gap: 12px;
   padding: 4px 16px 16px;
 }
+/* The empty Wall: the app's one empty state (PaneNote), across the grid's whole row. */
 .lc-wall-empty {
   grid-column: 1 / -1;
   display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 8px;
   min-height: 360px;
-  text-align: center;
-}
-.lc-wall-empty > svg {
-  color: var(--l-ink-4);
-}
-.lc-wall-empty > b {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--l-ink-2);
-}
-.lc-wall-empty > span {
-  max-width: 360px;
-  font-size: 13px;
-  color: var(--l-ink-3);
-}
-.lc-wall-empty > .lc-btn {
-  margin-top: 4px;
 }
 
 /* A tile */
@@ -246,6 +227,13 @@
   flex: none;
   font-size: 13px;
 }
+/* On a tile the live line opens nothing of its own: a press on it is the tile's (pick it, or open the session), so its › goes. */
+.lc-wt-ll .lc-ll-head {
+  pointer-events: none;
+}
+.lc-wt-ll .lc-sum-chev {
+  display: none;
+}
 .lc-wt-error {
   display: -webkit-box;
   flex: none;
@@ -261,14 +249,14 @@
   color: var(--l-warn-text);
 }
 
-/* What it waits on */
+/* What it waits on: bordered as the chat's cards are (SPEC rule 6), no fill. */
 .lc-wt-card {
   display: grid;
   flex: none;
   gap: 5px;
   padding: 10px 12px;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-well);
+  border: 1px solid var(--l-line-2);
+  border-radius: 14px;
 }
 .lc-wt-lead {
   display: inline-flex;
@@ -318,18 +306,19 @@
   gap: 6px;
   margin-top: 3px;
 }
+/* An answer: the boards' chip, 22 high, with the scale's 6px corner nearest the board's 7. */
 .lc-wt-chip {
   max-width: 100%;
-  height: 28px;
-  padding: 0 10px;
+  height: 22px;
+  padding: 0 8px;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--lc-paper);
   box-shadow: 0 0 0 1px var(--lc-hair);
   color: var(--l-ink-2);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -424,9 +413,9 @@
   color: var(--l-ink-3);
   white-space: nowrap;
 }
-.lc-wt-files > li > svg {
+.lc-wt-fst {
+  display: inline-flex;
   flex: none;
-  color: var(--l-ink-4);
 }
 .lc-wt-fname {
   flex: none;
@@ -442,15 +431,6 @@
   direction: rtl;
   text-align: left;
   text-overflow: ellipsis;
-}
-.lc-wt-fnew,
-.lc-wt-fdel {
-  flex: none;
-  font-size: 12px;
-  color: var(--l-ok-text);
-}
-.lc-wt-fdel {
-  color: var(--l-danger-text);
 }
 .lc-wt-files > li[data-status="deleted"] .lc-wt-fname {
   text-decoration: line-through;

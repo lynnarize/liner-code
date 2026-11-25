@@ -14,6 +14,7 @@ import { openLivePicker } from "./Live";
 import { PictureTool } from "./Pictures";
 import { parentIn } from "./Canvas";
 import { design, getDesign, useDesign, type Tool } from "./store";
+import { SIZE_ICON, SIZE_NAME, sizeWords } from "./sizes";
 
 type P = { size?: number };
 const G = ({ size = 16, children }: P & { children: React.ReactNode }) => (
@@ -29,6 +30,15 @@ export const D = {
   text: (p: P) => <G {...p}><path d="M3.25 3.75h9.5M8 3.75v9" /></G>,
   picture: (p: P) => <G {...p}><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.75" /><path d="m2.75 11 3.25-3.25 2.5 2.5 1.75-1.75 3 3" /><circle cx="10.5" cy="5.75" r="1" /></G>,
   stack: (p: P) => <G {...p}><rect x="2.75" y="2.75" width="10.5" height="4" rx="1" /><rect x="2.75" y="9.25" width="10.5" height="4" rx="1" /></G>,
+  /** Lining up and spacing several frames (Style's row for them): an edge or a middle line, and the frames against it. */
+  alignLeft: (p: P) => <G {...p}><path d="M2.75 2.25v11.5" /><rect x="5.25" y="3.75" width="8" height="3" rx="1" /><rect x="5.25" y="9.25" width="5" height="3" rx="1" /></G>,
+  alignCentreH: (p: P) => <G {...p}><path d="M8 2.25v11.5" /><rect x="3.75" y="3.75" width="8.5" height="3" rx="1" /><rect x="5.25" y="9.25" width="5.5" height="3" rx="1" /></G>,
+  alignRight: (p: P) => <G {...p}><path d="M13.25 2.25v11.5" /><rect x="2.75" y="3.75" width="8" height="3" rx="1" /><rect x="5.75" y="9.25" width="5" height="3" rx="1" /></G>,
+  alignTop: (p: P) => <G {...p}><path d="M2.25 2.75h11.5" /><rect x="3.75" y="5.25" width="3" height="8" rx="1" /><rect x="9.25" y="5.25" width="3" height="5" rx="1" /></G>,
+  alignCentreV: (p: P) => <G {...p}><path d="M2.25 8h11.5" /><rect x="3.75" y="3.75" width="3" height="8.5" rx="1" /><rect x="9.25" y="5.25" width="3" height="5.5" rx="1" /></G>,
+  alignBottom: (p: P) => <G {...p}><path d="M2.25 13.25h11.5" /><rect x="3.75" y="2.75" width="3" height="8" rx="1" /><rect x="9.25" y="5.75" width="3" height="5" rx="1" /></G>,
+  spreadH: (p: P) => <G {...p}><path d="M2.75 2.25v11.5M13.25 2.25v11.5" /><rect x="6.5" y="4.25" width="3" height="7.5" rx="1" /></G>,
+  spreadV: (p: P) => <G {...p}><path d="M2.25 2.75h11.5M2.25 13.25h11.5" /><rect x="4.25" y="6.5" width="7.5" height="3" rx="1" /></G>,
 };
 
 const SNIPPETS = {
@@ -64,11 +74,7 @@ export async function insert(kind: keyof typeof SNIPPETS) {
   }
 }
 
-const SIZES: { id: DesignSize; title: string; note: string; icon: React.ReactNode }[] = [
-  { id: "desktop", title: "Desktop", note: "1280 × 800", icon: <I.monitor size={14} /> },
-  { id: "tablet", title: "Tablet", note: "834 × 1112", icon: <I.tablet size={14} /> },
-  { id: "phone", title: "Phone", note: "390 × 844", icon: <I.device size={14} /> },
-];
+const SIZES: DesignSize[] = ["desktop", "tablet", "phone"];
 
 export function Rail() {
   const tool = useDesign((s) => s.tool);
@@ -90,8 +96,9 @@ export function Rail() {
       <Pop label="Frame: a new one, of a size" side="left" width={240} triggerClass="lc-tb" triggerAttrs={{ title: "Frame (F)", "aria-pressed": tool === "frame" }} trigger={<D.frame />} menu>
         {(close) => (
           <>
+            {/* A size's value at the right end, as every menu shows a value (sizes.ts says them one way). */}
             {SIZES.map((x) => (
-              <Row key={x.id} title={x.title} note={x.note} icon={x.icon} onPick={() => (close(), void design.addFrame(x.id))} />
+              <Row key={x} title={SIZE_NAME[x]} end={sizeWords(x)} icon={SIZE_ICON[x]} onPick={() => (close(), void design.addFrame(x))} />
             ))}
             <Row title="Custom" note="Draw it on the canvas" icon={<D.frame size={16} />} onPick={() => (close(), design.setTool("frame"))} />
             <Row title="The running app, live" note="A page of its dev server" icon={<I.globe size={16} />} onPick={() => (close(), openLivePicker())} />

@@ -7,12 +7,13 @@ import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
 import type { AgentProfile, LimitWindow } from "@contracts";
-import { Glyph, I, ModelMark, StateMark, type MarkKind, type MarkState } from "./icons";
+import { Glyph, I, ModelMark, N, StateMark, type MarkKind, type MarkState } from "./icons";
 import { clock } from "./model";
 import { stopIgnored } from "./stop-guard";
 import { confirmPress } from "./confirm";
 import { shortcutOf } from "./keymap";
-import { panelLeft, panelSide, placeMenu, TOP_ROW, type Box } from "./menu-place";
+import { panelLeft, panelSide, placeMenu, sideMenuLeft, TOP_ROW, type Box } from "./menu-place";
+import { backFromSide, FIRST_FOCUS, inText, movesRows } from "./menu-keys";
 import * as os from "./os";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
@@ -44,7 +45,7 @@ const KEEP_MIN = 260;
   opens beside the sidebar, never over your sessions), its top a little above the trigger's so
   its title sits level with it; with no room there it opens under the trigger as any other.
 */
-function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger" | "within", keep: boolean, beside: "left" | "right" | false = false, within?: () => HTMLElement | null, whole = false) {
+function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, prefer: Side, align: "start" | "end" | "center", width: number | "trigger" | "within", keep: boolean, beside: "left" | "right" | false = false, within?: () => HTMLElement | null, whole = false, out = 0) {
   const [at, setAt] = useState<Place>({ side: prefer, top: -9999, left: -9999, ready: false });
   useLayoutEffect(() => {
     if (!open) return setAt((a) => ({ ...a, ready: false }));
@@ -97,7 +98,7 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
         setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, w, ready: true });
         return;
       }
-      const left = panelLeft(align, r, w, lo, hi);
+      const left = panelLeft(align, r, w, lo, hi, out);
       const top = side === "bottom" ? r.bottom + GAP : Math.max(TOP_ROW, r.top - GAP - tall);
       setAt({ side, top: Math.round(top), left: Math.round(left), max, w, ready: true });
     };
@@ -118,12 +119,24 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       window.removeEventListener("scroll", moved, true);
     };
     // A width that changes while open (the model picker gains or loses its side card as the window is resized) is placed again.
-  }, [open, width]);
+  }, [open, width, out]);
   return at;
 }
 
 /** Rows inside a menu are its items: role="menuitem", which the arrow keys go by. */
 const InMenu = createContext(false);
+/**
+  The panels a menu has opened to its side (SubMenu): they live in the layer above the window, outside the
+  menu's own box, so a press in one would read as a press outside the menu and close both. The menu that
+  opened them counts them as its own.
+*/
+const Subs = createContext<Set<HTMLElement> | null>(null);
+/** A ref the dismiss hook can ask: is this node in one of the side panels? */
+function useSubs() {
+  const subs = useRef(new Set<HTMLElement>());
+  const inside = useRef({ contains: (n: Node | null) => [...subs.current].some((s) => s.contains(n)) } as unknown as HTMLElement);
+  return { subs: subs.current, inside };
+}
 
 /** A trigger and a glass panel under (or over) it, in the layer above the window. The panel gets `close`. */
 export function Pop({
@@ -142,6 +155,9 @@ export function Pop({
   within,
   describedBy,
   bare = false,
+  out = 0,
+  open: openAsked,
+  onOpenChange,
 }: {
   trigger: ReactNode;
   label: string;
@@ -166,13 +182,24 @@ export function Pop({
   describedBy?: string;
   /** No glass of its own: what it holds draws its own cards (the model picker's rail, list and side card). */
   bare?: boolean;
+  /** How far it hangs out past the trigger's edge it is aligned on, in px: the model picker's side card past its chip (picker.ts pickerOut). */
+  out?: number;
+  /** Open or shut from outside, as a key opens the Session popup; leave both unset and the trigger alone opens it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [own, setOwn] = useState(false);
+  const open = openAsked ?? own;
+  const setOpen = (v: boolean) => {
+    if (openAsked === undefined) setOwn(v);
+    onOpenChange?.(v);
+  };
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within, bare);
-  useDismiss(open, () => setOpen(false), [wrap, panel], btn);
+  const { subs, inside } = useSubs();
+  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within, bare, out);
+  useDismiss(open, () => setOpen(false), [wrap, panel, inside], btn);
   const close = () => {
     setOpen(false);
     btn.current?.focus({ preventScroll: true });
@@ -186,7 +213,7 @@ export function Pop({
   }, [open, at.ready]);
   return (
     <div ref={wrap} className={cx("lc-pop", className)}>
-      <button ref={btn} type="button" {...triggerAttrs} className={cx("lc-pick l-focus", triggerClass)} aria-haspopup={menu ? "menu" : "dialog"} aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen((o) => !o)}>
+      <button ref={btn} type="button" {...triggerAttrs} className={cx("lc-pick l-focus", triggerClass)} aria-haspopup={menu ? "menu" : "dialog"} aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen(!open)}>
         {trigger}
       </button>
       {open &&
@@ -208,8 +235,8 @@ export function Pop({
                 e.preventDefault();
                 close();
               }
-              // A menu's rows, by the arrow keys, Home and End, round from the last to the first.
-              if (menu && ["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+              // A menu's rows, by the arrow keys, Home and End, round from the last to the first; a text field in it keeps them for its caret.
+              if (menu && movesRows(e.key, inText(e.target as HTMLElement))) {
                 const rows = [...(panel.current?.querySelectorAll<HTMLElement>("[role^='menuitem']:not(:disabled)") ?? [])];
                 const i = rows.indexOf(document.activeElement as HTMLElement);
                 const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
@@ -218,7 +245,9 @@ export function Pop({
               }
             }}
           >
-            <InMenu.Provider value={menu}>{children(close)}</InMenu.Provider>
+            <Subs.Provider value={subs}>
+              <InMenu.Provider value={menu}>{children(close)}</InMenu.Provider>
+            </Subs.Provider>
           </div>,
           // Inside a modal dialog the panel joins it in the top layer, or the dialog would cover it.
           wrap.current?.closest("dialog[open]") ?? document.body,
@@ -234,7 +263,8 @@ export function Pop({
 export function ContextMenu({ at, label, onClose, children, width = 240 }: { at: { x: number; y: number; under?: Box; row?: Box } | null; label: string; onClose: () => void; children: (close: () => void) => ReactNode; width?: number }) {
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
-  useDismiss(Boolean(at), onClose, [panel]);
+  const { subs, inside } = useSubs();
+  useDismiss(Boolean(at), onClose, [panel, inside]);
   // Focus goes back where it was when the menu goes: a row whose menu the keyboard opened keeps the keyboard.
   const shown = Boolean(at);
   useLayoutEffect(() => {
@@ -288,17 +318,23 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
         }
       }}
     >
-      <InMenu.Provider value>{children(onClose)}</InMenu.Provider>
+      <Subs.Provider value={subs}>
+        <InMenu.Provider value>{children(onClose)}</InMenu.Provider>
+      </Subs.Provider>
     </div>,
     document.body,
   );
 }
 
 /**
-  The app's one menu row, in every menu and picker of Code, Liner Design and Liner Security: one line 30px
-  high, a 16px icon in the second ink (never the accent), the title, and at the far right its key or
-  value (`end`, in the third ink) or, for a row that opens a list in the menu's place (`opens`, the list's
-  name, which the row carries as data-opens so focus can come back to it), a ›.
+  The app's one menu row, in every menu and picker of Code, Liner Design and Liner Security (board Menus,
+  2026-11-25): one line 28px high, set 4px in from the menu's edge with a 6px corner, a 14px icon in the
+  fourth ink (never the accent), the title in ink at 13px, and at the far right, in 12.5px fourth ink, its
+  key or value (`end`), a tick when it is the one picked (`on`), or for a row that opens a list in the
+  menu's place (`opens`, the list's name, which the row carries as data-opens so focus can come back to it)
+  a ›. A row whose value leads somewhere else (a surface, a page) without opening a list takes `chevron`
+  for the same ›. A row with no icon starts its words at the icons' edge. `red`: a destructive row, in the
+  danger colour from the start (Stop, Turn the swarm off); `forGood` is the same look for a row that deletes.
   A `note` is the row's tooltip, not a second line: only a row that can't be read without it shows it
   under the title (`keepNote`: a confirm about to act, a row that can't be pressed and says why).
   A note that says WHICH thing the row is (`which`: a project's path or remote beside another of the same name, a skill's
@@ -306,12 +342,13 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
   (from the left for a path, `whichPath`, so its end shows) and whole in its tooltip. A note that isn't words (code, two
   lines) can't be a tooltip, so without `keepNote` it shows there too rather than being dropped.
   `rove`: one of the rows the arrow keys walk in a place that walks them (the model picker's pinned rows, Models.tsx rove).
-  Picked, its tick takes the icon's place, unless `keepIcon`: then the icon stays and the tick goes at the end.
+  Picked, its tick goes at the end and the icon stays (`keepIcon` is how that was asked for once; it is the
+  rule now, and the prop stays so the rows that pass it need no change).
   `danger`: the confirm's look, a row about to do what can't be undone (ConfirmRow). `forGood`: a row
   that deletes for good is red from the start; one that can be undone (Archive) never is.
 */
-export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, end, opens, disabled, keepIcon, danger, forGood, onPick }: { title: ReactNode; note?: ReactNode; keepNote?: boolean; which?: string; whichPath?: boolean; rove?: boolean; on?: boolean; icon?: ReactNode; end?: ReactNode; opens?: string; disabled?: boolean; keepIcon?: boolean; danger?: boolean; forGood?: boolean; onPick?: () => void }) {
-  const tickEnd = keepIcon && on;
+export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, end, opens, chevron, disabled, keepIcon: _keepIcon, danger, forGood, red, label, back, onPick }: { title: ReactNode; note?: ReactNode; keepNote?: boolean; which?: string; whichPath?: boolean; rove?: boolean; on?: boolean; icon?: ReactNode; end?: ReactNode; opens?: string; chevron?: boolean; disabled?: boolean; keepIcon?: boolean; danger?: boolean; forGood?: boolean; red?: boolean; label?: string; back?: boolean; onPick?: () => void }) {
+  const tickEnd = Boolean(on);
   const inMenu = useContext(InMenu);
   const shown = keepNote && note;
   const words = typeof note === "string" || typeof note === "number";
@@ -325,8 +362,8 @@ export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, e
     <span className="lc-row-which">{loose}</span>
   ) : undefined;
   return (
-    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} aria-haspopup={opens ? "menu" : undefined} data-opens={opens} data-rove={rove || undefined} title={tip} data-on={on || undefined} data-danger={danger || undefined} data-for-good={forGood || undefined} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
-      <span className="lc-row-tick">{on && !keepIcon ? <I.check size={16} /> : icon}</span>
+    <button type="button" className="lc-row l-focus" role={inMenu ? (on === undefined ? "menuitem" : "menuitemcheckbox") : undefined} aria-label={label} aria-haspopup={opens ? "menu" : undefined} data-opens={opens} data-back={back || undefined} data-rove={rove || undefined} title={tip} data-on={on || undefined} data-danger={danger || undefined} data-for-good={forGood || red || undefined} data-bare={icon ? undefined : true} disabled={disabled} aria-pressed={inMenu ? undefined : on} aria-checked={inMenu ? on : undefined} onClick={onPick}>
+      {icon && <span className="lc-row-tick">{icon}</span>}
       <span className="lc-row-t">
         {aside ? (
           <span className="lc-row-line">
@@ -338,13 +375,147 @@ export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, e
         )}
         {shown && <small>{note}</small>}
       </span>
-      {(end || tickEnd || opens) && (
+      {(end || tickEnd || opens || chevron) && (
         <span className="lc-row-end">
-          {tickEnd ? <I.check size={16} /> : end}
-          {opens && <I.chevR size={14} />}
+          {end}
+          {tickEnd && <I.check size={14} className="lc-row-on" />}
+          {(opens || chevron) && <I.chevR size={14} />}
         </span>
       )}
     </button>
+  );
+}
+
+/**
+  The way back from a list that opened in a menu's place (the branches under From a branch, older versions,
+  what a session no longer asks about): a menu row like every other, its ‹ in the icons' column and the list's
+  name as its words in the second ink, 4px over the list (put a Sep after it where the menu has rules). It carries data-back, so a part that puts the keyboard on the
+  list's first row passes over it with `:not([data-back])`. In a menu it is one of the menu's items; `menu`
+  makes it one where the panel is not a Pop menu. `rove`: one of the rows the arrow keys walk (Models.tsx rove),
+  on by default as the old back row was.
+*/
+export function BackRow({ name, label, menu, rove = true, onBack }: { name: ReactNode; label?: string; menu?: boolean; rove?: boolean; onBack: () => void }) {
+  const row = <Row title={name} icon={<I.chevL size={14} />} label={label ?? (typeof name === "string" ? `Back from ${name}` : "Back")} back rove={rove} onPick={onBack} />;
+  return menu ? <InMenu.Provider value>{row}</InMenu.Provider> : row;
+}
+
+/**
+  A row that opens a menu to its side (board Menus: Your apps, a Browser's Width, Snooze until): the row
+  with its value and a ›, and beside the menu it is in, level with the row, a menu of its own in the same
+  shape. It opens by a press, Enter or →, and goes by Escape or ←, back to its row; a press outside every
+  menu closes them all, and a press on another row of the first closes this one. `children` gets `done`,
+  which closes it; pass the outer menu's `close` too when a pick should close everything. It works inside
+  a Pop and a ContextMenu.
+*/
+export function SubMenu({ title, icon, value, label, width = 240, children }: { title: ReactNode; icon?: ReactNode; value?: ReactNode; label: string; width?: number; children: (done: () => void) => ReactNode }) {
+  const subs = useContext(Subs);
+  const row = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
+  const done = () => {
+    setOpen(false);
+    row.current?.focus({ preventScroll: true });
+  };
+  // Counted as the menu's own while it shows, so a press in it doesn't close the menu.
+  useLayoutEffect(() => {
+    const p = panel.current;
+    if (!open || !p || !subs) return;
+    subs.add(p);
+    return () => void subs.delete(p);
+  }, [open]);
+  // Beside the menu it opened from: to its right while the window has room, else its left (menu-place.ts sideMenuLeft).
+  useLayoutEffect(() => {
+    if (!open) return setPos(null);
+    const r = row.current;
+    const p = panel.current;
+    const menu = r?.closest<HTMLElement>(".lc-pop-panel");
+    if (!r || !p) return;
+    const m = (menu ?? r).getBoundingClientRect();
+    const rr = r.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = Math.min(width, vw - EDGE * 2);
+    const left = sideMenuLeft(m, w, vw);
+    p.style.maxHeight = "none";
+    const h = p.scrollHeight;
+    const fit = Math.min(h, vh - EDGE - TOP_ROW);
+    const top = Math.max(TOP_ROW, Math.min(rr.top - 4, vh - EDGE - fit));
+    setPos({ top: Math.round(top), left: Math.round(left), max: h > fit ? fit : undefined });
+  }, [open, width]);
+  // The keyboard goes in once it is placed: to its text field when it has one (a chooser's find field), else its first row.
+  useEffect(() => {
+    if (pos) (panel.current?.querySelector<HTMLElement>(FIRST_FOCUS) ?? panel.current?.querySelector<HTMLElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
+  }, [Boolean(pos)]);
+  // A press anywhere but here or on its row closes it (another row of the menu, or outside, where the menu goes too).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (panel.current?.contains(t) || row.current?.contains(t)) return;
+      setOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [open]);
+  return (
+    <>
+      <button
+        ref={row}
+        type="button"
+        className="lc-row l-focus"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-open={open || undefined}
+        data-bare={icon ? undefined : true}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight" && !open) (e.preventDefault(), setOpen(true));
+        }}
+      >
+        {icon && <span className="lc-row-tick">{icon}</span>}
+        <span className="lc-row-t">
+          <b>{title}</b>
+        </span>
+        <span className="lc-row-end">
+          {value}
+          <I.chevR size={14} />
+        </span>
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            className="l-pop lc-pop-panel lc-layer"
+            data-side="right"
+            data-ready={pos ? true : undefined}
+            role="menu"
+            aria-label={label}
+            style={{ width: Math.min(width, document.documentElement.clientWidth - EDGE * 2), top: pos?.top ?? -9999, left: pos?.left ?? -9999, maxHeight: pos?.max, right: "auto", bottom: "auto", translate: "none" }}
+            onKeyDown={(e) => {
+              // Its own Escape and ←: back to its row, the menu it came from still open. A text field in it keeps ← for its caret.
+              const typing = inText(e.target as HTMLElement);
+              if (backFromSide(e.key, typing) && !e.defaultPrevented) {
+                e.preventDefault();
+                e.stopPropagation();
+                done();
+              }
+              if (movesRows(e.key, typing)) {
+                const rows = [...(panel.current?.querySelectorAll<HTMLElement>("[role^='menuitem']:not(:disabled)") ?? [])];
+                const i = rows.indexOf(document.activeElement as HTMLElement);
+                const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+                rows[to]?.focus();
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          >
+            <InMenu.Provider value>{children(done)}</InMenu.Provider>
+          </div>,
+          row.current?.closest("dialog[open]") ?? document.body,
+        )}
+    </>
   );
 }
 /**
@@ -353,7 +524,7 @@ export function Row({ title, note, keepNote, which, whichPath, rove, on, icon, e
   start. A press that comes too soon after the ask (confirm.ts) is the second click of a double-click and does nothing.
   The confirm's `sureNote` shows under it, since it says what the press will do; the first state's `note` is its tooltip.
 */
-export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, onConfirm }: { title: ReactNode; sure: ReactNode; note?: ReactNode; sureNote?: ReactNode; icon?: ReactNode; forGood?: boolean; onConfirm: () => void }) {
+export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, red, onConfirm }: { title: ReactNode; sure: ReactNode; note?: ReactNode; sureNote?: ReactNode; icon?: ReactNode; forGood?: boolean; red?: boolean; onConfirm: () => void }) {
   const [askedAt, setAskedAt] = useState<number | null>(null);
   const asked = askedAt !== null;
   return (
@@ -364,6 +535,7 @@ export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, onConfi
       icon={icon}
       danger={asked}
       forGood={forGood}
+      red={red}
       onPick={() => {
         const now = performance.now();
         const step = confirmPress(askedAt, now);
@@ -373,13 +545,20 @@ export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, onConfi
     />
   );
 }
+/**
+  A menu's grey label (12.5px, fourth ink, 28px), over the rows it names: "Dev servers", "This session".
+  `end` is a live note at its right end ("1 running", "1 open"), in the same grey.
+*/
 export const PanelHead = ({ children, end }: { children: ReactNode; end?: ReactNode }) => (
   <div className="lc-pop-head">
     <span>{children}</span>
     {end && <span>{end}</span>}
   </div>
 );
+/** A rule between a menu's groups: edge to edge of the menu, 4px above and below. */
 export const Sep = () => <span className="lc-sep" role="separator" />;
+/** A menu's grey foot line under a rule, saying how things stand: "Servers come from .claude/launch.json", "No limit set". */
+export const MenuFoot = ({ children }: { children: ReactNode }) => <div className="lc-pop-foot">{children}</div>;
 
 /** An agent's disc: a planner's from before pairs is filled (when the caller says so), the rest are outlined. */
 export function Disc({ agent, size = 22, lead }: { agent: Pick<AgentProfile, "glyph" | "role" | "name">; size?: number; lead?: boolean }) {
@@ -400,14 +579,16 @@ export const ModelTag = ({ kind, label, size = 12 }: { kind: MarkKind; label: st
 );
 
 /**
-  Show the sidebar, in a page's top row while the sidebar is hidden: one part for every page in every face, a header's
-  30px button with the sidebar's 16px icon, its key in its tooltip (your binding, keymap.ts).
+  Show the sidebar, in a page's top row while the sidebar is hidden: one part for every page in every face, the session
+  header's 32px button (lc-sw-b, as the switcher's icons and Design's row) with the sidebar's own 20px icon, the one its
+  Hide draws (Sidebar.tsx), so the icon keeps its size and drawing as the sidebar comes and goes; its key in its tooltip
+  (your binding, keymap.ts).
 */
 export function ShowSidebar({ onShow }: { onShow: () => void }) {
   const key = os.keys(shortcutOf("sidebar") ?? []);
   return (
-    <button type="button" className="lc-tb l-focus" aria-label="Show the sidebar" title={key ? `Show the sidebar (${key})` : "Show the sidebar"} onClick={onShow}>
-      <I.sidebar size={16} />
+    <button type="button" className="lc-sw-b l-focus" aria-label="Show the sidebar" title={key ? `Show the sidebar (${key})` : "Show the sidebar"} onClick={onShow}>
+      <N.sidebar />
     </button>
   );
 }

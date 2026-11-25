@@ -1,18 +1,20 @@
 /*
   Where a session lives and what to do with it, from one button in its bar: the Mac and the
   folder it works in, opening that folder in your editor, a new project script, its branch,
-  committing and pushing, and its changes. A row with a chevron opens in place, one at a time,
-  to pick from; the row itself does the usual thing.
+  committing and pushing, and its changes. Rows are the app's menu rows (ui.tsx Row); one with a ›
+  opens its list in the menu's place, with the way back on top. Commit opens Changes with its
+  commit form open.
 */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Project, RpcResult, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
-import { CommitForm, type Then } from "./Commit";
+import { type Then } from "./Commit";
+import { askCommit } from "./commit-ask";
 import { rpc } from "./engine";
 import { I } from "./icons";
 import { plural } from "./model";
-import { Lines, Pop, Sep } from "./ui";
+import { BackRow, Lines, MenuFoot, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
 type More = "mac" | "editor" | "script" | "branch" | "commit" | null;
@@ -35,10 +37,12 @@ const keep = (key: string, value: string) => {
   }
 };
 const THEN: { id: Then; title: string; note: string }[] = [
-  { id: "push", title: "Commit & push", note: "To its branch on GitHub" },
-  { id: "pr", title: "Commit & open a PR", note: "The PR card, in the chat" },
+  { id: "push", title: "Commit and push", note: "To its branch on GitHub" },
+  { id: "pr", title: "Commit and open a pull request", note: "The pull request card, in the chat" },
   { id: "commit", title: "Commit", note: `Only here, on ${os.here}` },
 ];
+/** What follows a commit, as the value at the end of "After committing". */
+const THEN_WORD: Record<Then, string> = { push: "Push", pr: "Open a pull request", commit: "Nothing" };
 
 /**
   The session's menu, opened from its title (Claude Code's title menu, TasteCode's chat menu): the
@@ -65,69 +69,35 @@ export function EnvMenu({ thread, project, files, lines, onChanges, onRename, ac
     >
       {(close) => (
         <>
-          {actions?.(close)}
-          <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} />
+          <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} actions={actions} />
         </>
       )}
     </Pop>
   );
 }
 
-/** A row that does its thing, with an optional button beside it and a chevron that opens more under it. */
-function Line({ icon, title, note, end, side, open, onPick, onMore, disabled, children }: { icon: ReactNode; title: ReactNode; note?: ReactNode; end?: ReactNode; side?: ReactNode; open?: boolean; onPick?: () => void; onMore?: () => void; disabled?: boolean; children?: ReactNode }) {
-  return (
-    <div className="lc-env" data-open={open || undefined}>
-      <div className="lc-env-l">
-        <button type="button" className="lc-row l-focus" disabled={disabled} onClick={onPick ?? onMore}>
-          <span className="lc-row-tick">{icon}</span>
-          <span className="lc-row-t">
-            <b>{title}</b>
-            {note && <small>{note}</small>}
-          </span>
-          {end && <span className="lc-row-end">{end}</span>}
-        </button>
-        {side}
-        {onMore && (
-          <button type="button" className="lc-env-b l-focus" aria-expanded={open} aria-label="More choices" title="More choices" onClick={onMore}>
-            <I.chevD size={12} />
-          </button>
-        )}
-      </div>
-      {children !== undefined && (
-        <div className="lc-fold" inert={!open || undefined}>
-          <div>
-            <div className="lc-env-in">{children}</div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A choice inside an opened row. */
-const Pick = ({ title, note, on, icon, disabled, onPick }: { title: ReactNode; note?: ReactNode; on?: boolean; icon?: ReactNode; disabled?: boolean; onPick: () => void }) => (
-  <button type="button" className="lc-env-p l-focus" data-on={on || undefined} disabled={disabled} onClick={onPick}>
-    <span className="lc-env-pi">{on ? <I.check size={12} /> : icon}</span>
-    <span>{title}</span>
-    {note && <small>{note}</small>}
-  </button>
-);
-
-function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; close: () => void }) {
+function EnvPanel({ thread, project, files, lines, onChanges, close, actions }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; close: () => void; actions?: (close: () => void) => ReactNode }) {
   const [more, setMore] = useState<More>(null);
   const [editors, setEditors] = useState<Editor[] | null>(null);
   const [git, setGit] = useState<RpcResult<"git.branches"> | null>(null);
   const [status, setStatus] = useState<RpcResult<"git.status"> | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [then, setThen] = useState<Then>(() => (saved("lc:commit-then") as Then) ?? "push");
-  const [committing, setCommitting] = useState(false);
   const [script, setScript] = useState({ name: "", command: "" });
   const [newBranch, setNewBranch] = useState("");
   const [busy, setBusy] = useState(false);
   const cwd = thread.worktree?.path ?? project.path;
   const branch = thread.worktree?.branch ?? project.branch;
   const running = thread.status === "running";
-  const toggle = (m: More) => setMore((x) => (x === m ? null : m));
+  // A list opens in the menu's place, with the way back on top (ui.tsx BackRow); Escape comes back first, onto the row that opened it.
+  const box = useRef<HTMLDivElement>(null);
+  const focusIn = (sel: string) => requestAnimationFrame(() => box.current?.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true }));
+  const go = (m: More) => (setMore(m), focusIn("input:not(:disabled), button[data-on], button:not([data-back]):not(:disabled)"));
+  const back = () => {
+    const was = more;
+    setMore(null);
+    focusIn(`[data-opens="${was}"]`);
+  };
 
   useEffect(() => {
     void rpc("apps.editors", {})
@@ -166,7 +136,7 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
       await rpc("project.update", { id: project.id, scripts: [...(project.scripts ?? []), { id: `s${Date.now().toString(36)}`, name: name.trim(), command: command.trim() }] });
       toast.success(`Added ${name.trim()}`, { description: "Run it from the play button in the bar." });
       setScript({ name: "", command: "" });
-      setMore(null);
+      back();
     } catch (e) {
       fail(e);
     }
@@ -185,9 +155,10 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
     }
   };
 
-  // With nothing to commit, the row does the step after: a push, or the PR card.
+  // With files to commit, Changes opens with its commit form open, as one place to commit (commit-ask.ts); with
+  // nothing to commit, the row does the step after: a push, or the pull request card.
   const commitRow = () => {
-    if (files > 0) return (setCommitting(true), setMore("commit"));
+    if (files > 0) return (close(), askCommit(thread.id, then), onChanges());
     if (then === "commit") return;
     close();
     if (then === "pr") return void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail);
@@ -196,86 +167,68 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
       .catch(fail);
   };
   const how = THEN.find((x) => x.id === then)!;
-  const commitTitle = files > 0 ? how.title : then === "pr" ? "Open a PR" : then === "push" ? "Push" : "Commit";
+  const commitTitle = files > 0 ? how.title : then === "pr" ? "Open a pull request" : then === "push" ? "Push" : "Commit";
+
+  const scripts = (project.scripts ?? []).length;
+  const ahead = status && (status.ahead > 0 || status.behind > 0) ? `↑${status.ahead} ↓${status.behind}` : undefined;
+  const scriptReady = Boolean(script.name.trim() && script.command.trim());
 
   return (
-    <div className="lc-envp">
-      <Line
-        icon={<I.laptop size={14} />}
-        title={window.__LINER__?.machine ?? os.Here}
-        note={<span className="lc-mono">{tilde(cwd)}</span>}
-        side={
-          <button type="button" className="lc-env-b l-focus" aria-label={`Show in ${os.fileManager}`} title={`Show in ${os.fileManager}`} onClick={() => (close(), bridge.openIn(cwd, "finder"))}>
-            <I.folder size={14} />
-          </button>
-        }
-        open={more === "mac"}
-        onMore={() => toggle("mac")}
-      >
-        <Pick title="Copy the path" icon={<I.copy size={12} />} onPick={() => (void navigator.clipboard?.writeText(cwd), toast("Copied the path"), close())} />
-        <Pick title="Open it in Terminal" icon={<I.terminal size={12} />} onPick={() => (close(), bridge.openIn(cwd, "terminal"))} />
-        {thread.worktree && <p className="lc-env-note">A worktree of its own, so other sessions never edit these files.</p>}
-      </Line>
-
-      <Line icon={<I.edit size={14} />} title={editor ? `Open in ${editor.name}` : "Open in your editor"} open={more === "editor"} onPick={() => openIn(editor)} onMore={editors?.length ? () => toggle("editor") : undefined}>
-        {editors && editors.length > 0 && (
-          <>
-            {editors.map((e) => (
-              <Pick key={e.id} title={e.name} note={e.kind === "terminal" ? "Terminal" : undefined} on={e.id === editor?.id} onPick={() => openIn(e)} />
-            ))}
-          </>
-        )}
-      </Line>
-
-      <Line icon={<I.plus size={14} />} title="Add project script" note={(project.scripts ?? []).length ? `${plural(project.scripts!.length, "script")} so far` : "A command you run often, a press away"} open={more === "script"} onMore={() => toggle("script")}>
-        <form
-          className="lc-env-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void addScript(script.name, script.command);
-          }}
-        >
-          <input className="lc-input" value={script.name} onChange={(e) => setScript((x) => ({ ...x, name: e.target.value }))} placeholder="Name, like Dev server" aria-label="Script name" />
-          <input className="lc-input lc-mono" value={script.command} onChange={(e) => setScript((x) => ({ ...x, command: e.target.value }))} placeholder="npm run dev" aria-label="Command" />
-          <button type="submit" className="lc-btn" data-kind="accent" data-size="sm" disabled={!script.name.trim() || !script.command.trim()}>
-            Add
-          </button>
-        </form>
-        {fromPackage.map((n) => (
-          <Pick key={n} title={`npm run ${n}`} note="From package.json" icon={<I.plus size={12} />} onPick={() => void addScript(n, `npm run ${n}`)} />
-        ))}
-      </Line>
-
-      <Sep />
-
-      {project.git && (
-        <Line
-          icon={<I.branch size={14} />}
-          title={<span className="lc-mono">{branch ?? "No branch"}</span>}
-          note={
-            status && (status.ahead > 0 || status.behind > 0)
-              ? `${thread.worktree ? "Worktree" : "Checkout"} · ↑${status.ahead} ↓${status.behind}`
-              : thread.worktree
-                ? "Its own worktree"
-                : "This checkout"
-          }
-          open={more === "branch"}
-          onMore={() => toggle("branch")}
-        >
-          <Pick
-            title={status && status.behind > 0 ? `Fetch & pull (${status.behind} behind)` : "Fetch from origin"}
-            note={status ? `↑${status.ahead} ↓${status.behind}` : undefined}
-            icon={<I.refresh size={12} />}
-            disabled={syncing || running}
-            onPick={() => void syncBranch(false)}
-          />
+    <div ref={box} className="lc-envp" onKeyDown={(e) => more && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), back())}>
+      {more === "mac" ? (
+        <>
+          <BackRow name="This Mac" rove={false} onBack={back} />
+          <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={14} />} onPick={() => (close(), bridge.openIn(cwd, "finder"))} />
+          <Row title="Copy the path" icon={<I.copy size={14} />} onPick={() => (void navigator.clipboard?.writeText(cwd), toast("Copied the path"), close())} />
+          <Row title="Open it in Terminal" icon={<I.terminal size={14} />} onPick={() => (close(), bridge.openIn(cwd, "terminal"))} />
+          <MenuFoot>
+            <span className="lc-mono">{tilde(cwd)}</span>
+            {thread.worktree && <span className="lc-envp-why">A worktree of its own, so other sessions never edit these files.</span>}
+          </MenuFoot>
+        </>
+      ) : more === "editor" ? (
+        <>
+          <BackRow name="Editor" rove={false} onBack={back} />
+          {(editors ?? []).map((e) => (
+            <Row key={e.id} title={e.name} icon={<I.edit size={14} />} end={e.kind === "terminal" ? "Terminal" : undefined} on={e.id === editor?.id} onPick={() => openIn(e)} />
+          ))}
+        </>
+      ) : more === "script" ? (
+        <>
+          <BackRow name="Add project script" rove={false} onBack={back} />
+          <form
+            className="lc-env-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addScript(script.name, script.command);
+            }}
+          >
+            <input className="lc-input" value={script.name} onChange={(e) => setScript((x) => ({ ...x, name: e.target.value }))} placeholder="Name, like Dev server" aria-label="Script name" />
+            <input className="lc-input lc-mono" value={script.command} onChange={(e) => setScript((x) => ({ ...x, command: e.target.value }))} placeholder="npm run dev" aria-label="Command" />
+            {/* Enter in either field adds it; the row under them does the same. */}
+            <button type="submit" hidden disabled={!scriptReady} />
+          </form>
+          <Row title="Add it" icon={<I.plus size={14} />} disabled={!scriptReady} onPick={() => void addScript(script.name, script.command)} />
+          {fromPackage.length > 0 && (
+            <>
+              <Sep />
+              <PanelHead>From package.json</PanelHead>
+              {fromPackage.map((n) => (
+                <Row key={n} title={<span className="lc-mono">npm run {n}</span>} icon={<I.plus size={14} />} onPick={() => void addScript(n, `npm run ${n}`)} />
+              ))}
+            </>
+          )}
+        </>
+      ) : more === "branch" ? (
+        <>
+          <BackRow name="Branch" rove={false} onBack={back} />
+          <Row title={status && status.behind > 0 ? `Fetch and pull (${status.behind} behind)` : "Fetch from origin"} icon={<I.refresh size={14} />} end={ahead} disabled={syncing || running} onPick={() => void syncBranch(false)} />
           {!thread.worktree &&
             (git?.branches ?? [])
               .filter((b) => !git?.worktrees.some((w) => w.branch === b.name))
               .slice(0, 8)
-              .map((b) => (
-                <Pick key={b.name} title={<span className="lc-mono">{b.name}</span>} on={b.name === branch} disabled={busy || running || b.name === branch} onPick={() => void switchTo(b.name)} />
-              ))}
+              .map((b) => <Row key={b.name} title={<span className="lc-mono">{b.name}</span>} icon={<I.branch size={14} />} on={b.name === branch} disabled={busy || running || b.name === branch} onPick={() => void switchTo(b.name)} />)}
+          <Sep />
           <form
             className="lc-env-form"
             onSubmit={(e) => {
@@ -284,45 +237,44 @@ function EnvPanel({ thread, project, files, lines, onChanges, close }: { thread:
             }}
           >
             <input className="lc-input lc-mono" value={newBranch} onChange={(e) => setNewBranch(e.target.value)} placeholder="new-branch-name" aria-label="New branch from here" disabled={running} />
-            <button type="submit" className="lc-btn" data-kind="plain" data-size="sm" disabled={!newBranch.trim() || busy || running}>
-              {thread.worktree ? "New branch from here" : "New branch"}
-            </button>
+            <button type="submit" hidden disabled={!newBranch.trim() || busy || running} />
           </form>
-          {running && <p className="lc-env-note">Branch actions wait until the turn finishes.</p>}
-        </Line>
+          <Row title={thread.worktree ? "New branch from here" : "New branch"} icon={<I.plus size={14} />} disabled={!newBranch.trim() || busy || running} onPick={() => void switchTo(newBranch.trim(), true)} />
+          {running && <MenuFoot>Branch actions wait until the turn finishes.</MenuFoot>}
+        </>
+      ) : more === "commit" ? (
+        <>
+          <BackRow name="After committing" rove={false} onBack={back} />
+          {THEN.map((x) => (
+            <Row
+              key={x.id}
+              title={x.title}
+              note={x.note}
+              icon={<I.push size={14} />}
+              on={x.id === then}
+              onPick={() => {
+                setThen(x.id);
+                keep("lc:commit-then", x.id);
+                back();
+              }}
+            />
+          ))}
+        </>
+      ) : (
+        <>
+          {actions?.(close)}
+          {/* Where it runs, in the Session popup's words; its folder's path in the row's tooltip and at the foot of its list. */}
+          <Row title="This Mac" note={tilde(cwd)} icon={<I.laptop size={14} />} end={thread.worktree ? "its own worktree" : "the checkout"} opens="mac" onPick={() => go("mac")} />
+          <Row title={editor ? `Open in ${editor.name}` : "Open in your editor"} icon={<I.edit size={14} />} onPick={() => openIn(editor)} />
+          {editors && editors.length > 1 && <Row title="Editor" icon={<I.code size={14} />} end={editor?.name} opens="editor" onPick={() => go("editor")} />}
+          <Row title="Add project script" icon={<I.plus size={14} />} end={scripts ? plural(scripts, "script") : undefined} opens="script" onPick={() => go("script")} />
+          <Sep />
+          {project.git && <Row title={<span className="lc-mono">{branch ?? "No branch"}</span>} icon={<I.branch size={14} />} end={ahead} opens="branch" onPick={() => go("branch")} />}
+          {project.git && <Row title={commitTitle} note={files > 0 ? "Opens Changes with the commit's message" : undefined} icon={<I.push size={14} />} end={files > 0 ? plural(files, "file") : "Nothing to commit"} disabled={running || (files === 0 && then === "commit")} onPick={commitRow} />}
+          {project.git && <Row title="After committing" icon={<I.sliders size={14} />} end={THEN_WORD[then]} opens="commit" onPick={() => go("commit")} />}
+          <Row title={files > 0 ? `${plural(files, "file")} changed` : lines.added || lines.removed ? "Changes" : "No changes yet"} icon={<I.changes size={14} />} end={lines.added || lines.removed ? <Lines {...lines} /> : undefined} chevron={Boolean(lines.added || lines.removed)} disabled={!lines.added && !lines.removed} onPick={() => (close(), onChanges())} />
+        </>
       )}
-
-      {project.git && (
-        <Line
-          icon={<I.push size={14} />}
-          title={commitTitle}
-          note={files > 0 ? `${plural(files, "file")} to commit` : "Nothing to commit"}
-          disabled={running || (files === 0 && then === "commit")}
-          open={more === "commit"}
-          onPick={commitRow}
-          onMore={() => (setCommitting(false), toggle("commit"))}
-        >
-          {committing && files > 0 ? (
-            <CommitForm thread={thread} files={files} then={then} onDone={close} />
-          ) : (
-            THEN.map((x) => (
-              <Pick
-                key={x.id}
-                title={x.title}
-                note={x.note}
-                on={x.id === then}
-                onPick={() => {
-                  setThen(x.id);
-                  keep("lc:commit-then", x.id);
-                  setMore(null);
-                }}
-              />
-            ))
-          )}
-        </Line>
-      )}
-
-      <Line icon={<I.changes size={14} />} title="Changes" end={lines.added || lines.removed ? <Lines {...lines} /> : <span className="lc-mono">+0 −0</span>} disabled={!lines.added && !lines.removed} onPick={() => (close(), onChanges())} />
     </div>
   );
 }

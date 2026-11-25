@@ -98,9 +98,9 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
             {tall ? "Less" : "All of it"}
           </button>
         )}
-        {/* Kept and drawn full size, version by version, where you can comment on its parts. */}
+        {/* Kept and drawn full size, version by version, where you can comment on its parts. It wears the Design surface's own icon, as the panel's ··· menu does. */}
         <button type="button" className="lc-ib l-focus" aria-label="Open it in the panel, as a design" title="Open it in the panel, as a design" onClick={save}>
-          <I.panel size={14} />
+          <I.design size={14} />
         </button>
         <button
           type="button"

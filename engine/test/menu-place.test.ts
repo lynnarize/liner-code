@@ -4,7 +4,8 @@
 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EDGE, GAP, panelLeft, panelSide, WHOLE_MIN, placeMenu, TOP_ROW } from "../../ui/src/app/menu-place.ts";
+import { EDGE, GAP, panelLeft, panelSide, sideMenuLeft, WHOLE_MIN, placeMenu, TOP_ROW } from "../../ui/src/app/menu-place.ts";
+import { PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut } from "../../ui/src/app/picker.ts";
 
 const vw = 1200;
 const vh = 800;
@@ -113,4 +114,34 @@ test("The model picker hung below Home's chip stays inside the window sideways, 
   // A window too narrow for it sideways keeps its right edge inside.
   const left = panelLeft("start", { left: 900, right: 1000, width: 100 }, 636, EDGE, 1200 - EDGE);
   assert.ok(left + 636 <= 1200 - EDGE, "the picker runs past the window's right edge");
+});
+
+test("The model picker's list, not its side card, stands over the chip: the card goes past the chip to the right, and the picker slides left only as far as the window makes it", () => {
+  const chip = { left: 1001, right: 1073, width: 72 };
+  const listLeft = (left: number) => left + PICKER.rail + PICKER.gap;
+  // A 1440 window, the message box's chip: the list ends on the chip's right edge, the card stands past it.
+  const out = pickerOut("end", true);
+  const left = panelLeft("end", chip, PICKER_WIDE, EDGE, 1440 - EDGE, out);
+  assert.equal(listLeft(left) + PICKER.list, chip.right, "the list does not end on the chip's right edge");
+  assert.ok(left + PICKER_WIDE <= 1440 - EDGE, "the card runs past the window");
+  // A window with no room for the card past the chip: it slides left by what is missing and no more, so the list stays the nearest part.
+  const tight = panelLeft("end", { left: 831, right: 903, width: 72 }, PICKER_WIDE, EDGE, 1100 - EDGE, out);
+  assert.equal(tight + PICKER_WIDE, 1100 - EDGE);
+  // Without its card (a narrow window) nothing hangs past the chip.
+  assert.equal(pickerOut("end", false), 0);
+  assert.equal(panelLeft("end", chip, PICKER_NARROW, EDGE, 1440 - EDGE, pickerOut("end", false)), chip.right - PICKER_NARROW);
+  // Hung by its left (a field in a dialog): the list starts on the field's left edge, the rail before it.
+  const field = { left: 400, right: 640, width: 240 };
+  assert.equal(listLeft(panelLeft("start", field, PICKER_WIDE, EDGE, 1440 - EDGE, pickerOut("start", true))), field.left);
+  // A field at the window's left edge keeps the rail inside.
+  assert.equal(panelLeft("start", { left: 20, right: 200, width: 180 }, PICKER_WIDE, EDGE, 1440 - EDGE, pickerOut("start", true)), EDGE);
+});
+
+test("A side menu opens to the right of its menu while the window has room there, and to the left only when it has not", () => {
+  // The title menu, at the left of the session: its side menu goes right, not over the sidebar.
+  assert.equal(sideMenuLeft({ left: 276, right: 616 }, 240, 1440), 616 + GAP);
+  // The switcher's ··· at the window's right edge: no room on the right, so it goes left.
+  assert.equal(sideMenuLeft({ left: 1180, right: 1430 }, 240, 1440), 1180 - GAP - 240);
+  // Room on neither side (a narrow window): kept inside the window's right edge.
+  assert.equal(sideMenuLeft({ left: 60, right: 400 }, 240, 480), 480 - EDGE - 240);
 });

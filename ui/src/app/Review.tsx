@@ -28,12 +28,14 @@ import { baseOf, dirOf, langOf, linesOf, tokensOf, Toks } from "./code";
 import { keptRead, keptWrite, wordRead, wordWrite } from "./kept.ts";
 import { fileLetter, fileStatus, patchOf } from "./patch.ts";
 import { ship } from "./Ship";
-import { Lines, ModelTag, PanelHead, Pop, Row as MenuRow, Sep } from "./ui";
+import { Lines, MenuFoot, ModelTag, PanelHead, Pop, Row as MenuRow, Sep, SubMenu } from "./ui";
 import { SendBox } from "./Composer";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { FindBar } from "./Find";
-import { MoreFiles, SurfaceNote, TurnPicker, Viewed } from "./Surfaces";
-import { fullCanvas, SideKeys } from "./TopBar";
+import { MoreFiles, SurfaceNote, TurnPicker } from "./Surfaces";
+import { SideKeys } from "./TopBar";
+import { PANE_PICK, PANE_TOOL, PaneButton, PaneCheck, PaneFile, PaneFoot, PaneHead, PaneStatus, PaneTool, PaneWords } from "./Pane";
+import { linesSaid, moreFilesSaid, viewedSaid } from "./review-words.ts";
 import { undoTurn } from "./undo";
 
 type Checkpoint = Extract<Item, { kind: "checkpoint" }>;
@@ -58,9 +60,8 @@ function useStable<A extends unknown[]>(f: (...a: A) => void) {
   return useState(() => (...a: A) => now.current(...a))[0];
 }
 
-/** What happened to a file, as a letter in a tinted square (patch.ts fileLetter, by git's word for it) and in words. */
-const STATUS = { M: "modified", A: "added", D: "deleted", R: "renamed" } as const;
-const statusOf = (p: Prepared): keyof typeof STATUS => fileLetter(p.file);
+/** What happened to a file, as its letter (patch.ts fileLetter, by git's word for it); PaneStatus says it in words for a screen reader. */
+const statusOf = (p: Prepared) => fileLetter(p.file);
 
 /** The width of a line's own indent, in characters (a tab to the next stop of 8, as the code draws it), for a wrapped line to hang under. */
 function indentOf(line: Token[] | undefined) {
@@ -148,16 +149,16 @@ function byLine<T>(list: T[], at: (x: T) => { file: string; line?: number }) {
 }
 
 
-/** With nothing to commit, the foot still pushes the branch or opens a pull request. */
+/** With nothing to commit, the foot's one action pushes the branch or opens a pull request: the frame's ink button, as Commit is. */
 function PushButton({ thread, branch }: { thread: Thread; branch?: string }) {
   return (
-    <Pop label="Push or open a pull request" side="top" align="end" width={280} triggerClass="lc-btn" disabled={thread.status === "running"} trigger={<><I.push size={14} />Push</>}>
+    <Pop label="Push or open a pull request" menu side="top" align="end" width={280} triggerClass="lc-pane-btn" triggerAttrs={{ "data-ink": true }} disabled={thread.status === "running"} trigger={<><I.push size={14} />Push</>}>
       {(close) => (
-        <div className="lc-ship-menu">
+        <>
           <PanelHead>Nothing to commit</PanelHead>
-          <MenuRow title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={16} />} onPick={() => (close(), void ship(thread, null))} />
-          <MenuRow title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={16} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(e instanceof Error ? e.message : String(e))))} />
-        </div>
+          <MenuRow title={`Push ${branch ?? "this branch"}`} note="To its branch on GitHub" icon={<I.push size={14} />} onPick={() => (close(), void ship(thread, null))} />
+          <MenuRow title="Open a pull request" note="The PR card, in the chat" icon={<I.pr size={14} />} onPick={() => (close(), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(e instanceof Error ? e.message : String(e))))} />
+        </>
       )}
     </Pop>
   );
@@ -402,9 +403,10 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   // What the subagents checked: the turn's Task calls and the Reviewer.
   const turnNo = cp?.turn;
   const subs = tasks.filter((x) => turnNo === undefined || x.turn === turnNo);
-  const hiddenNote = prepared.length > shown.length && (
+  const hidden = prepared.length - shown.length;
+  const hiddenNote = hidden > 0 && (
     <button type="button" className="lc-rv-hidden lc-quiet l-focus" onClick={() => setHideTests(false)}>
-      {plural(prepared.length - shown.length, "test file")} hidden · Show
+      {plural(hidden, "test file")} hidden · Show
     </button>
   );
   const more = diff && total > diff.length && <MoreFiles n={total - diff.length} turn={Boolean(cp)} pick={pick} />;
@@ -412,54 +414,128 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
 
   if (!cps.length) {
     const wtFiles = wtStatus?.changes ?? [];
+    // The working tree's edits before any turn made one: the same frame, its files as the strips a turn's are.
     if (wtFiles.length > 0)
       return (
         <div ref={root} className="lc-rv" data-wide={wide || undefined} tabIndex={-1}>
-          <div className="lc-rv-body">
-            <section className="lc-rv-main">
-              <div className="lc-rv-bar">
-                <span className="lc-mono">Working tree ({plural(wtFiles.length, "file")})</span>
-                <span className="lc-grow" />
-                <button type="button" className="lc-ib l-focus" title="Refresh working tree" aria-label="Refresh working tree" onClick={() => setWtTick((n) => n + 1)}>
-                  <I.refresh size={14} />
-                </button>
-              </div>
-              <div className="lc-rv-files">
-                {wtFiles.map((f) => (
-                  <div key={f.path} className="lc-rv-fm">
-                    <span className="lc-rv-st" data-st={f.status[0]?.toUpperCase() || "M"} aria-hidden>
-                      {f.status[0]?.toUpperCase() || "M"}
-                    </span>
-                    <button
-                      type="button"
-                      className="lc-rv-fmb l-focus"
-                      title={f.path}
-                      onClick={() => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, threadId: thread.id } }))}
-                    >
-                      <span className="lc-mono lc-path">
-                        <span className="lc-quiet">{dirOf(f.path)}</span>
-                        <span>{baseOf(f.path)}</span>
-                      </span>
-                    </button>
-                    <Lines added={f.added} removed={f.removed} />
-                  </div>
-                ))}
-              </div>
-            </section>
+          <PaneHead
+            shows={
+              <>
+                <PaneWords>Working tree</PaneWords>
+                <span className="lc-rv-tot">
+                  <PaneWords>{plural(wtFiles.length, "file")}</PaneWords>
+                </span>
+              </>
+            }
+            tools={<PaneTool label="Look again" icon={<I.refresh size={16} />} onClick={() => setWtTick((n) => n + 1)} />}
+          />
+          <div className="lc-rv-files">
+            {wtFiles.map((f) => (
+              <PaneFile key={f.path} path={f.path} status={f.status[0]?.toUpperCase() || "M"} lines={{ added: f.added, removed: f.removed }} onOpen={() => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, threadId: thread.id } }))} />
+            ))}
           </div>
         </div>
       );
     return (
-      <div className="lc-panel-empty">
-        <I.changes size={20} />
-        <b>No changes yet</b>
-        <p>When a turn or your working tree edits files, changes land here so you can review, undo or commit them.</p>
-      </div>
+      <>
+        <PaneHead />
+        <SurfaceNote icon={<I.changes size={20} />} title="No changes yet">
+          When a turn or your working tree edits files, changes land here so you can review, undo or commit them.
+        </SurfaceNote>
+      </>
     );
   }
 
+  // The files as a menu under "N files ⌄", where they have no column of their own (surfaces.css shows it in a narrow full canvas too).
+  const filesMenu = (
+    <Pop label="Files in this turn" width={320} className="lc-rv-filesb" triggerClass={PANE_PICK} trigger={<>{plural(files.length, "file")}<I.chevD size={12} /></>}>
+      {(close) => (
+        <>
+          <PanelHead end={viewedSaid(seen, files.length)}>Files in this turn</PanelHead>
+          {shown.map((p) => (
+            <MenuRow key={p.file.path} icon={<PaneStatus status={statusOf(p)} />} title={baseOf(p.file.path)} which={dirOf(p.file.path) || undefined} whichPath on={viewed.has(p.file.path) || undefined} note={viewed.has(p.file.path) ? "Viewed" : undefined} end={<Lines added={p.added} removed={p.removed} />} onPick={() => (close(), onFocus({ id: pick, path: p.file.path }))} />
+          ))}
+          {(hidden > 0 || (diff && total > diff.length)) && (
+            <>
+              <Sep />
+              <MenuFoot>{[hidden > 0 ? `${plural(hidden, "test file")} hidden` : "", diff && total > diff.length ? moreFilesSaid(total - diff.length, Boolean(cp), pick) : ""].filter(Boolean).join(" · ")}</MenuFoot>
+            </>
+          )}
+        </>
+      )}
+    </Pop>
+  );
+  // How the diff is drawn, under one options button (board Menus): a choice among several is "Label  Value ›".
+  const options = (
+    <Pop label="How it's shown" menu align="end" width={260} triggerClass={PANE_TOOL} trigger={<I.sliders size={16} />}>
+      {(close) => (
+        <>
+          <SubMenu title="Layout" icon={view === "split" ? <I.split size={14} /> : <I.unified size={14} />} value={view === "split" ? "Split" : "Unified"} label="Layout" width={200}>
+            {() => (
+              <>
+                <MenuRow title="Unified" icon={<I.unified size={14} />} on={view === "unified"} onPick={() => (close(), setView("unified"))} />
+                <MenuRow title="Split" icon={<I.split size={14} />} on={view === "split"} onPick={() => (close(), setView("split"))} />
+              </>
+            )}
+          </SubMenu>
+          {/* Both remembered (T3 Code: DiffPanel.tsx). Split is drawn by CodeDiff, which doesn't mark spaces: there that row stands dimmed and says where it works. */}
+          <MenuRow title="Wrap lines" icon={<I.wrap size={14} />} on={wrap} onPick={() => (close(), setWrap(!wrap))} />
+          <MenuRow title="Spaces and tabs" note={view === "split" ? "In the unified view" : undefined} keepNote icon={<I.pilcrow size={14} />} on={spaces && view === "unified"} disabled={view === "split"} onPick={() => (close(), setSpaces(!spaces))} />
+          {tests > 0 && (
+            <SubMenu title="Test files" icon={<I.flask size={14} />} value={hideTests ? "Hidden" : "Shown"} label="Test files" width={200}>
+              {() => (
+                <>
+                  <MenuRow title="Shown" end={String(tests)} on={!hideTests} onPick={() => (close(), setHideTests(false))} />
+                  <MenuRow title="Hidden" on={hideTests} onPick={() => (close(), setHideTests(true))} />
+                </>
+              )}
+            </SubMenu>
+          )}
+          <Sep />
+          <MenuRow title="Find" icon={<I.search size={14} />} end={find?.join("")} onPick={() => (close(), setFinding(true))} />
+          <MenuRow title={allFolded ? "Unfold every file" : "Fold every file"} icon={<I.fold size={14} />} disabled={!shown.length} onPick={() => (close(), setFolded(allFolded ? new Set() : new Set(shown.map((p) => p.file.path))))} />
+          <MenuRow title="Copy as a patch" icon={<I.copy size={14} />} disabled={!diff?.length} onPick={() => (close(), void copyPatch())} />
+        </>
+      )}
+    </Pop>
+  );
+
   return (
     <div ref={root} className="lc-rv" data-wide={wide || undefined} tabIndex={-1}>
+      {/* The turn, its files and totals, then the tools. In the full canvas "Change N of M" and the branch come too, and give way first as it narrows (surfaces.css). */}
+      <PaneHead
+        shows={
+          <>
+            <TurnPicker cps={cps} pick={pick} turns={thread.turns} onPick={(id) => onFocus({ id })} />
+            {filesMenu}
+            <span className="lc-rv-tot">
+              <PaneWords>
+                <Lines {...lines} />
+              </PaneWords>
+            </span>
+            {wide && changes.length > 0 && view === "unified" && (
+              <span className="lc-rv-count">
+                <PaneWords>
+                  Change {Math.min(at + 1, changes.length)} of {changes.length}
+                </PaneWords>
+              </span>
+            )}
+            {wide && branch && (
+              <span className="lc-branch lc-mono" title={branch}>
+                <I.branch size={12} />
+                <span>{branch}</span>
+              </span>
+            )}
+          </>
+        }
+        tools={
+          <>
+            <PaneTool label="Previous change (K)" icon={<I.chevU size={16} />} disabled={!shown.length} onClick={() => goChange(at - 1)} />
+            <PaneTool label="Next change (J)" icon={<I.chevD size={16} />} disabled={!shown.length} onClick={() => goChange(at + 1)} />
+            {options}
+          </>
+        }
+      />
       <div className="lc-rv-body">
         {wide && (
           <nav className="lc-rv-nav" aria-label="Files in this turn">
@@ -470,13 +546,13 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
               </span>
             </div>
             {shown.map((p) => (
-              <label key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
-                <input type="checkbox" checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
+              <div key={p.file.path} className="lc-rv-f" data-on={viewed.has(p.file.path) || undefined}>
+                <PaneCheck checked={viewed.has(p.file.path)} label={`Viewed ${p.file.path}`} onChange={(on) => setViewed(p.file.path, on)} />
                 <button type="button" className="lc-rv-fb lc-mono l-focus" title={p.file.path} onClick={() => onFocus({ id: pick, path: p.file.path })}>
                   {baseOf(p.file.path)}
                 </button>
                 <Lines added={p.added} removed={p.removed} />
-              </label>
+              </div>
             ))}
             {hiddenNote}
             {more}
@@ -508,90 +584,6 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
           </nav>
         )}
         <section className="lc-rv-main" aria-label="Changes">
-          {/* The turn and its totals, then the tools. "Change N of M" and the branch give way first as it narrows (surfaces.css). */}
-          <div className="lc-rv-strip">
-            <TurnPicker cps={cps} pick={pick} turns={thread.turns} onPick={(id) => onFocus({ id })} />
-            <Lines {...lines} />
-            <span className="lc-grow" />
-            {changes.length > 0 && view === "unified" && (
-              <>
-                {wide && (
-                  <span className="lc-quiet lc-rv-count">
-                    Change {Math.min(at + 1, changes.length)} of {changes.length}
-                  </span>
-                )}
-                <button type="button" className="lc-ib l-focus" aria-label="Previous change (K)" title="Previous change (K)" onClick={() => goChange(at - 1)}>
-                  <I.chevU size={14} />
-                </button>
-                <button type="button" className="lc-ib l-focus" aria-label="Next change (J)" title="Next change (J)" onClick={() => goChange(at + 1)}>
-                  <I.chevD size={14} />
-                </button>
-              </>
-            )}
-            {/* The files as a menu, where they have no column of their own (surfaces.css shows it in a narrow full canvas too). */}
-            <Pop label="Files in this turn" align="end" width={320} className="lc-rv-filesb" triggerClass="lc-ib" triggerAttrs={{ title: "Files in this turn" }} trigger={<I.list size={14} />}>
-              {(close) => (
-                <div className="lc-rv-fmenu">
-                  <PanelHead>
-                    Files in this turn · {seen} of {files.length} viewed
-                  </PanelHead>
-                  {shown.map((p) => {
-                    const st = statusOf(p);
-                    return (
-                      <div key={p.file.path} className="lc-rv-fm" data-on={viewed.has(p.file.path) || undefined}>
-                        <input type="checkbox" className="l-focus" aria-label={`${p.file.path}: viewed`} checked={viewed.has(p.file.path)} onChange={(e) => setViewed(p.file.path, e.target.checked)} />
-                        <button type="button" className="lc-rv-fmb l-focus" title={p.file.path} onClick={() => (close(), onFocus({ id: pick, path: p.file.path }))}>
-                          <span className="lc-rv-st" data-st={st} aria-hidden>
-                            {st}
-                          </span>
-                          <span className="lc-mono lc-path">
-                            <span className="lc-quiet">{dirOf(p.file.path)}</span>
-                            <span>{baseOf(p.file.path)}</span>
-                          </span>
-                        </button>
-                        <Lines added={p.added} removed={p.removed} />
-                      </div>
-                    );
-                  })}
-                  {hiddenNote}
-                  {more}
-                </div>
-              )}
-            </Pop>
-            {/* The top row keeps going from change to change and the files; how the diff is drawn is under the one ···, with the rest. */}
-            <Pop label="More: view, wrap, spaces, find, fold, hide tests, copy, full canvas" menu align="end" width={260} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
-              {(close) => {
-                const canvas = fullCanvas(thread.id);
-                return (
-                  <>
-                    <MenuRow title="Unified" icon={<I.unified size={16} />} keepIcon on={view === "unified"} onPick={() => (close(), setView("unified"))} />
-                    <MenuRow title="Split" icon={<I.split size={16} />} keepIcon on={view === "split"} onPick={() => (close(), setView("split"))} />
-                    {/* Both remembered (T3 Code: DiffPanel.tsx). Split is drawn by CodeDiff, which doesn't mark spaces: there that row stands dimmed and says where it works. */}
-                    <MenuRow title="Wrap long lines" icon={<I.wrap size={16} />} keepIcon on={wrap} onPick={() => (close(), setWrap(!wrap))} />
-                    <MenuRow title="Show spaces and tabs" note={view === "split" ? "In the unified view" : undefined} keepNote icon={<I.pilcrow size={16} />} keepIcon on={spaces && view === "unified"} disabled={view === "split"} onPick={() => (close(), setSpaces(!spaces))} />
-                    <Sep />
-                    <MenuRow title="Find in the changes" icon={<I.search size={16} />} end={find && <kbd className="lc-kbd">{find.join("")}</kbd>} onPick={() => (close(), setFinding(true))} />
-                    <MenuRow title={allFolded ? "Unfold every file" : "Fold every file"} icon={<I.fold size={16} />} disabled={!shown.length} onPick={() => (close(), setFolded(allFolded ? new Set() : new Set(shown.map((p) => p.file.path))))} />
-                    {tests > 0 && <MenuRow title={hideTests ? `Show test files (${tests})` : `Hide test files (${tests})`} icon={<I.eye size={16} />} onPick={() => (close(), setHideTests(!hideTests))} />}
-                    <MenuRow title="Copy the diff as a patch" icon={<I.copy size={16} />} disabled={!diff?.length} onPick={() => (close(), void copyPatch())} />
-                    {canvas && (
-                      <>
-                        <Sep />
-                        <MenuRow title={canvas.full ? "Leave the full canvas" : "Open in the full canvas"} icon={canvas.full ? <I.shrink size={14} /> : <I.expand size={14} />} onPick={() => (close(), canvas.toggle())} />
-                      </>
-                    )}
-                  </>
-                );
-              }}
-            </Pop>
-            {/* The branch, in the full canvas only: in the side panel the title's menu has it. */}
-            {wide && branch && (
-              <span className="lc-branch lc-mono" title={branch}>
-                <I.branch size={12} />
-                <span>{branch}</span>
-              </span>
-            )}
-          </div>
           {finding && (
             <FindBar
               root={box}
@@ -615,18 +607,11 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
                 {diffErr}
               </SurfaceNote>
             ) : !diff.length ? (
-              <div className="lc-panel-empty">
-                <b>{pick === "branch" ? "This branch matches main" : "Nothing changed here"}</b>
-              </div>
+              <SurfaceNote title={pick === "branch" ? "This branch matches main" : "Nothing changed here"} />
             ) : !shown.length ? (
-              <div className="lc-panel-empty">
-                <b>Only test files changed here</b>
-                <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setHideTests(false)}>
-                  Show them
-                </button>
-              </div>
+              <SurfaceNote title="Only test files changed here" action={<PaneButton onClick={() => setHideTests(false)}>Show them</PaneButton>} />
             ) : view === "split" ? (
-              // Its own row of tools is hidden (app.css, .lc-diff): this row has them. Clicking a line number lets you ask about that line in split view too.
+              // Its own row of tools is hidden (app.css, .lc-diff): the head has them. Clicking a line number lets you ask about that line in split view too.
               <div
                 className="lc-diff"
                 onClick={(e) => {
@@ -642,34 +627,11 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
                 }}
               >
                 <CodeDiff key={`${wrap}:${[...folded].join("\n")}`} files={shown.map((p) => p.file)} view="split" maxHeight={100000} defaultWrap={wrap} defaultCollapsed={[...folded]} />
+                {/* The same ask as the unified view's: the lines, then the message box's field and Send. */}
                 {sel && (
                   <div className="lc-rv-ask">
-                    <span className="lc-mono lc-quiet">
-                      Ask about {sel.file}:{sel.line}
-                      {sel.endLine && sel.endLine !== sel.line ? `–${sel.endLine}` : ""}
-                    </span>
-                    <textarea
-                      className="lc-input"
-                      rows={2}
-                      placeholder="Ask the agent about these lines…"
-                      value={ask}
-                      onChange={(e) => setAsk(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          void send();
-                        } else if (e.key === "Escape") setSel(null);
-                      }}
-                    />
-                    <div className="lc-you-acts">
-                      <span className="lc-grow" />
-                      <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setSel(null)}>
-                        Cancel
-                      </button>
-                      <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!ask.trim()} onClick={() => void send()}>
-                        Ask
-                      </button>
-                    </div>
+                    <span className="lc-rv-lines">{linesSaid(sel)}</span>
+                    <SendBox autoFocus value={ask} onChange={setAsk} label={`Ask ${coder.name} about it`} placeholder={`Ask ${coder.name} about ${sel.endLine && sel.endLine !== sel.line ? "these lines" : "this line"} in ${baseOf(sel.file)}`} onSend={() => void send()} onEscape={() => setSel(null)} />
                   </div>
                 )}
               </div>
@@ -680,23 +642,23 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
               })
             )}
           </div>
-          <div className="lc-panel-foot">
-            <Viewed seen={seen} total={files.length} />
-            <span className="lc-quiet lc-rv-hint">Press a line number to ask about it; shift for a range</span>
-            <span className="lc-grow" />
+          {/* Where things stand, then Undo, then the one action in ink: Commit, or with nothing to commit, Push. */}
+          <PaneFoot say={viewedSaid(seen, files.length)}>
             {cp && !cp.reverted && !cp.committed && (
-              <button type="button" className="lc-btn" data-kind="ghost" disabled={busy !== null || thread.status === "running"} onClick={() => void undo()}>
-                <I.undo size={14} />
+              <PaneButton icon={<I.undo size={14} />} disabled={busy !== null || thread.status === "running"} onClick={() => void undo()}>
                 Undo turn {cp.turn}
-              </button>
+              </PaneButton>
             )}
             {openFiles > 0 ? <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
-          </div>
+          </PaneFoot>
         </section>
       </div>
     </div>
   );
 }
+
+/** What a line number says under the pointer: how to ask about it (the hint the foot used to carry). */
+const ASK_TIP = "Press a line number to ask about it; shift for a range";
 
 /*
   One file of the diff, drawn again only when what it shows changes: its rows, what's unfolded, the
@@ -752,6 +714,7 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
               type="button"
               className="lc-rv-n lc-rv-pick l-focus"
               aria-label={`Ask about line ${r.new}`}
+              title={ASK_TIP}
               onClick={(e) => {
                 const line = r.new!;
                 setSel((s) => (e.shiftKey && s && s.file === p.file.path ? { file: s.file, line: Math.min(s.line, line), endLine: Math.max(s.endLine ?? s.line, line) } : { file: p.file.path, line }));
@@ -776,7 +739,7 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
         {here.map((t) => (
           <div key={t.id} className="lc-rv-thread">
             <div className="lc-rv-q">
-              <span className="lc-rv-lines">{t.anchor.endLine && t.anchor.endLine !== t.anchor.line ? `Lines ${t.anchor.line}–${t.anchor.endLine}` : `Line ${t.anchor.line}`}</span>
+              <span className="lc-rv-lines">{linesSaid(t.anchor)}</span>
               <span className="lc-quiet">You · {ago(t.at)}</span>
               <p>{t.question}</p>
             </div>
@@ -790,7 +753,7 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
         ))}
         {endsSel && (
           <div className="lc-rv-ask">
-            <span className="lc-rv-lines">{sel!.endLine && sel!.endLine !== sel!.line ? `Lines ${sel!.line}–${sel!.endLine}` : `Line ${sel!.line}`}</span>
+            <span className="lc-rv-lines">{linesSaid(sel!)}</span>
             {/* The message box's field and Send, as every place that writes to an agent has them. */}
             <SendBox autoFocus value={ask} onChange={setAsk} label={`Ask ${coder} about it`} placeholder={`Ask ${coder} about ${sel!.endLine && sel!.endLine !== sel!.line ? "these lines" : "this line"}`} onSend={() => void send()} onEscape={() => setSel(() => null)} />
           </div>
@@ -801,29 +764,16 @@ const FileBody = memo(function FileBody({ p, threadId, open, setOpen, sel, setSe
 
   return (
     <article className="lc-rv-file" data-file={p.file.path}>
-      <header className="lc-rv-fh">
-        <button type="button" className="lc-rv-ff l-focus" aria-expanded={!folded} aria-label={`${p.file.path}, ${STATUS[st]}${p.moved ? ` from ${p.moved}` : ""}. ${folded ? "Unfold it" : "Fold it"}`} title={p.moved ? `Moved from ${p.moved}` : p.file.path} onClick={() => onFold(p.file.path)}>
-          <I.chevD size={12} className="lc-rv-chev" />
-          <span className="lc-rv-st" data-st={st} aria-hidden>
-            {st}
+      {/* The file's own strip (Pane.tsx), as Files draws one: the fold, what happened, the path, its lines, your editor, Viewed. Sticky, so it stays over its lines. The path folds the file too, as the whole strip once did. */}
+      <PaneFile className="lc-rv-fh" path={p.file.path} status={st} lines={{ added: p.added, removed: p.removed }} fold={{ open: !folded, onToggle: () => onFold(p.file.path) }} onOpen={() => onFold(p.file.path)}>
+        {p.moved && (
+          <span className="lc-rv-from" title={`Moved from ${p.moved}`}>
+            from {baseOf(p.moved)}
           </span>
-          <span className="lc-mono lc-path">
-            <span className="lc-quiet">{dirOf(p.file.path)}</span>
-            <span>{baseOf(p.file.path)}</span>
-          </span>
-        </button>
-        <span className="lc-grow" />
-        <Lines added={p.added} removed={p.removed} />
-        <label className="lc-rv-seen">
-          <input type="checkbox" className="l-focus" checked={viewed} onChange={(e) => onViewed(p.file.path, e.target.checked)} />
-          Viewed
-        </label>
-        {onOpen && !p.gone && (
-          <button type="button" className="lc-ib l-focus" aria-label={`Open ${p.file.path} in your editor`} title="Open in your editor" onClick={() => onOpen(p.file.path)}>
-            <I.external size={14} />
-          </button>
         )}
-      </header>
+        {onOpen && !p.gone && <PaneTool label="Open in your editor" icon={<I.external size={14} />} onClick={() => onOpen(p.file.path)} />}
+        <PaneCheck checked={viewed} label="Viewed" onChange={(on) => onViewed(p.file.path, on)} />
+      </PaneFile>
       {!folded && (
         <div className="lc-rv-code lc-mono">
           {p.binary && <p className="lc-rv-bin lc-quiet">A binary file, so there's no text to compare.</p>}

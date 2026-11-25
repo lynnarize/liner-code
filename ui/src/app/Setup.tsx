@@ -14,7 +14,9 @@ import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, ModelMark, StateMark, type MarkKind } from "./icons";
+import { I, ModelMark, StateMark, StepMark, type MarkKind } from "./icons";
+import { PaneCheck } from "./Pane";
+import { LookAgain } from "./ui";
 import { markOf, modelLabel, pairReady, plural, since } from "./model";
 import { startModel, StartPick } from "./Models";
 import * as os from "./os";
@@ -136,14 +138,12 @@ export function Setup({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Where a row stands, as every step does (the state mark): finished, not started, or needing you. */
-const STATUS_MARK = { ok: "done", todo: "new", warn: "needs" } as const;
+/**
+  Where a row stands, as every list of steps does (the step mark): a grey tick when finished, an empty ring when
+  not started. Needing you keeps the state mark's own shape, since it asks for something rather than failing.
+*/
 function Status({ state }: { state: "ok" | "todo" | "warn" }) {
-  return (
-    <span className="lc-wel-st">
-      <StateMark state={STATUS_MARK[state]} size={16} />
-    </span>
-  );
+  return <span className="lc-wel-st">{state === "warn" ? <StateMark state="needs" size={16} /> : <StepMark state={state === "ok" ? "done" : "waiting"} size={16} />}</span>;
 }
 
 /** A row: its status, a title over one grey line, what you can do at the right, and what it opens under it. */
@@ -207,7 +207,7 @@ function SystemRows() {
           end={
             <>
               <Tb onClick={() => bridge.runInTerminal(mac.install!)}>Install</Tb>
-              <Tb onClick={checkMac}>Look again</Tb>
+              <LookAgain onLook={checkMac} />
             </>
           }
         />
@@ -221,7 +221,7 @@ function SystemRows() {
           end={
             <>
               {mac.rgInstall && <Tb onClick={() => bridge.runInTerminal(mac.rgInstall!)}>Install</Tb>}
-              <Tb onClick={checkMac}>Look again</Tb>
+              <LookAgain onLook={checkMac} />
             </>
           }
         />
@@ -321,9 +321,7 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
             <Pill on={Boolean(keyFor)} onClick={() => (setKeyFor((k) => (k ? null : "anthropic")), setValue(""))}>
               Add an API key
             </Pill>
-            <Tb disabled={checking} onClick={look}>
-              {checking ? "Looking" : "Look again"}
-            </Tb>
+            <LookAgain looking={checking} onLook={look} />
           </div>
           {keyFor && (
             <div className="lc-wel-key">
@@ -337,7 +335,7 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
                 <I.lock size={12} />
                 <input autoFocus type="password" placeholder={keyFor === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? void save() : e.key === "Escape" && (setKeyFor(null), setValue("")))} aria-label={`${KEYS.find((k) => k.id === keyFor)?.name} key`} />
               </span>
-              <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={!value.trim()} onClick={() => void save()}>
+              <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!value.trim()} onClick={() => void save()}>
                 Save
               </button>
             </div>
@@ -478,7 +476,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
         >
           {offer && (
             <label className="lc-wel-repo">
-              <input type="checkbox" checked={sample} onChange={(e) => setSample(e.target.checked)} />
+              <PaneCheck checked={sample} label="Add the sample project" onChange={setSample} />
               <b>Sample project</b>
               <small>Tide tables, with the Demo agent</small>
               <span className="lc-wel-grey lc-wel-mono">main</span>
@@ -486,7 +484,14 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
           )}
           {(found ?? []).map((f) => (
             <label key={f.path} className="lc-wel-repo" data-added={f.added || undefined}>
-              <input type="checkbox" checked={f.added || picked.has(f.path)} disabled={f.added} onChange={(e) => pick(f.path, e.target.checked)} />
+              {/* An added one is ticked for good: the same box, but not a control, so the row can't untick it. */}
+              {f.added ? (
+                <span className="lc-pane-check" role="checkbox" aria-checked="true" aria-disabled="true" aria-label={`${f.name}, added`}>
+                  <I.check size={12} />
+                </span>
+              ) : (
+                <PaneCheck checked={picked.has(f.path)} label={`Add ${f.name}`} onChange={(on) => pick(f.path, on)} />
+              )}
               <b>{f.name}</b>
               <small className="lc-wel-mono">{os.tilde(f.path)}</small>
               <span className="lc-wel-grey">

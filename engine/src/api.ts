@@ -1299,8 +1299,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "memory.distill": ({ threadId }) => distillSessionToMemory(store, threadId),
     // The person's own search: it may match and show what they read of a message (shown); an agent's never does.
     "sessions.search": ({ projectId, query }) => searchSessions(store, store.project(projectId).id, query, { person: true }),
-    "thread.carryOn": async ({ id, model }) => (await ensureWorktree(id), await runtime.carryOn(id, model), null),
-    "thread.tryAgain": async ({ id }) => (await ensureWorktree(id), await runtime.tryAgain(id), null),
+    "thread.carryOn": async ({ id, model }) => (runtime.swarm.personSpoke(id), await ensureWorktree(id), await runtime.carryOn(id, model), null),
+    "thread.tryAgain": async ({ id }) => (runtime.swarm.personSpoke(id), await ensureWorktree(id), await runtime.tryAgain(id), null),
     "thread.send": ({ id, text, files, mode, anchor, design, shown: said, once }) => {
       const t = store.thread(id);
       // What the person reads of it (Liner Design's asks): kept on the item and in the queue, never in what the agent is sent.
@@ -1335,6 +1335,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         }
         text = body;
       }
+      // A message the person sends carries a paused team on (the swarm's own wakes go through runtime.send, never here).
+      runtime.swarm.personSpoke(id);
       // The turn runs on; its progress comes back as events. A new worktree finishes setting up
       // first, and one that's gone is put back. A side chat works in its session's worktree, so it
       // waits for that one (T3 Code: ThreadFork.execution.test.ts, a side chat and its parent's worktree).
@@ -1836,6 +1838,11 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         const ref = typeof patch.swarmWorkerModel === "string" ? patch.swarmWorkerModel.trim() : "";
         patch.swarmWorkerModel = !ref || ref === "same" ? undefined : ref;
       }
+      if (patch.swarmReaderModel !== undefined) {
+        const ref = typeof patch.swarmReaderModel === "string" ? patch.swarmReaderModel.trim() : "";
+        patch.swarmReaderModel = !ref || ref === "same" ? undefined : ref;
+      }
+      if (patch.swarmReaderEffort !== undefined && patch.swarmReaderEffort !== "same" && patch.swarmReaderEffort !== "lower") throw new Error('Reader effort must be "same" or "lower".');
       pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
       if (patch.outside !== undefined) x.outside?.apply();
@@ -2047,7 +2054,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "swarm.enable": ({ threadId, enabled, mode, preset, title, maxActive, hibernateSec }) => runtime.swarm.enable(threadId, { enabled, mode, preset, title, maxActive, hibernateSec }),
     "swarm.config": ({ threadId, maxActive, hibernateSec, stallMonitor, title }) => runtime.swarm.updateConfig(threadId, { maxActive, hibernateSec, stallMonitor, title }),
     "swarm.post": ({ threadId, text, channel }) => runtime.swarm.post(threadId, { from: "you", text, channel, kind: "user" }).snapshot,
-    "swarm.addWorker": async ({ threadId, name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork }) => (await runtime.swarm.addWorkers(threadId, { name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork })).snapshot,
+    "swarm.addWorker": async ({ threadId, name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork, audit, of }) => (await runtime.swarm.addWorkers(threadId, { name, role, model, workspace, mode, channels, brief, parent, canDelegate, n, tasks, fork, audit: audit === true, of })).snapshot,
     "swarm.swapModel": ({ threadId, name, model, reason }) => runtime.swarm.swapModel(threadId, name, model, reason),
     "swarm.wake": ({ threadId, name, note }) => runtime.swarm.wake(threadId, name, note),
     "swarm.hibernate": ({ threadId, name }) => runtime.swarm.hibernate(threadId, name),

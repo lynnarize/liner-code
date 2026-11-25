@@ -1,6 +1,7 @@
 /*
-  The Design surface (Design.tsx): one bar over a canvas that runs edge to edge, a faint grid of
-  dots with the design floating on it and its size under it, and a zoom pill in the corner. Its
+  The Design surface (Design.tsx): in the panel's one frame (Pane.tsx), a canvas that runs edge to
+  edge between its head and its foot, a faint grid of dots with the design floating on it and its
+  size under it, and a zoom bar in the corner. Its
   card on the timeline: a small picture beside the chat, or the design itself, wide, in the chat.
 */
 .lc-dz {
@@ -10,116 +11,23 @@
   min-height: 0;
 }
 
-/* ---------- The bar ---------- */
-.lc-dz-bar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  min-height: 44px;
-  padding: 0 10px 0 14px;
-}
-/* Which design: its name, plain, with the menu's chevron. */
-.lc-dz-bar > .lc-pop:first-child {
+/* ---------- The head (the panel's frame, Pane.tsx) ---------- */
+/* The design's name in the head's picker, cut with an ellipsis before the version picker is. */
+.lc-dz-pname {
   min-width: 0;
-  max-width: 50%;
-}
-.lc-dz-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-  height: 28px;
-  margin-left: -6px;
-  padding: 0 6px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.lc-dz-name b {
+  max-width: 180px;
   overflow: hidden;
-  font-weight: 500;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.lc-dz-name > svg {
-  flex: none;
-  color: var(--l-ink-4);
-}
-/* Which version: a quiet pill, "Live" while it's the file as it is now (a fact, so a word, not a dot). */
-.lc-dz-ver {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  margin-left: 2px;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.lc-dz-ver > svg {
-  color: var(--l-ink-4);
-}
-@media (hover: hover) {
-  .lc-dz-name:hover,
-  .lc-dz-ver:hover {
-    background: var(--l-wash);
-  }
-}
-.lc-dz-bar > .lc-ib {
-  color: var(--l-ink-3);
-}
-.lc-dz-build {
-  flex: none;
-  margin-left: 6px;
-}
-.lc-dz-ver,
-.lc-dz-build {
-  white-space: nowrap;
-}
-/* In a narrow panel the bar keeps the design's name: Build says it with its icon, the version
-   drops "Live", and the buttons pull in. */
-@container (max-width: 560px) {
+/* In a narrow panel the version picker drops "Live". */
+@container (max-width: 470px) {
   .lc-dz-wide {
     display: none;
-  }
-  .lc-dz-bar {
-    padding: 0 8px 0 12px;
-  }
-  .lc-dz-build {
-    margin-left: 2px;
-    padding-inline: 9px;
-  }
-}
-@container (max-width: 470px) {
-  .lc-dz-build > span {
-    display: none;
-  }
-}
-/* Narrower still, the bar takes two lines: the design and its version, then how it's drawn and
-   what to do with it. */
-@container (max-width: 400px) {
-  .lc-dz-bar {
-    flex-wrap: wrap;
-    row-gap: 2px;
-    padding-block: 6px;
-  }
-  .lc-dz-bar > .lc-grow {
-    flex-basis: 100%;
-  }
-  .lc-dz-bar > .lc-pop:first-child {
-    max-width: 75%;
   }
 }
 .lc-dz-menu {
   display: grid;
-  gap: 2px;
   max-height: 360px;
-  padding: 4px;
   overflow: auto;
 }
 
@@ -201,7 +109,7 @@
 .lc-dz-cap [data-stale] {
   color: var(--l-warn-text);
 }
-/* Zoom: a small glass pill in the canvas's corner. */
+/* Zoom: a small glass bar in the canvas's corner, in the menus' shape (board Menus): a 10px corner, 4px in, 28px buttons with a 6px corner. */
 .lc-dz-zoom {
   position: absolute;
   right: 12px;
@@ -210,9 +118,10 @@
   display: flex;
   align-items: center;
   gap: 1px;
-  height: 32px;
+  height: 36px;
+  box-sizing: border-box;
   padding: 0 4px;
-  border-radius: 999px;
+  border-radius: 10px;
   background: color-mix(in oklab, var(--lc-paper) 72%, transparent);
   box-shadow:
     inset 0 0 0 1px var(--l-line-2),
@@ -227,9 +136,9 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 6px;
   background: none;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
   cursor: pointer;
 }
 .lc-dz-zoom > button:disabled {
@@ -237,7 +146,8 @@
   cursor: default;
 }
 .lc-dz-zoom > button[aria-pressed="true"] {
-  color: var(--l-accent-text);
+  background: var(--l-wash-2);
+  color: var(--l-ink);
 }
 @media (hover: hover) {
   .lc-dz-zoom > button:not(:disabled):hover {
@@ -500,71 +410,25 @@ html[data-native="mac"] .lc-dz-full-bar {
 }
 
 /* ---------- A session's Liner Design file: a small view of its canvas (DesignMini.tsx) ---------- */
-/* The title and Open in Liner Design over it, who is drawing under them, then the frames on the canvas's own grey. */
-.lc-dm,
-.lc-dm-both {
+/* In the panel's frame: the design and its frames in the head, the frames on the canvas's own grey, who is drawing in the foot. */
+.lc-dm {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
 }
-.lc-dm-switch {
-  display: flex;
-  flex: none;
-  padding: 10px 14px 0;
-}
-.lc-dm-both > .lc-dz {
-  min-height: 0;
-}
-.lc-dm-head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 6px 10px 6px 16px;
-}
-.lc-dm-name {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  line-height: 17px;
-}
-.lc-dm-name > b {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--l-ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-dm-meta {
-  font-size: 12px;
-  color: var(--l-ink-3);
-  white-space: nowrap;
-}
-.lc-dm-head > .lc-btn {
-  flex: none;
-  white-space: nowrap;
-}
+/* Who is drawing what, the foot's words: one line, cut with an ellipsis. */
 .lc-dm-status {
   display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding: 0 16px 10px;
-  font-size: 13px;
-  color: var(--l-ink-3);
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
 }
 .lc-dm-who {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-.lc-dm-who b {
-  font-weight: 600;
-  color: var(--l-ink);
 }
 .lc-dm-body {
   position: relative;
@@ -698,17 +562,8 @@ html[data-native="mac"] .lc-dz-full-bar {
 .lc-dm-box[data-on="lead"] {
   --lc-dm-c: var(--ld-lead);
 }
-/* Narrow: Open in Liner Design keeps its words on a line of its own under the title. */
+/* Narrow: the frames keep a smaller margin. */
 @container (max-width: 340px) {
-  .lc-dm-head {
-    flex-wrap: wrap;
-    row-gap: 8px;
-    padding: 10px 12px;
-  }
-  .lc-dm-name {
-    flex-basis: 100%;
-  }
-  .lc-dm-status,
   .lc-dm-body {
     padding-inline: 12px;
   }

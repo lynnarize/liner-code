@@ -115,12 +115,11 @@
 .ldc-col .lc-ll.ldc-live {
   padding: 2px 16px 8px;
 }
-.ldc-v {
+/* The small row's own ›: it opens the chat. */
+.ldc-min-go {
   flex: none;
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--lc-hair);
+  margin-left: auto;
+  color: var(--l-ink-4);
 }
 .ldc-h {
   display: flex;
@@ -138,9 +137,9 @@
   font-weight: 500;
   color: var(--l-ink);
 }
-.ldc-h .lc-tb[aria-pressed="true"] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
+/* The open chat's Make small sits a little apart, where a pane's Close does. */
+.ldc-h > .ldc-mini {
+  margin-left: 10px;
 }
 .ldc-empty {
   margin: 0;
@@ -182,9 +181,6 @@
   min-height: 0;
   background: var(--lc-paper);
   box-shadow: 1px 0 0 var(--lc-hair);
-}
-.ldc-col > .ldc-h {
-  padding: 0 8px 0 16px;
 }
 .ldc-col > .ldc-empty {
   flex: 1;

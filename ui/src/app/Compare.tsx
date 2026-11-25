@@ -9,10 +9,11 @@ import { CodeDiff } from "@liner/pro/code-diff/code-diff";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { toast } from "@liner/components/toast/toast";
 import { loadItems, rpc, useEngine, useItems } from "./engine";
-import { MARK_WORD, StateMark, type MarkState } from "./icons";
+import { I, MARK_WORD, N, StateMark, type MarkState } from "./icons";
 import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, money, plural, sumLines, threadModel } from "./model";
 import { reviewHeld } from "./session-state";
 import { Lines, ModelTag, ShowSidebar } from "./ui";
+import { PaneButton, PaneFoot, PaneHead, PaneNote, PaneRow, PaneWords } from "./Pane";
 
 export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string; sidebar: boolean; onSidebar: () => void; onOpen: (threadId: string) => void; onDone: (threadId: string) => void }) {
   const all = useEngine((s) => s.threads);
@@ -46,17 +47,17 @@ export function Compare({ id, sidebar, onSidebar, onOpen, onDone }: { id: string
         <h1 className="lc-title">{title}</h1>
         <span className="lc-quiet lc-cmp-n">{running ? `${running} of ${threads.length} still working` : `${plural(threads.length, "answer")}, pick one`}</span>
         <span className="lc-grow" data-drag />
+        {/* A view toggle is a pressed icon, as Files' "only changed files" is: the Changes icon, lit while the changes show. */}
         {threads.length > 0 && (
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" aria-pressed={diffs} onClick={() => setDiffs((d) => !d)}>
-            {diffs ? "Hide the changes" : "Show the changes"}
+          <button type="button" className="lc-sw-b l-focus" aria-label="Show the changes" title={diffs ? "Show the answers" : "Show the changes"} aria-pressed={diffs} onClick={() => setDiffs((d) => !d)}>
+            <N.changes />
           </button>
         )}
       </header>
       {threads.length === 0 ? (
-        <div className="lc-panel-empty">
-          <b>This comparison is over</b>
-          <p>You kept one; the others are in the archive.</p>
-        </div>
+        <PaneNote icon={<I.check size={16} />} title="This comparison is over">
+          You kept one; the others are in the archive.
+        </PaneNote>
       ) : (
         <div className="lc-cmp-cols" style={{ gridTemplateColumns: `repeat(${threads.length}, minmax(300px, 1fr))` }}>
           {threads.map((t, i) => (
@@ -96,50 +97,46 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
   const u = t.usage;
   // A column that changed nothing has no diff to ask for: it says so, rather than show its answer under "Hide the changes".
   const shown = diffs ? (diff ?? (t.status !== "running" && !cps.length ? [] : null)) : null;
+  const name = modelLabel(model, providers);
+  // Each column is the pane frame (a 44px head, rows, a 56px foot), flush beside the next, a hairline between them.
   return (
-    <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={modelLabel(model, providers)}>
-      <header className="lc-cmp-h">
-        <ModelTag kind={markOf(model)} label={modelLabel(model, providers)} size={14} />
-        <span className="lc-quiet">{a.name !== modelLabel(model, providers) ? a.name : ""}</span>
-        <span className="lc-grow" />
-        {/* How each one stands, as a session's row says it: the mark stays mounted so a change plays, and the words are the mark's. */}
-        <span className="lc-cmp-s">
-          <StateMark state={state} size={12} brand={markOf(model)} />
-          {MARK_WORD[state]}
-        </span>
-      </header>
-      <dl className="lc-cmp-stats">
-        <div>
-          <dt>Changed</dt>
-          <dd>{files.length ? <>{plural(files.length, "file")} <Lines {...lines} /></> : "Nothing yet"}</dd>
-        </div>
-        <div>
-          <dt>Took</dt>
-          <dd>{turn?.kind === "turn" && turn.seconds ? duration(turn.seconds) : "–"}</dd>
-        </div>
-        <div>
-          <dt>Cost</dt>
-          <dd>{u.costUsd ? money(u.costUsd) : `${compact(u.inputTokens + u.outputTokens + u.cacheReadTokens)} tokens`}</dd>
-        </div>
-      </dl>
+    <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={name}>
+      <PaneHead
+        canvas={false}
+        name={<ModelTag kind={markOf(model)} label={name} size={14} />}
+        shows={a.name !== name ? <PaneWords>{a.name}</PaneWords> : undefined}
+        tools={
+          // How each one stands, as a session's row says it: the mark stays mounted so a change plays, and the words are the mark's.
+          <span className="lc-cmp-s">
+            <StateMark state={state} size={12} />
+            {MARK_WORD[state]}
+          </span>
+        }
+      />
+      <div className="lc-cmp-stats">
+        <PaneRow value={files.length ? <>{plural(files.length, "file")} <Lines {...lines} /></> : "Nothing yet"} quiet={!files.length}>
+          Changed
+        </PaneRow>
+        <PaneRow value={turn?.kind === "turn" && turn.seconds ? duration(turn.seconds) : "–"}>Took</PaneRow>
+        <PaneRow value={u.costUsd ? money(u.costUsd) : `${compact(u.inputTokens + u.outputTokens + u.cacheReadTokens)} tokens`}>Cost</PaneRow>
+      </div>
       <div className="lc-cmp-body">
         {shown ? (
-          shown.length ? <CodeDiff files={shown} view="unified" maxHeight={100000} defaultWrap /> : <p className="lc-quiet">No changes.</p>
+          shown.length ? <CodeDiff files={shown} view="unified" maxHeight={100000} defaultWrap /> : <PaneNote title="No changes">This one changed no file.</PaneNote>
         ) : last?.kind === "text" ? (
           <StreamedMarkdown className="lc-md" text={last.text} streaming={last.streaming} animate={false} />
+        ) : t.status === "running" ? (
+          <PaneNote icon={<StateMark state="working" size={16} />} title="Reading the project" />
         ) : (
-          <p className="lc-quiet">{t.status === "running" ? "Reading the project" : "It hasn't answered."}</p>
+          <PaneNote title="It hasn't answered" />
         )}
       </div>
-      <footer className="lc-cmp-f">
-        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onOpen}>
-          Open the session
-        </button>
-        <span className="lc-grow" />
-        <button type="button" className="lc-btn" data-kind="accent" data-size="sm" disabled={busy || t.status === "running" || !files.length} onClick={onKeep}>
+      <PaneFoot>
+        <PaneButton onClick={onOpen}>Open the session</PaneButton>
+        <PaneButton ink disabled={busy || t.status === "running" || !files.length} onClick={onKeep}>
           Keep this one
-        </button>
-      </footer>
+        </PaneButton>
+      </PaneFoot>
     </section>
   );
 }

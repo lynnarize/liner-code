@@ -3,8 +3,9 @@
   every frame drawn at a size that fits the panel with its name over it, as on the canvas, kept in
   step with the file (canvas.changed: a frame drawn again, new frames come, removed ones go) and
   with who is on a frame now (canvas.presence: the ring in the lead's or the sidekick's colour).
-  Over it, the design's title, how many frames, who is drawing, and Open in Liner Design; pressing a
-  frame opens it there too, on that frame (face.ts landOn).
+  In the panel's frame: the head says the design (a picker when the chat showed designs too) and how
+  many frames, the foot who is drawing what and Open in Liner Design; pressing a frame opens it there
+  too, on that frame (face.ts landOn).
 
   Its own light read of the file through the canvas's calls (canvas.open, canvas.frame.read,
   canvas.watch), never the Design face's store, which holds the one file that face shows. A frame is
@@ -14,7 +15,7 @@
   it has loaded, so nothing flashes. Cost: only frames in view (and a few just past it, MAX_LIVE in
   all), and none while the panel is hidden, hold a live iframe; the rest are a flat box of their size.
 */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DesignFile, DesignFrame, Item, Thread } from "@contracts";
 import { DESIGN_UNREADABLE } from "@contracts";
 import { SHIM } from "./Design";
@@ -24,6 +25,8 @@ import { I, StateMark } from "./icons";
 import { plural } from "./model";
 import { reviewHeld } from "./session-state";
 import { SurfaceNote } from "./Surfaces";
+import { PANE_PICK, PaneButton, PaneFoot, PaneHead, PaneWords } from "./Pane";
+import { PanelHead, Pop, Row, Sep } from "./ui";
 
 /** Frames just past the view hold a live iframe only while fewer than MAX_LIVE do; every frame in view does, up to MAX_IN_VIEW (a safety cap for a very tall panel). */
 const MAX_LIVE = 8;
@@ -273,7 +276,11 @@ function Drawing({ doc, f, scale }: { doc: string; f: DesignFrame; scale: number
 
 type Laid = { f: DesignFrame; span: number; scale: number; w: number; h: number };
 
-export function DesignMini({ thread, items, cwd, file: slug, agentName, visible, top }: { thread: Thread; items: Item[]; cwd: string; file: string; agentName: string; visible: boolean; top?: ReactNode }) {
+/**
+  `chat`: the designs an agent showed in the chat in this session, which the head's design picker lists under the
+  file; picking one shows it (`onChat`, Design.tsx).
+*/
+export function DesignMini({ thread, items, cwd, file: slug, agentName, visible, chat = [], onChat }: { thread: Thread; items: Item[]; cwd: string; file: string; agentName: string; visible: boolean; chat?: { design: string; title: string }[]; onChat?: (design: string) => void }) {
   const { read, html, who: heard, why } = useMiniFile(cwd, slug, visible);
   const own = useEngine((s) => s.projects.find((p) => p.id === thread.projectId)?.kind === "design");
   const body = useRef<HTMLDivElement>(null);
@@ -391,10 +398,29 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
     window.dispatchEvent(new CustomEvent("lc:open-liner-design", { detail: { threadId: thread.id, cwd, file: slug } }));
   };
 
+  // The head's one picker: the file, and the designs shown in chat when there are any; with none, the file's name in words.
+  const name = file?.title ?? slug;
+  const pick = chat.length ? (
+    <Pop label="Designs in this session" menu width={300} triggerClass={PANE_PICK} trigger={<><span className="lc-dz-pname">{name}</span><I.chevD size={12} /></>}>
+      {(close) => (
+        <div className="lc-dz-menu">
+          <PanelHead>Liner Design</PanelHead>
+          <Row title={name} icon={<I.design size={14} />} on onPick={close} />
+          <Sep />
+          <PanelHead>Shown in chat</PanelHead>
+          {chat.map((x) => (
+            <Row key={x.design} title={x.title} onPick={() => (close(), onChat?.(x.design))} />
+          ))}
+        </div>
+      )}
+    </Pop>
+  ) : (
+    <PaneWords>{name}</PaneWords>
+  );
   if (why)
     return (
       <div className="lc-dm">
-        {top}
+        <PaneHead shows={pick} />
         <SurfaceNote icon={<I.design size={20} />} title="Design not found">
           {why}
         </SurfaceNote>
@@ -409,38 +435,11 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
 
   return (
     <div className="lc-dm">
-      {top}
-      <div className="lc-dm-head">
-        <div className="lc-dm-name">
-          <b title={file?.title}>{file?.title ?? "Opening the design"}</b>
-          {file && (
-            <span className="lc-dm-meta">
-              {plural(file.frames.length, "frame")}
-              {own ? " · On its own" : ""}
-            </span>
-          )}
-        </div>
-        <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => open()}>
-          <I.edit size={14} />
-          Open in Liner Design
-        </button>
-      </div>
+      <PaneHead shows={<>{pick}{file && <PaneWords>{plural(file.frames.length, "frame")}{own ? " · On its own" : ""}</PaneWords>}</>} />
       {/* Always there, so its first words are heard; it says who is drawing, not every frame they move to. */}
       <span className="l-sr-only" role="status">
         {[...new Set(status.map((w) => w.name))].map((n) => `${n} is drawing on the canvas.`).join(" ")}
       </span>
-      {status.length > 0 && (
-        <div className="lc-dm-status" aria-hidden>
-          {status.map((w, i) => (
-            <span key={i} className="lc-dm-who">
-              <StateMark state="working" size={12} tint={w.lead ? "var(--ld-lead)" : "var(--ld-side)"} />
-              <span>
-                <b>{w.name}</b> is drawing {w.frame ?? "on the canvas"}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
       <div ref={body} className="lc-dm-body">
         {!file ? (
           <span className="l-shimmer lc-dm-wait">Opening the design</span>
@@ -500,6 +499,27 @@ export function DesignMini({ thread, items, cwd, file: slug, agentName, visible,
           </div>
         )}
       </div>
+      {/* Who is drawing what, then the one action: the file in Liner Design. */}
+      <PaneFoot
+        say={
+          status.length > 0 && (
+            <span className="lc-dm-status" aria-hidden>
+              {status.map((w, i) => (
+                <span key={i} className="lc-dm-who">
+                  <StateMark state="working" size={12} />
+                  <span>
+                    {w.name} is drawing {w.frame ?? "on the canvas"}
+                  </span>
+                </span>
+              ))}
+            </span>
+          )
+        }
+      >
+        <PaneButton ink onClick={() => open()}>
+          Open in Liner Design
+        </PaneButton>
+      </PaneFoot>
     </div>
   );
 }

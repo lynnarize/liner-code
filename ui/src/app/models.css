@@ -236,31 +236,21 @@
   font-weight: 500;
   color: var(--l-accent-text);
 }
-.lc-pc-note {
-  display: grid;
-  justify-items: start;
+/* GitHub not ready: the one empty state (PaneNote), its two buttons side by side, the ink one last. */
+.lc-pc-list > .lc-panel-empty {
+  padding: 20px 16px 24px;
+}
+.lc-pc-acts {
+  display: flex;
   gap: 6px;
-  padding: 10px 10px 12px;
-  font-size: 13px;
 }
-.lc-pc-note p {
-  margin: 0 0 4px;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--l-ink-3);
-}
-.lc-pc-foot {
-  margin: 6px 8px 4px;
-  font-size: 12px;
-  line-height: 17px;
-}
-.lc-pc-foot .lc-link {
-  display: inline;
-  padding: 0;
-  font-size: inherit;
-}
+/* A scan or GitHub that failed says so in a line of its own, in the warning's colour: no box. */
 .lc-pc-warn {
-  margin: 4px;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-warn-text);
 }
 .lc-pb.lc-rb-proj {
   max-width: 220px;
@@ -905,8 +895,11 @@
   color: var(--l-ink-3);
 }
 /*
-  Effort's slider: one pill 28 high, a stop a level of the model's own. It fills in ink from the left through the level it
-  runs at, the knob at that stop's end; each stop past it keeps a 1px tick where the knob would sit. The knob is white in
+  Effort's slider: one pill 28 high, a stop a level of the model's own, the lowest at its start and the highest at its end.
+  The knob stands on the level it runs at and the ink fills up to it, so the lowest level is the knob alone at the start
+  (a model whose lowest is "none" must not read as half), and with no level picked the track is empty with no knob. Each
+  stop past the knob keeps a 1px tick where the knob would sit; a stop's part of the track is the part nearest it, so the
+  end stops take half a step each. The knob is white in
   both looks, as the owner's reference and the app's own switch thumb (switch.css) are, and takes the switch thumb's shadow,
   whose ring keeps it apart from the light ink fill of the dark look. The fill and the knob move in 180ms,
   the length Quick motion keeps for what you press; Reduce motion stops them (below, and foundation.css).
@@ -927,28 +920,44 @@
 .lc-pk-slide-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  width: calc(var(--lc-pk-fill, 0) * 100%);
+  width: calc(var(--lc-pk-fill, 0) * (100% - 18px) + 18px);
+  /* The track's own corner, which is the knob's 5 and the 3 it sits in from the fill's edge: the fill ends round about the knob, not in a straight cut beside it. */
+  border-radius: 8px;
   background: var(--l-ink);
   pointer-events: none;
   transition: width 180ms var(--l-ease-out);
+}
+.lc-pk-slide[data-empty] .lc-pk-slide-fill {
+  width: 0;
 }
 .lc-pk-slide-stop {
   position: relative;
   flex: 1 1 0;
 }
+/* Not a lone stop's: one level alone keeps the whole track, and half a share of it would leave its tick in the middle. */
+.lc-pk-slide-stop[data-half] {
+  flex-grow: 0.5;
+}
 .lc-pk-slide-stop[data-tick]::after {
   content: "";
   position: absolute;
   top: 9px;
-  right: 8px;
+  left: calc(50% + 9px - 18px * var(--lc-pk-at, 0.5));
   width: 1px;
   height: 10px;
   background: var(--l-line-strong);
 }
+.lc-pk-slide-stop[data-end="start"][data-tick]::after {
+  left: 9px;
+}
+.lc-pk-slide-stop[data-end="end"][data-tick]::after {
+  left: auto;
+  right: 9px;
+}
 .lc-pk-slide-knob {
   position: absolute;
   top: 3px;
-  left: clamp(3px, calc(var(--lc-pk-fill, 0) * 100% - 15px), calc(100% - 15px));
+  left: calc(3px + var(--lc-pk-fill, 0) * (100% - 18px));
   width: 12px;
   height: 22px;
   border-radius: 5px;

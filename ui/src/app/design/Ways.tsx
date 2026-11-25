@@ -19,10 +19,11 @@ import { toast } from "@liner/components/toast/toast";
 import { getState, loadItems, rpc, useEngine, useHoldItems } from "../engine";
 import { I, MARK_WORD, ModelMark, StateMark } from "../icons";
 import { duration, markOf, modelLabel, money, plural } from "../model";
-import { ContextMenu, Row } from "../ui";
+import { ContextMenu, PanelHead, Row } from "../ui";
 import { countFor, fixerName, leanSeen } from "./checks";
 import { sayBar, useInCanvas } from "./SayBar";
 import { design, getDesign, onCanvasEvent, selectionOf, useDesign } from "./store";
+import { useTrayInk } from "./tray-ink";
 import "./ways.css";
 
 // ---------- Which frames are takes, and of what
@@ -328,7 +329,7 @@ function MoreMenu() {
       {() =>
         m && (
           <>
-            <div className="ld-way-mh">3 more like this, each in its own frame beside it</div>
+            <PanelHead>3 more like this, each in its own frame beside it</PanelHead>
             <Row title={`Three takes by ${who}`} note="One message, three new frames" icon={<I.layers size={16} />} onPick={() => go(() => threeHere(m.frame, m.node))} />
             <Row
               title={tools.length ? `One each by ${tools.map((t) => t.name).join(", ")}` : "One each by your other tools"}
@@ -370,8 +371,8 @@ export function WayLabel({ frame }: { frame: DesignFrame }) {
         {ref && <ModelMark kind={markOf(ref)} size={12} />}
         {by.name}
       </span>
-      {/* A take at work says so with the one mark for state, in its model's colour (a shimmer stops under Reduce motion). */}
-      {thread?.status === "running" && <StateMark state="working" size={12} brand={ref ? markOf(ref) : undefined} label={MARK_WORD.working} />}
+      {/* A take at work says so with the one mark for state, untinted (its model is the tag before it). */}
+      {thread?.status === "running" && <StateMark state="working" size={12} label={MARK_WORD.working} />}
       {(cost !== undefined || secs !== undefined) && <span className="ld-num">{[cost !== undefined ? costText(cost) : "", secs !== undefined ? duration(secs) : ""].filter(Boolean).join(" · ")}</span>}
     </>
   );
@@ -445,7 +446,7 @@ function KeepBar({ way, picked, box }: { way: Way; picked: DesignFrame; box: { l
       <ContextMenu at={mixing} label="Mix with" width={260} onClose={() => setMixing(null)}>
         {(close) => (
           <>
-            <div className="ld-way-mh">Mix this one with</div>
+            <PanelHead>Mix this one with</PanelHead>
             {others.map((o) => (
               <Row key={o.id} title={o.id === way.orig?.id ? "The original" : `${byOf(o)?.name ?? "A take"}'s`} which={o.name} onPick={() => (close(), mix(way, picked, o))} />
             ))}
@@ -536,14 +537,16 @@ export function WaysRow() {
   const ways = useMemo(() => waysOf(file?.frames ?? []), [file]);
   const w = ways.find((x) => [...x.takes, ...(x.orig ? [x.orig] : [])].some((f) => sel.some((y) => y.frame === f.id)));
   useHoldItems(w ? w.takes.map(sessionOf) : []);
+  const picked = w?.takes.find((f) => sel.some((x) => x.frame === f.id));
+  // Keep is ink only as the tray's one button (tray-ink.ts).
+  const ink = useTrayInk(picked ? "keep" : undefined);
   if (!w) return null;
-  const picked = w.takes.find((f) => sel.some((x) => x.frame === f.id));
   const costs = w.takes.map((f) => costOf(threads.find((t) => t.id === sessionOf(f)), items)?.cost);
   const total = costs.every((c) => c !== undefined) ? costs.reduce((a, b) => a! + b!, 0) : undefined;
   const names = new Set(w.takes.map((f) => byOf(f)?.name));
   return (
     <div className="lc-trow ld-way-row" role="status">
-      <I.layers size={14} />
+      <I.layers size={16} />
       <span className="lc-trow-t">
         One ask, drawn {w.takes.length} {w.takes.length === 1 ? "way" : "ways"}
         {names.size === 1 ? ` by ${[...names][0]}` : ""}
@@ -551,7 +554,7 @@ export function WaysRow() {
       </span>
       <span className="lc-grow" />
       {picked && (
-        <button type="button" className="lc-trow-lk l-focus" onClick={() => void keep(w, picked)}>
+        <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind={ink ? "ink" : "ghost"} onClick={() => void keep(w, picked)}>
           Keep {names.size > 1 ? `${byOf(picked)?.name}'s` : "this one"}
         </button>
       )}

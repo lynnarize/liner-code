@@ -15,12 +15,17 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { DesignFrame, FrameBuild, ShownChip, Thread, UserShown } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { onStream, rpc, useEngine } from "../engine";
-import { I, wt } from "../icons";
+import { I, StepMark } from "../icons";
 import { agentOf } from "../model";
+import { PANE_ROW, PaneButton, PaneFoot, PaneNote, PaneRowIn, PaneSection } from "../Pane";
+import { Pop, Row } from "../ui";
+import { footButtons } from "./build-foot";
+import { toFix, useChecks } from "./checks";
 import { compareOn, openCompare } from "./Compare";
 import { pendingCount, sendToCode } from "./Live";
 import { blankHtml, design, getDesign, isGone, subscribeDesign, useDesign } from "./store";
 import { FOOT } from "./inspect/slots";
+import { useInkClaim, useTrayInk } from "./tray-ink";
 import "./build.css";
 
 // The builds of the open design file, by frame id.
@@ -178,16 +183,12 @@ export function bringAsk(f: DesignFrame, b: FrameBuild) {
 
 const STATE: Record<FrameBuild["state"], string> = { step: "In step", "design-ahead": "Design ahead", "code-ahead": "Code ahead", none: "Not built" };
 
-/** The state's mark: a tick, an arrow towards the code, one back from it, a ring. */
+/** The state's mark: the steps' tick and ring (StepMark), and an arrow towards the code or one back from it. */
 export function StateIcon({ state, size = 14 }: { state: FrameBuild["state"]; size?: number }) {
-  if (state === "step") return <I.check size={size} />;
+  if (state === "step") return <StepMark state="done" size={size} label="In step" />;
   if (state === "design-ahead") return <I.forward size={size} />;
   if (state === "code-ahead") return <I.back size={size} />;
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16)} aria-hidden>
-      <circle cx="8" cy="8" r="4.25" />
-    </svg>
-  );
+  return <StepMark state="waiting" size={size} label="Not built" />;
 }
 
 /** Not a screen (a brand board, a reference sheet): never built. build.state says so once read; the frame's own mark until then. */
@@ -259,23 +260,36 @@ function Built({ f, b }: { f: DesignFrame; b: FrameBuild }) {
       )}
       {b.state === "code-ahead" && b.changed && <ul className="ld-bt-l"><li>{b.changed}</li></ul>}
       <div className="ld-bt-a">
-        {b.state === "design-ahead" && (
-          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(updateAsk([{ f, b }]), "Sent: update the code", updateShown([{ f, b }]))}>
-            Update code
-          </button>
-        )}
+        {b.state === "design-ahead" && <PaneButton onClick={() => void askAgent(updateAsk([{ f, b }]), "Sent: update the code", updateShown([{ f, b }]))}>Update code</PaneButton>}
         {b.state === "code-ahead" && (
-          <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(bringAsk(f, b), "Sent: bring it into the frame", shownAsk(`Bring what changed in ${b.file} into ${f.name}`, { kind: "build", label: "Bring into the frame" }, [f]))}>
+          <PaneButton onClick={() => void askAgent(bringAsk(f, b), "Sent: bring it into the frame", shownAsk(`Bring what changed in ${b.file} into ${f.name}`, { kind: "build", label: "Bring into the frame" }, [f]))}>
             Bring it into the frame
-          </button>
+          </PaneButton>
         )}
         {b.state !== "none" && (
-          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" aria-pressed={comparing} onClick={() => openCompare(comparing ? undefined : f.id)}>
+          <PaneButton aria-pressed={comparing} onClick={() => openCompare(comparing ? undefined : f.id)}>
             {comparing ? "Stop comparing" : "Compare with the app"}
-          </button>
+          </PaneButton>
         )}
       </div>
     </section>
+  );
+}
+
+/**
+  Whether a frame is a screen of the app or not for code, as a setting is in the panel: a row with its value and a ›,
+  its menu the two choices. `name` is the row's words (the frame's name where several are listed).
+*/
+function ScreenRow({ f, screen, name }: { f: DesignFrame; screen: boolean; name: string }) {
+  return (
+    <Pop label={`${f.name}: a screen of the app, or not for code`} menu width={240} triggerClass={PANE_ROW} trigger={<PaneRowIn value={screen ? "Screen" : "Not for code"} quiet opens>{name}</PaneRowIn>}>
+      {(close) => (
+        <>
+          <Row title="A screen of the app" note="Build makes it into code" on={screen} onPick={() => (close(), screen || void setScreen(f, true))} />
+          <Row title="Not for code" note="A reference: Build leaves it out" on={!screen} onPick={() => (close(), screen && void setScreen(f, false))} />
+        </>
+      )}
+    </Pop>
   );
 }
 
@@ -289,148 +303,132 @@ export function BuildTab() {
   const cwd = useDesign((s) => s.cwd);
   const project = useEngine((s) => s.projects.find((p) => p.path === cwd)?.name);
   useEffect(() => void refreshBuilds(), []);
-  if (!file) return <div className="ld-body"><div className="ld-bt-empty">Open a design file to build it.</div></div>;
-  // A frame whose file is gone has nothing to build.
+  if (!file) return <PaneNote icon={<I.folder size={20} />} title="No design file open">Open a design file to build it.</PaneNote>;
   // A frame whose file is gone, or with nothing in it yet, has nothing to build.
   const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
   const live = file.frames.filter((f) => f.kind === "live").length;
+  if (!drawn.length && !live) return <PaneNote icon={<I.folder size={20} />} title="No frames yet">Draw one, or ask in the dock.</PaneNote>;
   const built = drawn.filter((f) => builds[f.id] && builds[f.id].state !== "none");
   const order: FrameBuild["state"][] = ["step", "design-ahead", "code-ahead"];
   built.sort((a, b) => order.indexOf(builds[a.id].state) - order.indexOf(builds[b.id].state));
   const sheets = drawn.filter((f) => !built.includes(f) && notScreen(f, builds[f.id]));
   const rest = drawn.filter((f) => !built.includes(f) && !sheets.includes(f));
   const last = Math.max(0, ...built.map((f) => file.frames.find((x) => x.id === f.id)?.built?.turn ?? 0));
+  // The project is the first section's label and how far it is built its note; each frame a card under an inset rule.
   return (
     <div className="ld-body ld-build">
-      <div className="ld-bt-top">
-        <I.folder size={16} />
-        <b className="ld-ell">{project ?? file.title}</b>
-        <span>{built.length ? (last ? `built in turn ${last}` : `${plural(built.length, "frame")} built`) : "nothing built yet"}</span>
-      </div>
-      {mock && <div className="ld-bt-empty">The mock has no project files: build states come from the engine.</div>}
-      {built.map((f) => (
-        <Built key={f.id} f={f} b={builds[f.id]} />
-      ))}
-      {rest.length > 0 && (
-        <section className="ld-bt" data-state="none">
-          <div className="ld-bt-h">
-            <span className="ld-bt-i" data-state="none">
-              <StateIcon state="none" size={14} />
-            </span>
-            <span className="ld-bt-n">{rest.length === 1 ? rest[0].name : built.length ? `${plural(rest.length, "more frame")}` : plural(rest.length, "frame")}</span>
-            <span className="ld-bt-s">Not built</span>
-          </div>
-          <ul className="ld-bt-rows">
-            {rest.map((f) => (
-              <li key={f.id}>
-                {rest.length > 1 && <span className="ld-ell">{f.name}</span>}
-                <button type="button" className="ld-live-lk l-focus" aria-label={`${f.name}: not for code`} title={`${f.name} isn't a screen of the app: Build leaves it out`} onClick={() => void setScreen(f, false)}>
-                  Not for code
-                </button>
-              </li>
-            ))}
-          </ul>
-          <div className="ld-bt-a">
-            <button type="button" className="lc-btn" data-size="sm" onClick={() => void askAgent(buildAsk(rest), "Sent: build them", buildShown(rest))}>
-              {rest.length === 1 ? "Build it" : "Build them"}
-            </button>
-          </div>
-        </section>
-      )}
-      {sheets.length > 0 && (
-        <section className="ld-bt" data-state="none">
-          <div className="ld-bt-h">
-            <span className="ld-bt-i" data-state="none" aria-hidden>
-              <I.page size={14} />
-            </span>
-            <span className="ld-bt-n">{sheets.length === 1 ? sheets[0].name : plural(sheets.length, "frame")}</span>
-            <span className="ld-bt-s">Not for code</span>
-          </div>
-          <p className="ld-bt-p">{sheets.length === 1 ? "A reference, not a screen of the app: Build leaves it out." : `${sheets.map((f) => f.name).join(", ").replace(/, ([^,]*)$/, " and $1")}: references, not screens of the app. Build leaves them out.`}</p>
-          <ul className="ld-bt-rows">
-            {sheets.map((f) => (
-              <li key={f.id}>
-                {sheets.length > 1 && <span className="ld-ell">{f.name}</span>}
-                <button type="button" className="ld-live-lk l-focus" aria-label={`${f.name}: this is a screen`} onClick={() => void setScreen(f, true)}>
-                  This is a screen
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {live > 0 && <p className="ld-bt-p ld-bt-live">{plural(live, "live frame")} {live === 1 ? "is" : "are"} the running app itself: {live === 1 ? "its" : "their"} changes go to code from the dock.</p>}
-      {!drawn.length && !live && <div className="ld-bt-empty">No frames yet. Draw one, or ask in the dock.</div>}
+      <PaneSection label={project ?? file.title} note={built.length ? (last ? `Built in turn ${last}` : `${plural(built.length, "frame")} built`) : "Nothing built yet"}>
+        {mock && <p className="ld-note ld-bt-p">The mock has no project files: build states come from the engine.</p>}
+        {built.map((f) => (
+          <Built key={f.id} f={f} b={builds[f.id]} />
+        ))}
+        {/* Build is the foot's (its ink action, or a quiet button beside Send or Update, build-foot.ts), so the card only says which frames wait and lets one be marked not for code. */}
+        {rest.length > 0 && (
+          <section className="ld-bt" data-state="none">
+            <div className="ld-bt-h">
+              <span className="ld-bt-i" data-state="none">
+                <StateIcon state="none" size={14} />
+              </span>
+              <span className="ld-bt-n">{rest.length === 1 ? rest[0].name : built.length ? `${plural(rest.length, "more frame")}` : plural(rest.length, "frame")}</span>
+              <span className="ld-bt-s">Not built</span>
+            </div>
+            <div className="ld-bt-rows">
+              {rest.map((f) => (
+                <ScreenRow key={f.id} f={f} screen name={rest.length > 1 ? f.name : "What it is"} />
+              ))}
+            </div>
+          </section>
+        )}
+        {sheets.length > 0 && (
+          <section className="ld-bt" data-state="none">
+            <div className="ld-bt-h">
+              <span className="ld-bt-i" data-state="none" aria-hidden>
+                <I.page size={14} />
+              </span>
+              <span className="ld-bt-n">{sheets.length === 1 ? sheets[0].name : plural(sheets.length, "frame")}</span>
+              <span className="ld-bt-s">Not for code</span>
+            </div>
+            <p className="ld-bt-p">{sheets.length === 1 ? "A reference, not a screen of the app: Build leaves it out." : `${sheets.map((f) => f.name).join(", ").replace(/, ([^,]*)$/, " and $1")}: references, not screens of the app. Build leaves them out.`}</p>
+            <div className="ld-bt-rows">
+              {sheets.map((f) => (
+                <ScreenRow key={f.id} f={f} screen={false} name={sheets.length > 1 ? f.name : "What it is"} />
+              ))}
+            </div>
+          </section>
+        )}
+        {live > 0 && <p className="ld-bt-p ld-bt-live">{plural(live, "live frame")} {live === 1 ? "is" : "are"} the running app itself: {live === 1 ? "its" : "their"} changes go to code from the dock.</p>}
+      </PaneSection>
     </div>
   );
 }
 
-/** The inspector's foot: what waits to go to code, and the one ink action for it. */
-function BuildFoot() {
+/** The inspector's foot: what waits to go to code, and the one ink action for it; on Checks with something to fix, Fix all has the foot instead. */
+function BuildFoot({ tab }: { tab: string }) {
   const file = useDesign((s) => s.file);
   const sel = useDesign((s) => s.sel);
   const waiting = useDesign(pendingCount);
   const builds = useBuilds();
   // Read so a frame drawn into for the first time joins the counts.
   useDesign((s) => s.html);
-  if (!file) return null;
-  // A frame whose file is gone has nothing to build.
+  // Read so the foot comes back here once Checks has nothing left to fix (its Fix all has the foot until then).
+  useChecks((s) => s.byFrame);
+  const fixing = tab === "checks" && toFix().length > 0;
   // A frame whose file is gone, or with nothing in it yet, has nothing to build.
-  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
-  if (waiting) {
-    return (
-      <div className="ld-bfoot">
-        <span>{plural(waiting, "change")} waiting</span>
-        <button type="button" className="lc-btn" data-kind="ink" onClick={() => void sendToCode()}>
-          Send to code
-        </button>
-      </div>
-    );
-  }
+  const drawn = (file?.frames ?? []).filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
   const ahead = drawn.filter((f) => builds[f.id]?.state === "design-ahead").map((f) => ({ f, b: builds[f.id] }));
-  if (ahead.length) {
-    const n = ahead.reduce((k, x) => k + Math.max(1, linesOf(x.b).length), 0);
-    return (
-      <div className="ld-bfoot">
-        <span>{plural(n, "change")} to send</span>
-        <button type="button" className="lc-btn" data-kind="ink" onClick={() => void askAgent(updateAsk(ahead), "Sent: update the code", updateShown(ahead))}>
-          Update code
-        </button>
-      </div>
-    );
-  }
   const screens = drawn.filter((f) => !notScreen(f, builds[f.id]));
   const none = screens.filter((f) => !builds[f.id] || builds[f.id].state === "none");
   const picked = screens.filter((f) => sel.some((x) => x.frame === f.id));
-  // Nothing to send: every screen built and none ahead. The button goes quiet and says so; it wakes
-  // as soon as a frame is ahead or not built. Code ahead is the Build tab's (bring it into the frame).
-  const codeAhead = screens.filter((f) => builds[f.id]?.state === "code-ahead").length;
-  if (screens.length && !none.length) {
+  const offer = footButtons({ waiting, ahead: ahead.length, screens: screens.length, notBuilt: none.length });
+  // While this foot shows Send to code or Update code in ink, the dock's row for the same thing stays quiet (tray-ink.ts).
+  useInkClaim("foot", !file || fixing ? undefined : offer.ink === "send" || offer.ink === "update" ? offer.ink : undefined);
+  if (!file || fixing) return null;
+  // Send or Update has the ink; frames not built yet keep a quiet Build before it, or nothing would build them.
+  const quietBuild = offer.quietBuild && (
+    <PaneButton title={`Build ${none.map((f) => f.name).join(", ")}`} onClick={() => void askAgent(buildAsk(none), "Sent: build", buildShown(none))}>
+      Build
+    </PaneButton>
+  );
+  if (offer.ink === "send") {
     return (
-      <div className="ld-bfoot">
-        <span>{codeAhead ? `Code is ahead in ${plural(codeAhead, "frame")}: see Build` : "Every frame is in step"}</span>
-        <button type="button" className="lc-btn" disabled title="Nothing to send: every frame is in step with its file">
-          All in step
-        </button>
-      </div>
+      <PaneFoot say={`${plural(waiting, "change")} waiting`}>
+        {quietBuild}
+        <PaneButton ink onClick={() => void sendToCode()}>
+          Send to code
+        </PaneButton>
+      </PaneFoot>
     );
   }
+  if (offer.ink === "update") {
+    const n = ahead.reduce((k, x) => k + Math.max(1, linesOf(x.b).length), 0);
+    return (
+      <PaneFoot say={`${plural(n, "change")} to send`}>
+        {quietBuild}
+        <PaneButton ink onClick={() => void askAgent(updateAsk(ahead), "Sent: update the code", updateShown(ahead))}>
+          Update code
+        </PaneButton>
+      </PaneFoot>
+    );
+  }
+  // Nothing to send: every screen built and none ahead. The foot says so in words and has no button; the button comes back
+  // as soon as a frame is ahead or not built. Code ahead is the Build tab's (bring it into the frame).
+  const codeAhead = screens.filter((f) => builds[f.id]?.state === "code-ahead").length;
+  if (!offer.ink) return <PaneFoot say={codeAhead ? `Code is ahead in ${plural(codeAhead, "frame")}: see Build` : "Every frame is in step"} />;
   const which = none.length ? none : picked.length ? picked : screens;
   const note = !screens.length ? "No screens to build yet" : none.length === screens.length ? `${plural(screens.length, "frame")}, none built yet` : `${plural(none.length, "frame")} not built`;
   return (
-    <div className="ld-bfoot">
-      <span>{note}</span>
-      <button type="button" className="lc-btn" data-kind="ink" disabled={!which.length} title={which.length ? `Build ${which.map((f) => f.name).join(", ")}` : undefined} onClick={() => void askAgent(buildAsk(which), "Sent: build", buildShown(which))}>
+    <PaneFoot say={note}>
+      <PaneButton ink disabled={!which.length} title={which.length ? `Build ${which.map((f) => f.name).join(", ")}` : undefined} onClick={() => void askAgent(buildAsk(which), "Sent: build", buildShown(which))}>
         Build
-      </button>
-    </div>
+      </PaneButton>
+    </PaneFoot>
   );
 }
 
 // The foot is the inspector's slot: one entry, kept once across reloads of this module.
 {
   const i = FOOT.findIndex((x) => x.id === "build");
-  const entry = { id: "build", render: () => <BuildFoot /> };
+  const entry = { id: "build", render: (tab: string) => <BuildFoot tab={tab} /> };
   if (i >= 0) FOOT[i] = entry;
   else FOOT.push(entry);
 }
@@ -447,35 +445,36 @@ export function WaitRow({ thread }: { thread: Thread }) {
   useDesign((s) => s.html);
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
-  if (!file || thread.status === "running") return null;
+  const ahead = (file?.frames ?? []).filter((f) => !isGone(f) && builds[f.id]?.state === "design-ahead");
+  const shows = Boolean(file) && thread.status !== "running";
+  // Quiet beside the inspector foot's ink button for the same action, or beside another row with a button (tray-ink.ts).
+  const ink = useTrayInk(!shows ? undefined : waiting ? "send" : ahead.length ? "update" : undefined);
+  if (!file || !shows) return null;
   if (waiting) {
     return (
       <div className="lc-trow ld-wait" role="status">
-        <I.globe size={14} />
+        <I.globe size={16} />
         <span className="lc-trow-t">
           <b>Live</b> from the Browser panel's server
         </span>
         <span className="lc-grow" />
         <span className="ld-q">{plural(waiting, "change")} waiting</span>
-        <button type="button" className="lc-trow-lk l-focus" onClick={() => void sendToCode()}>
+        <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind={ink ? "ink" : "ghost"} onClick={() => void sendToCode()}>
           Send to code
         </button>
       </div>
     );
   }
-  const ahead = file.frames.filter((f) => !isGone(f) && builds[f.id]?.state === "design-ahead");
   if (!ahead.length) return null;
   const one = ahead[0];
   const n = linesOf(builds[one.id]).length;
   const who = agentOf(thread.agent, agents, providers).name;
   return (
     <div className="lc-trow ld-wait" role="status">
-      <span className="ld-bmark ld-bmark-i" data-state="design-ahead" aria-hidden>
-        <I.forward size={14} />
-      </span>
+      <I.forward size={16} />
       <span className="lc-trow-t">{ahead.length === 1 ? `${one.name} is ${n ? plural(n, "change") : "a change"} ahead of the code` : `${plural(ahead.length, "frame")} are ahead of the code`}</span>
       <span className="lc-grow" />
-      <button type="button" className="lc-trow-lk l-focus" title={`Ask ${who} to change only what differs`} onClick={() => void askAgent(updateAsk(ahead.map((f) => ({ f, b: builds[f.id] }))), "Sent: update the code", updateShown(ahead.map((f) => ({ f, b: builds[f.id] }))))}>
+      <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind={ink ? "ink" : "ghost"} title={`Ask ${who} to change only what differs`} onClick={() => void askAgent(updateAsk(ahead.map((f) => ({ f, b: builds[f.id] }))), "Sent: update the code", updateShown(ahead.map((f) => ({ f, b: builds[f.id] }))))}>
         Update code
       </button>
     </div>

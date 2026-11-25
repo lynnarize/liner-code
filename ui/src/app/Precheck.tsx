@@ -12,7 +12,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Precheck, Project, SessionMode, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
-import { I } from "./icons";
+import { I, StateMark } from "./icons";
 import type { Outgoing, RunSettings } from "./Composer";
 import { DraftMemory } from "./precheck-state";
 import "./precheck.css";
@@ -182,8 +182,9 @@ export function usePrecheck(env: Env) {
 
   const row: ReactNode = holding ? (
     <div className="lc-trow lc-pcheck" role="status">
-      <I.sparkle size={16} />
-      <span className="lc-trow-t l-shimmer">Reading whether this belongs here</span>
+      {/* A tray row for something that runs leads with the Working mark, as the cards' rows do. */}
+      <StateMark state="working" size={14} />
+      <span className="lc-trow-t">Reading whether this belongs here</span>
       <span className="lc-grow" />
       <span className="lc-pcheck-key">Send again to send now</span>
     </div>
@@ -193,14 +194,15 @@ export function usePrecheck(env: Env) {
         <I.sparkle size={16} />
         <span className="lc-trow-t">{found.caption}</span>
         <span className="lc-grow" />
-        <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind="plain" onClick={act}>
-          {found.action}
-        </button>
+        {/* The one action in ink and last, as the tray's Commit is; Send here quiet before it. */}
         {found.kind === "unrelated" && (
           <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind="ghost" onClick={() => (reset(), env.send({ checked: true }))}>
             Send here
           </button>
         )}
+        <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind="ink" onClick={act}>
+          {found.action}
+        </button>
         <button type="button" className="lc-ib l-focus" aria-label="Dismiss" title="Dismiss" onClick={close}>
           <I.close size={14} />
         </button>

@@ -68,7 +68,7 @@ export function toolNotice(t: ToolUpdate): Notice | null {
   const base = { id: `${t.id}:${t.state}:${t.latest ?? ""}`, eyebrow: t.label };
   switch (t.state) {
     case "available":
-      return { ...base, title: `${t.latest} is out`, body: `You have ${t.current}. Liner Code runs ${t.command} once no session is working on it.`, action: { label: "Update now", onClick: () => updates.tool(t.id) } };
+      return { ...base, title: `${t.latest} is out`, body: `You have ${t.current}. Liner Code runs ${t.command} once no session is working on it.`, action: { label: "Update", onClick: () => updates.tool(t.id) } };
     case "waiting":
       return t.busy
         ? { ...base, title: `${t.latest} is waiting`, body: `It goes in as soon as the ${plural(t.busy, "session")} working on it ${t.busy === 1 ? "finishes" : "finish"}.`, action: details }

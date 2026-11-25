@@ -18,14 +18,15 @@ import { bridge } from "../bridge";
 import { useEngine } from "../engine";
 import { I } from "../icons";
 import { providerLabel } from "../model";
-import { Pop, Row } from "../ui";
+import { SendBox } from "../Composer";
+import { PaneBody, PaneButton, PaneFile, PaneFoot, PaneHead, PaneRow, PaneSection, PaneTool, PaneWords, PANE_TOOL } from "../Pane";
+import { MenuFoot, PanelHead, Pop, Row, Sep } from "../ui";
 import { act, MOCK } from "./findings-data";
-import { SevMark, Tag } from "./parts";
+import { SevMark } from "./parts";
 import { goSecurity } from "./store";
 import { fixedAt, insideProject, tidyEnd, when } from "./when";
 import "./findings.css";
 
-type Tab = "summary" | "code" | "activity";
 const REASONS = Object.keys(DISMISS_LABEL) as DismissReason[];
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
@@ -75,24 +76,14 @@ function Words({ text, tight }: { text: string; tight?: boolean }) {
 }
 
 /**
-  A piece of code with its line numbers, the lines that matter marked. `head`: its file and Open in your editor above it (the
-  Code tab); `cap`: only its file's name above it (Summary, for a file other than the finding's own).
+  A piece of code under its file's own row (the frame's PaneFile, as Changes and Files draw a file): the file and its first
+  line that matters, Open in your editor at the row's end when it opens, then the lines flush under it, the ones that
+  matter tinted as Files tints a change.
 */
-function Excerpt({ x, head, cap, onOpen }: { x: CodeExcerpt; head?: boolean; cap?: boolean; onOpen?: () => void }) {
+function Excerpt({ x, onOpen }: { x: CodeExcerpt; onOpen?: () => void }) {
   return (
     <div className="lf-x-exc">
-      {cap && !head && <div className="lf-x-cap lf-x-mono">{x.file}</div>}
-      {head && (
-        <div className="lf-x-exh">
-          <span className="lf-x-mono">{x.file}{x.hit.length ? `:${x.hit[0]}` : ""}</span>
-          {onOpen && (
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={onOpen}>
-              <I.external size={14} />
-              Open in your editor
-            </button>
-          )}
-        </div>
-      )}
+      <PaneFile path={`${x.file}${x.hit.length ? `:${x.hit[0]}` : ""}`}>{onOpen && <PaneTool label="Open in your editor" icon={<I.external size={14} />} onClick={onOpen} />}</PaneFile>
       <div className="lf-x-ev" role="group" aria-label={`${x.file}, from line ${x.start}`}>
         {x.lines.map((l, i) => {
           const n = x.start + i;
@@ -110,17 +101,24 @@ function Excerpt({ x, head, cap, onOpen }: { x: CodeExcerpt; head?: boolean; cap
   );
 }
 
-/** Dismiss, with why: a reason picks it at once; Other asks for a note first. */
+/** The icon an activity row is drawn with, by what happened. */
+const ACT_ICON: Record<string, (p: { size?: number }) => ReactNode> = { found: I.search, "raised-again": I.refresh, looked: I.settle, dismissed: I.close, reopened: I.undo, "fix-started": I.tool, fixed: I.check, note: I.comment };
+
+/**
+  Dismiss, with why: a reason picks it at once; Other asks for a note first, in the same menu, with a way back on top and
+  the note sent by Enter, or no note by the row under it (a menu holds rows, never buttons of its own).
+*/
 function Dismiss({ onDismiss }: { onDismiss: (r: DismissReason, note?: string) => void }) {
   const [other, setOther] = useState(false);
   const [note, setNote] = useState("");
   return (
     <Pop
       label="Dismiss, and say why"
+      menu
       side="top"
-      width={260}
-      triggerClass="lc-btn lf-x-dismiss"
-      triggerAttrs={{ "data-kind": "ghost", "data-size": "sm" }}
+      align="end"
+      width={280}
+      triggerClass="lc-pane-btn lf-x-dismiss"
       trigger={
         <>
           Dismiss
@@ -130,29 +128,43 @@ function Dismiss({ onDismiss }: { onDismiss: (r: DismissReason, note?: string) =
     >
       {(close) =>
         other ? (
-          <form
-            className="lf-x-other"
-            onSubmit={(e) => {
-              e.preventDefault();
-              close();
-              setOther(false);
-              onDismiss("other", note.trim() || undefined);
-              setNote("");
-            }}
-          >
-            <label htmlFor="lf-x-note">Why it isn't one to act on</label>
-            <textarea id="lf-x-note" rows={3} value={note} placeholder="In a few words" onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), e.currentTarget.form?.requestSubmit())} />
-            <span className="lf-x-otherb">
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => setOther(false)}>Back</button>
-              <button type="submit" className="lc-btn l-focus" data-kind="ink" data-size="sm">Dismiss</button>
-            </span>
-          </form>
+          <>
+            <Row title="Back" icon={<I.chevL size={14} />} onPick={() => setOther(false)} />
+            <Sep />
+            <PanelHead>Why it isn't one to act on</PanelHead>
+            <div className="lf-x-other">
+              <SendBox
+                value={note}
+                lines={3}
+                autoFocus
+                label="Why it isn't one to act on"
+                placeholder="In a few words"
+                onChange={setNote}
+                onEscape={() => setOther(false)}
+                onSend={() => {
+                  close();
+                  setOther(false);
+                  onDismiss("other", note.trim() || undefined);
+                  setNote("");
+                }}
+              />
+            </div>
+            {/* The box sends only words, and the note was always optional: while it is empty, this row dismisses without one. */}
+            {!note.trim() && (
+              <>
+                <Sep />
+                <Row title="Dismiss without a note" icon={<I.close size={14} />} onPick={() => (close(), setOther(false), onDismiss("other"), setNote(""))} />
+              </>
+            )}
+          </>
         ) : (
           <>
-            <div className="lf-x-why">Why it isn't one to act on. The next scan won't raise it again.</div>
+            <PanelHead>Why it isn't one to act on</PanelHead>
             {REASONS.map((r) => (
-              <Row key={r} title={DISMISS_LABEL[r]} onPick={() => (r === "other" ? setOther(true) : (close(), onDismiss(r)))} end={r === "other" ? <I.chevR size={12} /> : undefined} />
+              <Row key={r} title={DISMISS_LABEL[r]} opens={r === "other" ? "Why" : undefined} onPick={() => (r === "other" ? setOther(true) : (close(), onDismiss(r)))} />
             ))}
+            <Sep />
+            <MenuFoot>The next scan won't raise it again.</MenuFoot>
           </>
         )
       }
@@ -174,16 +186,12 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
   /** After Dismiss or Reopen moved it out of the tab it was in, so the list can open the next one. */
   onActed?: (f: SecurityFinding) => void;
 }) {
-  const [tab, setTab] = useState<Tab>("summary");
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
   const who = useWho();
-  const body = useRef<HTMLDivElement>(null);
-  // A new finding starts at its Summary, scrolled to the top.
-  useEffect(() => {
-    setTab("summary");
-    void body.current?.scrollTo({ top: 0 });
-  }, [f.id]);
-  useEffect(() => void body.current?.scrollTo({ top: 0 }), [tab]);
+  const root = useRef<HTMLElement>(null);
+  // A new finding starts at its top.
+  useEffect(() => void root.current?.querySelector(".lc-pane-body")?.scrollTo({ top: 0 }), [f.id]);
 
   const ex = f.explain;
   const places: CodeExcerpt[] = ex?.where?.length ? ex.where : [];
@@ -198,246 +206,175 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
   };
   const run = (p: Promise<unknown>) => (setBusy(true), void p.catch(fail).finally(() => setBusy(false)));
   const goThread = (id?: string) => id && goSecurity({ kind: "scan", threadId: id });
-
-  const look = f.look.state === "none" ? null : (
-    <div className="lf-x-look" data-state={f.look.state}>
-      {f.look.state === "confirmed" ? <I.settle size={16} /> : <I.info size={16} />}
-      <span>
-        {f.look.state === "confirmed" ? (
-          <>
-            <b>Confirmed by {who(f.look.by) || "another model"}</b>, a model from another maker than the one that scanned.
-          </>
-        ) : (
-          <>
-            <b>{who(f.look.by) || "Another model"} couldn't confirm it</b>, reading as a model from another maker than the one that scanned.
-          </>
-        )}
-        {f.look.words && <> {f.look.words}</>}
-      </span>
-    </div>
+  const secondLook = () => run(act.look(f.id).then((n) => (toast(n.look.state === "confirmed" ? "Second look confirmed it" : "Second look finished"), onActed?.(n))));
+  const addNote = () => {
+    const text = note.trim();
+    if (!text) return;
+    setNote("");
+    run(act.note(f.id, text).then((n) => (toast("Note added"), onActed?.(n))));
+  };
+  // The head's ···: what acts on the finding beyond the foot's own actions. Shown only when it has a row.
+  const canLook = f.state === "open" && f.look.state === "none";
+  const more = (canLook || f.url) && (
+    <Pop label="More for this finding" menu align="end" width={240} triggerClass={PANE_TOOL} trigger={<I.more size={16} />}>
+      {(close) => (
+        <>
+          {canLook && <Row title="Get a second look" note="Have another model double-check this finding against the code" icon={<I.settle size={14} />} disabled={busy} onPick={() => (close(), secondLook())} />}
+          {f.url && <Row title="Open on GitHub" icon={<I.external size={14} />} onPick={() => (close(), bridge.openExternal(f.url!))} />}
+        </>
+      )}
+    </Pop>
   );
+  // How it stands, as plain words in the head (the pull request's head says its state so): the second look, then fixed or dismissed.
+  const states = [f.look.state === "confirmed" ? ["Confirmed", "ok"] : f.look.state === "unconfirmed" ? ["Couldn't confirm", ""] : null, f.state === "fixed" ? ["Fixed", ""] : f.state === "dismissed" ? ["Dismissed", ""] : null].filter((x): x is string[] => Boolean(x));
 
   return (
-    <aside className="lf-x" aria-label={`The finding: ${f.title}`}>
-      <header className="lf-x-bar" data-drag>
-        <SevMark severity={f.severity} dot />
-        {(f.look.state !== "none" || f.state !== "open") && (
-          <span className="lf-x-tags">
-            {f.look.state === "confirmed" && <Tag tone="ok">Confirmed</Tag>}
-            {f.look.state === "unconfirmed" && <Tag>Couldn't confirm</Tag>}
-            {f.state !== "open" && <Tag>{f.state === "fixed" ? "Fixed" : "Dismissed"}</Tag>}
-          </span>
-        )}
-        <span className="lc-grow" />
-        <button type="button" className="lc-tb l-focus" aria-label={`The finding before${place ? `, ${place}` : ""}`} title="The finding before (↑)" disabled={!onPrev} onClick={onPrev}>
-          <I.chevU size={16} />
-        </button>
-        <button type="button" className="lc-tb l-focus" aria-label={`The next finding${place ? `, ${place}` : ""}`} title="The next finding (↓)" disabled={!onNext} onClick={onNext}>
-          <I.chevD size={16} />
-        </button>
-        <button type="button" className="lc-tb l-focus" aria-label="Close the finding" title="Close (Esc)" onClick={onClose}>
-          <I.close size={16} />
-        </button>
-      </header>
-
-      <div className="lf-x-body" ref={body} tabIndex={-1}>
-        <h2 className="lf-x-h2">{f.title}</h2>
-        <div className="lf-x-meta">
-          {projectName && <span>{projectName}</span>}
-          {f.file && (
-            <>
-              {projectName && <span aria-hidden>·</span>}
-              <span className="lf-x-mono">{f.file}{f.line ? `:${f.line}` : ""}</span>
-            </>
-          )}
-          <span aria-hidden>·</span>
-          <span>{f.source === "agent" ? `found by ${who(firstFound?.by) || "a scan"}, ${when(firstFound?.at ?? f.foundAt)}` : `${f.source === "checks" ? "found by the free checks" : f.source === "github" ? "brought in from GitHub" : "brought in from a report"}, ${when(f.foundAt)}`}</span>
-        </div>
-
-        <div className="ls-segs lf-x-tabs" role="tablist" aria-label="About this finding">
-          {([["summary", "Summary"], ["code", "Code", codeCount], ["activity", "Activity", f.activity.length]] as [Tab, string, number?][]).map(([id, label, n]) => (
-            <button key={id} type="button" role="tab" id={`lf-x-t-${id}`} aria-controls="lf-x-tab" aria-selected={tab === id} className="ls-sg l-focus" onClick={() => setTab(id)}>
-              {label}
-              {n !== undefined && <span className="ls-num">{n}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div id="lf-x-tab" role="tabpanel" aria-labelledby={`lf-x-t-${tab}`}>
-          {tab === "summary" && (
-            <>
-              <p className="lf-x-lead"><Inline text={tidyEnd(ex?.lead || f.title)} /></p>
-              {f.state === "dismissed" && f.dismissed && (
-                <>
-                  <h3>Dismissed</h3>
-                  <p>{DISMISS_LABEL[f.dismissed.reason]}, {when(f.dismissed.at)}{f.dismissed.note ? `: ${f.dismissed.note}` : "."}</p>
-                </>
-              )}
-              {look && (
-                <>
-                  <h3>A second look</h3>
-                  {look}
-                </>
-              )}
-              {ex?.wrong && (
-                <>
-                  <h3>What is wrong</h3>
-                  <Words text={ex.wrong} />
-                </>
-              )}
-              {places.length > 0 && (
-                <>
-                  <h3>Where</h3>
-                  {/* The file is named above an excerpt from another file, unless its own first line names it already. */}
-                  {places.map((x, i) => <Excerpt key={i} x={x} cap={x.file !== f.file && !x.lines[0]?.includes(x.file)} />)}
-                </>
-              )}
-              {ex?.who && (
-                <>
-                  <h3>Who can do it</h3>
-                  <Words text={ex.who} />
-                </>
-              )}
-              {ex?.gets && (
-                <>
-                  <h3>What they get</h3>
-                  <Words text={ex.gets} />
-                </>
-              )}
-              {ex?.see?.length ? (
-                <>
-                  <h3>How to see it</h3>
-                  <ol>
-                    {ex.see.map((s, i) => (
-                      <li key={i}>
-                        <Words text={s} tight />
-                      </li>
-                    ))}
-                  </ol>
-                </>
-              ) : null}
-              {!ex && <p className="lf-x-quiet">No more was said about it than its title{f.rule ? ` and its rule, ${f.rule}` : ""}.</p>}
-              {f.url && (
-                <p className="lf-x-quiet">
-                  <button type="button" className="lf-x-link l-focus" onClick={() => bridge.openExternal(f.url!)}>
-                    Where it lives on GitHub <I.external size={12} />
-                  </button>
-                </p>
-              )}
-            </>
-          )}
-
-          {tab === "code" &&
-            (places.length ? (
-              places.map((x, i) => <Excerpt key={i} x={x} head onOpen={open(x.file)} />)
-            ) : f.file ? (
-              <div className="lf-x-exc">
-                <div className="lf-x-exh">
-                  <span className="lf-x-mono">{f.file}{f.line ? `:${f.line}` : ""}</span>
-                  {open(f.file) && (
-                    <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={open(f.file)}>
-                      <I.external size={14} />
-                      Open in your editor
-                    </button>
-                  )}
-                </div>
-                <p className="lf-x-quiet">No lines came with this finding, only the file.</p>
-              </div>
-            ) : (
-              <p className="lf-x-quiet">This finding names no file.</p>
+    <aside ref={root} className="lf-x" aria-label={`The finding: ${f.title}`}>
+      <PaneHead
+        name="Finding"
+        canvas={false}
+        onClose={onClose}
+        shows={
+          <>
+            <span className="lf-x-sev"><SevMark severity={f.severity} dot /></span>
+            {states.map(([w, tone]) => (
+              <span key={w} className="lf-x-state" data-tone={tone || undefined}>{w}</span>
             ))}
+            {place && <span className="lf-x-place"><PaneWords>{place}</PaneWords></span>}
+          </>
+        }
+        tools={
+          <>
+            <PaneTool label={`The finding before (↑)${place ? `, ${place}` : ""}`} icon={<I.chevU size={16} />} disabled={!onPrev} onClick={onPrev} />
+            <PaneTool label={`The next finding (↓)${place ? `, ${place}` : ""}`} icon={<I.chevD size={16} />} disabled={!onNext} onClick={onNext} />
+            {more}
+          </>
+        }
+      />
 
-          {tab === "activity" && (
-            <>
-              <AddNoteForm disabled={busy} onAdd={(text) => run(act.note(f.id, text).then((n) => (toast("Note added"), onActed?.(n))))} />
-              <ol className="lf-x-acts">
-                {[...f.activity].reverse().map((a, i) => (
-                  <li key={i} data-kind={a.kind}>
-                    <span className="lf-x-dot" aria-hidden />
-                    <span className="lf-x-act">
-                      <b><Inline text={a.text} /></b>
-                      <small>{[who(a.by).replace(/^./, (c) => c.toUpperCase()), when(a.at)].filter(Boolean).join(" · ")}</small>
-                    </span>
+      <PaneBody className="lf-x-body">
+        <div className="lf-x-top">
+          <h2 className="lf-x-h2">{f.title}</h2>
+          <div className="lf-x-meta">
+            {projectName && <span>{projectName}</span>}
+            {f.file && (
+              <>
+                {projectName && <span aria-hidden>·</span>}
+                <span className="lf-x-mono">{f.file}{f.line ? `:${f.line}` : ""}</span>
+              </>
+            )}
+            <span aria-hidden>·</span>
+            <span>{f.source === "agent" ? `found by ${who(firstFound?.by) || "a scan"}, ${when(firstFound?.at ?? f.foundAt)}` : `${f.source === "checks" ? "found by the free checks" : f.source === "github" ? "brought in from GitHub" : "brought in from a report"}, ${when(f.foundAt)}`}</span>
+          </div>
+        </div>
+
+        {/* Summary, Code and Activity are sections of one column, as the panel's surfaces have them: no tabs in a body. */}
+        <PaneSection label="Summary">
+          <div className="lf-x-txt">
+            <p className="lf-x-lead"><Inline text={tidyEnd(ex?.lead || f.title)} /></p>
+            {!ex && <p className="lf-x-quiet">No more was said about it than its title{f.rule ? ` and its rule, ${f.rule}` : ""}.</p>}
+          </div>
+        </PaneSection>
+        {f.state === "dismissed" && f.dismissed && (
+          <PaneSection label="Dismissed">
+            <div className="lf-x-txt">
+              <p>{DISMISS_LABEL[f.dismissed.reason]}, {when(f.dismissed.at)}{f.dismissed.note ? `: ${f.dismissed.note}` : "."}</p>
+            </div>
+          </PaneSection>
+        )}
+        {f.look.state !== "none" && (
+          <PaneSection label="A second look">
+            <PaneRow icon={f.look.state === "confirmed" ? <span className="lf-x-ok"><I.settle size={14} /></span> : <I.info size={14} />}>
+              {f.look.state === "confirmed" ? `Confirmed by ${who(f.look.by) || "another model"}` : `${who(f.look.by) || "Another model"} couldn't confirm it`}
+            </PaneRow>
+            <div className="lf-x-txt">
+              <p className="lf-x-quiet">
+                {f.look.state === "confirmed" ? "A model from another maker than the one that scanned." : "Reading as a model from another maker than the one that scanned."}
+                {f.look.words && <> {f.look.words}</>}
+              </p>
+            </div>
+          </PaneSection>
+        )}
+        {ex?.wrong && (
+          <PaneSection label="What is wrong">
+            <div className="lf-x-txt"><Words text={ex.wrong} /></div>
+          </PaneSection>
+        )}
+        {codeCount > 0 && (
+          <PaneSection label="Code" note={codeCount}>
+            {places.length ? (
+              places.map((x, i) => <Excerpt key={i} x={x} onOpen={open(x.file)} />)
+            ) : (
+              <div className="lf-x-exc">
+                <PaneFile path={`${f.file}${f.line ? `:${f.line}` : ""}`}>{open(f.file!) && <PaneTool label="Open in your editor" icon={<I.external size={14} />} onClick={open(f.file!)} />}</PaneFile>
+                <div className="lf-x-txt"><p className="lf-x-quiet">No lines came with this finding, only the file.</p></div>
+              </div>
+            )}
+          </PaneSection>
+        )}
+        {ex?.who && (
+          <PaneSection label="Who can do it">
+            <div className="lf-x-txt"><Words text={ex.who} /></div>
+          </PaneSection>
+        )}
+        {ex?.gets && (
+          <PaneSection label="What they get">
+            <div className="lf-x-txt"><Words text={ex.gets} /></div>
+          </PaneSection>
+        )}
+        {ex?.see?.length ? (
+          <PaneSection label="How to see it">
+            <div className="lf-x-txt">
+              <ol>
+                {ex.see.map((s, i) => (
+                  <li key={i}>
+                    <Words text={s} tight />
                   </li>
                 ))}
               </ol>
-            </>
+            </div>
+          </PaneSection>
+        ) : null}
+        <PaneSection label="Activity" note={f.activity.length}>
+          {[...f.activity].reverse().map((a, i) => {
+            const Icon = ACT_ICON[a.kind] ?? I.info;
+            return (
+              <PaneRow key={i} icon={<Icon size={14} />} value={[who(a.by).replace(/^./, (c) => c.toUpperCase()), when(a.at)].filter(Boolean).join(" · ")} quiet title={a.text}>
+                <Inline text={a.text} />
+              </PaneRow>
+            );
+          })}
+          <div className="lf-x-note">
+            <SendBox value={note} label="Add a triage note" placeholder="Add a triage note" disabled={busy} onChange={setNote} onSend={addNote} />
+          </div>
+        </PaneSection>
+      </PaneBody>
+
+      {/* Three buttons leave the words little room in a narrow panel: a few words, the whole sentence in the tooltip. */}
+      {f.state === "open" ? (
+        <PaneFoot say={<span title={fixing ? (f.fix?.state === "ready" ? "Its fix is ready to merge" : "Being fixed in a session in its own worktree") : "Fix starts a session in its own worktree, with this as its brief"}>{fixing ? (f.fix?.state === "ready" ? "Fix ready to merge" : "Being fixed") : "Fix works in a worktree"}</span>}>
+          <Dismiss onDismiss={(r, note) => run(act.dismiss(f.id, r, note).then((n) => (toast(`Dismissed as ${DISMISS_LABEL[r].toLowerCase()}. The next scan won't raise it again.`), onActed?.(n))))} />
+          <PaneButton disabled={busy} onClick={() => run(act.ask(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: a session to ask about it would open here."))))}>
+            Ask about it
+          </PaneButton>
+          {fixing ? (
+            <PaneButton ink onClick={() => goThread(f.fix?.threadId)}>
+              Open the session
+            </PaneButton>
+          ) : (
+            <PaneButton ink disabled={busy} title="A session in its own worktree, with this as its brief" onClick={() => run(act.fix(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: the fix session would open here."))))}>
+              Fix
+            </PaneButton>
           )}
-        </div>
-      </div>
-
-      <footer className="lf-x-act-bar">
-        {f.state === "open" ? (
-          <>
-            <Dismiss onDismiss={(r, note) => run(act.dismiss(f.id, r, note).then((n) => (toast(`Dismissed as ${DISMISS_LABEL[r].toLowerCase()}. The next scan won't raise it again.`), onActed?.(n))))} />
-            {f.look.state === "none" && (
-              <button
-                type="button"
-                className="lc-btn l-focus"
-                data-kind="ghost"
-                data-size="sm"
-                disabled={busy}
-                title="Have another model double-check this finding against the code"
-                onClick={() => run(act.look(f.id).then((n) => (toast(n.look.state === "confirmed" ? "Second look confirmed it" : "Second look finished"), onActed?.(n))))}
-              >
-                Get a second look
-              </button>
-            )}
-            <span className="lc-grow" />
-            <span className="lf-x-hint">{fixing ? (f.fix?.state === "ready" ? "Its fix is ready to merge" : "Being fixed in its own worktree") : "A session in its own worktree, with this as its brief"}</span>
-            <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" disabled={busy} onClick={() => run(act.ask(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: a session to ask about it would open here."))))}>
-              Ask about it
-            </button>
-            {fixing ? (
-              <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" onClick={() => goThread(f.fix?.threadId)}>
-                Open the session
-              </button>
-            ) : (
-              <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" disabled={busy} onClick={() => run(act.fix(f.id).then((t) => (t ? goThread(t.id) : MOCK && toast("Mock: the fix session would open here."))))}>
-                Fix
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <span className="lf-x-hint lf-x-hint-l">{f.state === "dismissed" ? `Dismissed${f.dismissed ? ` as ${DISMISS_LABEL[f.dismissed.reason].toLowerCase()}, ${when(f.dismissed.at)}` : ""}` : `Fixed, ${when(fixedAt(f))}`}</span>
-            <span className="lc-grow" />
-            {f.fix?.threadId && f.state === "fixed" && (
-              <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" onClick={() => goThread(f.fix?.threadId)}>
-                Open the session
-              </button>
-            )}
-            <button type="button" className="lc-btn l-focus" data-kind="ink" data-size="sm" disabled={busy} onClick={() => run(act.reopen(f.id).then((n) => (toast("Open again"), onActed?.(n))))}>
-              Reopen
-            </button>
-          </>
-        )}
-      </footer>
+        </PaneFoot>
+      ) : (
+        <PaneFoot say={f.state === "dismissed" ? `Dismissed${f.dismissed ? ` as ${DISMISS_LABEL[f.dismissed.reason].toLowerCase()}, ${when(f.dismissed.at)}` : ""}` : `Fixed, ${when(fixedAt(f))}`}>
+          {f.fix?.threadId && f.state === "fixed" && <PaneButton onClick={() => goThread(f.fix?.threadId)}>Open the session</PaneButton>}
+          <PaneButton ink disabled={busy} onClick={() => run(act.reopen(f.id).then((n) => (toast("Reopened"), onActed?.(n))))}>
+            Reopen
+          </PaneButton>
+        </PaneFoot>
+      )}
     </aside>
-  );
-}
-
-function AddNoteForm({ disabled, onAdd }: { disabled: boolean; onAdd: (text: string) => void }) {
-  const [text, setText] = useState("");
-  const submit = () => {
-    const clean = text.trim();
-    if (!clean) return;
-    onAdd(clean);
-    setText("");
-  };
-  return (
-    <form
-      className="lc-env-form"
-      style={{ marginBottom: 12 }}
-      onSubmit={(e) => {
-        e.preventDefault();
-        submit();
-      }}
-    >
-      <input className="lc-input" value={text} disabled={disabled} placeholder="Add a triage note…" aria-label="Add a triage note" onChange={(e) => setText(e.target.value)} />
-      <button type="submit" className="lc-btn l-focus" data-kind="plain" data-size="sm" disabled={disabled || !text.trim()}>
-        Add note
-      </button>
-    </form>
   );
 }

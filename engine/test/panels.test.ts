@@ -21,6 +21,7 @@ import { Offers } from "../src/offers.ts";
 import { startServer } from "../src/server.ts";
 import { Store } from "../src/store.ts";
 import * as dock from "../../ui/src/app/dock.ts";
+import * as switcher from "../../ui/src/app/surface-row.ts";
 
 const home = () => mkdtempSync(join(tmpdir(), "lc-panels-"));
 const todos = (access: PanelAccess = { files: "project", composer: true }, extra: Partial<PanelManifest> = {}): PanelManifest => ({ apiVersion: 1, id: "todos", kind: "panel", name: "TODOs", place: "dock", entry: "index.html", icon: "list", access, ...extra });
@@ -239,7 +240,7 @@ test("versions: the same manifest and files are one version, a change to either 
   a.update("todos", { version: 1 });
   assert.equal(a.wouldBe(todos(), { ...FILES, "app.js": "// v2" }).version, 2, "an earlier version comes back as itself");
   const info = a.get("todos")!;
-  assert.deepEqual([info.kind, info.version, info.versions, info.panel?.place, info.reaches], ["panel", 1, [1, 2, 3], "dock", "reads this project's files · can put text in the composer · no network"]);
+  assert.deepEqual([info.kind, info.version, info.versions, info.panel?.place, info.reaches], ["panel", 1, [1, 2, 3], "dock", "reads this project's files · can put text in the message box · no network"]);
   assert.throws(() => a.install(todos(), { by }), /needs its files/);
 });
 
@@ -257,7 +258,7 @@ test("versions: what counts as asking for more", () => {
   assert.deepEqual(widerAccess({}, { files: "project" }), ["Read the project's files"]);
   assert.deepEqual(widerAccess({ sessions: "this" }, { sessions: "all" }), ["Read every session's titles and changes"]);
   assert.deepEqual(widerAccess({ sessions: "all" }, { sessions: "this" }), []);
-  assert.deepEqual(widerAccess({}, { composer: true }), ["Put text in the composer"]);
+  assert.deepEqual(widerAccess({}, { composer: true }), ["Put text in the message box"]);
   assert.deepEqual(widerAccess({}, { storage: 64 }), ["Keep its own storage, up to 64 KB"]);
   assert.deepEqual(widerAccess({ storage: 64 }, { storage: 1024 }), ["Keep more in its storage: up to 1 MB, not 64 KB"]);
   assert.deepEqual(widerAccess({}, { network: "api.github.com" }), ["Reach api.github.com over the internet"]);
@@ -521,6 +522,45 @@ test("dock: a preview becomes its add-on in place, and a kept layout is read bac
   assert.equal(dock.readDock({ panes: [{ tabs: ["a"], tab: "a" }, { tabs: ["b"], tab: "b" }, { tabs: ["c"], tab: "c" }] }), null, "three panes isn't a dock");
   assert.equal(dock.readDock("nonsense"), null);
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: [], tab: "x" }, { tabs: ["a", "a", 3], tab: "zz" }], at: 9 }), { open: true, full: false, panes: [{ tabs: ["a"], tab: "a" }], at: 0 }, "empty panes, repeats and junk go");
+});
+
+test("switcher: the lit icon is the surface showing, the Terminal's the bottom panel, and ··· is lit for a surface with no icon of its own", () => {
+  const changes = dock.openTab(dock.emptyDock(), "changes");
+  assert.deepEqual(switcher.ICONS, ["session", "terminal", "changes", "browser", "files"], "the icons and their order");
+  assert.equal(switcher.iconLit("changes", changes, false, false), true);
+  assert.equal(switcher.iconLit("files", changes, false, false), false);
+  assert.equal(switcher.iconLit("changes", dock.hideDock(changes), false, false), false, "a hidden panel lights nothing");
+  assert.equal(switcher.iconLit("terminal", changes, true, false), true, "the Terminal's is the bottom panel's");
+  assert.equal(switcher.iconLit("session", changes, false, true), true, "Session's is its popup's");
+  assert.equal(switcher.moreLit(changes), false);
+  for (const t of ["pr", "design", "side", "device", "agents", "linked", "app:todos", "preview:x"]) assert.equal(switcher.moreLit(dock.openTab(changes, t)), true, `${t} showing lights ···`);
+  assert.equal(switcher.moreLit(dock.hideDock(dock.openTab(changes, "pr"))), false);
+});
+
+test("switcher: ··· lists Pull request, Design, Side chat and Device, then your apps pinned first, the one showing ticked", () => {
+  const apps = [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }];
+  const pr = dock.openTab(dock.emptyDock(), "pr");
+  const rows = switcher.moreRows(pr, apps, ["b"]);
+  assert.deepEqual(rows.surfaces, [{ id: "pr", on: true }, { id: "design", on: false }, { id: "side", on: false }, { id: "device", on: false }]);
+  assert.deepEqual(rows.apps.map((a) => a.id), ["b", "a"], "the pinned app first");
+  assert.equal(rows.appOn, false);
+  const app = switcher.moreRows(dock.openTab(pr, "app:a"), apps, []);
+  assert.deepEqual([app.appOn, app.apps.find((a) => a.id === "a")?.on, app.surfaces[0].on], [true, true, false]);
+});
+
+test("dock: a kept layout that names the guide, Session or a second pane opens cleanly, with no tab nobody can reach", () => {
+  // The guide and Session were tabs once; Session is a popup now and the guide is gone with the strip.
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["changes", "guide", "session"], tab: "changes" }], at: 0 }), { open: true, full: false, panes: [{ tabs: ["changes"], tab: "changes" }], at: 0 }, "the guide and Session stay behind a surface that was up");
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["files", "guide"], tab: "guide" }], at: 0 }), { open: false, full: false, panes: [{ tabs: ["files"], tab: "files" }], at: 0 }, "with the guide up, the panel comes back hidden rather than on a surface nobody asked for");
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["guide"], tab: "guide" }], at: 0 }), dock.emptyDock(), "a panel that held only the guide is an empty one");
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["browser"], tab: "browser" }, { tabs: ["guide", "linked"], tab: "linked" }], at: 1 }), { open: true, full: false, panes: [{ tabs: ["browser", "linked"], tab: "linked" }], at: 0 }, "two panes fold into one, Linked kept up, the guide gone");
+  // A session opened with Session asked for (⌘K from Settings) opens its popup, and the panel stays as it was asked.
+  const asked = dock.dropPopups(dock.openTab(dock.emptyDock(), "session"));
+  assert.equal(asked.popup, "session");
+  assert.equal(asked.dock.open, false, "the panel doesn't come up on Changes for a popup");
+  assert.ok(!asked.dock.panes.some((p) => p.tabs.includes("session")));
+  const kept = dock.openTab(dock.emptyDock(), "files");
+  assert.deepEqual(dock.dropPopups(kept), { dock: kept }, "a layout with neither is the same layout");
 });
 
 /* ---------- "Make it an app" ---------- */

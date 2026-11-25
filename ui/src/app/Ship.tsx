@@ -10,7 +10,8 @@ import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "rea
 import type { GitCommit, Thread } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
-import { I, StateMark } from "./icons";
+import { I, StepMark } from "./icons";
+import { PaneButton } from "./Pane";
 import { ago, plural } from "./model";
 import { pushCount, shipLive, shipWords } from "./ship-words";
 
@@ -173,7 +174,7 @@ export function ShipCard({ thread }: { thread: Thread }) {
                     <span className="h1" aria-hidden={!live.h1}>Committing</span>
                     <span className="h2" aria-hidden={!live.h2}>Pushing</span>
                     <span className="h3" aria-hidden={!live.h3}>
-                      <StateMark state="done" size={12} />
+                      <StepMark state="done" size={12} />
                       Pushed
                     </span>
                   </span>
@@ -237,19 +238,19 @@ export function ShipCard({ thread }: { thread: Thread }) {
                 Commit and push
               </span>
               <span className="x1" aria-hidden={!live.x1}>
-                <StateMark state="working" size={14} />
+                <StepMark state="working" size={14} />
                 Committing {plural(s.files, "file")}
               </span>
               <span className="x2" aria-hidden={!live.x2}>
-                <StateMark state="working" size={14} />
+                <StepMark state="working" size={14} />
                 {words.pushing}
               </span>
               <span className="x3" aria-hidden={!live.x3}>
-                <StateMark state="done" size={14} />
+                <StepMark state="done" size={14} />
                 Pushed to {remote}
               </span>
               <span className="x4" aria-hidden={!live.x4}>
-                <StateMark state={s.error ? "problem" : "done"} size={14} />
+                <StepMark state={s.error ? "failed" : "done"} size={14} />
                 {s.error ? (s.stopped === "commit" ? "The commit didn't go through" : "The push didn't go through") : words.pushed}
               </span>
             </span>
@@ -267,14 +268,13 @@ export function ShipCard({ thread }: { thread: Thread }) {
           </div>
         </div>
         {s.error ? (
-          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" inert={!live.next || undefined} title={s.error} onClick={() => dismiss(thread.id)}>
+          <PaneButton className="lc-ship-next" inert={!live.next || undefined} title={s.error} onClick={() => dismiss(thread.id)}>
             Dismiss
-          </button>
+          </PaneButton>
         ) : (
-          <button type="button" className="lc-ship-next lc-btn" data-kind="plain" data-size="sm" inert={!live.next || undefined} onClick={() => (dismiss(thread.id), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(String(e?.message ?? e))))}>
-            <I.pr size={14} />
+          <PaneButton ink className="lc-ship-next" icon={<I.pr size={14} />} inert={!live.next || undefined} onClick={() => (dismiss(thread.id), void rpc("thread.send", { id: thread.id, text: "create pr" }).catch((e) => toast.error(String(e?.message ?? e))))}>
             Open a pull request
-          </button>
+          </PaneButton>
         )}
       </div>
     </div>

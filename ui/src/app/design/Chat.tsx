@@ -15,6 +15,8 @@ import { readableFrame, type DesignFile, type Item, type Thread } from "@contrac
 import { useItems, useItemsWhere } from "../engine";
 import { isDockable } from "../Ask";
 import { I, StateMark } from "../icons";
+import { PANE_TOOL, PaneHead } from "../Pane";
+import { CardLines } from "../CardLines";
 import { FrameNames, LiveLine, Timeline, type FrameNamer, type Mark } from "../Timeline";
 import { design, getDesign, setChat, useChat, useDesign, type ChatSize } from "./store";
 import "./chat.css";
@@ -126,7 +128,7 @@ function Pin() {
   const pinned = useChat() === "pinned";
   return (
     // A press with the pointer leaves the focus where it was (in the composer, say), so the move gives it back there.
-    <button type="button" className="lc-tb l-focus" onMouseDown={(e) => e.preventDefault()} aria-pressed={pinned} aria-label={pinned ? "Unpin the chat" : "Pin the chat beside the canvas"} title={pinned ? "Unpin the chat" : "Pin the chat beside the canvas"} onClick={(e) => {
+    <button type="button" className={`${PANE_TOOL} l-focus`} onMouseDown={(e) => e.preventDefault()} aria-pressed={pinned} aria-label={pinned ? "Unpin the chat" : "Pin the chat beside the canvas"} title={pinned ? "Unpin the chat" : "Pin the chat beside the canvas"} onClick={(e) => {
         // Pressed from the keyboard, the focus goes on to the pin button in the chat's new place (the column's isn't in a host, so nothing else gives it back).
         const keys = document.activeElement === e.currentTarget;
         setChat(pinned ? "open" : "pinned");
@@ -139,7 +141,7 @@ function Pin() {
 /** The way back to Liner Code: one icon button, the same in the open chat and the column. */
 function OpenInCode() {
   return (
-    <button type="button" className="lc-tb l-focus" aria-label="Open in Liner Code" title="Open in Liner Code" onClick={() => design.setFace("code")}>
+    <button type="button" className={`${PANE_TOOL} l-focus`} aria-label="Open in Liner Code" title="Open in Liner Code" onClick={() => design.setFace("code")}>
       <I.external size={16} />
     </button>
   );
@@ -166,36 +168,39 @@ export function ChatMin({ thread }: { thread: Thread }) {
   if (!now.running && !line) return null;
   const open = () => {
     // From the keyboard on the row, the focus goes on to the open chat (the row goes away): ChatOpen picks it up.
-    fromRow = Boolean(document.activeElement?.closest(".ldc-min, .ldc-live"));
+    fromRow = Boolean(document.activeElement?.closest(".ldc-min, .ldc-live, .ldc-cards"));
     setChat("open");
   };
+  // The Plan and the team at work, folded to a line each over the live line (board Tray); a press opens the chat, where the cards are.
+  const cards = <CardLines thread={thread} items={items} onOpen={open} className="ldc-cards" />;
   if (now.running)
     return (
       <FrameNames.Provider value={names}>
+        {cards}
         <LiveLine
           threadId={thread.id}
           className="ldc-live"
           extra={<SideWords words={now.sideWords} />}
           end={
-            <>
-              <button type="button" className="lc-tb l-focus" aria-label="Open the chat" title="Open the chat" onClick={open}>
-                <I.chevU size={16} />
-              </button>
-              <Pin />
-            </>
+            // The live line is one line: the step, its time and a › that opens the chat. Pin is in the open chat's head.
+            <button type="button" className={`${PANE_TOOL} l-focus`} aria-label="Open the chat" title="Open the chat" onClick={open}>
+              <I.chevR size={16} />
+            </button>
           }
         />
       </FrameNames.Provider>
     );
   return (
+    <>
+    {cards}
     <div className="ldc-min" data-unread={unread || undefined}>
       <button type="button" className="ldc-min-t l-focus" onClick={open} title="Open the chat">
         {unread && <StateMark state="fresh" label="A reply you haven't read" />}
         <span className="ldc-min-w">{line}</span>
+        <I.chevR size={14} className="ldc-min-go" />
       </button>
-      <span className="ldc-v" aria-hidden />
-      <Pin />
     </div>
+    </>
   );
 }
 
@@ -392,14 +397,15 @@ export function ChatOpen() {
   }, []);
   return (
     <div className="ldc-open" role="region" aria-label="Chat">
+      {/* The pinned column's head in small: Pin and Open in Liner Code, then Make small where a pane's Close is. */}
       <div className="ldc-h">
         <b>Chat</b>
         <span className="lc-grow" />
-        <button ref={mini} type="button" className="lc-tb l-focus" aria-label="Make the chat small" title="Make the chat small" onClick={() => (hosts ? hosts.minimise() : setChat("min"))}>
-          <I.chevD size={16} />
-        </button>
         <Pin />
         <OpenInCode />
+        <button ref={mini} type="button" className={`${PANE_TOOL} ldc-mini l-focus`} aria-label="Make the chat small" title="Make the chat small" onClick={() => (hosts ? hosts.minimise() : setChat("min"))}>
+          <I.chevD size={16} />
+        </button>
       </div>
       {hosts && <Slot host={hosts.body} className="ldc-slot" />}
     </div>
@@ -411,12 +417,8 @@ export function ChatColumn({ thread }: { thread?: Thread }) {
   const hosts = useContext(DockHosts);
   return (
     <aside className="ldc-col" aria-label="Chat">
-      <div className="ldc-h">
-        <b>Chat</b>
-        <span className="lc-grow" />
-        <Pin />
-        <OpenInCode />
-      </div>
+      {/* The panel's own head (Pane.tsx), as Code's Side chat has: its name, then its tools. */}
+      <PaneHead name="Chat" tools={<><Pin /><OpenInCode /></>} canvas={false} />
       {thread && hosts ? <Slot host={hosts.body} className="ldc-slot ldc-grow" /> : <p className="ldc-empty ldc-grow">Nothing said yet. Say what to draw below.</p>}
       <div className="ldc-foot">
         <div className="ld-dock" data-place="column">

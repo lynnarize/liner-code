@@ -32,11 +32,11 @@ test("Changes keeps a failed diff said, in the panel and the full canvas alike",
 });
 
 test("Changes keeps its turn picker when a diff fails, so another turn is one press away", () => {
-  // The picker rides in Changes' own row, drawn above whatever the diff's read came to, so a failed one keeps it.
+  // The picker rides in Changes' head (Pane.tsx PaneHead), drawn above whatever the diff's read came to, so a failed one keeps it.
   const changes = span(app("Review.tsx"), "export function Review(", "One file of the diff");
-  const row = span(changes, '<div className="lc-rv-strip">', "{finding && (");
-  assert.ok(/<TurnPicker /.test(row), "the turn picker is no longer in Changes' own row");
-  assert.ok(changes.indexOf('<div className="lc-rv-strip">') < changes.indexOf("diff === null ?"), "the row is drawn only for some of the diff's states");
+  const head = span(changes, "<PaneHead\n        shows={", '<div className="lc-rv-body">');
+  assert.ok(/<TurnPicker /.test(head), "the turn picker is no longer in Changes' head");
+  assert.ok(changes.lastIndexOf("<PaneHead\n        shows={") < changes.indexOf("diff === null ?"), "the head is drawn only for some of the diff's states");
 });
 
 test("Settings' memory and rules editors say a failed read instead of empty or gone", () => {
@@ -60,7 +60,7 @@ test("Projects' Mac scan keeps its error, as the GitHub tab does", () => {
   const projects = app("Projects.tsx");
   assert.ok(!/rpc\("projects\.scan", \{\}\)\.catch\(\(\) => \[\]\)/.test(projects), "the scan still answers a failure with an empty list");
   const mac = span(projects, '{tab === "mac" &&', '{tab === "github" &&');
-  assert.ok(/lc-pr-warn lc-pc-warn/.test(mac), "the Mac tab does not say the scan's failure as the GitHub tab does");
+  assert.ok(/className="lc-pc-warn"/.test(mac), "the Mac tab does not say the scan's failure as the GitHub tab does");
   assert.ok(/detail/.test(mac), "the Mac tab does not keep the error's words");
   assert.ok(/Look again/.test(mac), "the Mac tab lost its retry");
 });
@@ -118,12 +118,14 @@ test("the by-hand manifest form names a JSON fault in whole words, with where it
   assert.ok(hand.includes("That isn't JSON yet: ${jsonFault("), "the form does not name the fault through jsonFault");
 });
 
-test("one agent at work is said once, by the live line, not also by the strip over the box", () => {
+test("one agent at work is said once, by the live line, not also by the card at the chat's end", () => {
   const crew = app("Crew.tsx");
-  const strip = span(crew, "export function CrewStrip(", "export function LoneStop(");
-  // Exactly one agent while the turn runs: the strip is not drawn (the crew chip's rule, two or more).
+  // The strip over the message box is gone (SPEC rule 6, 2026-11-25): the crew's card at the chat's end took its place.
+  assert.ok(!/export function CrewStrip\(/.test(crew), "the strip over the message box is back");
+  const card = span(crew, "function CrewCardOf(", "/** A card's head");
+  // Exactly one agent while the turn runs: the card is not drawn (the crew chip's rule, two or more).
   assert.match(crew, /const lone = \(thread: Thread, working: Tool\[\]\) => working\.length === 1 && thread\.status === "running";/);
-  assert.match(strip, /if \(!crew \|\| !working\.length \|\| lone\(thread, working\)\) return null;/, "the strip still shows for one agent");
+  assert.match(card, /if \(!crew \|\| !working\.length \|\| lone\(thread, working\)\) return null;/, "the card still shows for one agent");
   // Its Stop, same words, at the live line's end.
   const stop = span(crew, "export function LoneStop(", "/* ---------- the Agents surface");
   assert.match(stop, /stopAll\(thread\.id, working\)/);
@@ -133,10 +135,18 @@ test("one agent at work is said once, by the live line, not also by the strip ov
   assert.match(app("Timeline.tsx"), /verb=\{`\$\{isSidekick\(agent\) \? "Sidekick" : agentName\(agent\)\} · \$\{agent\.agent\.now\}`\}/, "the newest step doesn't say what the agent is doing");
 });
 
-test("a step's mark is the state mark, with no ring, tick or cross of its own", () => {
+test("a step's mark has the dots only while it runs: finished is a tick, waiting an empty ring, failed a red cross (board Marks, choice B)", () => {
   const icons = app("icons.tsx");
   const step = span(icons, "export function StepMark(");
-  assert.match(step, /<StateMark state=\{STEP_MARK\[state\]\}/, "StepMark draws its own shapes again");
-  assert.match(icons, /const STEP_MARK: Record<StepState, MarkState> = \{ waiting: "new", working: "working", done: "done", skipped: "new", failed: "problem" \};/);
-  assert.ok(!/lc-stepmark-(ring|tick|x|disc)/.test(icons + app("app.css")), "the old ring, tick or cross is drawn somewhere");
+  assert.match(step, /if \(state === "working"\) return <StateMark state="working"/, "a working step isn't the state mark's travelling light");
+  assert.match(icons, /const STEP_SHAPE: Record<Exclude<StepState, "working">, "tick" \| "ring" \| "cross"> = \{ waiting: "ring", done: "tick", skipped: "ring", failed: "cross" \};/);
+  assert.match(step, /className=\{`lc-mk \$\{cls\}`\} data-step=\{shape\}/, "the shapes lose the classes the lists place a mark by");
+  const css = app("app.css");
+  assert.match(css, /\.lc-mk\[data-step="tick"\] \{\s*color: var\(--l-ink-4\);/, "a finished step's tick isn't in the fourth ink");
+  assert.match(css, /\.lc-mk\[data-step="cross"\] \{\s*color: var\(--l-danger\);/, "a failed step's cross isn't in the danger colour");
+  // Working is three lit dots with nothing behind them, in the second ink, whoever's model it is.
+  // No holder tints it either (RULING 5): only a mark on a coloured chip takes the chip's white (app.css).
+  assert.match(css, /\.lc-mk\[data-s="working"\] \{\s*--mk-loop: 1\.2s;\s*color: var\(--l-ink-2\);/, "working isn't in the second ink");
+  assert.ok(!/\.lc-mk\[data-s="working"\][^{]*data-brand/.test(css), "working is tinted by its model again");
+  assert.match(css, /\.lc-mk\[data-s="working"\] > i \{\s*opacity: 0;/, "working draws a dim grid behind its light");
 });

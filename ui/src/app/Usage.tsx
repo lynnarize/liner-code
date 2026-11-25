@@ -93,7 +93,7 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
           <div className="lc-usage-tiles">
             <Tile label="Tokens" value={compact(t?.tokens ?? 0)} note={plural(t?.turns ?? 0, "turn")} />
             <Tile label="Per turn" value={money(t?.perTurn ?? 0)} note="on average" />
-            <Tile label="From the cache" value={`${Math.round((t?.cacheShare ?? 0) * 100)}%`} note="of input tokens" />
+            <Tile label="From cache" value={`${Math.round((t?.cacheShare ?? 0) * 100)}%`} note="of input tokens" />
             <Tile label="Most expensive turn" value={money(t?.priciest?.costUsd ?? 0)} note={t?.priciest?.title ?? "—"} />
           </div>
         </div>
@@ -143,14 +143,14 @@ export function Usage({ sidebar, onSidebar }: { sidebar: boolean; onSidebar: () 
           <div className="lc-fcard">
             <div className="lc-usage-h">
               <b>By model</b>
-              <span className="lc-quiet">tokens, cache hits and cost</span>
+              <span className="lc-quiet">tokens, from cache and cost</span>
             </div>
             <table className="lc-table">
               <thead>
                 <tr>
                   <th>Model</th>
                   <th>Tokens</th>
-                  <th>Cache hits</th>
+                  <th>From cache</th>
                   <th>Cost</th>
                 </tr>
               </thead>
@@ -222,14 +222,14 @@ function Budget({ spent, budget, editing, onEdit }: { spent: number | null; budg
       >
         <span className="lc-quiet">A monthly budget of $</span>
         <input name="b" className="lc-input" defaultValue={budget || ""} autoFocus inputMode="decimal" placeholder="200" aria-label="Monthly budget in dollars" onKeyDown={(e) => e.key === "Escape" && onEdit(false)} />
-        <button type="submit" className="lc-btn" data-kind="primary" data-size="sm">
-          Set it
-        </button>
         {budget > 0 && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => save("0")}>
             No budget
           </button>
         )}
+        <button type="submit" className="lc-btn" data-kind="ink" data-size="sm">
+          Set it
+        </button>
       </form>
     ) : (
       <button type="button" className="lc-link l-focus lc-budget-set" onClick={() => onEdit(true)}>
@@ -322,7 +322,7 @@ function Limits({ again, onAgain }: { again: number; onAgain: () => void }) {
         {goTools.length > 0 && !readGoKey && (
           <p className="lc-quiet lc-limits-none">
             OpenCode Go's limits: Liner Code can read the Go key {goTools.join(" or ")} saved, and send it to opencode.ai only, to ask what's left. It doesn't read that sign-in until you agree.{" "}
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void rpc("settings.save", { readGoKey: true })}>
+            <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => void rpc("settings.save", { readGoKey: true })}>
               Read the Go key
             </button>
           </p>

@@ -2,14 +2,13 @@
   Liner Security's small shared pieces, so every page draws a severity, a split, a tag or a bordered box the same way.
   Translated from the mockup's sheet (sec.css: .sev, .parts, .sevbar, .sevleg, .tag, .card, .segs, .cb.chip, .bx, .pick,
   .sw) into the app's own tokens; the classes are security.css's `ls-` ones. Where the app has the thing already (Pop,
-  Row, the Liner Switch, Num), these use it.
+  Row, the Liner Switch, Num), these use it. Empty states and find fields are the panel frame's own (Pane.tsx).
 */
 import type { ReactNode } from "react";
 import type { Severity, SeverityCounts } from "@contracts";
 import { SEVERITIES, SEVERITY_LABEL } from "@contracts";
 import { Switch } from "@liner/components/switch/switch";
 import { I } from "../icons";
-import { Pop, Row } from "../ui";
 import * as os from "../os";
 import "./security.css";
 
@@ -25,6 +24,13 @@ export function SevMark({ severity, dot, children }: { severity: Severity; dot?:
     </span>
   );
 }
+
+/** How bad, as its square alone, with its word for a screen reader: the icon of a finding's row in a pane (PaneRow). */
+export const SevSquare = ({ severity }: { severity: Severity }) => (
+  <span className="ls-sev ls-sev-sq" data-sev={severity} role="img" aria-label={SEVERITY_LABEL[severity]}>
+    <i />
+  </span>
+);
 
 /** One part of a whole, for Parts and Legend. */
 export type Part = { tone: Tone; value: number; label: string; title?: string };
@@ -120,35 +126,6 @@ export function CountTabs<T extends string>({ value, onChange, tabs, label }: { 
         </button>
       ))}
     </div>
-  );
-}
-
-/** A filter as a chip that opens its choices (Source, Severity, Second look, Fix). `value` undefined: any. */
-export function FilterChip<T extends string>({ label, value, options, onChange }: { label: string; value?: T; options: { value: T; label: string }[]; onChange: (v: T | undefined) => void }) {
-  const on = options.find((o) => o.value === value);
-  return (
-    <Pop
-      label={label}
-      menu
-      width={220}
-      triggerClass="ls-chip l-focus"
-      triggerAttrs={{ "data-on": on ? "" : undefined }}
-      trigger={
-        <>
-          {on ? `${label}: ${on.label}` : label}
-          <I.chevD size={12} />
-        </>
-      }
-    >
-      {(close) => (
-        <>
-          <Row title="Any" on={!on} onPick={() => (close(), onChange(undefined))} />
-          {options.map((o) => (
-            <Row key={o.value} title={o.label} on={o.value === value} onPick={() => (close(), onChange(o.value))} />
-          ))}
-        </>
-      )}
-    </Pop>
   );
 }
 

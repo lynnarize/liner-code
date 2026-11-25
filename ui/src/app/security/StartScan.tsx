@@ -20,9 +20,10 @@ import { bridge, isNative } from "../bridge";
 import { rpc, useEngine } from "../engine";
 import { I, ModelMark } from "../icons";
 import { EffortPick, ModelPicker, ModelPop, usePickerWide } from "../Models";
-import { PICKER_NARROW, PICKER_WIDE } from "../picker";
+import { PICKER_NARROW, PICKER_WIDE, pickerOut } from "../picker";
 import { agentOf, effortsFor, markOf, modelLabel, plural, toolMarkOf } from "../model";
-import { Pop, Row } from "../ui";
+import { PaneNote } from "../Pane";
+import { LookAgain, Pop, Row, Sep } from "../ui";
 import { OnOff, PageTop, PickTile, Tag } from "./parts";
 import { mockChoices, mockMode } from "./scan-mock";
 import { addSecurityFolder, goSecurity, getSecurityScope, useSecurity, useSecurityProjects } from "./store";
@@ -117,16 +118,17 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
       <div className="ls-page">
         <PageTop title="Start a scan" sidebar={sidebar} onSidebar={onSidebar} />
         <div className="ls-scroll">
-          <div className="ls-none">
-            <span className="ls-disc">
-              <I.folder size={16} />
-            </span>
-            <b>No project yet</b>
-            <span>Add a folder you work on, then scan it.</span>
-            <button type="button" className="lc-btn lsc-add" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
-              Add a project
-            </button>
-          </div>
+          <PaneNote
+            icon={<I.folder size={16} />}
+            title="No project yet"
+            action={
+              <button type="button" className="lc-btn" data-kind="ink" data-size="sm" onClick={() => void addFolder()}>
+                Add a project
+              </button>
+            }
+          >
+            Add a folder you work on, then scan it.
+          </PaneNote>
         </div>
       </div>
     );
@@ -238,6 +240,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
     <Pop
       label={`The tool that reads it: ${ownName}. Change it`}
       width={pickerWide ? PICKER_WIDE : PICKER_NARROW}
+      out={pickerOut("start", pickerWide)}
       bare
       triggerClass="ls-pick lsc-pick-b l-focus"
       trigger={
@@ -326,6 +329,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                     // One panel of rows, as every model is picked, however many security models your CLIs list.
                     <Pop
                       label={`The security model: ${src.label}. Change it`}
+                      menu
                       width={340}
                       triggerClass="ls-pick lsc-pick-b l-focus"
                       trigger={
@@ -342,25 +346,14 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                       }
                     >
                       {(close) => (
-                        <div className="lc-who-scroll" role="group" aria-label="Security models">
-                          {specialist.map((s) => {
-                            const on = who === "specialist" && src.id === s.id;
-                            return (
-                              <button key={s.id} type="button" className="lc-who-row l-focus" data-on={on || undefined} aria-pressed={on} onClick={() => (use(s), close())}>
-                                <ModelMark kind={markOf(s.ref)} size={14} />
-                                <span className="lc-who-row-t">{s.label}</span>
-                                <span className="lc-who-row-n">{s.via}</span>
-                                {on && <I.check size={16} className="lc-who-tick" />}
-                              </button>
-                            );
-                          })}
-                          <div className="lc-who-sep" />
-                          <button type="button" className="lc-who-row l-focus" title="Settings › Models: add an endpoint, then mark it as a security model" onClick={() => (close(), addEndpoint())}>
-                            <I.plus size={14} />
-                            <span className="lc-who-row-t">Another API endpoint</span>
-                            <span className="lc-who-row-n">an unrestricted model</span>
-                          </button>
-                        </div>
+                        // The menu's own rows (rule 8): the model's mark, its name, the tool that lists it grey on its line, the tick at its end.
+                        <>
+                          {specialist.map((s) => (
+                            <Row key={s.id} title={s.label} icon={<ModelMark kind={markOf(s.ref)} size={14} />} which={s.via} on={who === "specialist" && src.id === s.id} onPick={() => (use(s), close())} />
+                          ))}
+                          <Sep />
+                          <Row title="Another API endpoint" note="Settings › Models: add an endpoint, then mark it as a security model" icon={<I.plus size={14} />} which="an unrestricted model" onPick={() => (close(), addEndpoint())} />
+                        </>
                       )}
                     </Pop>
                   ) : (
@@ -372,14 +365,12 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                       note={signedOut.length ? `a security model like Mythos is listed only once you sign in` : `in ${(choices?.lookedIn ?? ["Claude Code", "Codex"]).join(" or ")}`}
                       action={
                         loginOf && !signingIn ? (
-                          <button type="button" className="lsc-pb l-focus" title={`${loginOf.login}, in Terminal`} onClick={(e) => (e.stopPropagation(), signIn())}>
+                          <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" title={`${loginOf.login}, in Terminal`} onClick={(e) => (e.stopPropagation(), signIn())}>
                             Sign in
                           </button>
                         ) : (
-                          <button type="button" className="lsc-pb l-focus" disabled={looking} aria-busy={looking || undefined} onClick={(e) => (e.stopPropagation(), void lookAgain())}>
-                            {/* Busy, not a state: the word alone. */}
-                            {looking ? "Looking" : "Look again"}
-                          </button>
+                          // The app's one Look again (ui.tsx); the box's own click leaves a button inside it alone (Choice).
+                          <LookAgain looking={looking} onLook={() => void lookAgain()} />
                         )
                       }
                     />
@@ -388,7 +379,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                       title="An API endpoint"
                       note="an unrestricted model"
                       action={
-                        <button type="button" className="lsc-pb l-focus" title="Settings › Models: add an endpoint, then mark it as a security model" onClick={(e) => (e.stopPropagation(), addEndpoint())}>
+                        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" title="Settings › Models: add an endpoint, then mark it as a security model" onClick={(e) => (e.stopPropagation(), addEndpoint())}>
                           Add
                         </button>
                       }
@@ -466,11 +457,12 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
             )}
           </div>
 
+          {/* Where things stand on the left, the one action last, as a pane's foot has them. */}
           <div className="lsc-go">
+            <span className="lsc-quiet">{depth === "checks" ? "On this Mac, in a few seconds. What they find lands on Findings." : "Findings appear as it works. Code and Design stay free to use."}</span>
             <button type="button" className="lc-btn" data-kind="ink" disabled={!ready} onClick={() => void start()}>
               {starting ? "Starting" : depth === "checks" ? "Run the free checks" : "Start the scan"}
             </button>
-            <span className="lsc-quiet">{depth === "checks" ? "On this Mac, in a few seconds. What they find lands on Findings." : "Findings appear as it works. Code and Design stay free to use."}</span>
           </div>
         </div>
       </div>

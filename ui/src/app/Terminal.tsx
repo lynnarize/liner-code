@@ -20,8 +20,9 @@ import { bridge } from "./bridge";
 import { onStream, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { cssVar, hexOf, takeScripts, onScript } from "./Surfaces";
-import { toComposer } from "./Find";
+import { FindBar, toComposer, type FindSearch } from "./Find";
 import { Pop, Row } from "./ui";
+import { PANE_TOOL, PaneButton, PaneNote, PaneTool } from "./Pane";
 
 function themeNow() {
   const ink = hexOf(cssVar("--l-ink"), "#1d1f24");
@@ -340,36 +341,36 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
   }, [visible]);
 
   const where = st.cwd && project ? (st.cwd.startsWith(project.path) ? `${project.name}${st.cwd.slice(project.path.length) || ""}` : st.cwd) : "";
-  const [finding, setFinding] = useState(false);
-  const [findQuery, setFindQuery] = useState("");
-  const [findHit, setFindHit] = useState<{ line: number; total: number } | null>(null);
-  const findInput = useRef<HTMLInputElement>(null);
-
-  const searchScrollback = (query: string, dir: 1 | -1 = 1) => {
-    const t = term.current;
-    const q = query.trim().toLowerCase();
-    if (!t || !q) return void setFindHit(null);
-    const buf = t.buffer.active;
-    const matches: number[] = [];
-    for (let i = 0; i < buf.length; i++) {
-      const line = buf.getLine(i)?.translateToString(true) ?? "";
-      if (line.toLowerCase().includes(q)) matches.push(i);
-    }
-    if (!matches.length) return void setFindHit({ line: 0, total: 0 });
-    const prevIdx = findHit && findHit.line > 0 ? matches.indexOf(findHit.line - 1) : -1;
-    const nextIdx = prevIdx < 0 ? (dir > 0 ? matches.length - 1 : 0) : (prevIdx + dir + matches.length) % matches.length;
-    const targetLine = matches[nextIdx];
-    t.scrollToLine(Math.max(0, targetLine - Math.floor(t.rows / 2)));
-    setFindHit({ line: targetLine + 1, total: matches.length });
-  };
+  // ⌘F counts in: each press while it's open puts the keys back in its field (FindBar's `asked`).
+  const [finding, setFinding] = useState(0);
+  /*
+    The scrollback isn't the page's text (xterm draws only the rows in view), so the shared find bar is
+    handed its own search: the lines that hold the words, newest first, and the one shown scrolled to
+    the middle.
+  */
+  const found = useRef<number[]>([]);
+  const [scrollback] = useState<FindSearch>(() => ({
+    count: (query) => {
+      const t = term.current;
+      const q = query.toLowerCase();
+      const out: number[] = [];
+      if (t && q) for (let i = t.buffer.active.length - 1; i >= 0; i--) if ((t.buffer.active.getLine(i)?.translateToString(true) ?? "").toLowerCase().includes(q)) out.push(i);
+      found.current = out;
+      return out.length;
+    },
+    show: (i) => {
+      const t = term.current;
+      const line = found.current[i];
+      if (t && line !== undefined) t.scrollToLine(Math.max(0, line - Math.floor(t.rows / 2)));
+    },
+  }));
 
   useEffect(() => {
     if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f" && box.current?.closest(".lc-term")?.contains(document.activeElement)) {
         e.preventDefault();
-        setFinding(true);
-        requestAnimationFrame(() => findInput.current?.focus());
+        setFinding((n) => n + 1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -385,36 +386,33 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
         <span className="lc-grow" />
         {st.exited !== undefined && <span className="lc-quiet">Exited with {st.exited}</span>}
         {picked && (
-          <button
-            type="button"
-            className="lc-btn"
-            data-kind="plain"
-            data-size="sm"
-            title="Put the selected output in the composer"
+          <PaneButton
+            icon={<I.comment size={14} />}
+            title="Put the selected output in the message box"
             onClick={() => {
               toComposer(thread.id, `From the terminal:\n\n\`\`\`\n${picked}\n\`\`\`\n\n`);
               term.current?.clearSelection();
               setPicked("");
             }}
           >
-            <I.comment size={12} />
             Ask about this
-          </button>
+          </PaneButton>
         )}
-        {/* The rest of a shell's tools under one ···, as every surface's top row has them. */}
-        <Pop label="More for this shell" menu align="end" width={220} triggerClass="lc-ib" triggerAttrs={{ title: "More" }} trigger={<I.more size={14} />}>
+        {/* The rest of a shell's tools under one ···, the panel's tool size and the menu shape. */}
+        <Pop label="More for this shell" menu align="end" width={220} triggerClass={PANE_TOOL} triggerAttrs={{ title: "More" }} trigger={<I.more size={16} />}>
           {(close) => (
             <>
+              <Row title="Find" icon={<I.search size={14} />} end={mac ? "⌘F" : "Ctrl F"} onPick={() => (close(), setFinding((n) => n + 1))} />
               <Row
                 title="Clear"
-                icon={<I.trash size={16} />}
+                icon={<I.trash size={14} />}
                 onPick={() => {
                   close();
                   term.current?.clear();
                   if (idRef.current) void rpc("term.clear", { id: idRef.current }).catch(() => {});
                 }}
               />
-              <Row title="Restart the shell" note="In this tab" icon={<I.refresh size={16} />} onPick={() => (close(), onRestart())} />
+              <Row title="Restart the shell" note="In this tab" icon={<I.refresh size={14} />} onPick={() => (close(), onRestart())} />
             </>
           )}
         </Pop>
@@ -423,42 +421,14 @@ function TermPane({ thread, pane, visible, onRestart, slot }: { thread: Thread; 
   return (
     <div className="lc-term">
       {slot ? visible && createPortal(barParts, slot) : <div className="lc-term-bar">{barParts}</div>}
-      {finding && (
-        <div className="lc-find" role="search" aria-label="Find in terminal">
-          <I.search size={13} />
-          <input
-            ref={findInput}
-            value={findQuery}
-            placeholder="Find in terminal output"
-            aria-label="Find in terminal output"
-            onChange={(e) => {
-              setFindQuery(e.target.value);
-              searchScrollback(e.target.value, -1);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setFinding(false);
-                term.current?.focus();
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                searchScrollback(findQuery, e.shiftKey ? -1 : 1);
-              }
-            }}
-          />
-          {findHit && <span className="lc-quiet l-num">{findHit.total ? `line ${findHit.line} (${findHit.total})` : "No match"}</span>}
-          <button type="button" className="lc-ib l-focus" aria-label="Previous match" onClick={() => searchScrollback(findQuery, -1)}>
-            <I.chevU size={12} />
-          </button>
-          <button type="button" className="lc-ib l-focus" aria-label="Next match" onClick={() => searchScrollback(findQuery, 1)}>
-            <I.chevD size={12} />
-          </button>
-          <button type="button" className="lc-ib l-focus" aria-label="Close search" onClick={() => (setFinding(false), term.current?.focus())}>
-            <I.close size={12} />
-          </button>
-        </div>
+      {finding > 0 && <FindBar search={scrollback} asked={finding} label="Find in the terminal" onClose={() => (setFinding(0), term.current?.focus())} />}
+      {/* A shell that couldn't start is the one empty state, in the box's place (F39). */}
+      {st.error && (
+        <PaneNote icon={<I.alert size={16} />} title="The shell couldn't start">
+          {st.error}
+        </PaneNote>
       )}
-      {st.error && <p className="lc-term-err">{st.error}</p>}
-      <div ref={box} className="lc-term-box" onClick={() => term.current?.focus()} />
+      <div ref={box} className="lc-term-box" hidden={Boolean(st.error) || undefined} onClick={() => term.current?.focus()} />
     </div>
   );
 }
@@ -534,9 +504,7 @@ export function TerminalSurface({ thread, visible, below, lead }: { thread: Thre
   const { panes, on } = tabs;
   if (!ready || !panes.length)
     return (
-      <div className="lc-diff-wait">
-        <span className="l-shimmer">Opening a terminal</span>
-      </div>
+      <PaneNote title="Opening a terminal" loading />
     );
   return (
     <div className="lc-terms" data-below={below ? "" : undefined}>
@@ -546,19 +514,17 @@ export function TerminalSurface({ thread, visible, below, lead }: { thread: Thre
           {panes.map((p) => (
             <span key={p.key} className="lc-terms-tab" data-on={p.key === on || undefined}>
               <button type="button" role="tab" aria-selected={p.key === on} className="l-focus" onClick={() => setOn(p.key)} title={p.command ?? "A shell"}>
-                {p.command ? <I.play size={12} /> : <I.terminal size={12} />}
+                {p.command ? <I.play size={14} /> : <I.terminal size={14} />}
                 {p.title}
               </button>
               <button type="button" className="lc-terms-x l-focus" aria-label={`Close ${p.title}`} onClick={() => close(p)}>
-                <I.close size={12} />
+                <I.close size={14} />
               </button>
             </span>
           ))}
           {below && (
             <>
-              <button type="button" className="lc-ib l-focus" aria-label="A new shell" title="A new shell" onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })}>
-                <I.plus size={14} />
-              </button>
+              <PaneTool label="A new shell" icon={<I.plus size={16} />} onClick={() => put(thread.id, (k) => { const n = shellPane(); return { panes: [...k.panes, n], on: n.key }; })} />
               <span className="lc-grow" />
               <span ref={setSlot} className="lc-below-tools" />
             </>

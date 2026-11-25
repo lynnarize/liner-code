@@ -119,8 +119,9 @@ export function CompareOver({ frame, box, zoom }: { frame: DesignFrame; box: { l
         <button type="button" className="ld-live-lk l-focus" onClick={() => void askAgent(fixAsk(frame, builds[frame.id]?.file, `http://${url}`), "Sent: fix the differences", shownAsk(`Make the app at ${url} match ${frame.name}`, { kind: "compare", label: "Fix the differences" }, [frame]))}>
           Fix the differences
         </button>
+        {/* The 20px head over the frame holds a 14px cross at most: the size the app's small closes have, not the 12 it had alone. */}
         <button type="button" className="lc-ib l-focus" aria-label="Stop comparing" title="Stop comparing" onClick={() => void openCompare(undefined)}>
-          <I.close size={12} />
+          <I.close size={14} />
         </button>
       </div>
       <div className="ld-cmp" style={box}>

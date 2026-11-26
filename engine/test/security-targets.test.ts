@@ -250,7 +250,18 @@ test("Who scans lists only tools that are ready, and names a tool once when its 
   const demo = readersOf({ providers, specialists: [], own: "@demo:demo" });
   assert.equal(demo[0].label, "Demo");
   const hermes = readersOf({ providers: [{ ...providers[2], signedIn: true }], specialists: [], own: "@hermes:default" });
-  assert.equal(hermes[0].label, "Hermes");
+  assert.equal(hermes[0].label, "Hermes · its default model");
+});
+
+test("Who scans names the model a tool's default row is set to, not the tool alone", () => {
+  const hermes = tool("hermes", "Hermes", ["default", "kimi-k3"], { signedIn: true, modelsFrom: "cli" });
+  hermes.models[0] = { ...hermes.models[0], label: "Hermes default", now: "Kimi K3" };
+  const opencode = tool("opencode", "OpenCode", ["default", "zen/glm-5.3"], { signedIn: true, modelsFrom: "cli" });
+  opencode.models[0].label = "OpenCode default";
+  const r = readersOf({ providers: [tool("claude", "Claude Code", ["claude-sonnet-5-5"], { modelsFrom: "cli" }), hermes, opencode], specialists: [], own: "@claude:claude-sonnet-5-5" });
+  assert.equal(r.find((x) => x.brand === "hermes")?.label, "Hermes · Kimi K3");
+  // OpenCode's own list doesn't say which model it is set to: the row says so rather than reading as the tool alone.
+  assert.equal(r.find((x) => x.brand === "opencode")?.label, "OpenCode · its default model");
 });
 
 test("A chip reads a scan's finish from the record the engine sends, at once, keeping what it had counted", async () => {

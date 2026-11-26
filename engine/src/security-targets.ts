@@ -311,12 +311,16 @@ export function readersOf(o: { providers: ProviderInfo[]; specialists: Specialis
   const out: ScanReaderChoice[] = [];
   // Ready: installed, driven, signed in by its own word, or (with no status command) its models listed by the tool itself.
   const usable = o.providers.filter((p) => p.available && p.adapter && p.models.length && (p.id === "demo" || p.endpoint || p.signedIn === true || (p.signedIn === undefined && p.modelsFrom !== "builtin")));
-  // A tool's name once: "Demo", "Hermes", not "Demo · Demo" or "Hermes · Hermes default".
-  const label = (p: ProviderInfo, m?: { label?: string; id: string }) => {
+  // A tool's name once, then its model: "Hermes · Kimi K3", not "Hermes · Hermes default". A tool's default row names the
+  // model it is set to when the tool said, else says it is the tool's own default, so a row never reads as a bare tool.
+  // The Demo has no model of its own to name: "Demo".
+  const label = (p: ProviderInfo, m?: { label?: string; id: string; now?: string }) => {
     const tool = `${p.label}${p.account ? ` (${p.account})` : ""}`;
+    if (m?.now?.trim()) return `${tool} · ${m.now.trim()}`;
     const words = (m?.label || m?.id || "").trim();
     const rest = words.toLowerCase().startsWith(p.label.toLowerCase()) ? words.slice(p.label.length).trim() : words;
-    return !rest || /^(default|\(default\))$/i.test(rest) || rest.toLowerCase() === p.id ? tool : `${tool} · ${rest}`;
+    if (!rest || rest.toLowerCase() === p.id) return tool;
+    return /^(default|\(default\))$/i.test(rest) ? `${tool} · its default model` : `${tool} · ${rest}`;
   };
   const own = o.own.startsWith("@") ? refOf(o.own) : "";
   const ownTool = own ? usable.find((p) => p.id === own.split(":")[0]) : undefined;

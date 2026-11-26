@@ -101,6 +101,8 @@ export type ModelInfo = {
   group?: string;
   /** What the tool picks when you don't. */
   isDefault?: boolean;
+  /** On a tool's "default" row, the model it is set to by name ("Kimi K3"), when the tool said; unset when it didn't. */
+  now?: string;
   /** A model id you added that the tool doesn't list. */
   custom?: boolean;
 };

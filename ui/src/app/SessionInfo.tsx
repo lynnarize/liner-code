@@ -3,20 +3,20 @@
   pins it at the chat's right (Session.tsx), in the menu's shape. Three sections: where it runs (the Mac or its worktree, the project and its
   folder, the branch, the changes still to commit, the agents that worked, a pull request and its checks), its context
   (used of the window, a bar split by source, what fills it opened in place, Compact, what came from cache) and its setup
-  (Multi-agent, Tool preset, Sidekick context, Connections, Spend limit, Workspace memory), each a row with its value and
+  (Tool preset, Sidekick context, Connections, Spend limit, Workspace memory), each a row with its value and
   a menu to its side. Tool, Lead, Sidekick and Reviewer are not here: the message box and the header say them. It asks
   the engine when it opens, again when a turn starts or ends, and on Look again.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isSwarm, type ContextPart, type ContextSource, type FileChange, type Item, type LimitWindow, type PrInfo, type SessionInfo, type Thread, type ToolLimits } from "@contracts";
+import { type ContextPart, type ContextSource, type FileChange, type Item, type LimitWindow, type PrInfo, type SessionInfo, type Thread, type ToolLimits } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine, useItems } from "./engine";
 import { I, StateMark } from "./icons";
 import { checkpointsOf, compact, duration, money, plural, sumLines } from "./model";
 import { openSurface } from "./TopBar";
-import { openAgents, showTeam } from "./Crew";
+import { openAgents } from "./Crew";
 import { addFive, agentsWorked, spendWords } from "./session-pop";
-import { ConfirmRow, Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
+import { Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
 
 const fail = (e: Error) => toast.error(e.message);
 
@@ -109,7 +109,7 @@ export function SessionSurface({ thread, items, visible, onShowChange, onClose =
       <PlanLimit limits={limit} />
       <Sep />
       <PanelHead>Setup</PanelHead>
-      <Setup thread={thread} close={onClose} />
+      <Setup thread={thread} />
     </div>
   );
 }
@@ -118,41 +118,11 @@ export function SessionSurface({ thread, items, visible, onShowChange, onClose =
 const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 
 /** The setup rows: each a value and a menu to its side, as the board's Setup section has them. */
-/**
-  Multi-agent › Off, Teamwork, Swarm: one row, the same in this popup's Setup and in the session's title menu (Session.tsx).
-  Teamwork and Swarm are started here (and by /teamwork and /swarm), never in a side chat or a scan. `close` closes the
-  menu it is in. Off stops every worker, so while a team is on it asks once more, as the team card's Turn it off does.
-*/
-export function MultiAgentRow({ thread, close }: { thread: Thread; close: () => void }) {
-  const mode = isSwarm(thread) ? ((thread.swarm?.mode ?? "teamwork") === "swarm" ? "Swarm" : "Teamwork") : "Off";
-  if (thread.sideOf || thread.security) return null;
-  // `done` shuts its side menu: in the pinned Session card `close` closes nothing, and the side menu stayed up after a pick.
-  const multiAgent = (to: "off" | "teamwork" | "swarm", done: () => void) => {
-    done();
-    close();
-    if (to === "off") void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail);
-    // On, the team opens in the Agents panel (Crew.tsx showTeam), the right tab that lists it.
-    else void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: to }).then(() => showTeam(thread.id), fail);
-  };
-  return (
-    <SubMenu title="Multi-agent" icon={<I.fusion size={14} />} value={mode} label="Multi-agent" width={250}>
-      {(done) => (
-        <>
-          {mode === "Off" ? <Row title="Off" on onPick={() => multiAgent("off", done)} /> : <ConfirmRow title="Off" sure="Turn it off: every worker stops" red onConfirm={() => multiAgent("off", done)} />}
-          <Row title="Teamwork" note="A coordinator and a tree of agents under it" on={mode === "Teamwork"} onPick={() => multiAgent("teamwork", done)} />
-          <Row title="Swarm" note="Peers on one board, parked at 0 MB while they wait" on={mode === "Swarm"} onPick={() => multiAgent("swarm", done)} />
-        </>
-      )}
-    </SubMenu>
-  );
-}
-
-function Setup({ thread, close }: { thread: Thread; close: () => void }) {
+function Setup({ thread }: { thread: Thread }) {
   const update = (patch: Omit<Parameters<typeof rpc<"thread.update">>[1], "id">) => void rpc("thread.update", { id: thread.id, ...patch }).catch(fail);
   const usage = thread.usage;
   return (
     <>
-      <MultiAgentRow thread={thread} close={close} />
       <SubMenu title="Tool preset" icon={<I.sliders size={14} />} value={thread.toolPreset === "lean" ? "Lean" : "Standard"} label="Tool preset" width={270}>
         {(done) => (
           <>

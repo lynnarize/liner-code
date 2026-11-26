@@ -1089,7 +1089,7 @@ function CrewView({ thread, crew }: { thread: Thread; crew: Crew | null }) {
           </>
         ) : (
           <PaneNote icon={<I.agents size={20} />} title="No agents yet">
-            When a model takes your message and sends agents off, they show here with who sent whom. Teamwork and Swarm start from the Session card's Multi-agent row.
+            When a model takes your message and sends agents off, they show here with who sent whom. Start Teamwork or Swarm with /teamwork or /swarm in the message box.
           </PaneNote>
         )}
         <SessionUse thread={thread} />

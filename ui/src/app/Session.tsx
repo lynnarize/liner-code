@@ -101,7 +101,6 @@ export function showBelow(threadId: string) {
 const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
 // The Session card reads the session itself (SessionInfo.tsx); pinned, it stays up when a row takes you to a surface.
 const SessionPopup = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionPopup));
-const MultiAgentRow = lazyAgain(() => import("./SessionInfo").then((m) => m.MultiAgentRow));
 /** The install previews that have come up by themselves once, while the app runs. */
 const openedPreviews = new Set<string>();
 
@@ -721,15 +720,9 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                     <>
                       {/* The Session card, as its icon in the header's row pins it. */}
                       <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), setSessionOpen(true))} />
-                      {/* One "Multi-agent  Off ›" row, as the Session card's Setup has it; Agents opens what the Agents key opens (the popup, or the panel's surface). */}
-                      {!thread.sideOf && !thread.security && (
-                        <>
-                          <Suspense fallback={null}>
-                            <MultiAgentRow thread={thread} close={close} />
-                          </Suspense>
-                          <Row title="Agents" icon={<I.agents size={16} />} onPick={() => (close(), openAgents(thread.id))} />
-                        </>
-                      )}
+                      {/* Agents opens what the Agents key opens (the popup, or the panel's surface). Teamwork and Swarm have no
+                          row in a menu: they start only from the message box, with /teamwork and /swarm. */}
+                      {!thread.sideOf && !thread.security && <Row title="Agents" icon={<I.agents size={16} />} onPick={() => (close(), openAgents(thread.id))} />}
                       <Row title="Rename" icon={<I.edit size={16} />} onPick={() => (close(), setRenaming(true))} />
                       <Row title={thread.pinned ? "Unpin" : "Pin"} icon={<I.pin size={16} />} onPick={() => (close(), void rpc("thread.update", { id: thread.id, pinned: !thread.pinned }).catch(fail))} />
                       {onBeside && <Row title="Open another session beside it" icon={<I.split size={16} />} onPick={() => (close(), onBeside())} />}

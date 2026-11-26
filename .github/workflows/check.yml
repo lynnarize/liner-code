@@ -6,12 +6,23 @@ on:
     branches: [main, design-and-api-endpoints]
   pull_request:
   workflow_dispatch:
+
+# A pull request from a fork runs this file as the fork wrote it. pull_request (not
+# pull_request_target) gives that run no secrets. The token only reads the repo; actions: write
+# is so setup-node can save the npm cache.
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   check:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The job does not push. A test should not inherit a credential either.
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 24

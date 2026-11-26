@@ -33,10 +33,9 @@ beside the lead for the work it can hand over.
 
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.jpg">
-  <img src=".github/readme/hero-light.jpg" width="100%" alt="Liner Code: a session where the agent asks a question as a card before it changes anything">
-</picture>
+<img src=".github/readme/hero.webp" width="100%" alt="Liner Code 0.3.2: Run the coding agents you already pay for, above a light-mode Code screen with a plan and agents at work">
+
+<p align="center"><sub>Liner Code 0.3.2 · the coding agents you already pay for</sub></p>
 
 </div>
 
@@ -119,47 +118,41 @@ Stuck? Open a [Discussion](https://github.com/lynnarize/liner-code/discussions).
 something that won't start, Ideas for what it should do, and Early testers for how the beta feels.
 **Help › Report a Problem…** makes a zip with the log and versions and opens an
 [issue](https://github.com/lynnarize/liner-code/issues/new/choose).
+To change the code, start at [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Features
 
 <table>
   <tr>
     <td width="33%" valign="top">
-      <img src=".github/readme/pair.svg" width="100%" alt="Wireframe: a lead's brief worked by its sidekick, then verified by the Reviewer">
       <b>Lead + sidekick</b><br>
       <sub>The lead plans and hands bounded work to a quicker model beside it, then reads what it did.</sub>
     </td>
     <td width="33%" valign="top">
-      <img src=".github/readme/diff.svg" width="100%" alt="Wireframe: a turn's diff with Undo turn and Commit">
       <b>Every turn is a diff</b><br>
       <sub>A git snapshot before and after each turn: undo it, commit it, or ask about a line.</sub>
     </td>
     <td width="33%" valign="top">
-      <img src=".github/readme/check.svg" width="100%" alt="Wireframe: the Reviewer's five criteria, one sent back">
       <b>Checked by another maker</b><br>
       <sub>A model of another maker reads each change against five fixed criteria. It never wrote it.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" valign="top">
-      <img src=".github/readme/design.svg" width="100%" alt="Wireframe: the Design surface with a comment on a part">
       <b>Designs beside the session</b><br>
       <sub>Any agent draws a screen; point at a part to change it, then Build it.</sub>
     </td>
     <td width="33%" valign="top">
-      <img src=".github/readme/surfaces.svg" width="100%" alt="Wireframe: the surfaces tabs with the Terminal open">
       <b>Surfaces</b><br>
       <sub>Changes, Files, Browser, Terminal, Design, Pull request and Device, in the panel beside the session.</sub>
     </td>
     <td width="33%" valign="top">
-      <img src=".github/readme/compare.svg" width="100%" alt="Wireframe: two models' answers side by side">
       <b>Models side by side</b><br>
       <sub>One prompt to the models you have, with what each cost, and keep the best.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" valign="top">
-      <img src=".github/readme/workshop.svg" width="100%" alt="Wireframe: Workshop making an add-on">
       <b>Workshop</b><br>
       <sub>Ask for what Liner Code doesn't have; an agent makes it as an add-on.</sub>
     </td>
@@ -174,33 +167,22 @@ something that won't start, Ideas for what it should do, and Early testers for h
   <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/plan-dark.jpg">
-        <img src=".github/readme/plan-light.jpg" width="100%" alt="A plan card with Approve and start">
-      </picture>
-      <p align="center"><sub><b>Plans</b>: approve it, then it builds</sub></p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/diff-dark.jpg">
-        <img src=".github/readme/diff-light.jpg" width="100%" alt="The diff panel with Undo turn and Commit">
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/diff-dark.webp">
+        <img src=".github/readme/diff-light.webp" width="100%" alt="Liner Code 0.3.2: the Changes panel with a turn's diff, Undo and Commit">
       </picture>
       <p align="center"><sub><b>Diffs</b>: every turn, undoable</sub></p>
     </td>
-  </tr>
-  <tr>
     <td width="50%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/pr-dark.jpg">
-        <img src=".github/readme/pr-light.jpg" width="100%" alt="The pull request card">
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/design-dark.webp">
+        <img src=".github/readme/design-light.webp" width="100%" alt="Liner Code 0.3.2: a phone design of the tide screen beside the session">
       </picture>
-      <p align="center"><sub><b>Pull requests</b>: checks and reviews beside the session</sub></p>
+      <p align="center"><sub><b>Designs</b>: a screen beside the session</sub></p>
     </td>
-    <td width="50%"></td>
   </tr>
 </table>
 
-<sub>Screenshots are the real app on a sample project (0.1.2 and 0.1.5, with a scripted demo agent);
-the feature pictures above are wireframes. Both follow your system's light or dark theme.</sub>
+<sub>Screenshots are Liner Code 0.3.2 on the sample project, with the scripted Demo. They follow your system's light or dark theme.</sub>
 
 Ideas came from [T3 Code](https://github.com/pingdotgg/t3code) (MIT) and
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) (MIT); no code was copied from either.

@@ -64,6 +64,8 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 
 ### Fixed
 
+- A Teamwork or Swarm session whose team has finished no longer says "Working · 1 agent" in the sidebar and on The
+  Wall for good: the count follows the team's agents as each starts and finishes, on every tool.
 - In the dark look a card's main button (a plan's Approve and start, a question's Next, Try again) is a light pill
   again, not near-black on the near-black card.
 - In Liner Security's Findings, a row's tick box no longer lies on the row: it stands in the margin clear of it, and

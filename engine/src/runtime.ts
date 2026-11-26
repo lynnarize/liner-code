@@ -446,7 +446,13 @@ export class Runtime {
         const tagged = { ...req, title: `@${memberName}: ${req.title}` };
         return cards.api.approve(tagged, signal).finally(() => cards.end());
       },
-      putItem: (threadId, item) => this.store.putItem(threadId, item),
+      // A team's rows are agents too: the session counts them as each starts or finishes, as a tool's own agents. The count at a
+      // turn's end alone came before the coordinator was marked waiting, and kept "1 agent" at work on a finished session.
+      putItem: (threadId, item) => {
+        const was = item.kind === "tool" && item.agent ? this.store.timeline(threadId).find((x) => x.id === item.id) : undefined;
+        this.store.putItem(threadId, item);
+        if (item.kind === "tool" && item.agent && (was?.kind === "tool" ? agentState(was) : undefined) !== agentState(item)) this.countAgents(threadId);
+      },
       turnOf: (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns,
       forgetWorkerKey: (threadId, worker) => this.tools?.forgetSwarmWorker(threadId, worker),
       resetCoordinatorSession: (threadId) => {

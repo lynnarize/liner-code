@@ -62,6 +62,109 @@
   gap: 8px;
 }
 
+/* The tunnel's steps (board Tunnel checks): a line each, what went wrong and the way out under a step that failed. */
+.lc-mcp-checks {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-mcp-checks[data-folded] {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  font-size: 12.5px;
+  color: var(--l-ink-4);
+}
+.lc-mcp-checks[data-folded] > span {
+  flex: 1;
+  min-width: 0;
+}
+.lc-mcp-checks-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-4);
+}
+.lc-mcp-checks-end {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+.lc-mcp-ck {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-mcp-ck[data-state="run"] {
+  color: var(--l-ink);
+}
+.lc-mcp-ck[data-state="wait"] {
+  color: var(--l-ink-4);
+}
+.lc-mcp-ck-m {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lc-mcp-ck[data-state="ok"] .lc-mcp-ck-m {
+  color: var(--l-ok, oklch(0.72 0.16 150));
+}
+.lc-mcp-ck[data-state="warn"] .lc-mcp-ck-m {
+  color: var(--l-warn);
+}
+.lc-mcp-ck-t {
+  flex: 1;
+  min-width: 0;
+}
+.lc-mcp-ck-v {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lc-mcp-fix {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 2px 0 8px 26px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--l-ink-2);
+  background: color-mix(in oklab, var(--l-danger, oklch(0.63 0.2 25)) 8%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-danger, oklch(0.63 0.2 25)) 24%, transparent);
+}
+.lc-mcp-fix[data-tone="warn"] {
+  background: color-mix(in oklab, var(--l-warn) 8%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-warn) 24%, transparent);
+}
+.lc-mcp-checks-fine {
+  margin: 4px 0 0 26px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--l-ink-4);
+}
+
 /* ---------- Add an app ---------- */
 
 .lc-sheet.lc-mcp-add {

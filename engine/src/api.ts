@@ -1356,6 +1356,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "mcp.decide": ({ id, allow, trust }) => (mcpOf().gate.decide(id, allow === true, trust === true), null),
     "mcp.signIn": ({ id, allow, level }) => (mcpOf().oauth.decide(id, allow === true, level), null),
     "mcp.retry": async () => (await mcpOf().retry(), mcpOf().status()),
+    "mcp.checkAgain": async () => (await mcpOf().tunnel.checkAgain(), mcpOf().status()),
+    "mcp.halt": async () => (await mcpOf().tunnel.halt(), mcpOf().status()),
     "mcp.unblock": ({ id }) => (mcpOf().apps.unblock(id), null),
     "mcp.rename": ({ id, name }) => mcpOf().apps.rename(id, String(name ?? "")),
     "mcp.expectSignIn": ({ kind }) => (mcpOf().oauth.expect(kind === "claude" || kind === "chatgpt" ? kind : "other"), null),

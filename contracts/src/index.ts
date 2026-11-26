@@ -1745,6 +1745,8 @@ export type Rpc = {
   "mcp.decide": [{ id: string; allow: boolean; trust?: boolean }, null];
   "mcp.signIn": [{ id: string; allow: boolean; level?: McpLevel }, null];
   "mcp.retry": [Record<string, never>, McpStatus];
+  "mcp.checkAgain": [Record<string, never>, McpStatus];
+  "mcp.halt": [Record<string, never>, McpStatus];
   /** A terminal agent you turned away, let in again; and a sign-in expected for the next 15 minutes (Add an app, an app that signs in itself). */
   "mcp.unblock": [{ id: string }, null];
   /** An app's name in Settings, changed (Another app 2 → Home Assistant). */

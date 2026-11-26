@@ -260,6 +260,10 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
   Cloudflare quick tunnel (`cloudflared tunnel --url http://127.0.0.1:<port>`, through Cloudflare,
   with a new trycloudflare.com address each time it starts), or an https address of your own that
   already forwards there. Either way only that listener is reachable, never the rest of the app.
+  While a way is up, Liner Code checks that it reaches this computer by asking its own address for
+  Liner MCP's sign-in details (`/.well-known/oauth-protected-resource/mcp`), once when it comes up,
+  every 5 minutes after, and when you press Check again. That request goes through your tunnel to
+  your own listener and nowhere else.
 - **Tell an app, if you set it up.** Give an https address under Settings › Liner MCP › Tell an
   app, and whenever a session starts waiting on you Liner Code posts one line there: that a session
   needs you, its title, and "Liner Code", with your secret as a bearer token if you gave one (kept in

@@ -91,7 +91,10 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   answer to a session at Full access always asks. A revoked terminal agent is turned away by its name until let in again. No app answers a permission ask or changes a
   setting, and each gets 60 calls a minute. From the internet (off unless picked): Tailscale Funnel (`tailscale funnel --bg
   <port>`, taken down with `tailscale funnel --https=443 off`), a Cloudflare quick tunnel (`cloudflared tunnel --url
-  http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. The engine's own
+  http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. Each start lists its
+  steps for Settings (`Tunnel.checks`: tool, signed in, Funnel on, :443 free, started), and once up the engine GETs its own
+  public `/.well-known/oauth-protected-resource/mcp` and expects its own address back, then every 5 minutes and on
+  `mcp.checkAgain`; `mcp.halt` stops a start that hangs. The engine's own
   server still takes no host but its own. Tell an app posts `{event, session title, app}` with your secret to your https
   webhook when a session starts waiting on you: never to this computer or a private network, no redirects, 10 seconds, two
   retries.

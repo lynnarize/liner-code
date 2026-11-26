@@ -28,6 +28,11 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   pick Tailscale Funnel, a Cloudflare quick tunnel or an address of your own.
 - **Tell an app:** an https webhook of yours hears when a session needs you, with its title and
   nothing else, so an app on your phone can say so. It never goes to this computer or a private network.
+- **Tunnel checks** under Settings › Liner MCP › From the internet: each step of bringing a tunnel up,
+  passed, failed or at work, with the step it's on while it starts and Stop when one takes too long. A
+  step that fails says why and the way out (Tailscale's page, a command, Try again). Once up, Liner checks
+  that the address really reaches this computer, then every 5 minutes, and says when an app last
+  called in, or that it still has a quick tunnel's old address. Copy details puts it all in words.
 
 ### Changed
 

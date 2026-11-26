@@ -3,7 +3,8 @@
   Settings, a new agent, a scan, an app). Three parts side by side, their sizes in picker.ts: a rail of your tools; a
   middle card of one size whatever the tool, with Find and the rows a caller pins (Fusion, Automatic) at its top, the rail's
   tool's models scrolling under them (the starred first, then by maker, or by what each is for in a tool of one maker, its
-  sources a switch over them), and at its foot the rows that open a list in its place (your agents, older versions); and a
+  sources a switch over them), and at its foot the row that opens the older versions in its place; under the rail's tools,
+  the places that open a list there too (your agents); and a
   card at its side about the model pointed at: where it runs, its price and its effort levels exactly as its tool reports
   them. In a window too narrow for the card, its words are one line at the middle card's foot. The models are the ones
   each tool on this Mac said it runs, not a list kept in the app; one model a tool offers from several sources is one row.
@@ -363,9 +364,11 @@ function useEasedHeight(card: RefObject<HTMLElement | null>, inner: RefObject<HT
 export type RailExtra = { id: string; label: string; mark: MarkKind; title?: string; body: ReactNode };
 /**
   The rail: one 28px button a tool that is ready, its own mark, the tool whose models show pressed. A tool installed but
-  not signed in is there all the same (its models can still be read), quieter, and says so in its name.
+  not signed in is there all the same (its models can still be read), quieter, and says so in its name. Under a hairline,
+  the places that open a list in the middle card's place (your agents): kept out of the middle card so the models have its
+  whole height. A place pressed while its list is open, with a dot when what it holds is the pick.
 */
-function ToolRail({ tools, extras, on, rail, onPick }: { tools: ProviderInfo[]; extras: RailExtra[]; on: string; rail: RefObject<HTMLDivElement | null>; onPick: (id: string) => void }) {
+function ToolRail({ tools, extras, places, on, open, rail, onPick, onPlace }: { tools: ProviderInfo[]; extras: RailExtra[]; places: Place[]; on: string; open: string; rail: RefObject<HTMLDivElement | null>; onPick: (id: string) => void; onPlace: (id: string) => void }) {
   return (
     <div ref={rail} className="lc-pk-card lc-pk-rail" role="toolbar" aria-orientation="vertical" aria-label="Tools">
       {tools.map((p) => {
@@ -382,6 +385,15 @@ function ToolRail({ tools, extras, on, rail, onPick }: { tools: ProviderInfo[]; 
           <ModelMark kind={x.mark} size={16} />
         </button>
       ))}
+      {places.length > 0 && <span className="lc-pk-rail-rule" role="presentation" />}
+      {places.map((p) => {
+        const say = p.note ? `${p.label} · ${p.note}` : p.label;
+        return (
+          <button key={p.id} type="button" className="lc-pk-tool l-focus" data-view={p.id} data-on={p.on || undefined} aria-pressed={open === p.id} aria-haspopup="true" aria-label={p.on ? `${say}, picked` : say} title={say} onClick={() => onPlace(p.id)}>
+            {p.icon}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -394,7 +406,7 @@ function ToolRail({ tools, extras, on, rail, onPick }: { tools: ProviderInfo[]; 
 export type EffortHook = { label?: string; of: (ref: string) => string | undefined; held?: (ref: string) => boolean; pick: (ref: string, id: string) => void };
 /** What a caller draws for a row of its own the card turns to (Fusion): the card's words, and the narrow form's one line. */
 export type OwnCard = { label: string; body: ReactNode; line: ReactNode };
-/** A row at the middle card's foot that opens a list in its place (your agents). */
+/** A place on the rail, under the tools, that opens a list in the middle card's place (your agents). */
 export type Place = { id: string; label: string; icon: ReactNode; on?: boolean; note?: string; body: ReactNode };
 
 /** What Claude Code's extras do, in plain words, as claude.ts sends them; an extra of another name keeps its tool's description. */
@@ -662,7 +674,7 @@ type Props = {
   foot?: ReactNode;
   /** Rows pinned under Find for picks that aren't a model (Automatic, Fusion), given the rail's tool. */
   first?: ReactNode | ((tool: string) => ReactNode);
-  /** Rows at the middle card's foot that open a list in its place (your agents); `open` opens on one. */
+  /** Places on the rail, under the tools, that open a list in the middle card's place (your agents); `open` opens on one. */
   places?: Place[];
   open?: string;
   /** The rail's entries past the tools (the Demo). */
@@ -790,7 +802,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   const leave = () => {
     const was = view;
     setView("");
-    refocus(() => mid.current?.querySelector<HTMLElement>(`[data-view="${was}"]`) ?? find.current);
+    refocus(() => mid.current?.querySelector<HTMLElement>(`[data-view="${was}"]`) ?? rail.current?.querySelector<HTMLElement>(`[data-view="${was}"]`) ?? find.current);
   };
   // A row pointed at on the tool before isn't one of this tool's: the card starts again from nothing pointed at.
   const pickTool = (id: string) => (setToolId(id), setView(""), setQuery(""), window.clearTimeout(timer.current), setDwell(dwellAt(null)));
@@ -959,11 +971,12 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
     </div>
   );
   const pinned = typeof first === "function" ? first(toolId) : first;
-  const hasFoot = places.length > 0 || older.length > 0;
+  const hasFoot = older.length > 0;
   const wide = side === "card";
   return (
     <div className="lc-pk" data-side={side || undefined} style={{ "--lc-pk-h": `${height}px` } as CSSProperties} onKeyDown={keys}>
-      <ToolRail tools={tools} extras={railExtras} on={extra ? extra.id : (tool?.id ?? "")} rail={rail} onPick={pickTool} />
+      {/* While a place's list is open no tool is pressed: the rail says what the middle card shows. */}
+      <ToolRail tools={tools} extras={railExtras} places={places} on={placeOpen ? "" : extra ? extra.id : (tool?.id ?? "")} open={view} rail={rail} onPick={pickTool} onPlace={(id) => (view === id ? leave() : enter(id))} />
       <section
         ref={mid}
         className="lc-pk-card lc-pk-mid"
@@ -991,15 +1004,6 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
         {note && <div className="lc-pk-note">{note}</div>}
         {hasFoot && (
           <div className="lc-pk-foot">
-            {places.map((p) => (
-              <button key={p.id} type="button" className="lc-who-row l-focus" data-rove data-view={p.id} data-on={p.on || undefined} aria-haspopup="true" onClick={() => enter(p.id)}>
-                {p.icon}
-                <span className="lc-who-row-t">{p.label}</span>
-                {p.note && <span className="lc-who-row-n">{p.note}</span>}
-                {p.on && <I.check size={14} className="lc-who-tick" />}
-                <I.chevR size={14} />
-              </button>
-            ))}
             {older.length > 0 && (
               <button type="button" className="lc-who-row l-focus" data-rove data-view="older" aria-label={`Older versions: ${older.length}`} onClick={() => enter("older")}>
                 <I.clock size={14} />

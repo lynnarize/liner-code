@@ -1185,7 +1185,7 @@ const ownDockIcon = isMac && Number(release().split(".")[0]) < 25;
 function setDockIcon() {
   if (!ownDockIcon) return;
   const look = systemPreferences.getUserDefault("AppleInterfaceStyle", "string") === "Dark" ? "dark" : "light";
-  const file = app.isPackaged ? join(app.getAppPath(), "icons", `${look}.png`) : join(__dirname, "../..", "docs/brand/icon-2026", `liner-code-icon-${look}.png`);
+  const file = app.isPackaged ? join(app.getAppPath(), "icons", `${look}.png`) : join(__dirname, "../..", "docs/brand/line-comment", `liner-code-icon-${look}.png`);
   if (existsSync(file)) app.dock?.setIcon(nativeImage.createFromPath(file));
 }
 

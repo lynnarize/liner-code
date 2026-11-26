@@ -998,7 +998,14 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
                   icon={x.id === DESIGNS ? <I.edit size={12} /> : undefined}
                   onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}
                   actions={
-                    // One ··· opening the folder's menu, the right-click's: New session here, Settle the project, Fold.
+                    <>
+                    {/* A + that starts a session in this project, as the menu's New session here does; not on Designs or on sessions of no project. */}
+                    {x.id && x.id !== DESIGNS && (
+                      <button type="button" className="lc-sb-a l-focus" data-new aria-label={`New session in ${x.name}`} title={`New session in ${x.name}`} onClick={() => onNew(x.id)}>
+                        <I.plus size={14} />
+                      </button>
+                    )}
+                    {/* One ··· opening the folder's menu, the right-click's: New session here, Settle the project, Fold. */}
                     <button
                       type="button"
                       className="lc-sb-a l-focus"
@@ -1015,6 +1022,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
                     >
                       <I.more size={14} />
                     </button>
+                    </>
                   }
                 >
                   {x.list.map(branch)}

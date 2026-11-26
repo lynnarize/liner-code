@@ -297,3 +297,29 @@ test("The side card drops to the list's foot beside a row pointed at in the list
   assert.equal(value(blocks(css, ".lc-pk-side[data-low]")[0] ?? "", "transform"), "translateY(calc(var(--lc-pk-tall) - 100%))", "the dropped card's bottom isn't on the list's bottom");
   assert.match(value(blocks(css, ".lc-pk-side")[0], "transition") ?? "", /transform 220ms/, "the card jumps between top and foot");
 });
+
+test("Your agents is a place on the picker's rail under the tools, not a row at the middle card's foot, so the models keep the card's height", () => {
+  const models = code("Models.tsx");
+  const rail = body(models, "function ToolRail(");
+  assert.match(rail, /\{places\.length > 0 && <span className="lc-pk-rail-rule" role="presentation" \/>\}/, "nothing parts the tools from the places");
+  assert.match(rail, /className="lc-pk-tool l-focus" data-view=\{p\.id\} data-on=\{p\.on \|\| undefined\} aria-pressed=\{open === p\.id\}/, "a place isn't a rail button pressed while its list is open");
+  const picker = body(models, "export function ModelPicker(");
+  assert.match(picker, /<ToolRail tools=\{tools\} extras=\{railExtras\} places=\{places\} on=\{placeOpen \? "" :/, "a tool stays pressed while a place's list shows");
+  assert.match(picker, /const hasFoot = older\.length > 0;/, "the foot still holds the places");
+  assert.doesNotMatch(picker, /\{places\.map\(\(p\) => \(\s*<button key=\{p\.id\} type="button" className="lc-who-row/, "a place is still a row at the foot");
+  // Escape out of a place's list goes back to its rail button.
+  assert.match(picker, /rail\.current\?\.querySelector<HTMLElement>\(`\[data-view="\$\{was\}"\]`\)/);
+  assert.equal(value(blocks(sheet("models.css"), ".lc-pk-tool[data-on]::after")[0] ?? "", "border-radius"), "50%", "a place that holds the pick has no dot");
+});
+
+test("Liner's mark in the app is the line comment, two slanted strokes with the second in the accent, and the two turns are gone", () => {
+  const icons = code("icons.tsx");
+  assert.match(icons, /mark: \(p: P\) => <S \{\.\.\.p\} w=\{2\}><path d="M3\.45 13\.05 7\.05 2\.95" \/><path d="M8\.95 13\.05 12\.55 2\.95" stroke="var\(--l-accent\)" \/><\/S>,/, "the mark isn't the line comment");
+  assert.match(icons, /markMono: \(p: P\) => <S \{\.\.\.p\} w=\{2\}>/);
+  assert.doesNotMatch(icons, /\bturn(Mono)?: \(p: P\)/, "the two turns are still drawn");
+  for (const f of ["AppModel.tsx", "Crew.tsx", "AddonsPage.tsx", "Home.tsx", "Addon.tsx", "Pr.tsx", "Page.tsx", "Models.tsx", "Composer.tsx"]) assert.doesNotMatch(code(f), /\bI\.turn(Mono)?\b/, `${f} still uses the two turns`);
+  // Run from source on macOS before 26, the Dock gets the line comment's PNGs, which are there.
+  const main = readFileSync(new URL("../../desktop/src/main.ts", import.meta.url), "utf8");
+  assert.match(main, /"docs\/brand\/line-comment", `liner-code-icon-\$\{look\}\.png`/, "the Dock is given the two turns when run from source");
+  for (const look of ["light", "dark"]) assert.ok(readFileSync(new URL(`../../docs/brand/line-comment/liner-code-icon-${look}.png`, import.meta.url)).length > 1000, `the ${look} icon is missing`);
+});

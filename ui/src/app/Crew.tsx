@@ -244,7 +244,7 @@ function useShownAgent(threadId: string) {
   do what they're sent to, one Codex calls by a nickname ("Planck") as well.
 */
 function Kind({ name, size = 12 }: { name: string; size?: number }) {
-  const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.turn;
+  const Icon = /^explor/i.test(name) ? I.search : /^test/i.test(name) ? I.flask : I.mark;
   return <Icon size={size} />;
 }
 /** An agent's face: a sidekick's is its model's mark, the rest their kind's. */

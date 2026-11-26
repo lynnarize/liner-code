@@ -1961,7 +1961,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
         {
           id: AGENTS_TAB,
           label: "Your agents",
-          icon: <I.agents size={14} />,
+          icon: <I.agents size={16} />,
           on: agentsOn,
           note: yours.length === 0 ? "None yet" : undefined,
           body: (

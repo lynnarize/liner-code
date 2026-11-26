@@ -315,7 +315,7 @@ function ProjectName({ project, projects, onPick, onSample, onScratch }: { proje
           onPick={(p) => (onPick(p.id), close())}
           more={[
             ...(project.name !== "Scratch" ? [{ title: "A scratch folder", icon: <I.notes size={16} />, onPick: () => (close(), onScratch()) }] : []),
-            ...(showDemo && !projects.some((p) => p.agent === "demo") ? [{ title: "Try the sample project", icon: <I.turn size={16} />, onPick: () => (close(), onSample()) }] : []),
+            ...(showDemo && !projects.some((p) => p.agent === "demo") ? [{ title: "Try the sample project", icon: <I.mark size={16} />, onPick: () => (close(), onSample()) }] : []),
           ]}
         />
       )}

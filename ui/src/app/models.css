@@ -471,6 +471,27 @@
   background: var(--lc-plate);
   color: var(--l-ink);
 }
+/* The hairline between the tools and the places under them (your agents). */
+.lc-pk-rail-rule {
+  flex: none;
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--l-line);
+}
+/* A place whose list holds the pick (one of your agents is picked): a small dot at its corner, in ink. */
+.lc-pk-tool[data-on] {
+  position: relative;
+}
+.lc-pk-tool[data-on]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--l-ink);
+}
 .lc-pk-tool[data-off] {
   color: var(--l-ink-4);
 }

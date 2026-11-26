@@ -86,12 +86,12 @@ html[data-action="ink"] {
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
 }
 /*
-  In the dark the paper is near black and the window round it (the sidebar) a step lighter, a dark
-  grey, so the work sits in a well of its own. Set on Liner's two colours, not ours, so one of
-  your own themes (which sets them inline) still wins.
+  In the dark the paper is near black and the window round it (the sidebar) only a small step lighter,
+  dark as Antigravity's, so the sidebar doesn't read as a grey slab beside the work. Set on Liner's two
+  colours, not ours, so one of your own themes (which sets them inline) still wins.
 */
 :root[data-theme="dark"] {
-  --l-bg: oklch(0.2 0.004 265);
+  --l-bg: oklch(0.155 0.003 265);
   --l-surface: oklch(0.118 0.003 265);
 }
 [data-theme="dark"] {
@@ -1186,6 +1186,13 @@ html[data-native="mac"] .lc-sb-head {
   pointer-events: none;
   /* It's on the open session as you get there: no glide or spring between rows, only a fade in and out. */
   transition: opacity 160ms ease;
+}
+/* In the dark the open session's card is deep black, darker than the near-black sidebar, as Antigravity marks its open
+   one: the card colour (paper with a touch of ink) read as a grey patch there. Darkened from the paper, so a theme of
+   your own still tints it. */
+[data-theme="dark"] .lc-sb-plate,
+[data-theme="dark"] .lc-sl-row[data-current]:not(.lc-sb-inner .lc-sl-row) {
+  background: color-mix(in oklab, var(--lc-paper) 55%, black);
 }
 .lc-sb-sec {
   display: flex;

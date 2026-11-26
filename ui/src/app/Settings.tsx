@@ -1427,7 +1427,7 @@ function ToolCheckRowView({ p, row, busy, onMessage }: { p: ProviderInfo; row?: 
               <ul>
                 {busy === t && !checks.some((c) => c.tier === t) ? (
                   <li>
-                    <StepMark state="working" size={14} />
+                    <StepMark state="working" size={14} live />
                     <span className="lc-ck-t">
                       <b>Checking</b>
                     </span>
@@ -1437,7 +1437,7 @@ function ToolCheckRowView({ p, row, busy, onMessage }: { p: ProviderInfo; row?: 
                     .filter((c) => c.tier === t)
                     .map((c) => (
                       <li key={c.id} data-s={c.state}>
-                        <StepMark state={busy === t ? "working" : STEP_OF[c.state]} size={14} label={c.state === "skipped" ? "Not checked" : undefined} tone={busy !== t && c.state === "passed" ? "ok" : undefined} />
+                        <StepMark state={busy === t ? "working" : STEP_OF[c.state]} live={busy === t} size={14} label={c.state === "skipped" ? "Not checked" : undefined} tone={busy !== t && c.state === "passed" ? "ok" : undefined} />
                         <span className="lc-ck-t">
                           <b>{c.label}</b>
                           {c.detail && <small>{c.detail}</small>}

@@ -126,7 +126,8 @@ test("While a part works, the live line says what it is thinking and its open li
   assert.ok(/<span className="lc-wk-r">\{thought\.sentence\}<\/span>/.test(live), "the thought's last sentence isn't on the line in the quiet style");
   assert.ok(/const list = rows;/.test(live), "the list the head opens still leaves the thoughts out");
   assert.ok(/if \(!n && !newest\)/.test(live), "thinking before the first step shows the clock alone, without its words");
-  assert.ok(/<Tick text=\{fine\} every=\{100\} \/>/.test(live), "the clock no longer redraws only its own text");
+  // Whole seconds once a second since 2026-11-26 (tenths at ten a second were the busiest thing on screen); still only its own text.
+  assert.ok(/<Tick text=\{secs\} \/>/.test(live), "the clock no longer redraws only its own text");
 });
 
 /* 7. Dead code */

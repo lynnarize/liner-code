@@ -1555,6 +1555,15 @@ html[data-native="mac"] .lc-sb-head {
   animation: none;
   opacity: 0;
 }
+/* Working in a row of a list (icons.tsx StepMark without `live`) stands still: the ring of eight lit, faint, in the progress
+   yellow. The list's head, the live line or the session's row already moves for the same work (2026-11-26, after Capy). */
+.lc-mk.lc-stepmark[data-s="working"]:not(.lc-mk-live) > i {
+  opacity: 0.5;
+  animation: none;
+}
+.lc-mk.lc-stepmark[data-s="working"]:not(.lc-mk-live) > i:nth-child(5) {
+  opacity: 0;
+}
 /* Checks: from the top left corner to the bottom right, a diagonal at a time. */
 .lc-mk[data-s="checks"] > i:nth-child(1) {
   animation-delay: -1.5s;
@@ -1648,16 +1657,16 @@ html[data-native="mac"] .lc-sb-head {
   color: var(--l-ink-2);
   pointer-events: none;
   transform-origin: 0 24px;
-  animation: lc-sbc-in 170ms var(--l-ease-out) backwards;
+  animation: lc-sbc-in 140ms var(--l-ease-out) backwards;
 }
 .lc-sbc[data-glide] {
   transition: top 180ms var(--l-ease-out);
 }
+/* A fade and a touch of scale, no blur: it comes with every row you point at (2026-11-26, calmer). */
 @keyframes lc-sbc-in {
   from {
     opacity: 0;
-    scale: 0.97;
-    filter: blur(2px);
+    scale: 0.98;
   }
 }
 .lc-sbc-title {
@@ -2274,14 +2283,23 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 .lc-blk {
   min-width: 0;
 }
+/* A new block fades in short and nearly in place: no blur and no rise to chase (2026-11-26, calmer, after Capy). */
 .lc-blk[data-fresh] {
-  animation: lc-focus-in 460ms var(--l-ease-enter) backwards;
+  animation: lc-focus-in 200ms var(--l-ease-out) backwards;
 }
 @keyframes lc-focus-in {
   from {
     opacity: 0;
-    filter: blur(6px);
-    transform: translateY(5px);
+    transform: translateY(2px);
+  }
+}
+/* Streamed words: Liner UI's chunk comes into focus over 620ms from a blur (ai-kit.css); in the app's chats it only fades, quickly. */
+.l-scope .l-chunk {
+  animation: lc-chunk-in 180ms ease-out both;
+}
+@keyframes lc-chunk-in {
+  from {
+    opacity: 0;
   }
 }
 .lc-you {
@@ -2742,13 +2760,12 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 .lc-q,
 .lc-plan {
-  animation: lc-ask-in 520ms var(--l-ease-enter) backwards;
+  animation: lc-ask-in 220ms var(--l-ease-out) backwards;
 }
 @keyframes lc-ask-in {
   from {
     opacity: 0;
-    filter: blur(6px);
-    transform: translateY(8px) scale(0.985);
+    transform: translateY(3px);
   }
 }
 .lc-plan-top {
@@ -3375,9 +3392,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-send:disabled {
   cursor: default;
 }
-.lc-send[data-ready] .lc-send-up {
-  animation: lc-lift 360ms var(--l-ease-enter);
-}
 /* Send and Stop are one button: both marks sit in one cell and the one in use shows, so the arrow
    gives way to the square (and back) where it is, while the colour under it turns. */
 .lc-send > svg {
@@ -3400,12 +3414,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   background: var(--l-wash-2);
   color: var(--l-ink);
   cursor: pointer;
-}
-@keyframes lc-lift {
-  from {
-    transform: translateY(5px);
-    opacity: 0;
-  }
 }
 .lc-send:not(:disabled):active,
 .lc-plus-b:active {
@@ -4361,15 +4369,15 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 
 /* ---------- The panel ---------- */
 /* The panel is a column on the ground beside the thread, with nothing drawn between them. */
+/* It fades in where it stands, quickly: it opens with every surface you pick, so a slide was motion on each click. */
 .lc-panel {
   min-width: 0;
   min-height: 0;
-  animation: lc-panel-in 460ms var(--l-ease-enter) backwards;
+  animation: lc-panel-in 200ms var(--l-ease-out) backwards;
 }
 @keyframes lc-panel-in {
   from {
     opacity: 0;
-    transform: translateX(14px);
   }
 }
 /* Shut: it fades as its column closes over it, quicker than it came (Session.tsx keeps it). */
@@ -6039,16 +6047,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-ship-rail .dash {
   stroke-dasharray: 2 2.5;
 }
-.lc-ship[data-p="2"] .lc-ship-rail .dash {
-  animation: lc-ship-flow calc(600ms * var(--k)) linear infinite;
-}
 .lc-ship:is([data-p="3"], [data-p="4"]) .lc-ship-rail .dash {
   stroke-dasharray: none;
-}
-@keyframes lc-ship-flow {
-  to {
-    stroke-dashoffset: -9;
-  }
 }
 .lc-ship-rail .ring {
   fill: var(--lc-well);
@@ -6383,10 +6383,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
 .lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-prc-meta {
   color: var(--l-ok-text);
 }
-/* The line to the base flows while it works, and the ring turns green once it can merge. */
-.lc-prc[data-busy] .lc-ship-rail .dash {
-  animation: lc-ship-flow 600ms linear infinite;
-}
+/* The line to the base stays still while it works (the card's mark moves for it), and the ring turns green once it can merge. */
 .lc-prc:is([data-stage="ready"], [data-stage="merged"]) .lc-ship-rail .dash {
   stroke-dasharray: none;
 }
@@ -6730,7 +6727,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex: none;
   font-size: 12px;
   font-weight: 500;
-  color: var(--l-accent);
+  color: var(--l-ink-2);
 }
 /* Past the cache: one quiet line over the card, no box (the panel's rule), with Compact now as a word and its ✕. */
 .lc-cold {
@@ -8144,6 +8141,11 @@ span.lc-sb-name {
    mark has no fade of its own to stop. */
 .lc-sb-inner .lc-sl-row[data-fresh],
 .lc-sb-inner .lc-sl-row[data-fresh] .lc-sl-sub:not([data-swap]) {
+  animation: none;
+}
+/* The open session's own row changes its words without a fade: the live line in the chat beside it already shows each
+   step, so a second movement for the same step was noise (2026-11-26, calmer). */
+.lc-sl-row[data-current] .lc-sl-sub {
   animation: none;
 }
 /* At the second line's end, after the facts; the row's buttons are on the title's line, so it stays put. */

@@ -274,7 +274,7 @@ function Figures({ o, lastFixed }: { o: SecurityOverview; lastFixed?: number }) 
           <b>{beingFixed}</b>
           <small>
             {/* A fix at work says so with the working mark, as a row of a session that works does. */}
-            {fix && fix.status === "running" && <StepMark state="working" size={12} />}
+            {fix && fix.status === "running" && <StepMark state="working" size={12} live />}
             {fixNote}
           </small>
         </button>

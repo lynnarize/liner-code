@@ -55,6 +55,11 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - What moves while something works is in colour: the working mark and running checks are a warm yellow everywhere, and
   there are fewer of them at once. The header's team and agents chips no longer carry their own working mark (the live
   line and the session's row already move for it).
+- The app is calmer while it works. In a working session, only the live line and the session's row move. A step in
+  progress in a list (the plan, agents, tasks) shows a still yellow ring, and a Code chat keeps no agents card at its end
+  (the Agents panel lists them). The live line's clock counts whole seconds. New answers, cards and the panel fade in
+  quickly without a blur, and Send no longer hops when you type. Nothing flows under a pull request or a push. Look
+  again's arrow turns only when you press it, and lane bars and the Queued tag are grey, not the accent.
 - Teamwork and a Swarm are no longer pinned over the chat or kept as a card at its end: their chip, and turning a team
   on, open the team in the Agents panel on the right. Liner Design's chat and a Liner Security scan, which have no
   Agents panel, keep the team's card.

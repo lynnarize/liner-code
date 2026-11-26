@@ -21,7 +21,7 @@ import { Composer, type RunSettings } from "./Composer";
 import { AskDock, useDockAsk } from "./Ask";
 import { EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
-import { I, ModelMark, StateMark } from "./icons";
+import { I, ModelMark } from "./icons";
 import { agentOf, checkpointsOf, markOf, modelLabel, plural, sumLines, threadModel } from "./model";
 import { ModelPicker } from "./Models";
 import { myPicks, reviewerFor, savePick } from "./Agentic";
@@ -1115,8 +1115,8 @@ function ReviewerSwitch({ thread }: { thread: Thread }) {
       triggerAttrs={{ "data-state": state, title: tip }}
       trigger={
         <>
-          {/* Reading, the Reviewer is a thing at work: the state mark. Its verdict is a fact, in words beside its shield. */}
-          {state === "checking" ? <StateMark state="working" size={14} /> : state !== "off" && <I.shield size={14} />}
+          {/* Its shield and its word, also while it reads ("Reading"): the Reviewer's chip at the chat's foot is the one that moves. */}
+          {state !== "off" && <I.shield size={14} />}
           <span key={state ?? "on"}>{word}</span>
           <I.chevD size={12} />
         </>

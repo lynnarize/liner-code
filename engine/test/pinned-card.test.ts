@@ -21,14 +21,14 @@ test("Teamwork and a Swarm are not pinned over the chat: their chip opens the te
   assert.doesNotMatch(read("Session.tsx"), /<TeamPin\b/, "the pinned column still holds a team card");
 });
 
-test("A Code session keeps no Teamwork or Swarm card at the chat's end, where its Agents panel lists the team; Liner Design's chat and a Security scan, with no such panel, keep theirs", () => {
+test("A Code session keeps no agents, Teamwork or Swarm card at the chat's end, where its Agents panel lists them; Liner Design's chat and a Security scan, with no such panel, keep theirs", () => {
   const session = read("Session.tsx");
   assert.match(session, /<Timeline threadId=\{thread\.id\} docked teamCard=\{false\}/, "the Code session still pins the team's card at the chat's end");
   assert.match(read("Timeline.tsx"), /teamCard = true,/, "the other faces lost the team's card");
   assert.doesNotMatch(read("design/Chat.tsx"), /teamCard=\{false\}/);
   assert.doesNotMatch(read("security/ScanSession.tsx"), /teamCard=\{false\}/);
   const crew = read("Crew.tsx");
-  assert.match(crew, /function CrewCardOf\(\{ thread, team \}[\s\S]*?if \(swarmOn && !team\) return null;/, "the card doesn't stand aside for the panel");
+  assert.match(crew, /function CrewCardOf\(\{ thread, team \}[\s\S]*?if \(!team\) return null;/, "the card doesn't stand aside for the panel, for a team or a plain crew alike");
 });
 
 test("Where the thread is wide, the chat and the message box make room for the pinned column; narrower, the message box stays over it", () => {

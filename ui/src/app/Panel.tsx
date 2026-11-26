@@ -132,7 +132,7 @@ export function Panel({
   }, [shown]);
   useEffect(() => setMounted((m) => new Set([...m].filter((t) => all.includes(t)))), [all.join()]);
   // A surface you go to, or the panel you open, shows what it holds as it is at Quick motion (look.ts,
-  // entering); the panel itself still slides in. Each surface's box stays mounted, so the ones that were
+  // entering); the panel itself still fades in (200ms). Each surface's box stays mounted, so the ones that were
   // showing are known by their element. One opened for the first time gets its box a render later,
   // once it is in mounted, so that change is watched too.
   const box = useRef<HTMLElement>(null);

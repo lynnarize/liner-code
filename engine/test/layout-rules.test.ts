@@ -393,8 +393,11 @@ test("the state mark moves whatever Reduce motion and the Motion setting say", (
   const kept = blocks(css, ".l-scope .lc-mk > i");
   assert.ok(kept.some((b) => (value(b, "animation-iteration-count") ?? "").includes("!important") && (value(b, "transition-duration") ?? "").includes("!important")), "nothing holds the mark's dots against foundation.css's reduced-motion rule, so its light and its change of state stop");
   // No rule of the app's own puts the mark's dots, or the mark, to sleep (one that leaves them out with :not() is fine; the middle dot of working stays dim on purpose).
+  // One exception by design (2026-11-26, calmer): a working step in a row of a list is drawn still unless it is `live`, so it is
+  // the still variant, not a moving mark put to sleep, and Reduce motion has no say in it either way.
+  assert.match(css, /\.lc-mk\.lc-stepmark\[data-s="working"\]:not\(\.lc-mk-live\) > i \{/, "the still row variant left a live one out");
   for (const file of ["app.css", "surfaces.css", "crew.css", "wall.css", "design.css", "design/design-face.css", "security/scan.css"]) {
-    const still = [...sheet(file).matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /\.lc-mk\b/.test(m[1].replace(/:not\([^)]*\)\)?/g, "")) && /animation:\s*none|transition:\s*none/.test(m[2]) && !/nth-child\(5\)/.test(m[1]));
+    const still = [...sheet(file).matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /\.lc-mk\b/.test(m[1].replace(/:not\([^)]*\)\)?/g, "")) && /animation:\s*none|transition:\s*none/.test(m[2]) && !/nth-child\(5\)/.test(m[1]) && !/\.lc-stepmark\[data-s="working"\]:not\(\.lc-mk-live\)/.test(m[1]));
     assert.equal(still.length, 0, `${file} stops the state mark: ${still.map((m) => m[1].trim()).join(", ")}`);
   }
   // Quick motion's entering window ends what a view starts as it opens, except its hints: the mark's dots are one.

@@ -565,15 +565,16 @@ export function CrewCard({ threadId, team = true }: { threadId: string; team?: b
   return <CrewCardOf thread={thread} team={team} />;
 }
 /*
-  `team` false: a Teamwork or a Swarm has no card here. A Code session's own Agents panel (the right tab) lists the team,
-  opens by itself when the team is turned on, and the header's chip reopens it, so a card kept at the chat's end only
-  said it twice. Liner Design's chat and a Liner Security scan have no such panel, so theirs stays.
+  `team` false: no card here, for a Teamwork, a Swarm or a plain crew of agents. A Code session's own Agents panel (the
+  right tab) lists them, the header's chip opens it, and the chat's "Started 3 agents" line says who went, so a card kept
+  at the chat's end only said it again, with marks and clocks of its own (2026-11-26, after Capy). Liner Design's chat and
+  a Liner Security scan have no such panel, so theirs stays.
 */
 function CrewCardOf({ thread, team }: { thread: Thread; team: boolean }) {
   const crew = useCrew(thread);
   const swarmOn = isSwarm(thread);
   const swarm = useSwarm(thread.id, swarmOn && team);
-  if (swarmOn && !team) return null;
+  if (!team) return null;
   if (swarmOn && swarm) {
     const workers = swarm.members.filter((m) => m.name !== "coordinator" && m.state !== "killed");
     const busy = workers.some((m) => m.state === "working" || m.state === "queued") || swarm.members.some((m) => m.name === "coordinator" && m.state === "working");

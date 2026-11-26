@@ -604,11 +604,12 @@ button.lc-cr-bg:hover {
   border-radius: 4px;
   background: color-mix(in oklab, var(--l-ink) 26%, transparent);
 }
+/* A lane at work in the second ink, not the accent: it's how long, not an alert (2026-11-26, calmer). Waiting, striped in grey. */
 .lc-cr-bar[data-live] {
-  background: var(--l-accent);
+  background: var(--l-ink-3);
 }
 .lc-cr-bar[data-wait] {
-  background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--l-accent) 55%, var(--lc-card)) 0 3px, color-mix(in oklab, var(--l-accent) 18%, var(--lc-card)) 3px 6px);
+  background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--l-ink) 30%, var(--lc-card)) 0 3px, color-mix(in oklab, var(--l-ink) 10%, var(--lc-card)) 3px 6px);
 }
 
 /* The tasks, with who took each. */

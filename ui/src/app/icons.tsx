@@ -411,9 +411,12 @@ const STEP_SHAPE: Record<Exclude<StepState, "working">, "tick" | "ring" | "cross
   the classes lc-mk and lc-stepmark (so the lists that place a mark keep placing it) and data-step with
   its shape, and says its state to a screen reader. `tone="ok"` is for a check that passed (a pull
   request's checks, a build's): its tick is green, where a step that is done keeps the grey one.
+  Working in a row of a list stands still (2026-11-26, after Capy): the ring of eight, lit and not moving, since the list's
+  head, the live line or the session's row already moves for the same work. `live` keeps it moving where this row is the
+  only sign that something runs (a tool check, a commit being pushed, a scan between turns).
 */
-export function StepMark({ state, size = 16, label, tone, className }: { state: StepState; size?: number; label?: string; tone?: "ok"; className?: string }) {
-  const cls = className ? `lc-stepmark ${className}` : "lc-stepmark";
+export function StepMark({ state, size = 16, label, tone, live, className }: { state: StepState; size?: number; label?: string; tone?: "ok"; live?: boolean; className?: string }) {
+  const cls = [className ? `lc-stepmark ${className}` : "lc-stepmark", live ? "lc-mk-live" : ""].filter(Boolean).join(" ");
   const word = label ?? STEP_WORD[state];
   if (state === "working") return <StateMark state="working" size={size} label={word} className={cls} />;
   const shape = STEP_SHAPE[state];

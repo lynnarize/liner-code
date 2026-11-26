@@ -419,7 +419,7 @@ export function PictureOver({ frames: onPage, boxOf }: { frames: DesignFrame[]; 
         if (!f || !m.rect) return null;
         const b = boxOf(f, m.rect);
         return (
-          <div key={m.key} className="ld-pic-making l-shimmer" style={b}>
+          <div key={m.key} className="ld-pic-making" style={b}>
             <span className="ld-ptag">{m.maker}</span>
           </div>
         );

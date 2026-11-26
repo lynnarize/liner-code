@@ -119,7 +119,7 @@ type Props = {
   onReview?: (checkpointId: string, path?: string) => void;
   /** Where onReview takes you, after a file's name in a row's label: "in Changes" unless the face says otherwise ("in Liner Code"). */
   reviewIn?: string;
-  /** False where the session's own Agents panel lists its Teamwork or Swarm (a Code session): the team then has no card at the chat's end. */
+  /** False where the session's own Agents panel lists its agents, Teamwork or Swarm (a Code session): they then have no card at the chat's end. */
   teamCard?: boolean;
   reviewing?: { id: string; path?: string } | null;
   onGrow?: () => void;
@@ -788,7 +788,7 @@ export function LiveLine({ threadId, items: given, docked = true, draw, end, ext
 
 function Live({ threadId, turn, marks, entries, rows, sent, asks, quiet, end, extra, className }: { threadId: string; turn: Item[]; marks: Mark[]; entries: Entry[]; rows: Row[]; sent: Tool[]; asks: Map<string, Ask>; quiet?: Extract<Item, { kind: "notice" }>; end?: ReactNode; extra?: ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
-  const { waiting, word, fine } = liveOf(marks, turn);
+  const { waiting, word, clock: secs } = liveOf(marks, turn);
   // Its ETA, as its sidebar row says it (Thread.eta): read as numbers, so a new thread object with the same one redraws nothing.
   const etaFrom = useEngine((s) => threadOf(s, threadId)?.eta?.from);
   const etaMs = useEngine((s) => threadOf(s, threadId)?.eta?.ms);
@@ -821,11 +821,12 @@ function Live({ threadId, turn, marks, entries, rows, sent, asks, quiet, end, ex
     <span className="lc-ll-clock l-num" data-wait={waiting || undefined} title={hush ? quiet!.text : undefined}>
       {waiting ? (
         <>
-          <b>Waiting for you</b> <Tick text={fine} />
+          <b>Waiting for you</b> <Tick text={secs} />
         </>
       ) : (
         <>
-          <Tick text={fine} every={100} />
+          {/* Whole seconds once a second: tenths ticking ten times a second were the busiest thing on screen. */}
+          <Tick text={secs} />
           {hush && ` · ${hush}`}
           {etaFrom !== undefined && etaMs !== undefined && <EtaLeft eta={{ from: etaFrom, ms: etaMs }} lead=" · " />}
         </>
@@ -953,7 +954,7 @@ function Switched({ h, providers }: { h: Handoff; providers: ProviderInfo[] }) {
 }
 
 /**
-  A plan while it's written: one line with the working mark, with how many steps it has so far,
+  A plan while it's written: one line with the working mark (still), with how many steps it has so far,
   rather than the plan streaming by and then showing again as its card. It opens for a look.
 */
 function PlanDraft({ text, title }: { text?: string; title?: string }) {
@@ -962,7 +963,8 @@ function PlanDraft({ text, title }: { text?: string; title?: string }) {
   return (
     <div className="lc-thought" data-open={open || undefined} data-live>
       <button type="button" className="lc-thought-h l-focus" aria-expanded={text ? open : undefined} disabled={!text} onClick={() => setOpen((o) => !o)}>
-        <StateMark state="working" />
+        {/* Still: the live line under it already moves for this turn. */}
+        <StepMark state="working" size={14} />
         <span>{title ? `Writing the plan: ${title}` : "Writing the plan"}</span>
         {steps > 0 && <span className="l-num">· {plural(steps, "step")} so far</span>}
         {text && <Chev className="lc-row-chev" />}

@@ -290,7 +290,7 @@ function ScanChat({ thread, sidebar, onSidebar }: { thread: Thread; sidebar: boo
     // while the live line shows, this row would only repeat them, so it goes, and Stop is the message box's own (the same
     // stop). Between turns, and during the second look, it says what runs and keeps Stop in reach.
     <div className="lc-trow" role="status">
-      {!liveShown && <StepMark state="working" size={14} />}
+      {!liveShown && <StepMark state="working" size={14} live />}
       <span className="lc-trow-t lc-grow">{scan.looking ? `Second look · ${lookName ?? "another maker's model"} reads what it found` : ["Working", left ?? ""].filter(Boolean).join(" · ")}</span>
       <button type="button" className="lc-trow-lk l-focus" onClick={stop}>
         Stop

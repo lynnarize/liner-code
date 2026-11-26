@@ -40,8 +40,8 @@ test("A confirm row disarms by itself after the lapse and when the focus leaves 
   assert.match(row, /setTimeout\(\(\) => setAskedAt\(null\), CONFIRM_LAPSE\)/, "the row stays armed until it unmounts");
   assert.match(row, /onBlur=\{asked \? \(\) => setAskedAt\(null\) : undefined\}/, "the row stays armed after the focus has gone elsewhere");
   assert.match(span(ui, "export function Row(", "export function ConfirmRow("), /onBlur=\{onBlur\}/, "a row can't hear the focus leave it");
-  // The team card is the one place the row never unmounts: it still uses the shared row.
-  assert.match(app("Crew.tsx"), /<ConfirmRow title=\{swarmMode \? "Turn the swarm off" : "Turn Teamwork off"\}/);
+  // The Agents panel's team menu (the team card that never unmounted is gone, 2026-11-26) still uses the shared row.
+  assert.match(app("Crew.tsx"), /<ConfirmRow title=\{isSwarmMode \? "Turn the swarm off" : "Turn Teamwork off"\}/);
 });
 
 test("Security's Dismiss starts at its reasons each time it opens, and never on another finding's note", () => {

@@ -3036,13 +3036,13 @@
   border-radius: var(--lc-r-card);
   background: var(--lc-well);
 }
+/* The message's lines while it's written stand still, faint: the mark beside "Writing the message" is what moves. */
 .lc-commit-wait > i {
   display: block;
   height: 8px;
   border-radius: 4px;
   background: color-mix(in oklab, var(--l-ink) 14%, transparent);
   transform-origin: left;
-  animation: lc-commit-type 2.4s var(--l-ease-enter) infinite both;
 }
 .lc-commit-wait > i:nth-child(1) {
   width: 62%;
@@ -3050,19 +3050,15 @@
 .lc-commit-wait > i:nth-child(2) {
   width: 0;
   margin-bottom: 4px;
-  animation: none;
 }
 .lc-commit-wait > i:nth-child(3) {
   width: 88%;
-  animation-delay: 0.3s;
 }
 .lc-commit-wait > i:nth-child(4) {
   width: 74%;
-  animation-delay: 0.6s;
 }
 .lc-commit-wait > i:nth-child(5) {
   width: 40%;
-  animation-delay: 0.9s;
 }
 .lc-commit-wait > span {
   display: inline-flex;
@@ -3071,26 +3067,6 @@
   margin-top: 6px;
   font-size: 12px;
   color: var(--l-ink-3);
-}
-@keyframes lc-commit-type {
-  0% {
-    scale: 0 1;
-    opacity: 1;
-  }
-  35%,
-  80% {
-    scale: 1 1;
-    opacity: 1;
-  }
-  100% {
-    scale: 1 1;
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lc-commit-wait > i {
-    animation: none;
-  }
 }
 .lc-commit-f {
   display: flex;

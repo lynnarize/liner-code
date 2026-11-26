@@ -1,18 +1,19 @@
 /*
-  The sidebar, in Liner 2.0: no colour but a session's state, no boxes, space between its parts.
-  Its top row is as Claude Code's desktop app has it: the traffic lights' room, then Hide, Back and
-  Forward together, the window's drag area, and at the far right how many sessions work and how
-  many wait on you, a pill that opens The Wall (every face has this row). The name is at the foot,
-  "Liner Code", "Liner Design" or "Liner Security", and it is the switch between the three. Under
-  the top row New session, Search, The Wall and Add-ons with your apps. Then "Sessions", whose one
-  menu holds what the list shows (By folder, the default, or By status, or one of the places a
-  session is put away: Snoozed, Settled and Archive), Carry on, the sort, your groups and a new
-  project. By folder: Pinned and your groups, then a folder for each project, what needs you first
-  in it, a fork under the session it came from. By status: Pinned, Needs you, Working, your groups,
-  Finished. Every row is two lines on the places' grid (SideList.tsx): how it stands in the mark
-  column under their icons, the title on their text edge with the time at its end, and under it
-  what the session is doing now, wants or how it ended, with its facts at the line's end (its pull
-  request's number, its model, its own worktree). Carry on, from the menu, opens a panel
+  The sidebar, in Liner 2.0 and since 2026-11-26 in Capy's layout, 224 wide: no colour but a
+  session's state, no boxes, space between its parts. Its top row has nothing but the traffic
+  lights at its left, the window's drag area, and at its right end Search (⌘K), Hide, Back and
+  Forward (every face has this row). The name is at the foot, "Liner Code", "Liner Design" or
+  "Liner Security", and it is the switch between the three, with Settings at the foot's end. Under
+  the top row your places as short rows: New session, The Wall, Add-ons and More (your add-on apps
+  and Carry on). Then "Sessions", with a Filter for the list and a ··· whose menu holds what the
+  list shows (By folder, the default, or By status, or one of the places a session is put away:
+  Snoozed, Settled and Archive), Carry on, the sort, your groups and a new project. By folder:
+  Pinned (it folds like a folder) and your groups, then a folder for each project, what needs you
+  first in it, a fork under the session it came from. By status: Pinned, Needs you, Working, your
+  groups, Finished. A group's header is one small grey line, its count after its name. Every row is
+  two lines (SideList.tsx, compact): the title with how it stands as the state mark at its end, and
+  under it what the session is doing now, wants or how it ended, then its facts (its own worktree,
+  its model, its pull request's number) and the time. Carry on, from either menu, opens a panel
   beside the sidebar with the work begun elsewhere (changes not committed in the project you were
   last in, sessions in Claude Code and Codex not brought in yet). The list takes all the room down
   to the foot and dissolves where it runs on past an edge, so nothing draws a line.
@@ -32,10 +33,11 @@ import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
 import { I, ModelMark, N, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
-import { ContextMenu, LimitRow, Num, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
+import { ContextMenu, Num, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
+import { PaneField } from "./Pane";
 import { groupValue, markUnread, stopShows, unreadRow } from "./row-menu";
 import type { Box } from "./menu-place";
-import { rowWords, SideCounts, SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused } from "./SideList";
+import { rowWords, SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused } from "./SideList";
 import { asksYou, markLabelOf, markStateOf, needsYou, newsForYou, prSaid, seenAsk, waitsOnYou, worksNow } from "./session-state";
 import { appNotice, updates } from "./Updates";
 import { pairOf } from "./Crew";
@@ -49,9 +51,7 @@ type Props = {
   current: string | null;
   onOpen: (id: string) => void;
   onNew: (projectId?: string) => void;
-  onUsage: () => void;
   onSettings: () => void;
-  usageOn: boolean;
   onRoutines: () => void;
   routinesOn: boolean;
   /** The Wall: every session at once. */
@@ -95,6 +95,8 @@ const keysOf = (id: string) => {
 type View = "folder" | "status" | "snoozed" | "settled" | "archive";
 /** By folder: the one group every design on its own is listed under. */
 const DESIGNS = "designs";
+/** Pinned's fold, kept with the folders' (lc:sb-shut) under a name no project's id takes. */
+const PINNED = "@pinned";
 const VIEWS: Record<View, string> = { folder: "By folder", status: "By status", snoozed: "Snoozed", settled: "Settled", archive: "Archive" };
 type Order = "activity" | "started";
 
@@ -167,10 +169,9 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSettings, usageOn, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, faceBody, recentProject, onCarryOn }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, faceBody, recentProject, onCarryOn }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
-  const limits = useEngine((s) => s.limits);
   const update = useEngine((s) => s.updates);
   const updateMode = useEngine((s) => updateModes(s.settings).app);
   // Liner Security's scans, fixes and questions about a finding are listed in its own sidebar (security/Side.tsx), not among Code's sessions.
@@ -203,6 +204,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const [edges, setEdges] = useState({ up: false, down: false });
   const [renaming, setRenaming] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  // The Filter under the Sessions heading: null while it's shut, else what's typed in it.
+  const [filter, setFilter] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const nav = useRef<HTMLElement>(null);
   const [plate, setPlate] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -251,8 +254,12 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
 
   // Latest activity first, or the newest session first.
   const newest = (a: Thread, b: Thread) => (order === "started" ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt);
-  const list = useMemo(() => threads.filter((t) => !t.archived).sort(newest), [threads, order]);
-  const archivedList = useMemo(() => threads.filter((t) => t.archived).sort(newest), [threads, order]);
+  // The Filter keeps the sessions whose title or project's name has what you typed, in any case, in every view.
+  const q = filter?.trim().toLowerCase() ?? "";
+  const allList = useMemo(() => threads.filter((t) => !t.archived).sort(newest), [threads, order]);
+  const matches = (t: Thread) => !q || `${t.title || "New session"}\n${projects.find((p) => p.id === t.projectId)?.name ?? "No project"}`.toLowerCase().includes(q);
+  const list = useMemo(() => (q ? allList.filter(matches) : allList), [allList, q, projects]);
+  const archivedList = useMemo(() => threads.filter((t) => t.archived && matches(t)).sort(newest), [threads, order, q, projects]);
 
   const place = (t: Thread): Bucket => bucketOf(t, now);
   const working = everyThread.filter((t) => !t.archived && t.status === "running").length;
@@ -274,7 +281,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const focused = useWindowFocused();
   const looking = (t: Thread) => focused && t.id === current;
   const wallWaits = onWallNow.filter((t) => newsForYou(t, now, looking(t))).length;
-  const wallWorking = onWallNow.filter(works);
   const machine = window.__LINER__?.machine ?? "This computer";
   const addProject = () =>
     void bridge.pickFolder().then((p) =>
@@ -295,7 +301,13 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     }
     return m;
   }, [list, now, groups]);
-  const byGroup = useMemo(() => groups.map((g) => ({ g, list: list.filter((t) => t.group === g.id && inGroup(t, place(t))) })), [groups, list, now]);
+  const allGroups = useMemo(() => groups.map((g) => ({ g, list: list.filter((t) => t.group === g.id && inGroup(t, place(t))) })), [groups, list, now]);
+  // While the Filter has words, a group with nothing that matches is left out, so the list can say nothing matches.
+  const byGroup = q ? allGroups.filter((x) => x.list.length > 0) : allGroups;
+  // How many each put-away place holds, whatever the Filter shows: the menu's counts and the heading's.
+  const putAwayAll = useMemo(() => ({ snoozed: allList.filter((t) => place(t) === "snoozed").length, settled: allList.filter((t) => place(t) === "settled").length, archive: threads.filter((t) => t.archived).length }), [allList, threads, now]);
+  // Folded, as you left it; while the Filter has words every folder and Pinned shows, so a match folded away is still seen (the fold you chose is kept).
+  const shut = (id: string) => !q && shutProjects.includes(id);
 
   // Project > session > its forks: every session that isn't pinned, in a group, snoozed or
   // settled, under its project in your projects' order; in each, what needs you first, then
@@ -471,7 +483,12 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const settleProject = async (projectId: string, name: string) => {
     const known = new Set(projects.map((p) => p.id));
     const designs = new Set(projects.filter((p) => p.kind === "design").map((p) => p.id));
-    const mine = [...byBucket.needs, ...byBucket.working, ...byBucket.open].filter((t) => (projectId === DESIGNS ? designs.has(t.projectId) : projectId ? t.projectId === projectId : !known.has(t.projectId)));
+    // Every session the project holds, not only those the Filter shows: it settles the project.
+    const here = allList.filter((t) => {
+      const b = place(t);
+      return !inGroup(t, b) && (b === "needs" || b === "working" || b === "open");
+    });
+    const mine = here.filter((t) => (projectId === DESIGNS ? designs.has(t.projectId) : projectId ? t.projectId === projectId : !known.has(t.projectId)));
     const go = mine.filter((t) => place(t) === "open");
     const busy = mine.filter((t) => place(t) === "working").length;
     const waiting = mine.length - go.length - busy;
@@ -682,13 +699,31 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
     );
   };
 
-  /** A labelled run of rows, with how many there are (Pinned's with its pin). `bare` is the rows alone, still named for a screen reader. */
-  const block = (name: string, ts: Thread[], extra: { pin?: boolean; bucket?: Bucket; bare?: boolean } = {}) =>
+  /** A labelled run of rows, with how many there are. `bare` is the rows alone, still named for a screen reader. */
+  const block = (name: string, ts: Thread[], extra: { bucket?: Bucket; bare?: boolean } = {}) =>
     ts.length > 0 && drawn.push(`§${name}`) > 0 && (
-      <section key={name} className="lc-sb-sec" aria-label={name} {...(extra.pin ? drop("pinned") : {})}>
-        {!extra.bare && <SideLabel name={name} count={ts.length} icon={extra.pin ? <I.pin size={12} /> : undefined} />}
+      <section key={name} className="lc-sb-sec" aria-label={name}>
+        {!extra.bare && <SideLabel name={name} count={ts.length} />}
         {ts.map((t) => row(t, extra.bucket ?? place(t), undefined, true))}
       </section>
+    );
+  /** Pinned, which folds like a folder (its fold kept with theirs), and takes a session dropped on it. Folded, its end says whether one in it waits on you or works. */
+  const pinned = () =>
+    byBucket.pinned.length > 0 && drawn.push(`▸${PINNED}:${shut(PINNED) ? "shut" : ""}`) > 0 && (
+      <div key="pinned" className="lc-sb-sec" {...drop("pinned")}>
+        <SideFolder
+          compact
+          name="Pinned"
+          count={byBucket.pinned.length}
+          open={!shut(PINNED)}
+          onToggle={() => foldProject(PINNED, byBucket.pinned.map((t) => t.id))}
+          needs={byBucket.pinned.some((t) => newsForYou(t, now, looking(t)))}
+          working={byBucket.pinned.some(works)}
+          icon={<I.pin size={12} />}
+        >
+          {byBucket.pinned.map((t) => row(t, "pinned", undefined, true))}
+        </SideFolder>
+      </div>
     );
   /** Takes a group away: its sessions go back to their projects, and Undo brings it back with them in it. */
   const removeGroup = (g: (typeof groups)[number]) => {
@@ -732,7 +767,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   const empty =
     listed[view] > 0
       ? null
-      : view === "snoozed"
+      : q
+        ? none(<I.search size={20} />, "Nothing matches", "No session here has those words in its title or its project's name.")
+        : view === "snoozed"
           ? none(<I.snooze size={20} />, "Nothing snoozed", "Snooze a session from its row (S), and it comes back by itself.")
           : view === "settled"
             ? none(<I.settle size={20} />, "Nothing settled", "Settle a finished session from its row (D) to put it out of the way.")
@@ -744,39 +781,38 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
   // Carry on's count, for its row in the menu (CarryOn knows it before its panel opens), and the way to open that panel.
   const [carryCount, setCarryCount] = useState(0);
   const carryOpen = useRef<(() => void) | null>(null);
-  const putAway = view === "snoozed" ? byBucket.snoozed.length : view === "settled" ? byBucket.settled.length : view === "archive" ? archivedList.length : undefined;
-  const wallBrand = wallWorking[0] ? markOf(onIt(wallWorking[0], agents, providers).ref) : undefined;
+  const putAway = view === "folder" || view === "status" ? undefined : putAwayAll[view];
+  // More is lit while one of your apps is on screen, since its row is inside it.
+  const appShown = Boolean(appOn && pages.some((a) => a.id === appOn));
 
   const out = (
     <nav ref={nav} className="lc-sb" aria-label={face === "design" ? "Designs" : face === "security" ? "Security" : "Sessions"}>
-      {/* As Claude Code's desktop app has it: Hide, Back and Forward together after the lights, the drag area, and at the far right what works and what waits on you, which opens The Wall. The name is at the foot. */}
+      {/* Nothing but the traffic lights at its left, the window's drag area, and at its right end Search (⌘K), Hide, Back and Forward, as Capy's sidebar has them. The name is at the foot. */}
       <div className="lc-sb-head" data-drag>
+        <span className="lc-grow" data-drag />
+        <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Search" title="Search sessions, projects and commands" onClick={onSearch}>
+          <N.search size={14} />
+        </button>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={onHide}>
-          <N.sidebar />
+          <N.sidebar size={14} />
         </button>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Back" title="Back" disabled={!onBack} onClick={onBack}>
-          <N.back />
+          <N.back size={14} />
         </button>
         <button type="button" className="lc-ib lc-sb-hb l-focus" aria-label="Forward" title="Forward" disabled={!onForward} onClick={onForward}>
-          <N.forward />
+          <N.forward size={14} />
         </button>
-        <span className="lc-grow" data-drag />
-        {onWall && <SideCounts working={wallWorking.length} waiting={wallWaits} brand={wallBrand} onOpen={onWall} />}
       </div>
 
       {faceBody ? (
         <div className="lc-sb-design" data-face={face}>{faceBody}</div>
       ) : (
       <>
-      {/* Your places, one row each: New session (search at its end), Routines and Add-ons. */}
+      {/* Your places, one short row each: New session, The Wall, Routines (while they're on), Add-ons, and More with your apps and Carry on. */}
       <div className="lc-sb-top">
         <button type="button" className="lc-sb-nav l-focus" aria-current={homeOn ? "page" : undefined} title="New session" onClick={() => onNew()}>
-          <N.plus />
+          <N.plus size={14} />
           <span>New session</span>
-        </button>
-        <button type="button" className="lc-sb-nav l-focus" title="Search sessions, projects and commands" onClick={onSearch}>
-          <N.search />
-          <span>Search</span>
         </button>
         {onWall && (
           <button
@@ -787,45 +823,75 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
             title="The Wall: every session at once"
             onClick={onWall}
           >
-            <N.wall />
+            <N.wall size={14} />
             <span>The Wall</span>
           </button>
         )}
         {/* Routines switched off (contracts, ROUTINES_ON): no row for them. */}
         {ROUTINES_ON && (
         <button type="button" className="lc-sb-nav l-focus" aria-current={routinesOn ? "page" : undefined} aria-label={`Routines${routinesNote ? `, ${routinesNote}` : ""}`} title={`Routines${routinesNote ? ` · ${routinesNote}` : ""}`} onClick={onRoutines}>
-          <N.routines />
+          <N.routines size={14} />
           <span>Routines</span>
           {handed > 0 ? <span className="lc-sb-ndot" data-k="warn" /> : routines.some((r) => r.on) && <span className="lc-sb-nend">{routinesNote}</span>}
         </button>
         )}
+        {onAddons && (
+          <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} title="Add-ons: connections, panels and apps" onClick={onAddons}>
+            <N.puzzle size={14} />
+            <span>Add-ons</span>
+          </button>
+        )}
+        {/* More: the apps your agents made (an add-on panel placed "page"), then Carry on, in a menu beside the sidebar. */}
+        <Pop
+          label={pages.length && onApp ? "More: your apps and Carry on" : "More: Carry on"}
+          menu
+          side="right"
+          width={236}
+          within={() => nav.current}
+          triggerClass="lc-sb-nav"
+          triggerAttrs={{ "aria-current": appShown ? "page" : undefined, title: "More: your apps and Carry on" }}
+          trigger={
+            <>
+              <N.more size={14} />
+              <span>More</span>
+            </>
+          }
+        >
+          {(close) => (
+            <div className="lc-sb-menu lc-sl-menu">
+              {onApp &&
+                pages.map((a) => {
+                  const Icon = appIcon(a.panel?.icon);
+                  return <Row key={a.id} title={a.name} icon={<Icon size={14} />} onPick={() => (close(), onApp(a.id))} />;
+                })}
+              {onApp && pages.length > 0 && <Sep />}
+              <Row
+                title="Carry on"
+                icon={<I.carry size={16} />}
+                end={carryCount > 0 ? <Num value={carryCount} /> : undefined}
+                opens="carry"
+                onPick={() => {
+                  close();
+                  // Once the menu has gone and given the keyboard back, the panel opens and takes it.
+                  window.setTimeout(() => carryOpen.current?.());
+                }}
+              />
+            </div>
+          )}
+        </Pop>
       </div>
 
-      {/* Add-ons, apart from your places: its ··· makes a new one or opens their settings, and your apps sit under it (DeepSeek Harness's sidebar entry). */}
-      {(onAddons || (pages.length > 0 && onApp)) && (
-        <section className="lc-sb-apps" aria-label="Add-ons">
-          {onAddons && (
-            <button type="button" className="lc-sb-nav l-focus" aria-current={addonsOn ? "page" : undefined} title="Add-ons: connections, panels and apps" onClick={onAddons}>
-              <N.puzzle />
-              <span>Add-ons</span>
-            </button>
-          )}
-          {onApp &&
-            pages.map((a) => {
-              const Icon = appIcon(a.panel?.icon);
-              return (
-                <button key={a.id} type="button" className="lc-sb-nav l-focus" aria-current={appOn === a.id ? "page" : undefined} onClick={() => onApp(a.id)}>
-                  <Icon size={16} style={{ margin: "0 2px" }} />
-                  <span>{a.name}</span>
-                </button>
-              );
-            })}
-        </section>
-      )}
-
-      {/* "Sessions", and another view's name after it; its one menu holds the views, Carry on, the sort, your groups and a new project. Carry on's panel opens from a button hidden at the heading's end, so it opens beside the sidebar level with it. */}
+      {/* "Sessions", and another view's name after it; then the Filter, and the ··· whose menu holds the views, Carry on, the sort, your groups and a new project. Carry on's panel opens from a button hidden at the heading's end, so it opens beside the sidebar level with it. */}
       <div className="lc-sb-listhead">
-        <SideHead title="Sessions" note={view === "folder" ? undefined : VIEWS[view]} count={putAway} menuLabel="What the list shows, and how it is sorted">
+        <SideHead
+          title="Sessions"
+          note={view === "folder" ? undefined : VIEWS[view]}
+          count={putAway}
+          menuLabel="What the list shows, and how it is sorted"
+          filtering={filter !== null}
+          // Pressed again it shuts, and the whole list comes back.
+          onFilter={() => setFilter((f) => (f === null ? "" : null))}
+        >
           {(close) => {
             const pick = (v: View) => () => (close(), setView(v));
             return (
@@ -833,9 +899,9 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
                 <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={pick("folder")} />
                 <Row title="By status" icon={<I.list size={16} />} keepIcon on={view === "status"} onPick={pick("status")} />
                 <Sep />
-                {(byBucket.snoozed.length > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={16} />} keepIcon on={view === "snoozed"} end={byBucket.snoozed.length || undefined} onPick={pick("snoozed")} />}
-                <Row title="Settled" icon={<I.settle size={16} />} keepIcon on={view === "settled"} end={byBucket.settled.length || undefined} onPick={pick("settled")} />
-                <Row title="Archive" icon={<I.box size={16} />} keepIcon on={view === "archive"} end={archivedList.length || undefined} onPick={pick("archive")} />
+                {(putAwayAll.snoozed > 0 || view === "snoozed") && <Row title="Snoozed" icon={<I.snooze size={16} />} keepIcon on={view === "snoozed"} end={putAwayAll.snoozed || undefined} onPick={pick("snoozed")} />}
+                <Row title="Settled" icon={<I.settle size={16} />} keepIcon on={view === "settled"} end={putAwayAll.settled || undefined} onPick={pick("settled")} />
+                <Row title="Archive" icon={<I.box size={16} />} keepIcon on={view === "archive"} end={putAwayAll.archive || undefined} onPick={pick("archive")} />
                 {carryCount > 0 && (
                   <>
                     <Sep />
@@ -876,6 +942,27 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         <CarryOn projectId={recentProject} now={now} onOpen={onOpen} onCarryOn={onCarryOn} side={() => nav.current} onCount={setCarryCount} opener={carryOpen} />
       </div>
 
+      {/* The Filter's field, right under the heading: Escape, or leaving it empty, shuts it. */}
+      {filter !== null && (
+        <PaneField className="lc-sb-filter" icon={<N.search size={14} />}>
+          <input
+            value={filter}
+            placeholder="Filter by title or project"
+            aria-label="Filter the sessions by title or project"
+            autoFocus
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              // The field goes, so the keyboard goes back to the Filter that opened it rather than to nowhere.
+              e.preventDefault();
+              setFilter(null);
+              nav.current?.querySelector<HTMLElement>(".lc-sb-listhead [data-filter]")?.focus({ preventScroll: true });
+            }}
+            onBlur={(e) => !e.target.value.trim() && setFilter(null)}
+          />
+        </PaneField>
+      )}
+
       {naming && (
         <form
           className="lc-sb-newg"
@@ -895,19 +982,20 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           <span className="lc-sb-plate" aria-hidden style={plate ? { transform: `translate(${plate.x}px, ${plate.y}px)`, width: plate.w, height: plate.h, opacity: 1 } : { opacity: 0 }} />
           {view === "folder" && (
             <>
-              {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
+              {pinned()}
               {groupBlocks()}
-              {tree.sections.map((x) => (drawn.push(`▸${x.id}:${shutProjects.includes(x.id) ? "shut" : ""}`),
+              {tree.sections.map((x) => (drawn.push(`▸${x.id}:${shut(x.id) ? "shut" : ""}`),
                 <SideFolder
                   key={x.id || "none"}
+                  compact
                   name={x.name}
                   count={x.count}
-                  open={!shutProjects.includes(x.id)}
+                  open={!shut(x.id)}
                   onToggle={() => foldProject(x.id, x.ids)}
                   needs={x.needs > 0}
                   working={Boolean(x.working)}
                   brand={x.working ? markOf(onIt(x.working, agents, providers).ref) : undefined}
-                  icon={x.id === DESIGNS ? <I.edit size={16} /> : undefined}
+                  icon={x.id === DESIGNS ? <I.edit size={12} /> : undefined}
                   onContextMenu={(e) => (e.preventDefault(), setProjMenu({ id: x.id, name: x.name, x: e.clientX, y: e.clientY }))}
                   actions={
                     // One ··· opening the folder's menu, the right-click's: New session here, Settle the project, Fold.
@@ -936,7 +1024,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           )}
           {view === "status" && (
             <>
-              {block("Pinned", byBucket.pinned, { pin: true, bucket: "pinned" })}
+              {pinned()}
               {block("Needs you", byBucket.needs.filter(needs), { bucket: "needs" })}
               {block("Working", [...byBucket.working, ...byBucket.needs.filter((t) => !needs(t) && works(t))].sort(newest))}
               {groupBlocks()}
@@ -1064,7 +1152,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
         );
       })()}
 
-      {/* Along the foot: the name, which is the Code and Design switch, then your plans' limits and Settings (your account is in Settings). */}
+      {/* Along the foot, under a hairline: the name, which is the Code, Design and Security switch, then Settings (your account is in Settings; Usage and cost is in ⌘K). */}
       <div className="lc-sb-foot" onClick={tapMe}>
         {onFace ? (
           <Pop
@@ -1121,7 +1209,6 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onUsage, onSet
           </span>
         )}
         <span className="lc-grow" />
-        <PlanLimits tools={limits.filter((l) => l.windows.length)} usageOn={usageOn} onUsage={onUsage} />
         <button type="button" className="lc-ib l-focus" aria-label="Settings and your account" title="Settings and your account" onClick={onSettings}>
           <N.settings />
         </button>
@@ -1255,8 +1342,8 @@ const toolOrder = (tool: string) => (tool in TOOLS ? Object.keys(TOOLS).indexOf(
   beside the sidebar, by where the work is, so however much there is your sessions don't move. The
   panel hangs from a button kept out of sight at the heading's end (`opener` presses it), so it opens
   level with the heading. Pressing one there brings it in and opens it, or for the work not
-  committed, writes the ask to finish it into Home's box. With nothing to carry on there's no row;
-  with the panel open it stays, saying so, until you close it.
+  committed, writes the ask to finish it into Home's box. With nothing to carry on the heading's
+  menu has no row; More's Carry on still opens the panel, which says so, and it stays until you close it.
   The row needs its count before it's opened, so it asks once the sidebar has been still a moment
   after it comes up, and again when the panel opens or the window comes back to the front, when what
   it has is over a minute old (so a row hidden for want of anything, or after a failed read, comes
@@ -1393,20 +1480,23 @@ function CarryOn({ projectId, now, onOpen, onCarryOn, side, onCount, opener }: {
   const theirs = found ? found.slice(0, RECENT_MAX - (carry ? 1 : 0)) : [];
   const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? "a project";
   const files = plural(carry, "file");
-  // Known once the sessions are; until then, or with nothing to carry on, there's no row (unless its panel is open).
+  // Known once the sessions are; until then, or with nothing to carry on, the heading's menu has no row (unless its panel is open). More's row is always there, and its panel says when there's nothing.
   const count = found ? theirs.length + (carry ? 1 : 0) : 0;
   useEffect(() => onCount(count), [count]);
-  // The button the panel hangs from is out of sight: once the panel closes, the keyboard goes back to the heading's menu, where Carry on is, rather than to it or to nowhere.
+  // The button the panel hangs from is out of sight: once the panel closes, the keyboard goes back to the menu it was opened from (More or the heading's ···), rather than to it or to nowhere.
   const holder = useRef<HTMLSpanElement>(null);
-  opener.current = () => holder.current?.querySelector<HTMLButtonElement>("button")?.click();
+  const back = useRef<HTMLElement | null>(null);
+  opener.current = () => {
+    back.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    holder.current?.querySelector<HTMLButtonElement>("button")?.click();
+  };
   const wasOpen = useRef(false);
   useEffect(() => {
     if (showing) return void (wasOpen.current = true);
     const at = document.activeElement;
-    if (wasOpen.current && (!at || at === document.body || holder.current?.contains(at))) side()?.querySelector<HTMLElement>(".lc-sl-head-b")?.focus({ preventScroll: true });
+    if (wasOpen.current && (!at || at === document.body || holder.current?.contains(at))) (back.current?.isConnected ? back.current : side()?.querySelector<HTMLElement>(".lc-sl-head-b.lc-pick"))?.focus({ preventScroll: true });
     wasOpen.current = false;
   }, [showing, count]);
-  if (!count && !showing) return null;
   // By where the work is: what isn't committed first, then each tool's sessions, newest first in each.
   const sources = [...new Set(theirs.map((x) => x.tool))].sort((a, b) => toolOrder(a) - toolOrder(b));
   /**
@@ -1500,53 +1590,6 @@ function CarryPanel({ onShow, onHide, children }: { onShow: () => void; onHide: 
     return onHide;
   }, []);
   return <div className="lc-carry">{children}</div>;
-}
-
-/** Your plans' limits at a glance: a ring with the busiest window, every tool's windows in its pop, and the way to Usage. */
-function PlanLimits({ tools, usageOn, onUsage }: { tools: import("@contracts").ToolLimits[]; usageOn: boolean; onUsage: () => void }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(t);
-  }, []);
-  const used = (w: import("@contracts").LimitWindow) => (w.resetsAt !== undefined && w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, w.usedPercent)));
-  const top = Math.max(0, ...tools.flatMap((t) => t.windows.map(used)));
-  const r = 5.5;
-  const c = 2 * Math.PI * r;
-  return (
-    <Pop
-      label={tools.length ? `Plan limits: the busiest window is ${Math.round(top)}% used` : "Usage and plan limits"}
-      side="top"
-      align="end"
-      width={290}
-      triggerClass="lc-ib lc-sb-fi"
-      triggerAttrs={{ "aria-pressed": usageOn || undefined }}
-      trigger={
-        <span className="lc-sb-ring" data-warn={top >= 80 || undefined} aria-hidden>
-          <svg width={16} height={16} viewBox="0 0 14 14">
-            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
-            <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c * (1 - top / 100)} strokeLinecap="round" transform="rotate(-90 7 7)" />
-          </svg>
-        </span>
-      }
-    >
-      {(close) => (
-        <div className="lc-limm">
-          {tools.map((t) => (
-            <div key={t.provider} className="lc-limm-tool">
-              <PanelHead end={t.plan && t.plan[0].toUpperCase() + t.plan.slice(1)}>{t.label}</PanelHead>
-              {t.windows.map((w) => (
-                <LimitRow key={w.label} w={w} label={t.label} now={now} />
-              ))}
-            </div>
-          ))}
-          {!tools.length && <p className="lc-quiet lc-pop-note">No plan has reported its limits yet. They show here once a session runs on Claude Code or Codex.</p>}
-          <Sep />
-          <Row title="Usage and cost" icon={<I.usage size={16} />} onPick={() => (close(), onUsage())} />
-        </div>
-      )}
-    </Pop>
-  );
 }
 
 /*
@@ -1793,8 +1836,11 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
       data-picked={picked || undefined}
       data-fresh={fresh || undefined}
       aria-current={current ? "page" : undefined}
+      compact
       current={current}
       quiet={quiet}
+      // One that waits on you, or finished while you were away and not read: its title in full ink, as the open one's.
+      loud={needsYou(t, now)}
       mark={<SideMark state={mark} brand={markOf(on.ref)} label={seenQ ? "Waits for your answer" : markLabelOf(t, mark)} />}
       title={title}
       ago={ago(t.updatedAt, now)}

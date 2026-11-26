@@ -143,7 +143,7 @@ function laidOut(list: DesignTab[], at: string, view: View, threads: Thread[], p
 }
 
 /**
-  Liner Design's side of the sidebar, as Code's: your places on top (New design, Search, Home),
+  Liner Design's side of the sidebar, as Code's: your places on top (New design and Home; Search is in the head row above),
   "Designs" with its one menu (By folder, By status), and the open designs as Code's two-line rows
   (SideRow, Rows.dc.html). A row says how its session stands in the state mark (working in its
   model's colour, needs when it waits on you and you haven't opened it since, grey after, fresh when
@@ -154,7 +154,7 @@ function laidOut(list: DesignTab[], at: string, view: View, threads: Thread[], p
   middle-click or the cross closes one, and nothing is deleted and nothing stops. Every open design
   is listed and the list scrolls; the one you're in has its folder opened to show it.
 */
-export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
+export function OpenDesigns() {
   const { list, at } = useTabs();
   const threads = useEngine((s) => s.threads);
   const projects = useEngine((s) => s.projects);
@@ -244,15 +244,11 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
     <div className="ld-open">
       <div className="lc-sb-top">
         <button type="button" className="lc-sb-nav l-focus" title={`New design (${keys("mod+n")})`} onClick={() => void newDesign().catch(fail)}>
-          <N.plus />
+          <N.plus size={14} />
           <span>New design</span>
         </button>
-        <button type="button" className="lc-sb-nav l-focus" title="Search sessions, projects and commands" onClick={onSearch}>
-          <N.search />
-          <span>Search</span>
-        </button>
         <button type="button" className="lc-sb-nav l-focus" aria-current={at === HOME_TAB ? "page" : undefined} title="Design Home: start a design, or find one" onClick={() => showTab(HOME_TAB)}>
-          <I.home size={20} />
+          <I.home size={14} />
           <span>Home</span>
         </button>
       </div>
@@ -275,6 +271,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
               return (
                 <SideFolder
                   key={f.id}
+                  compact
                   name={f.name}
                   count={f.tabs.length}
                   open={!shut.includes(f.id)}
@@ -282,7 +279,7 @@ export function OpenDesigns({ onSearch }: { onSearch: () => void }) {
                   needs={f.tabs.some((t) => asks(stand(t).state) && !seenQ(stand(t), looking(t)))}
                   working={Boolean(working)}
                   brand={working && modelOf(stand(working).s).brand}
-                  icon={f.id === OWN ? <I.edit size={16} /> : undefined}
+                  icon={f.id === OWN ? <I.edit size={12} /> : undefined}
                   what="designs"
                 >
                   {tabs(f.id === OWN ? "on their own" : `in ${f.name}`, f.tabs)}

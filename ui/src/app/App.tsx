@@ -1009,7 +1009,7 @@ export function App() {
                 {/* Your places and the open designs first, as Code lists its sessions; then this design's lean, pages and layers, or every design on Design Home. */}
                 <Boundary label="The open designs" quiet>
                   <Suspense fallback={null}>
-                    <OpenDesigns onSearch={() => (setBesideOf(null), setMenu(true))} />
+                    <OpenDesigns />
                   </Suspense>
                 </Boundary>
                 {designTab && designProject ? (
@@ -1028,7 +1028,7 @@ export function App() {
                 </>
                 )
               }
-              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onUsage={() => setView({ kind: "usage" })} onSettings={() => setSettings(true)} usageOn={view.kind === "usage"} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onSettings={() => setSettings(true)} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
           <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
             {still.backdrop}

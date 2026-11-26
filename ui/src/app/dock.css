@@ -481,20 +481,6 @@
   min-height: 0;
 }
 
-/* ---------- Apps in the left sidebar ---------- */
-.lc-sb-apps {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 2px;
-  padding: 2px 0 6px;
-}
-.lc-sb-apps .lc-sb-nav > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------- "Make it an app": the offer at a turn's end ---------- */
 .lc-offer {
   display: grid;
@@ -774,13 +760,4 @@
   .lc-wallback-b .lc-kbd {
     display: none;
   }
-}
-
-/* ---------- 0.2.7, second pass ---------- */
-/* Add-ons is the fourth of the sidebar's top rows, 1px under The Wall like the others (the
-   approved mockup), with the Sessions heading under it. Its menu's rows are 13 regular. */
-.lc-sb-top + .lc-sb-apps {
-  /* The sidebar's 10px gap, less 8: the same 2px as between the rows above. */
-  margin-top: -8px;
-  padding: 0 0 4px;
 }

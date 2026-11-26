@@ -59,3 +59,6 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   takes the window material and its own traffic lights, and Quit When They Finish hides it too.
 - In Antigravity sessions the agent has every Liner tool again: Teamwork, Liner Design's frames and pictures, server
   start, add-on offers and Liner Security's findings had been left out because their descriptions ran over a kilobyte.
+- Liner MCP through Tailscale Funnel no longer sits on Starting when Funnel isn't turned on for your tailnet: it says
+  so at once, with Open Tailscale for the page that turns it on. A Tailscale command that hangs now ends when its time
+  is up, also when `tailscale` is the Mac app's wrapper script.

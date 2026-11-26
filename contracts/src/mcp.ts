@@ -51,7 +51,8 @@ export type McpStatus = {
   reach: McpReach;
   /** The tunnel or own address, once known: the /mcp URL apps outside this Mac use. */
   publicUrl?: string;
-  tunnel: { state: "off" | "starting" | "up" | "down"; note?: string; found?: { tailscale: boolean; cloudflared: boolean } };
+  /** `link` is a page that fixes a tunnel that's down, such as Tailscale's for turning Funnel on. */
+  tunnel: { state: "off" | "starting" | "up" | "down"; note?: string; link?: string; found?:{ tailscale: boolean; cloudflared: boolean } };
   /** Level a terminal agent on stdio gets (today's behaviour was Trusted). */
   stdioLevel: McpLevel;
   webhook?: { url: string; hasSecret: boolean };

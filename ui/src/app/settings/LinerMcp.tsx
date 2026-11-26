@@ -220,6 +220,11 @@ function Reach({ s, onRetry }: { s: McpStatus; onRetry: () => void }) {
         <span className="lc-mcp-state" data-state={s.tunnel.state}>
           <i />
           {s.tunnel.state === "starting" ? "Starting" : s.tunnel.state === "up" ? (s.tunnel.note ?? (s.reach === "own" ? `To port ${s.port} on ${os.here}` : "Up")) : s.tunnel.state === "down" ? (s.tunnel.note ?? "Down") : "Off"}
+          {s.tunnel.state === "down" && s.tunnel.link && (
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.openExternal(s.tunnel.link!)}>
+              {s.reach === "tailscale" ? "Open Tailscale" : "Open"}
+            </button>
+          )}
           {(s.tunnel.state === "down" || missing) && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onRetry}>
               Try again

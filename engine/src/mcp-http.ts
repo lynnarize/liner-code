@@ -391,7 +391,7 @@ export class LinerMcp {
       command: (await this.o.command?.().catch(() => "")) ?? "",
       reach: s.mcpReach ?? "off",
       ...(this.tunnel.now.url ? { publicUrl: this.tunnel.now.url } : {}),
-      tunnel: { state: this.tunnel.now.state, ...(this.tunnel.now.note ? { note: this.tunnel.now.note } : {}), found: await this.tunnel.found() },
+      tunnel: { state: this.tunnel.now.state, ...(this.tunnel.now.note ? { note: this.tunnel.now.note } : {}), ...(this.tunnel.now.link ? { link: this.tunnel.now.link } : {}), found: await this.tunnel.found() },
       stdioLevel: this.o.outside.stdioLevel,
       ...(s.mcpWebhook ? { webhook: { url: s.mcpWebhook, hasSecret: Boolean(this.o.secret?.()) } } : {}),
       apps: this.apps.list(),

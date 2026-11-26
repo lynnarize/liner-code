@@ -7,15 +7,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { Tunnel, findTool, ownAddress, type TunnelDeps } from "../src/tunnel.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Tunnel, defaultDeps, findTool, ownAddress, type TunnelDeps } from "../src/tunnel.ts";
 
-function tailscale(o: { running?: boolean; serving?: unknown; funnelCode?: number } = {}) {
+function tailscale(o: { running?: boolean; serving?: unknown; funnelCode?: number; self?: Record<string, unknown> } = {}) {
   const ran: string[] = [];
   const deps: TunnelDeps = {
     which: async (n) => (n === "tailscale" ? "/fake/tailscale" : null),
     run: async (_c, args) => {
       ran.push(args.join(" "));
-      if (args[0] === "status") return { code: 0, stdout: JSON.stringify(o.running === false ? { BackendState: "NeedsLogin" } : { BackendState: "Running", Self: { DNSName: "mac.tail1234.ts.net." } }), stderr: "" };
+      if (args[0] === "status") return { code: 0, stdout: JSON.stringify(o.running === false ? { BackendState: "NeedsLogin" } : { BackendState: "Running", Self: { DNSName: "mac.tail1234.ts.net.", ...o.self } }), stderr: "" };
       if (args[0] === "funnel" && args[1] === "status") return { code: 0, stdout: JSON.stringify(o.serving ?? {}), stderr: "" };
       if (args[0] === "funnel" && args[1] === "--bg") return o.funnelCode ? { code: o.funnelCode, stdout: "", stderr: "Funnel is not enabled on your tailnet.\nTo enable, visit: https://login.tailscale.com/f/funnel" } : { code: 0, stdout: "", stderr: "" };
       if (args[0] === "version") return { code: 0, stdout: "1.90.0\n", stderr: "" };
@@ -60,6 +63,46 @@ test("Tailscale not signed in, or Funnel not enabled, says why and stays down", 
   await no.start("tailscale", 7318);
   assert.equal(no.now.state, "down");
   assert.match(no.now.note ?? "", /Funnel is not enabled/);
+  assert.equal(no.now.link, "https://login.tailscale.com/f/funnel", "the page Tailscale names is the way out");
+});
+
+test("A tailnet without Funnel turned on is told so with Tailscale's page for it, and Funnel, which would wait for it forever, isn't started", async () => {
+  // What Tailscale 1.104 says of a node whose tailnet hasn't turned Funnel on: neither "https" nor "funnel" in its caps.
+  const { deps, ran } = tailscale({ self: { ID: "nk7vVP3gN921CNTRL", CapMap: { "https://tailscale.com/cap/ssh": null }, Capabilities: ["https://tailscale.com/cap/ssh"] } });
+  const t = new Tunnel(deps);
+  await t.start("tailscale", 7318);
+  assert.equal(t.now.state, "down");
+  assert.match(t.now.note ?? "", /Funnel isn't turned on for your tailnet/);
+  assert.equal(t.now.link, "https://login.tailscale.com/f/funnel?node=nk7vVP3gN921CNTRL");
+  assert.equal(ran.some((r) => r.startsWith("funnel --bg")), false);
+  // With both caps it goes up as before.
+  const on = new Tunnel(tailscale({ self: { ID: "n1", CapMap: { https: null, funnel: null } } }).deps);
+  await on.start("tailscale", 7318);
+  assert.equal(on.now.state, "up");
+});
+
+test("A tool started by a wrapper script without exec still ends when its time is up, and when the script ends first", { skip: process.platform === "win32" }, async () => {
+  // Tailscale's /usr/local/bin/tailscale on a Mac is `#!/bin/sh` and then the app's binary, without exec.
+  const dir = mkdtempSync(join(tmpdir(), "liner-tunnel-"));
+  try {
+    const hangs = join(dir, "hangs");
+    writeFileSync(hangs, "#!/bin/sh\necho waiting\nsleep 30\n", { mode: 0o755 });
+    const leaves = join(dir, "leaves");
+    writeFileSync(leaves, "#!/bin/sh\necho done\nsleep 30 &\nexit 3\n", { mode: 0o755 });
+    const { run } = defaultDeps(process.env);
+    let t0 = Date.now();
+    const timedOut = await run(hangs, [], 300);
+    assert.ok(Date.now() - t0 < 3000, `ended after ${Date.now() - t0} ms`);
+    assert.equal(timedOut.code, -1);
+    assert.match(timedOut.stdout, /waiting/);
+    t0 = Date.now();
+    const ended = await run(leaves, [], 10_000);
+    assert.ok(Date.now() - t0 < 3000, `ended after ${Date.now() - t0} ms`);
+    assert.equal(ended.code, 3);
+    assert.match(ended.stdout, /done/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("A Cloudflare quick tunnel's address is read from its output, and the process ends with off", async () => {

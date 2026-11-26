@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { McpReach } from "../../contracts/src/mcp.ts";
 
-export type TunnelState = { state: "off" | "starting" | "up" | "down"; url?: string; note?: string };
+export type TunnelState = { state: "off" | "starting" | "up" | "down"; url?: string; note?: string; link?: string };
 export type TunnelDeps = {
   /** The tool's path, or null when it isn't on this computer. */
   which: (name: "tailscale" | "cloudflared") => Promise<string | null>;
@@ -30,6 +30,19 @@ export type TunnelDeps = {
 const TAILSCALE_APP = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 /** The quick tunnel's own address, never cloudflared's API (api.trycloudflare.com), which its error lines name. */
 const TRYCLOUDFLARE = /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/;
+/** A page on Tailscale's admin site that its CLI asks you to visit. */
+const TAILSCALE_PAGE = /https:\/\/login\.tailscale\.com\/[^\s"'<>]+/;
+
+type TailscaleSelf = { DNSName?: string; ID?: string; CapMap?: Record<string, unknown> | null; Capabilities?: string[] | null };
+/**
+  Whether this node is plainly without Funnel: Tailscale needs both the "https" and "funnel" capabilities, given in CapMap
+  (or the older Capabilities list). A status that carries neither says nothing, so Funnel is tried as before.
+*/
+function funnelOff(self: TailscaleSelf) {
+  if (!self.CapMap && !self.Capabilities) return false;
+  const has = (c: string) => Boolean(self.CapMap && c in self.CapMap) || Boolean(self.Capabilities?.includes(c));
+  return !has("https") || !has("funnel");
+}
 
 /** An address of your own: https, a host, no user or password; what apps are given is it with /mcp. */
 export function ownAddress(raw: string | undefined): URL | null {
@@ -77,13 +90,35 @@ export function defaultDeps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
     which: async (name) => findTool(name, env, platform),
     run: (cmd, args, timeoutMs) =>
       new Promise((resolve) => {
-        const p = nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
+        // A tool may be a wrapper script that starts the real one without exec (Tailscale's /usr/local/bin/tailscale on a
+        // Mac): killing the script leaves the real one holding the pipes, so "close" never comes. It runs in a group of
+        // its own, the whole group is killed when the time is up, and an exit is an end even while a pipe stays open.
+        const group = platform !== "win32";
+        const p = nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], detached: group });
         let stdout = "";
         let stderr = "";
+        let done = false;
+        const end = (code: number, err?: string) => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          resolve({ code, stdout, stderr: stderr || err || "" });
+        };
+        const kill = () => {
+          try {
+            if (group && p.pid) process.kill(-p.pid, "SIGKILL");
+            else p.kill("SIGKILL");
+          } catch {
+            // Already gone.
+          }
+        };
+        const t = setTimeout(() => (kill(), end(-1)), timeoutMs);
         p.stdout.on("data", (d: Buffer) => void (stdout.length < 1e6 && (stdout += String(d))));
         p.stderr.on("data", (d: Buffer) => void (stderr.length < 1e6 && (stderr += String(d))));
-        p.on("error", (e) => resolve({ code: -1, stdout, stderr: stderr || e.message }));
-        p.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+        p.on("error", (e) => end(-1, e.message));
+        p.on("close", (code) => end(code ?? -1));
+        // What's still in the pipes comes within a moment of the exit; anything left in the group after that is killed.
+        p.on("exit", (code) => void setTimeout(() => done || (kill(), end(code ?? -1)), 200).unref?.());
       }),
     spawn: (cmd, args) => nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] }),
   };
@@ -147,14 +182,21 @@ export class Tunnel {
     if (!bin) return this.set({ state: "down", note: `Tailscale isn't on ${here(this.deps.platform)}. Install it from tailscale.com and sign in.` });
     const status = await this.deps.run(bin, ["status", "--json"], 10_000);
     let dns = "";
+    let self: TailscaleSelf | undefined;
     try {
-      const s = JSON.parse(status.stdout) as { BackendState?: string; Self?: { DNSName?: string } };
-      if (s.BackendState === "Running") dns = String(s.Self?.DNSName ?? "").replace(/\.$/, "");
+      const s = JSON.parse(status.stdout) as { BackendState?: string; Self?: TailscaleSelf };
+      if (s.BackendState === "Running") {
+        dns = String(s.Self?.DNSName ?? "").replace(/\.$/, "");
+        self = s.Self;
+      }
     } catch {
       // Not JSON: it isn't running.
     }
     if (gen !== this.gen) return;
     if (!dns) return this.set({ state: "down", note: `Tailscale isn't running or signed in on ${here(this.deps.platform)}.` });
+    // Without Funnel turned on for the tailnet, `funnel --bg` prints a page to turn it on and waits for it with no end, so
+    // that page is given here instead and Funnel isn't started.
+    if (self && funnelOff(self)) return this.set({ state: "down", note: "Funnel isn't turned on for your tailnet yet. Turn it on in Tailscale, then Try again.", link: /^[A-Za-z0-9]+$/.test(self.ID ?? "") ? `https://login.tailscale.com/f/funnel?node=${self.ID}` : "https://login.tailscale.com/admin/acls" });
     // Funnel serving something of yours already: left as it is, and said.
     const serving = await this.deps.run(bin, ["funnel", "status", "--json"], 10_000);
     try {
@@ -168,7 +210,11 @@ export class Tunnel {
     if (gen !== this.gen) return;
     const r = await this.deps.run(bin, ["funnel", "--bg", String(port)], 30_000);
     if (gen !== this.gen) return;
-    if (r.code !== 0) return this.set({ state: "down", note: firstLine(r.stderr) || firstLine(r.stdout) || "Tailscale Funnel didn't start." });
+    if (r.code !== 0) {
+      // A page Tailscale asks you to visit (turning Funnel or HTTPS on) is given as the way out.
+      const link = TAILSCALE_PAGE.exec(r.stdout + "\n" + r.stderr)?.[0];
+      return this.set({ state: "down", note: firstLine(r.stderr) || firstLine(r.stdout) || "Tailscale Funnel didn't start.", ...(link ? { link } : {}) });
+    }
     this.tailscale = bin;
     const version = firstLine((await this.deps.run(bin, ["version"], 5000)).stdout);
     if (gen !== this.gen) return;

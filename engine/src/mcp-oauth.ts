@@ -31,6 +31,8 @@ export const REGISTER_RATE = 300;
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const VERIFIER = /^[A-Za-z0-9\-._~]{43,128}$/;
+/** The computer Liner Code runs on, as the app names it (ui/src/app/os.ts): the waiting page says where to answer. */
+const MACHINE = process.platform === "win32" ? "PC" : "Mac";
 
 export type Urls = { issuer: string; resource: string };
 export const urlsOf = (origin: string): Urls => ({ issuer: origin, resource: `${origin}/mcp` });
@@ -196,7 +198,7 @@ export class McpOAuth {
     if (pending !== null) {
       const w = this.waiting.get(pending);
       if (!w) return errorPage("This sign-in ran out or was answered already. Start it again from the app.");
-      if (!w.decision) return page("Allow it in Liner Code", `${w.client.name} is waiting for you. Open Liner Code on your Mac and choose what it may do on the card there; this page goes on by itself.`, `/authorize?pending=${encodeURIComponent(w.id)}`);
+      if (!w.decision) return page("Allow it in Liner Code", `${w.client.name} is waiting for you. Open Liner Code on your ${MACHINE} and choose what it may do on the card there; this page goes on by itself.`, `/authorize?pending=${encodeURIComponent(w.id)}`);
       this.waiting.delete(w.id);
       this.onChange();
       if (!w.decision.allow) return redirect(withParams(w.redirectUri, { error: "access_denied", state: w.state, iss: w.issuer }));
@@ -235,14 +237,15 @@ export class McpOAuth {
       const code = form.get("code") ?? "";
       const verifier = form.get("code_verifier") ?? "";
       const redirectUri = form.get("redirect_uri") ?? "";
-      if (!code || !verifier || !clientId) return tokenError("invalid_request", "code, client_id and code_verifier are required.");
+      // Every code was given for the redirect_uri /authorize was sent, so the same one must come back with it (RFC 6749 §4.1.3).
+      if (!code || !verifier || !clientId || !redirectUri) return tokenError("invalid_request", "code, client_id, code_verifier and redirect_uri are required.");
       const key = sha256(code);
       const c = this.codes.get(key);
       // Used once, whatever comes of it: a code tried twice is a code someone else may hold.
       this.codes.delete(key);
       if (!c || c.exp <= this.now()) return tokenError("invalid_grant", "That code isn't good any more. Sign in again.");
       if (!sameText(c.clientId, clientId)) return tokenError("invalid_grant", "That code was given to another app.");
-      if (redirectUri && redirectUri !== c.redirectUri) return tokenError("invalid_grant", "That code was given for another redirect_uri.");
+      if (redirectUri !== c.redirectUri) return tokenError("invalid_grant", "That code was given for another redirect_uri.");
       const resource = form.get("resource");
       if (resource !== null && resource.replace(/\/+$/, "") !== c.resource) return tokenError("invalid_target", `This server only issues tokens for ${c.resource}.`);
       if (!VERIFIER.test(verifier) || !sameText(createHash("sha256").update(verifier).digest("base64url"), c.challenge)) return tokenError("invalid_grant", "The code_verifier doesn't match.");

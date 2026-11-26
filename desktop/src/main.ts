@@ -14,7 +14,7 @@ import { basename, delimiter, join, normalize } from "node:path";
 import { sealedFrame } from "../../contracts/src/panel.ts";
 import { extractLaunchTarget, launchQuestion, parseDeepLink, type LaunchTarget } from "./deeplink";
 import { heldOnYou, openAsk, quitQuestion, QuitWhenDone, type Live } from "./finish";
-import { afterCrash, closeOf, engineStatusDue } from "./window-state";
+import { afterCrash, closeOf, engineStatusDue, hideEvery, senderOf } from "./window-state";
 import { fileIn, folderOf, openAsText, openIn as openInWith, type Opener } from "./editor";
 import { Engine, loginEnvironment, logFile, previousLogFile, whoami, type Paths } from "./engine";
 import { Keys } from "./keys";
@@ -148,29 +148,34 @@ function windowColor() {
   (frost). With the addon the window stays opaque for solid; for clear and frost it lets the window
   go transparent, the page tinting itself, with nothing behind it or a blur behind it all. Clear
   and frost need the addon: Electron alone left the window black behind the page, so there
-  they're solid, and the page doesn't offer Desktop (boot's `clear`).
+  they're solid, and the page doesn't offer Desktop (boot's `clear`). Each window has its own.
 */
-function applyMaterial() {
-  if (!win || !isMac) return;
+function applyMaterial(w: BrowserWindow) {
+  if (w.isDestroyed() || !isMac) return;
   // Full screen puts the window in a space of its own, with nothing of the desktop behind it (a
   // clear window shows the space's black there), so see-through is solid until it leaves.
-  if (mac) return mac.backdrop(win.getNativeWindowHandle(), seeThrough(material) && win.isFullScreen() ? "solid" : material);
-  win.setBackgroundColor(windowColor());
+  if (mac) return mac.backdrop(w.getNativeWindowHandle(), seeThrough(material) && w.isFullScreen() ? "solid" : material);
+  w.setBackgroundColor(windowColor());
 }
+/** A material picked in Settings goes on every window, not only the one it was picked in. */
+const applyMaterialEverywhere = () => {
+  for (const w of windows.values()) applyMaterial(w);
+};
 
 /**
   --lc-lights-y is the traffic lights' centre from the top, --lc-lights-x where they end (0 in full
   screen, where they're hidden: macOS moves them into a title bar of its own, so they aren't read there).
 */
 let lastLights = { x: LIGHTS.x + 54, y: LIGHTS.y + 7 };
-function lights() {
+function lights(w: BrowserWindow | null) {
   if (!isMac) return { x: 0, y: 28 };
-  if (win?.isFullScreen()) return { x: 0, y: lastLights.y };
-  const real = win && mac?.lights(win.getNativeWindowHandle());
+  if (w && !w.isDestroyed() && w.isFullScreen()) return { x: 0, y: lastLights.y };
+  const real = w && !w.isDestroyed() && mac?.lights(w.getNativeWindowHandle());
   if (real) lastLights = real;
   return lastLights;
 }
-const syncLights = () => win && !win.isDestroyed() && win.webContents.send("liner:lights", lights());
+/** Each window's own lights, to its own page: sent to the focused window alone, a New Window that loaded while another had focus never heard its own. */
+const syncLights = (w: BrowserWindow) => !w.isDestroyed() && w.webContents.send("liner:lights", lights(w));
 
 // Electron says yes to every permission a page asks for unless told otherwise. The app's own page
 // gets the two it uses (the clipboard for Copy, notifications); every other page and permission,
@@ -234,12 +239,12 @@ function createWindow(secondary = false) {
   w.on("blur", emitWindowState);
   w.on("maximize", emitWindowState);
   w.on("unmaximize", emitWindowState);
-  applyMaterial();
+  applyMaterial(w);
 
   const wc = w.webContents;
   // Showing the window makes it opaque again, so the material goes back on each time it's shown
   // (on launch, from the Dock, from a second launch); without this, Desktop never showed through.
-  w.on("show", () => applyMaterial());
+  w.on("show", () => applyMaterial(w));
   w.once("ready-to-show", () => {
     // Maximized only now: maximize() shows a hidden window, which would show it before its first paint.
     // It was made at its normal frame, so leaving maximized goes back there.
@@ -248,7 +253,7 @@ function createWindow(secondary = false) {
     app.focus({ steal: true });
   });
   wc.on("did-finish-load", () => {
-    syncLights();
+    syncLights(w);
     emitWindowState();
     if (pendingTarget) {
       const target = pendingTarget;
@@ -258,9 +263,9 @@ function createWindow(secondary = false) {
   });
   // The material again on the way in and out of full screen: a see-through window is solid while
   // it's full screen (applyMaterial).
-  w.on("enter-full-screen", () => (syncLights(), applyMaterial(), emitWindowState()));
+  w.on("enter-full-screen", () => (syncLights(w), applyMaterial(w), emitWindowState()));
   // Electron puts the lights back only after the window has left full screen.
-  w.on("leave-full-screen", () => (setTimeout(syncLights, 300), applyMaterial(), emitWindowState()));
+  w.on("leave-full-screen", () => (setTimeout(() => syncLights(w), 300), applyMaterial(w), emitWindowState()));
   const keepFrame = () => {
     if (secondary || w.isFullScreen()) return;
     prefs.maximized = w.isMaximized();
@@ -495,14 +500,15 @@ const rectOf = (p: Record<string, unknown>): Rect => ({ x: num(p.x), y: num(p.y)
 
 ipcMain.on("liner:boot", (e) => {
   // clear: the window can turn see-through (the Mac addon is there), so the page offers Desktop.
-  e.returnValue = { ...boot, platform: process.platform, lights: lights(), clear: Boolean(mac) };
+  e.returnValue = { ...boot, platform: process.platform, lights: lights(BrowserWindow.fromWebContents(e.sender) ?? win), clear: Boolean(mac) };
 });
 
 ipcMain.handle("liner", async (e, method: unknown, params: unknown) => {
-  // Only the app's own page: never a page in the Browser surface's frame.
-  if (!win || e.sender !== win.webContents || e.senderFrame !== win.webContents.mainFrame || !ours(e.senderFrame?.url ?? "")) return { ok: false, value: "Not the app's page." };
+  // Only the app's own page, in any of its windows (window-state.ts senderOf): never a page in the Browser surface's frame.
+  const w = senderOf(windows.values(), e.sender, e.senderFrame);
+  if (!w || !ours(e.senderFrame?.url ?? "")) return { ok: false, value: "Not the app's page." };
   try {
-    return { ok: true, value: (await handle(str(method), (params ?? {}) as Record<string, unknown>)) ?? null };
+    return { ok: true, value: (await handle(str(method), (params ?? {}) as Record<string, unknown>, w)) ?? null };
   } catch (err) {
     return { ok: false, value: (err as Error).message };
   }
@@ -585,11 +591,11 @@ function look(url: string, width: number, height: number) {
   );
 }
 
-async function handle(method: string, p: Record<string, unknown>): Promise<unknown> {
-  if (!win) throw new Error("No window.");
+/** A call from the page in `from`: what is the window's own (its dialog, its zoom, its snapshot) is done to that window. */
+async function handle(method: string, p: Record<string, unknown>, from: BrowserWindow): Promise<unknown> {
   switch (method) {
     case "pickFolder": {
-      const r = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"], buttonLabel: "Add project", message: "Pick a folder for Liner Code to work in." });
+      const r = await dialog.showOpenDialog(from, { properties: ["openDirectory", "createDirectory"], buttonLabel: "Add project", message: "Pick a folder for Liner Code to work in." });
       return r.canceled ? null : (r.filePaths[0] ?? null);
     }
     case "notify":
@@ -603,7 +609,8 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       const n = num(p.count);
       if (isMac) app.dock?.setBadge(n > 0 ? String(n) : "");
       // Windows has no count on a taskbar button: a dot over its icon, and the count in its tooltip.
-      else if (isWin) win.setOverlayIcon(n > 0 ? redDot() : null, n > 0 ? `${n} need${n === 1 ? "s" : ""} you` : "");
+      // The count is the app's, and each window has a button of its own, so each gets it.
+      else if (isWin) for (const w of windows.values()) if (!w.isDestroyed()) w.setOverlayIcon(n > 0 ? redDot() : null, n > 0 ? `${n} need${n === 1 ? "s" : ""} you` : "");
       else app.setBadgeCount(n);
       return;
     }
@@ -652,7 +659,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       const g = str(p.ground);
       prefs.ground = seeThrough(material) && g.length <= 160 && /^[\w\s.,%()#-]+$/.test(g) ? g : undefined;
       savePrefs();
-      return applyMaterial();
+      return applyMaterialEverywhere();
     }
     case "setAppearance": {
       const t = str(p.theme);
@@ -683,7 +690,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
       // The page marks its top bars as drag regions here; WebKit asked on every press instead.
       return;
     case "zoomWindow":
-      return win.isMaximized() ? win.unmaximize() : win.maximize();
+      return from.isMaximized() ? from.unmaximize() : from.maximize();
     case "setMenuKeys":
       // Your shortcuts, on the menu items that run the same commands.
       menuKeys = Object.fromEntries(Object.entries((p.keys ?? {}) as Record<string, unknown>).map(([k, v]) => [k, str(v)]));
@@ -698,7 +705,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
     case "snapshot": {
       // A part of the page (the Browser's frame, for an agent), as a PNG.
       const r = rectOf(p);
-      const img = await win.webContents.capturePage({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
+      const img = await from.webContents.capturePage({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
       if (img.isEmpty()) throw new Error("The window didn't give a snapshot.");
       // At the size asked (a page drawn zoomed out, at its own pixels, so a point on it is a point to click).
       const ow = Math.round(num(p.outWidth));
@@ -1076,6 +1083,8 @@ async function askToQuit(working: number, held = 0) {
 
 /** Set while the app waits, out of sight, for its sessions to finish before it quits (finish.ts decides). */
 let waiting: QuitWhenDone | null = null;
+/** The windows it put out of sight, shown again if the quit is called off. */
+let hidForWaiting: BrowserWindow[] = [];
 let waitTimer: NodeJS.Timeout | undefined;
 let checking = false;
 /** How often the engine is asked: the page is hidden too, and a hidden page's timers can lag by a minute, so the shell asks itself. */
@@ -1087,12 +1096,7 @@ function waitThenQuit() {
   waiting = new QuitWhenDone();
   // Shown at once, on the page's last word, until the engine's first answer.
   statusItem.hold({ working: [], waiting: [] });
-  if (win && !win.isDestroyed()) {
-    if (win.isFullScreen()) {
-      win.once("leave-full-screen", () => waiting && win?.hide());
-      win.setFullScreen(false);
-    } else win.hide();
-  }
+  hidForWaiting = hideEvery(windows.values(), () => !!waiting);
   if (isMac) app.dock?.hide();
   waitTimer = setInterval(() => void checkWaiting(), WAIT_EVERY_MS);
   void checkWaiting();
@@ -1104,6 +1108,9 @@ function stopWaiting() {
   waiting = null;
   clearInterval(waitTimer);
   statusItem.hold(null);
+  // Every window it hid comes back, the one you came back to last (show), so a New Window isn't left out of reach.
+  for (const w of hidForWaiting) if (!w.isDestroyed() && w !== win) w.showInactive();
+  hidForWaiting = [];
   if (isMac) void app.dock?.show().then(setDockIcon);
 }
 
@@ -1190,7 +1197,7 @@ function setDockIcon() {
 }
 
 nativeTheme.on("updated", () => {
-  if (win && !mac) win.setBackgroundColor(windowColor());
+  if (!mac) for (const w of windows.values()) if (!w.isDestroyed()) w.setBackgroundColor(windowColor());
   setDockIcon();
 });
 

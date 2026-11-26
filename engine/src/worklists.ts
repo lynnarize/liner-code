@@ -206,9 +206,13 @@ export class Worklists {
     value.catch(() => this.kept.get(key)?.value === value && this.kept.delete(key));
     return value;
   }
-  /** Forgets every kept list: a key added or taken away, a host switched. */
-  forget() {
-    this.kept.clear();
+  /**
+    Forgets every kept list: a key added or taken away, a host switched. Given a project, only that project's pull
+    requests and issues: one merged or opened from Liner, which would otherwise show as it was until the refresh came round.
+  */
+  forget(projectId?: string) {
+    if (projectId === undefined) return this.kept.clear();
+    for (const k of [...this.kept.keys()]) if (k.startsWith(`prs:${projectId}:`) || k.startsWith(`issues:${projectId}:`)) this.kept.delete(k);
   }
 
   /** Whether gh is here and signed in, asked at most once a minute: undefined when it is, else why not. */

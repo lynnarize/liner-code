@@ -6,7 +6,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { request } from "node:http";
+import { Server as HttpServer, request } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -208,6 +208,70 @@ test("The listener is there only while apps are let in, and the tunnel starts on
     await mcp.apply();
     assert.equal(mcp.port, 0);
     assert.ok(ran.includes("funnel --https=443 off"), "taken down with the listener");
+  } finally {
+    await mcp.stop();
+  }
+});
+
+test("Applies asked at once end as the latest says: no listener left open behind, no tunnel after off, never one on port 0", async (t) => {
+  const { store, outside } = base();
+  // Listeners opened and not closed, counted at the server itself.
+  const listen = t.mock.method(HttpServer.prototype, "listen");
+  const close = t.mock.method(HttpServer.prototype, "close");
+  const open = () => listen.mock.callCount() - close.mock.callCount();
+  const ran: string[] = [];
+  const deps: TunnelDeps = {
+    which: async (n) => (n === "tailscale" ? "/fake/tailscale" : null),
+    run: async (_cmd, args) => {
+      ran.push(args.join(" "));
+      if (args[0] === "status") return { code: 0, stdout: JSON.stringify({ BackendState: "Running", Self: { DNSName: "liner.tail1234.ts.net." } }), stderr: "" };
+      return { code: 0, stdout: "{}", stderr: "" };
+    },
+    spawn: () => {
+      throw new Error("no process in this test");
+    },
+  };
+  const mcp = new LinerMcp({ store, outside, env: {}, tunnelDeps: deps, port: 0, log: () => {} });
+  try {
+    store.setSettings({ outside: true, mcpReach: "tailscale" });
+    const first = mcp.apply();
+    store.setSettings({ outside: false });
+    const second = mcp.apply();
+    await Promise.all([first, second]);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(mcp.port, 0, "no listener");
+    assert.equal(mcp.tunnel.now.state, "off");
+    assert.equal(ran.includes("funnel --bg 0"), false, "no tunnel on port 0");
+    const up = ran.lastIndexOf(ran.find((r) => r.startsWith("funnel --bg")) ?? "-");
+    assert.ok(up === -1 || ran.indexOf("funnel --https=443 off", up) > up, `a Funnel Liner put up is taken down again: ${ran.join(", ")}`);
+    // Off, then on again at once: the latest wins, with the listener and the tunnel up.
+    store.setSettings({ outside: true });
+    const a = mcp.apply();
+    store.setSettings({ outside: false });
+    const b = mcp.apply();
+    store.setSettings({ outside: true });
+    const c = mcp.apply();
+    await Promise.all([a, b, c]);
+    assert.ok(mcp.port > 0);
+    assert.equal(mcp.tunnel.now.state, "up");
+    assert.ok(ran.includes(`funnel --bg ${mcp.port}`));
+    assert.equal(open(), 1, "one listener, not one for each apply");
+  } finally {
+    await mcp.stop();
+  }
+  assert.equal(open(), 0, "none left open after stop");
+});
+
+test("Add an app makes no key while apps are kept out, since there's no address to give it", async () => {
+  const { store, outside } = base();
+  const mcp = new LinerMcp({ store, outside, env: {}, port: 0, log: () => {}, tunnelDeps: { which: async () => null, run: async () => ({ code: 0, stdout: "", stderr: "" }), spawn: () => { throw new Error("no"); } } });
+  try {
+    await mcp.apply();
+    assert.throws(() => mcp.addApp({ kind: "other", level: "read" }), /Let apps outside Liner Code in first/);
+    assert.equal((await mcp.status()).apps.length, 0, "none was made");
+    store.setSettings({ outside: true });
+    await mcp.apply();
+    assert.equal(mcp.addApp({ kind: "other", level: "read" }).url, `http://127.0.0.1:${mcp.port}/mcp`);
   } finally {
     await mcp.stop();
   }

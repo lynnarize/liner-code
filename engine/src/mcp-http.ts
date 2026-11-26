@@ -266,7 +266,10 @@ export class LinerMcp {
   readonly webhook: Webhook;
   private o: LinerMcpOptions;
   private listener: Listener | null = null;
-  private opening: Promise<void> | null = null;
+  /** The applies asked for, one after another: two at once would each open a listener of their own. */
+  private applying: Promise<void> = Promise.resolve();
+  /** Set by stop (the engine quitting): a listener still opening then is closed, not kept. */
+  private stopped = false;
   /** What the tunnel was last started with, so a settings save that changes nothing of it leaves it running. */
   private tunnelFor = "";
 
@@ -313,13 +316,26 @@ export class LinerMcp {
     return this.listener?.port ?? 0;
   }
 
-  /** As Settings say: the listener up while apps are let in, and the tunnel you picked up with it; both down when they aren't. */
-  async apply() {
-    await this.opening?.catch(() => {});
-    const s = this.o.store.settings;
+  /**
+    As Settings say: the listener up while apps are let in, and the tunnel you picked up with it; both down when they aren't.
+    Applies run one after another, each reading the settings as they are when its turn comes, so the latest wins. Switched
+    off, a tunnel still starting is stopped at once rather than after its turn.
+  */
+  apply(): Promise<void> {
+    if (!this.on) {
+      this.tunnelFor = "";
+      void this.tunnel.stop().catch(() => {});
+    }
+    const turn = this.applying.then(() => this.applyNow());
+    // A listener that failed to start is tried again on the next apply, not waited on for good.
+    this.applying = turn.catch(() => {});
+    return turn;
+  }
+
+  private async applyNow() {
     // What terminal agents may do is in outside.json too, for the stdio server's list: kept as the setting says.
     this.o.outside.relevel();
-    if (!this.on) {
+    if (!this.on || this.stopped) {
       this.tunnelFor = "";
       await this.tunnel.stop();
       const l = this.listener;
@@ -329,14 +345,13 @@ export class LinerMcp {
       return;
     }
     if (!this.listener) {
-      this.opening = startMcpHttp({ port: this.o.port ?? MCP_PORT, apps: this.apps, gate: this.gate, oauth: this.oauth, publicHost: () => this.tunnel.host, log: this.o.log }).then((l) => void (this.listener = l));
-      try {
-        await this.opening;
-      } finally {
-        // A listener that failed to start is tried again on the next apply, not waited on for good.
-        this.opening = null;
-      }
+      const l = await startMcpHttp({ port: this.o.port ?? MCP_PORT, apps: this.apps, gate: this.gate, oauth: this.oauth, publicHost: () => this.tunnel.host, log: this.o.log });
+      if (this.stopped) return l.close();
+      this.listener = l;
     }
+    // Switched off while the listener opened: the apply that did it comes next and closes it; no tunnel starts before.
+    if (!this.on) return;
+    const s = this.o.store.settings;
     const want = `${s.mcpReach ?? "off"}\n${s.mcpReach === "own" ? (s.mcpOwnUrl ?? "") : ""}\n${this.port}`;
     if (want !== this.tunnelFor) {
       this.tunnelFor = want;
@@ -351,6 +366,7 @@ export class LinerMcp {
   }
 
   async stop() {
+    this.stopped = true;
     this.apps.flush();
     await this.tunnel.stop();
     const l = this.listener;
@@ -386,9 +402,11 @@ export class LinerMcp {
   addApp(p: { kind: McpAppKind; level: McpLevel; name?: string }): McpNewKey {
     if (!Object.hasOwn(MCP_KIND_NAMES, p.kind) || p.kind === "terminal") throw new Error("That isn't an app Liner can add with a key.");
     if (!MCP_LEVELS.includes(p.level)) throw new Error("That isn't a level.");
+    // With apps kept out there's no address to give it, and a key made then would be one nobody can use yet.
+    if (!this.on || !this.port) throw new Error("Let apps outside Liner Code in first, in Settings › Liner MCP. Then add the app.");
     // Two of the same kind are told apart: Another app, Another app 2… unless you named it.
     const { app, key } = this.apps.create({ name: p.name?.trim() || this.apps.freeName(MCP_KIND_NAMES[p.kind]), kind: p.kind, level: p.level });
-    return { app, key, url: this.tunnel.now.url ?? (this.port ? `http://127.0.0.1:${this.port}/mcp` : "") };
+    return { app, key, url: this.tunnel.now.url ?? `http://127.0.0.1:${this.port}/mcp` };
   }
 
   setLevel(id: string, level: McpLevel) {
@@ -407,7 +425,7 @@ export function checkMcpPatch(patch: Record<string, unknown>) {
   if (patch.mcpReach !== undefined && !["off", "tailscale", "cloudflare", "own"].includes(String(patch.mcpReach))) throw new Error("That isn't a way in from the internet.");
   if (patch.mcpOwnUrl !== undefined && patch.mcpOwnUrl !== "" && !ownAddress(String(patch.mcpOwnUrl))) throw new Error("Your own address must be an https address, like https://liner.example.com.");
   if (patch.mcpStdioLevel !== undefined && !MCP_LEVELS.includes(patch.mcpStdioLevel as McpLevel)) throw new Error("That isn't a level.");
-  if (patch.mcpWebhook !== undefined && patch.mcpWebhook !== "" && !webhookOk(patch.mcpWebhook)) throw new Error("Tell an app needs an https address.");
+  if (patch.mcpWebhook !== undefined && patch.mcpWebhook !== "" && !webhookOk(patch.mcpWebhook)) throw new Error("Tell an app needs an https address on the internet, not one on this computer or a private network.");
   if (patch.mcpOwnUrl === "") patch.mcpOwnUrl = undefined;
   if (patch.mcpWebhook === "") patch.mcpWebhook = undefined;
 }

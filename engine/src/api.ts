@@ -2255,6 +2255,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const base = await mainBranch(cwd);
       if (base && base.replace(/^origin\//, "") === branch) throw new Error(`This session works on ${branch} itself. Start it in a worktree to open a pull request from a branch of its own.`);
       const pr = await prCreate(cwd, branch, { title, body, draft, base: baseArg, reviewers, labels }, env);
+      // A new pull request shows on the Pull requests page at once, not when the kept list runs out.
+      lists.forget(store.thread(threadId).projectId);
       const checks = keptSince(undefined, prChecksOf(pr.checks));
       store.patchThread(threadId, { pr: { number: pr.number, url: pr.url, state: pr.state, ...(checks ? { checks } : {}) } });
       return pr;
@@ -2269,6 +2271,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "pr.merge": async ({ projectId, number, method, deleteBranch }) => {
       // None picked: Settings › Source control's default merge method.
       await prMerge(store.project(projectId).path, number, env, { method: mergeMethodFor(store.settings, method), deleteBranch });
+      // The Pull requests page's next read finds it merged, and the issues it closed closed, rather than the kept list.
+      lists.forget(projectId);
       return null;
     },
     "worklists.prs": (q) => lists.prs(store, q ?? {}),

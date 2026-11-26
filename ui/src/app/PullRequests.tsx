@@ -105,6 +105,11 @@ export function PullRequests({ sidebar, onSidebar, pick }: { sidebar: boolean; o
   useEffect(() => {
     if (open && data && !picked) setOpen(null);
   }, [data, picked === null]);
+  // Merged from here: shown merged at once, then the list is read again (the engine let go of its kept one), so on Open it goes.
+  const merged = (p: PrItem) => {
+    setData((d) => d && { ...d, items: d.items.map((x) => (prKey(x) === prKey(p) ? { ...x, state: "merged" as const } : x)) });
+    setAgain((n) => n + 1);
+  };
   const close = () => {
     const at = open;
     setOpen(null);
@@ -137,7 +142,7 @@ export function PullRequests({ sidebar, onSidebar, pick }: { sidebar: boolean; o
           {data && <Unavailable list={data.unavailable} />}
         </div>
       </div>
-      {picked && <PrDetailColumn key={open!} pr={picked} onClose={close} />}
+      {picked && <PrDetailColumn key={open!} pr={picked} onClose={close} onMerged={merged} />}
     </div>
   );
 }
@@ -187,8 +192,10 @@ function PrRow({ pr, on, onOpen }: { pr: PrItem; on: boolean; onOpen: () => void
 }
 
 /** The detail beside the list: what it is, its body and files, and at its foot the scan, Check out and Open a session on it. */
-function PrDetailColumn({ pr, onClose }: { pr: PrItem; onClose: () => void }) {
+function PrDetailColumn({ pr, onClose, onMerged }: { pr: PrItem; onClose: () => void; onMerged: (pr: PrItem) => void }) {
   const [full, setFull] = useState<PrDetail | null>(null);
+  // Merging, or merged from here: Merge it can't be pressed twice, nor come back if gh's next list is a moment behind.
+  const [merging, setMerging] = useState<"no" | "now" | "done">("no");
   const [allFiles, setAllFiles] = useState(false);
   const [starting, setStarting] = useState(false);
   const method = useEngine((s) => scmSettings(s.settings).mergeMethod);
@@ -213,11 +220,21 @@ function PrDetailColumn({ pr, onClose }: { pr: PrItem; onClose: () => void }) {
       .catch(fail)
       .finally(() => setStarting(false));
   };
-  const merge = () =>
+  const merge = () => {
+    if (merging !== "no") return;
+    setMerging("now");
     void rpc("pr.merge", { projectId: pr.projectId, number: pr.number }).then(
-      () => toast(`Merged #${pr.number}`, { description: pr.title }),
-      fail,
+      () => {
+        setMerging("done");
+        toast(`Merged #${pr.number}`, { description: pr.title });
+        onMerged(pr);
+      },
+      (e) => {
+        setMerging("no");
+        fail(e);
+      },
     );
+  };
   const methodWord = method === "squash" ? "squash" : method === "rebase" ? "rebase" : "a merge commit";
   return (
     <Detail
@@ -233,10 +250,14 @@ function PrDetailColumn({ pr, onClose }: { pr: PrItem; onClose: () => void }) {
         <>
           <Row title="Copy the link" icon={<I.link size={14} />} onPick={() => (close(), copyLink(pr.url))} />
           <Row title="Check out the branch" note="In a worktree of its own, in a new session" icon={<I.branch size={14} />} onPick={() => (close(), start())} />
-          {(pr.state === "open" || pr.state === "draft") && (
+          {(pr.state === "open" || pr.state === "draft") && merging !== "done" && (
             <>
               <Sep />
-              <ConfirmRow title="Merge it" note={`With ${methodWord}, as Settings › Source control says`} sure={`Merge #${pr.number} now`} icon={<I.merge size={14} />} onConfirm={() => (close(), merge())} />
+              {merging === "now" ? (
+                <Row title={`Merging #${pr.number}`} icon={<I.merge size={14} />} disabled />
+              ) : (
+                <ConfirmRow title="Merge it" note={`With ${methodWord}, as Settings › Source control says`} sure={`Merge #${pr.number} now`} icon={<I.merge size={14} />} onConfirm={() => (close(), merge())} />
+              )}
             </>
           )}
         </>

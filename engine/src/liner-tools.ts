@@ -11,7 +11,11 @@ import { TOOLS as BUILD_TOOLS } from "./buildlinks-tools.ts";
 import { TOOLS as PICTURE_TOOLS } from "./pictures-tools.ts";
 import { SECURITY_READS, TOOLS as SECURITY_TOOLS } from "./security-tools.ts";
 
-export type Schema = { type: "object"; properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
+/**
+  A property's description may be left out where its name says it all: Antigravity's agy leaves a tool over about a
+  kilobyte out of what its model is told (liner-tools.test.ts), so every word in a tool has to earn its place.
+*/
+export type Schema = { type: "object"; properties: Record<string, { type: string; description?: string; enum?: string[]; items?: { type: string } }>; required?: string[] };
 export type ToolDef = { name: string; description: string; inputSchema: Schema };
 
 const none: Schema = { type: "object", properties: {} };
@@ -95,10 +99,9 @@ export const TOOLS: ToolDef[] = [
   {
     name: "server_start",
     description: [
-      "Starts a dev server named in .claude/launch.json in the session's folder (the file Claude Code reads for its previews) and opens it in Liner Code's Browser. Returns its port and the page, as browser_open does.",
-      "Use it instead of starting a dev server from your shell: Liner Code stops it when no session in the folder needs it and starts it again when the person comes back. One that runs already is used as it is.",
-      'When the file is missing, or lacks the server, write it first: {"version": "0.0.1", "configurations": [{"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}. runtimeExecutable is the command and runtimeArgs its arguments (or program, a script for node, with args); port is where it listens (3000 when left out), and it gets PORT too; cwd, env and autoPort (true: it may move to a free port when its own is taken) are optional.',
-      "A command the person hasn't run from this file before may wait for their yes.",
+      "Starts a dev server named in .claude/launch.json in the session's folder (Claude Code's preview file) and opens it in Liner Code's Browser; returns its port and the page. Use it, not your shell: Liner Code stops it when no session needs it and starts it again later. One that runs already is used as it is.",
+      'With no file or no such server, write it first: {"version": "0.0.1", "configurations": [{"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}. It gets PORT too; cwd, env and autoPort (true: a free port when its own is taken) are optional.',
+      "A command the person hasn't run from this file may wait for their yes.",
     ].join(" "),
     inputSchema: { type: "object", properties: { name: { type: "string", description: "The server's name in .claude/launch.json" } }, required: ["name"] },
   },
@@ -149,20 +152,19 @@ export const TOOLS: ToolDef[] = [
   {
     name: "design_show",
     description: [
-      "Shows a design in the Design surface beside the session: a screen, a page, a component sheet, a clickable prototype. The person sees it full size at the size it's drawn for, comments on any part of it, and asks for it to be built.",
-      "Write it as one self-contained HTML file in the session's folder, under .liner/designs/ (like .liner/designs/settings.html): CSS and scripts inline, pictures inline (SVG, data: URIs) or as files beside it; a font or a library from a CDN works too. Then call this with its path. To change it, read the file, change only what was asked, and call this again with the same path: each call keeps a version the person can go back to. If you can't write files, pass the whole page as html instead.",
-      "Design it the way a good product designer would: real content (no lorem ipsum), one type scale and one spacing scale, clear hierarchy, enough contrast, and the states that matter (empty, loading, error). When the project has a look of its own, read its styles first and match them.",
-      "It returns a picture of the design as drawn, with its console errors: look at it, and fix what's off before you say it's done.",
+      "Shows a design (a screen, a page, a clickable prototype) beside the session, at its size, for the person to comment on and have built.",
+      "Write one self-contained HTML file under .liner/designs/ (settings.html) and call this with its path; to change it, edit only what was asked and call again: each call keeps a version. Without file tools, pass html.",
+      "Use real content and the project's own look. Returns a picture as drawn, with console errors: fix what's off first.",
     ].join(" "),
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "A short name for the design: \"Settings screen\"" },
-        path: { type: "string", description: "Its HTML file in the session's folder, like .liner/designs/settings.html" },
-        html: { type: "string", description: "The whole page, only when you can't write the file yourself" },
-        size: { type: "string", enum: ["desktop", "tablet", "phone"], description: "What it's drawn for: desktop (the default), tablet or phone" },
-        note: { type: "string", description: "What this version changed, in a few words" },
-        design: { type: "string", description: "The id of a design shown before, to make this its next version (the same path does that too)" },
+        title: { type: "string" },
+        path: { type: "string" },
+        html: { type: "string" },
+        size: { type: "string", enum: ["desktop", "tablet", "phone"] },
+        note: { type: "string", description: "What this version changed" },
+        design: { type: "string", description: "A shown design's id" },
       },
       required: ["title"],
     },
@@ -177,8 +179,8 @@ export const TOOLS: ToolDef[] = [
   {
     name: "liner_inspect",
     description:
-      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets: Claude Code, Codex, OpenCode, Hermes) and panels (a small page of your own that opens in Liner Code, in the right dock, as a tab beside Chat, or as a page from the left sidebar), the manifests to write, the add-ons installed, and the agent tools on this Mac. Call it before you make either: when the person asks to connect a service through MCP, or for a panel, view or small app inside Liner Code. With a topic it reads one part in depth: panels, places, apps (the bar a full-page app meets), manifest, bridge, theme, design (Liner 2.0, the app's own look: read it before drawing a panel or page), starters, verify, installed (with manifests and file paths), connections, or catalogue. Changes nothing.",
-    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part of the guide, in depth; leave it out for the whole short guide", enum: ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "design", "starters", "verify", "installed"] } } },
+      "Reads Liner Code's add-on guide: connections (an MCP server every agent tool here gets) and panels (a small page of your own in Liner Code: in the right dock, a tab beside Chat, or a page from the sidebar), the manifests to write, what's installed, and the agent tools on this Mac. Read it before you make either, when the person asks to connect a service through MCP or for a panel or small app in Liner Code. A topic reads one part in depth: apps is the bar a full-page app meets, design is Liner 2.0, the app's own look (read it before drawing a panel), installed has manifests and paths. Changes nothing.",
+    inputSchema: { type: "object", properties: { topic: { type: "string", description: "One part, in depth; the short guide when left out", enum: ["catalogue", "connections", "panels", "manifest", "places", "apps", "bridge", "theme", "design", "starters", "verify", "installed"] } } },
   },
   {
     name: "addon_check",
@@ -189,15 +191,15 @@ export const TOOLS: ToolDef[] = [
   {
     name: "addon_offer",
     description:
-      "Offers the person a card at the end of your answer: make something as an app in Liner Code, in the background, where they choose. Answer first, then offer at most one, when they asked for an interface, or your answer has a clear use they'll come back to (a record they keep, results they'll explore again); not for a one-off answer, a static table, or a change to their own project. Pick the place: \"dock\" to watch or edit beside this conversation, \"tab\" for this session's live output or interaction, \"page\" for something global they keep across projects. access is what it may touch, as a panel's manifest says it (liner_inspect); ask for the least it needs. Don't make it yourself.",
+      "Offers the person a card after your answer, to make something as an app in Liner Code. At most one, when they asked for an interface or your answer has a use they'll come back to; not for a one-off answer, a static table, or a change to their project. place: dock (beside this chat), tab (this session's output) or page (across projects). Don't make it yourself.",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "What it's called, a few words" },
-        brief: { type: "string", description: "What it does, what it reads and what it keeps, so a session that can't read this one can make it" },
-        place: { type: "string", description: "Where it goes", enum: ["dock", "tab", "page"] },
-        access: { type: "object", description: 'As a panel manifest\'s access: files ("project"), sessions ("this" or "all"), composer (true), storage (KB), ai (true: it asks a model the person picks), network (one host)' },
-        initialContent: { type: "array", items: { type: "string" }, description: "What it starts with, in the person's own items, when they gave some" },
+        name: { type: "string" },
+        brief: { type: "string", description: "What it does, reads and keeps, for a session that can't read this one" },
+        place: { type: "string", enum: ["dock", "tab", "page"] },
+        access: { type: "object", description: 'The least it needs: files ("project"), sessions ("this"/"all"), composer, storage (KB), ai, network (a host)' },
+        initialContent: { type: "array", items: { type: "string" }, description: "The person's own items" },
       },
       required: ["name", "brief", "place"],
     },
@@ -227,16 +229,16 @@ export const TOOLS: ToolDef[] = [
   {
     name: "sidekick",
     description: [
-      "Hands one bounded piece of work to your sidekick, a quicker model working in this same folder under the same access, and waits until it's done (10 minutes at most, less where your tool won't wait that long on one call: the result says when the cap stopped it). One brief at a time: a second call waits for the first.",
-      "Write the brief with the goal, the constraints and how to tell it's done; it knows nothing of this conversation but your briefs. It remembers your earlier briefs in this session, so send corrections to it; fresh starts it over.",
+      "Hands one bounded piece of work to your sidekick, a quicker model in this folder under the same access, and waits until it's done (10 minutes at most: the result says when a cap stopped it). One brief at a time.",
+      "Give the goal, the constraints and how to tell it's done: it knows nothing of this conversation but your briefs. It remembers your earlier briefs, so send corrections to it; fresh starts it over.",
       "Returns how it went, its report, and the files it changed as Liner Code measured them. The report is its claim: read the diff before you build on it.",
     ].join(" "),
     inputSchema: {
       type: "object",
       properties: {
-        brief: { type: "string", description: "The work: the goal, the files and constraints that matter, what to leave alone" },
-        done_when: { type: "string", description: "How it can tell it's done: the check to run, the behaviour to see" },
-        fresh: { type: "boolean", description: "Start it over, forgetting your earlier briefs" },
+        brief: { type: "string", description: "The goal, the files and constraints that matter, what to leave alone" },
+        done_when: { type: "string", description: "The check to run, the behaviour to see" },
+        fresh: { type: "boolean", description: "Forget your earlier briefs" },
       },
       required: ["brief"],
     },
@@ -244,46 +246,48 @@ export const TOOLS: ToolDef[] = [
   {
     name: "subagent",
     description: [
-      "Spawns an ephemeral subagent in this folder with a fresh context to handle one focused task and returns its report (10 minutes at most, less where your tool won't wait that long on one call).",
-      "Use mode: \"read\" (the default) for codebase exploration, audits, analysis or planning: multiple read-only subagents run in parallel when you call this tool multiple times in one turn, and they cannot edit files.",
-      "Use mode: \"write\" for bounded implementation tasks: write subagents run one at a time in this folder under the session's access and return the files they changed as Liner Code measured them.",
-      "Make prompt self-contained (goal, paths, constraints, what to report): the subagent knows nothing of this conversation and cannot ask the person questions.",
+      "Spawns a subagent in this folder with a fresh context for one focused task and returns its report (10 minutes at most).",
+      "mode read (the default) is for exploring, audits and planning: several calls in one turn run in parallel, and they can't edit files.",
+      "mode write is for bounded implementation: one at a time, under the session's access, returning the files it changed.",
+      "Make prompt self-contained (goal, paths, constraints, what to report): it knows nothing of this conversation and can't ask the person.",
     ].join(" "),
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short label for what this subagent is doing (a few words)" },
-        prompt: { type: "string", description: "Self-contained instructions: the goal, files/folders to inspect or change, constraints, and what to report" },
-        mode: { type: "string", enum: ["read", "write"], description: "read (default, parallel, read-only) or write (serialized, can edit files when this session allows edits)" },
-        done_when: { type: "string", description: "Optional check or deliverable that defines when the subagent is done" },
+        title: { type: "string", description: "What it's doing, a few words" },
+        prompt: { type: "string", description: "The goal, files to read or change, constraints, what to report" },
+        mode: { type: "string", enum: ["read", "write"] },
+        done_when: { type: "string", description: "The check or deliverable that says it's done" },
       },
       required: ["prompt"],
     },
   },
   {
     name: "swarm_manage",
+    // Short on purpose (agy drops a tool over about a kilobyte): the coordinator's and members' notes in swarm.ts say how
+    // to add, audit, fork and plan, so the fields here only name themselves.
     description:
-      "Runs your Liner Code Teamwork or Swarm team. Actions: add (a named worker; n adds copies, tasks one per slice, fork seeds it from a member), plan (the Overview goal, tasks and threads), status (the roster and slots), models (the '<provider>:<model>' refs you can use), model (swap a worker's model), title (name the team), kill (end a worker and prune its clean worktree), skip (mark a role not needed), land (refused: only the person merges a worktree; tell them which are ready).",
+      "Runs your Teamwork or Swarm team, as your notes say: add, plan, status, models, model (swap one's), title, kill, skip. land is refused: only the person merges.",
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["add", "skip", "plan", "status", "models", "model", "land", "title", "kill"], description: "The action" },
-        name: { type: "string", description: "Roster name (a-z, 0-9, - or _, up to 24; the base name with n or tasks), for add, skip, model, land or kill" },
-        role: { type: "string", description: "Title shown in the panel (e.g. 'Victory Auditor', 'Backend Fixer'), for add or skip" },
-        can_delegate: { type: "boolean", description: "Teamwork only: this member (a Project Orchestrator) may add specialists under itself, for add" },
-        audit: { type: "boolean", description: "The auditor: runs on the session's own model and effort, for add" },
-        of: { type: "string", description: "With audit: the writer whose work it checks; it runs read-only in that writer's worktree, for add" },
-        n: { type: "number", description: "Copies (2..8) sharing the brief, named <name>-1.., for add" },
-        tasks: { type: "array", items: { type: "string" }, description: "Up to 8 slices, one worker each (<name>-1..), each given the brief and its slice, for add" },
-        fork: { type: "string", description: "A member (or 'coordinator') whose brief and recent posts seed the new worker, for add" },
-        model: { type: "string", description: "A '<provider>:<model>' ref to pin or swap to, for add or model" },
-        workspace: { type: "string", enum: ["inherit", "share", "branch"], description: "inherit (the shared folder) or share/branch (its own git worktree, for writers), for add" },
-        mode: { type: "string", enum: ["read", "write"], description: "read (cannot edit files) or write, for add" },
-        channels: { type: "array", items: { type: "string" }, description: "Channels besides main (without #), for add" },
-        brief: { type: "string", description: "Self-contained assignment: what it owns and what done looks like, for add" },
-        reason: { type: "string", description: "Why, for model or skip" },
-        title: { type: "string", description: "Short team title, for title" },
-        plan: { type: "object", description: "{ goal: { title, line }, tasks: { worker: summary }, threads: [{ id, title, goal, tasks }] }, for plan" },
+        action: { type: "string", enum: ["add", "skip", "plan", "status", "models", "model", "land", "title", "kill"] },
+        name: { type: "string" },
+        role: { type: "string" },
+        can_delegate: { type: "boolean" },
+        audit: { type: "boolean" },
+        of: { type: "string" },
+        n: { type: "number" },
+        tasks: { type: "array", items: { type: "string" } },
+        fork: { type: "string" },
+        model: { type: "string" },
+        workspace: { type: "string", enum: ["inherit", "share", "branch"] },
+        mode: { type: "string", enum: ["read", "write"] },
+        channels: { type: "array", items: { type: "string" } },
+        brief: { type: "string" },
+        reason: { type: "string" },
+        title: { type: "string" },
+        plan: { type: "object" },
       },
       required: ["action"],
     },

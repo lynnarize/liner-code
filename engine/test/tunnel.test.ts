@@ -1,13 +1,13 @@
 /*
   Liner MCP from the internet, with fake tools and processes only (no real tunnel is ever started here): Tailscale Funnel's
   address read from its status, a Funnel already serving something else left alone, Cloudflare's address read from its
-  output, your own address taken only when it's https, and each taken down again.
+  output, your own address taken only when it's https, and each taken down again. The tools are found on Windows too.
   Run with `node --test engine/test/tunnel.test.ts`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { Tunnel, ownAddress, type TunnelDeps } from "../src/tunnel.ts";
+import { Tunnel, findTool, ownAddress, type TunnelDeps } from "../src/tunnel.ts";
 
 function tailscale(o: { running?: boolean; serving?: unknown; funnelCode?: number } = {}) {
   const ran: string[] = [];
@@ -126,4 +126,57 @@ test("The wait for an address stops once cloudflared has failed or ended, so its
     assert.equal(tunnel.now.note, said, how);
     assert.doesNotMatch(tunnel.now.note ?? "", /within 30 seconds/);
   }
+});
+
+test("On Windows the tools are found on the PATH by their .exe, with Windows' separator, and Tailscale where its installer puts it", () => {
+  const files = new Set(["C:\\Tools\\cloudflared.exe", "C:\\Program Files\\Tailscale\\tailscale.exe", "C:\\Shims\\cloudflared.cmd"]);
+  const has = (f: string) => files.has(f);
+  const env = { Path: 'C:\\Windows;"C:\\Tools";C:\\Shims', PATHEXT: ".COM;.EXE;.BAT;.CMD", ProgramFiles: "C:\\Program Files" };
+  assert.equal(findTool("cloudflared", env, "win32", has), "C:\\Tools\\cloudflared.exe");
+  assert.equal(findTool("tailscale", env, "win32", has), "C:\\Program Files\\Tailscale\\tailscale.exe");
+  // A .cmd needs a shell to start, which the tunnel doesn't use: not taken.
+  assert.equal(findTool("cloudflared", { PATH: "C:\\Shims", PATHEXT: ".CMD;.EXE" }, "win32", has), null);
+  // The Mac's way is unchanged.
+  const mac = new Set(["/opt/homebrew/bin/cloudflared"]);
+  assert.equal(findTool("cloudflared", { PATH: "/usr/bin:/opt/homebrew/bin" }, "darwin", (f) => mac.has(f)), "/opt/homebrew/bin/cloudflared");
+  assert.equal(findTool("tailscale", { PATH: "/usr/bin" }, "darwin", (f) => f === "/Applications/Tailscale.app/Contents/MacOS/Tailscale"), "/Applications/Tailscale.app/Contents/MacOS/Tailscale");
+});
+
+test("What a tunnel says when its tool is missing fits the computer it runs on", async () => {
+  const none = { which: async () => null, run: async () => ({ code: 0, stdout: "", stderr: "" }), spawn: () => { throw new Error("no"); } };
+  const pc = new Tunnel({ ...none, platform: "win32" });
+  await pc.start("cloudflare", 7318);
+  assert.match(pc.now.note ?? "", /this PC.*winget install --id Cloudflare\.cloudflared/);
+  await pc.start("tailscale", 7318);
+  assert.match(pc.now.note ?? "", /isn't on this PC/);
+  const mac = new Tunnel({ ...none, platform: "darwin" });
+  await mac.start("cloudflare", 7318);
+  assert.match(mac.now.note ?? "", /this Mac.*brew install cloudflared/);
+});
+
+test("A stop that comes while an earlier tunnel is still coming down leaves no tunnel starting after it", async () => {
+  let release!: () => void;
+  const ran: string[] = [];
+  const deps: TunnelDeps = {
+    which: async (n) => (n === "tailscale" ? "/fake/tailscale" : "/fake/cloudflared"),
+    run: async (_c, args) => {
+      ran.push(args.join(" "));
+      // Taking Funnel down is slow: the next start waits on it.
+      if (args.join(" ") === "funnel --https=443 off") await new Promise<void>((r) => (release = r));
+      if (args[0] === "status") return { code: 0, stdout: JSON.stringify({ BackendState: "Running", Self: { DNSName: "mac.tail1234.ts.net." } }), stderr: "" };
+      return { code: 0, stdout: "{}", stderr: "" };
+    },
+    spawn: () => {
+      throw new Error("cloudflared must not start after the stop");
+    },
+  };
+  const t = new Tunnel(deps);
+  await t.start("tailscale", 7318);
+  assert.equal(t.now.state, "up");
+  const next = t.start("cloudflare", 7318);
+  await new Promise((r) => setImmediate(r));
+  const off = t.stop();
+  release();
+  await Promise.all([next, off]);
+  assert.equal(t.now.state, "off");
 });

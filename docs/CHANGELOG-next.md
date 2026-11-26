@@ -27,7 +27,7 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   a terminal agent you revoke is turned away by name until you let it in again. From the internet is off until you
   pick Tailscale Funnel, a Cloudflare quick tunnel or an address of your own.
 - **Tell an app:** an https webhook of yours hears when a session needs you, with its title and
-  nothing else, so an app on your phone can say so.
+  nothing else, so an app on your phone can say so. It never goes to this computer or a private network.
 
 ### Changed
 
@@ -55,3 +55,7 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - In Liner Security's Findings, a row's tick box no longer lies on the row: it stands in the margin clear of it, and
   with a finding open, where the margin is too narrow, it takes the severity square's place while you point at the
   row. A row you clicked no longer keeps its box showing after the pointer has left.
+- A window from File › New Window works while another window has focus: its status, badge and buttons answer, it
+  takes the window material and its own traffic lights, and Quit When They Finish hides it too.
+- In Antigravity sessions the agent has every Liner tool again: Teamwork, Liner Design's frames and pictures, server
+  start, add-on offers and Liner Security's findings had been left out because their descriptions ran over a kilobyte.

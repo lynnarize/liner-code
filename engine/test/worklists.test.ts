@@ -5,7 +5,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scmKey } from "../../contracts/src/index.ts";
@@ -261,4 +261,26 @@ test("A Linear issue's detail comes from Linear, asked by its key under a projec
   assert.deepEqual(asked, [{ id: "LIN-12" }, { id: "LIN-12" }]);
   assert.ok(!gh.calls.some((c) => c.cmd === "gh"), "gh is never asked for a Linear key");
   await assert.rejects(w.issue(store, LINEAR_PROJECT, "#12"), /Linear issue's key/);
+});
+
+test("A pull request merged from Liner is gone from the next open list, rather than kept as open until the refresh", async () => {
+  const { createApi } = await import("../src/api.ts");
+  const { Runtime } = await import("../src/runtime.ts");
+  // A gh on PATH that is signed in, lists #131 as open until it is asked to merge it, then lists none.
+  const bin = mkdtempSync(join(tmpdir(), "lc-wl-gh-"));
+  const merged = join(bin, "merged");
+  writeFileSync(join(bin, "open.json"), JSON.stringify([PR_ROW]));
+  writeFileSync(join(bin, "gh"), `#!/bin/bash\ncase "$1 $2" in\n  "auth status") exit 0;;\n  "api user") echo harbour-dev;;\n  "pr list") if [ -f "${merged}" ]; then echo '[]'; else cat "${join(bin, "open.json")}"; fi;;\n  "pr merge") touch "${merged}";;\n  *) exit 1;;\nesac\n`, { mode: 0o755 });
+  const store = new Store(mkdtempSync(join(tmpdir(), "lc-wl-")));
+  const work = mkdtempSync(join(tmpdir(), "lc-wl-work-"));
+  store.putProject({ id: "p1", name: "foreshore", path: work, git: true, remote: "o/foreshore", createdAt: 1 });
+  const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: store.home };
+  const api = createApi(store, new Runtime(store, env), env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  const call = <T>(m: string, p: unknown) => api.call(m, p) as Promise<T>;
+  const before = await call<{ items: { number: number }[] }>("worklists.prs", { state: "open" });
+  assert.deepEqual(before.items.map((x) => x.number), [131]);
+  await call("pr.merge", { projectId: "p1", number: 131 });
+  assert.ok(existsSync(merged), "gh was asked to merge it");
+  const after = await call<{ items: { number: number }[] }>("worklists.prs", { state: "open" });
+  assert.deepEqual(after.items.map((x) => x.number), [], "the kept list still showed it open, with Merge it there to press again");
 });

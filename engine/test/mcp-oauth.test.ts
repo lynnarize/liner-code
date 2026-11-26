@@ -109,7 +109,7 @@ test("A code is good once, only with its verifier, and makes an app at the level
   assert.equal(app.auth, "oauth");
   const disk = readFileSync(join(home, "mcp-apps.json"), "utf8");
   assert.equal(disk.includes(t.access_token) || disk.includes(t.refresh_token), false);
-  assert.equal(oauth.token(new URLSearchParams({ grant_type: "authorization_code", code: code2, client_id: clientId, code_verifier: verifier })).status, 400, "used once");
+  assert.equal(oauth.token(new URLSearchParams({ grant_type: "authorization_code", code: code2, client_id: clientId, code_verifier: verifier, redirect_uri: REDIRECT })).status, 400, "used once");
 
   // Refreshed: new tokens, and the refresh token used is used up.
   const r = oauth.token(new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refresh_token, client_id: clientId }));
@@ -121,13 +121,28 @@ test("A code is good once, only with its verifier, and makes an app at the level
   assert.equal(apps.verify((r.json as { access_token: string }).access_token), undefined);
 });
 
+test("A code is exchanged only with the redirect_uri it was given for, never without one", () => {
+  const { oauth, authorize, clientId, verifier } = rig();
+  const codeFor = () => {
+    oauth.expect("claude");
+    const id = pendingOf(authorize().headers!.location);
+    oauth.decide(id, true, "read");
+    return new URL(oauth.authorize(new URLSearchParams({ pending: id }), urls).headers!.location).searchParams.get("code")!;
+  };
+  const left = oauth.token(new URLSearchParams({ grant_type: "authorization_code", code: codeFor(), client_id: clientId, code_verifier: verifier }));
+  assert.equal(left.status, 400, "RFC 6749 4.1.3: /authorize had one, so /token must send it");
+  assert.equal((left.json as { error: string }).error, "invalid_request");
+  assert.equal(oauth.token(new URLSearchParams({ grant_type: "authorization_code", code: codeFor(), client_id: clientId, code_verifier: verifier, redirect_uri: `${REDIRECT}/` })).status, 400, "only the very same one");
+  assert.equal(oauth.token(new URLSearchParams({ grant_type: "authorization_code", code: codeFor(), client_id: clientId, code_verifier: verifier, redirect_uri: REDIRECT })).status, 200);
+});
+
 test("An access token runs out after an hour, and a sign-in nobody answers after ten minutes", () => {
   let now = 5_000_000;
   const { oauth, apps, authorize, clientId, verifier } = rig(() => now);
   const id = pendingOf(authorize().headers!.location);
   oauth.decide(id, true, "trusted");
   const code = new URL(oauth.authorize(new URLSearchParams({ pending: id }), urls).headers!.location).searchParams.get("code")!;
-  const t = oauth.token(new URLSearchParams({ grant_type: "authorization_code", code, client_id: clientId, code_verifier: verifier })).json as { access_token: string };
+  const t = oauth.token(new URLSearchParams({ grant_type: "authorization_code", code, client_id: clientId, code_verifier: verifier, redirect_uri: REDIRECT })).json as { access_token: string };
   now += 3_600_001;
   assert.equal(apps.verify(t.access_token), undefined);
   oauth.expect("claude");
@@ -163,7 +178,7 @@ test("A signed-in app's kind and logo come from what you picked, never from the 
   assert.equal("kind" in oauth.list()[0], false);
   oauth.decide(id, true, "read");
   const code = new URL(oauth.authorize(new URLSearchParams({ pending: id }), urls).headers!.location).searchParams.get("code")!;
-  const t = oauth.token(new URLSearchParams({ grant_type: "authorization_code", code, client_id: clientId, code_verifier: verifier })).json as { access_token: string };
+  const t = oauth.token(new URLSearchParams({ grant_type: "authorization_code", code, client_id: clientId, code_verifier: verifier, redirect_uri: REDIRECT })).json as { access_token: string };
   const app = apps.verify(t.access_token)!;
   assert.equal(app.kind, "other", "it called itself Claude, but you added another app");
   assert.equal(app.name, "Claude (as it calls itself)");

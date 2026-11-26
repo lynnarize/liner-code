@@ -93,7 +93,8 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   <port>`, taken down with `tailscale funnel --https=443 off`), a Cloudflare quick tunnel (`cloudflared tunnel --url
   http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. The engine's own
   server still takes no host but its own. Tell an app posts `{event, session title, app}` with your secret to your https
-  webhook when a session starts waiting on you: no redirects, 10 seconds, two retries.
+  webhook when a session starts waiting on you: never to this computer or a private network, no redirects, 10 seconds, two
+  retries.
 - **Pull requests and issues** (`worklists.ts`, `sourcecontrol.ts`). GitHub's come from `gh` in each project's folder
   (`gh pr list`, `gh pr view`, `gh issue list`, `gh issue view`, `gh api user`), Linear's from its API with your key; each
   list is kept for Settings › Source control & issues' refresh (`worklistRefresh`, 120 seconds), and a project that can't be

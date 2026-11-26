@@ -43,7 +43,7 @@ const toolsAt = (level: McpLevel) => Object.entries(MCP_TOOL_LEVELS).flatMap(([t
 /** The way in from the internet you used last, on this Mac: Add an app's Turn it on goes back to it. */
 const REACH_KEY = "lc:mcp-reach";
 const REACH: { value: McpReach; label: string; note: string }[] = [
-  { value: "off", label: "Off", note: "Only apps on this Mac" },
+  { value: "off", label: "Off", note: `Only apps on ${os.here}` },
   { value: "tailscale", label: "Tailscale Funnel", note: "Your tailnet's address, kept across launches" },
   { value: "cloudflare", label: "Cloudflare quick tunnel", note: "No account; a new address each launch" },
   { value: "own", label: "Your own address", note: "An https address you forward here" },
@@ -104,8 +104,8 @@ export function LinerMcpPlace() {
               <I.terminal size={14} />
             </HostTile>
           }
-          title="On this Mac"
-          note="Claude Code, Codex or Hermes in a terminal, through Liner's server on stdio. Nothing leaves the Mac."
+          title={`On ${os.here}`}
+          note={`Claude Code, Codex or Hermes in a terminal, through Liner's server on stdio. Nothing leaves the ${os.machine}.`}
         >
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!on || !s?.command} onClick={() => s?.command && copy(s.command, "Copied. Run it once in a terminal.")}>
             <I.copy size={13} />
@@ -131,7 +131,7 @@ export function LinerMcpPlace() {
               From the internet <Tag tone="new">New</Tag>
             </>
           }
-          note="Grok Bot and Muse run in the cloud, so they need an https address that reaches this Mac. Liner starts the tunnel you pick and stops it when it quits."
+          note={`Grok Bot and Muse run in the cloud, so they need an https address that reaches ${os.here}. Liner starts the tunnel you pick and stops it when it quits.`}
         >
           <Choice label="From the internet" value={reach} options={REACH} onPick={(mcpReach) => (mcpReach !== "off" && wordWrite(localStorage, REACH_KEY, mcpReach), void save({ mcpReach }))} />
         </Row>
@@ -141,7 +141,8 @@ export function LinerMcpPlace() {
       <Section
         title="Apps"
         end={
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setAdding(true)}>
+          // While apps are kept out there's no address to give one, so the engine makes no key: said here rather than after.
+          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={!on} title={on ? undefined : "Let apps outside Liner Code in first"} onClick={() => setAdding(true)}>
             <I.plus size={13} />
             Add an app
           </button>
@@ -218,7 +219,7 @@ function Reach({ s, onRetry }: { s: McpStatus; onRetry: () => void }) {
       <SubRow title={s.reach === "own" ? "Forwarding" : "Tunnel"}>
         <span className="lc-mcp-state" data-state={s.tunnel.state}>
           <i />
-          {s.tunnel.state === "starting" ? "Starting" : s.tunnel.state === "up" ? (s.tunnel.note ?? (s.reach === "own" ? `To port ${s.port} on this Mac` : "Up")) : s.tunnel.state === "down" ? (s.tunnel.note ?? "Down") : "Off"}
+          {s.tunnel.state === "starting" ? "Starting" : s.tunnel.state === "up" ? (s.tunnel.note ?? (s.reach === "own" ? `To port ${s.port} on ${os.here}` : "Up")) : s.tunnel.state === "down" ? (s.tunnel.note ?? "Down") : "Off"}
           {(s.tunnel.state === "down" || missing) && (
             <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onRetry}>
               Try again
@@ -250,7 +251,7 @@ function AppRow({ a, stdioLevel, publicUp }: { a: McpApp; stdioLevel: McpLevel; 
   const days = a.via === "stdio" ? null : Math.max(0, Math.ceil((a.expiresAt - Date.now()) / 86_400_000));
   const recent = Boolean(a.lastCallAt && Date.now() - a.lastCallAt < 10 * 60_000);
   // How it really comes in now: an app with a key reaches the internet address only while one is up, else this Mac's.
-  const way = a.via === "stdio" ? "On this Mac, in a terminal" : !publicUp ? "Over HTTP on this Mac" : a.auth === "oauth" ? "From the internet, signed in" : "From the internet";
+  const way = a.via === "stdio" ? `On ${os.here}, in a terminal` : !publicUp ? `Over HTTP on ${os.here}` : a.auth === "oauth" ? "From the internet, signed in" : "From the internet";
   const bits = [way, a.lastCallAt ? `last call ${ago(a.lastCallAt)}${a.lastTool ? `, ${a.lastTool}` : ""}` : "waiting for its first call", ...(a.keyEnd && a.auth === "key" ? [`key …${a.keyEnd}`] : []), ...(days === null ? [] : [days ? `${plural(days, "day")} left` : "ran out"])];
   const revoke = () => {
     if (!sure) return setSure(true);
@@ -270,7 +271,7 @@ function AppRow({ a, stdioLevel, publicUp }: { a: McpApp; stdioLevel: McpLevel; 
             {a.name} <Tag tone="warn">Turned away</Tag>
           </>
         }
-        note="On this Mac, in a terminal · refused by the name it gives"
+        note={`On ${os.here}, in a terminal · refused by the name it gives`}
       >
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => void rpc("mcp.unblock", { id: a.id }).catch(fail)}>
           Let in again
@@ -419,7 +420,7 @@ function Reaches() {
               </HostTile>
             }
             title={a.name}
-            note={`${a.transport === "http" ? "An address" : "A program on this Mac"} · ${a.reaches}${a.enabled ? "" : " · off"}`}
+            note={`${a.transport === "http" ? "An address" : `A program on ${os.here}`} · ${a.reaches}${a.enabled ? "" : " · off"}`}
           />
         ))
       ) : (
@@ -565,7 +566,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
             </div>
           ) : !made ? (
             <div className="lc-mcp-step">
-              <p>{kind === "other" ? "A key for an app that speaks MCP over HTTP, on this Mac or through your address from the internet. An app that signs in by itself can do so for the next 15 minutes; the sign-in finishes on a card here." : `${name} works from the cloud, so it reaches Liner through your address from the internet.`}</p>
+              <p>{kind === "other" ? `A key for an app that speaks MCP over HTTP, on ${os.here} or through your address from the internet. An app that signs in by itself can do so for the next 15 minutes; the sign-in finishes on a card here.` : `${name} works from the cloud, so it reaches Liner through your address from the internet.`}</p>
               <button type="button" className="lc-btn" data-kind="primary" data-size="sm" disabled={busy} onClick={() => void make()}>
                 {busy ? "Making the key" : "Make its key"}
               </button>

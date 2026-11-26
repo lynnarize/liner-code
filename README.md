@@ -282,7 +282,8 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
   app, and whenever a session starts waiting on you Liner Code posts one line there: that a session
   needs you, its title, and "Liner Code", with your secret as a bearer token if you gave one (kept in
   the keychain). Nothing of the session's code or words goes with it. It goes whether or not apps
-  are let in, to https only, with no redirects, tried three times at most.
+  are let in, to https only, never to this computer or a private network, with no redirects, tried
+  three times at most.
 - **AI pictures go to the endpoint you add.** When an agent or you ask for an AI picture in Liner
   Design, or you press Draw it for the dots behind Home, the words go to the AI pictures endpoint
   set up in Settings › Agent tools, with its key, billed to that account. Nothing goes there until you

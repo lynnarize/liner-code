@@ -169,3 +169,30 @@ export const BRANDS: Record<Brand, { name: string; letters: string; paths: strin
     ],
   },
 };
+
+/**
+  Each logo's own colour, where its maker draws it in one: the picker draws its marks in these, so a list of models reads
+  by who made them at a glance, and its Effort pill fills in the colour of the model it is for. Gemini's is its gradient,
+  from its top left to its bottom right. A maker that draws its logo in black (OpenAI, xAI, Cursor, the OpenCode marks,
+  Ollama) has none, and keeps the current ink; the pill then takes the app's accent.
+*/
+export const TINTS: Partial<Record<Brand, string | string[]>> = {
+  claude: "#D97757",
+  claudecode: "#D97757",
+  gemini: ["#1BA1E3", "#5489D6", "#9B72CB", "#D96570"],
+  deepseek: "#4D6BFE",
+  qwen: "#615CED",
+  mistral: "#FA520F",
+  meta: "#0081FB",
+  glm: "#3859FF",
+  minimax: "#F23F5D",
+  mimo: "#FF6900",
+  nvidia: "#76B900",
+  openrouter: "#6566F1",
+};
+/** A brand's colour as a CSS paint for a filled shape (the Effort pill): its colour, or its gradient left to right; undefined for one drawn in ink. */
+export function tintPaint(kind: string): string | undefined {
+  const t = TINTS[kind as Brand];
+  if (!t) return undefined;
+  return typeof t === "string" ? t : `linear-gradient(90deg, ${t.join(", ")})`;
+}

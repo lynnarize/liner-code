@@ -22,7 +22,7 @@
 */
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
-import { BRANDS, type Brand } from "./brands";
+import { BRANDS, TINTS, type Brand } from "./brands";
 import type { MarkState } from "./session-state";
 export type { MarkState } from "./session-state";
 
@@ -301,9 +301,20 @@ export const N = {
 export type MarkKind = Brand | "other" | "demo";
 export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }) {
   const cut = useId();
+  // The logo's own colour rides on --lc-tint, which only a place that wants colour (the model picker, models.css) paints with.
+  const tint = kind !== "demo" && kind !== "other" ? TINTS[kind] : undefined;
   if (kind !== "demo" && kind !== "other" && BRANDS[kind].paths.length)
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lc-mark" data-brand={kind} fill="currentColor" fillRule="evenodd">
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lc-mark" data-brand={kind} fill="currentColor" fillRule="evenodd" style={tint ? ({ "--lc-tint": typeof tint === "string" ? tint : `url("#${cut}")` } as CSSProperties) : undefined}>
+        {Array.isArray(tint) && (
+          <defs>
+            <linearGradient id={cut} x1="0" y1="0" x2="1" y2="1">
+              {tint.map((c, i) => (
+                <stop key={c} offset={i / (tint.length - 1)} stopColor={c} />
+              ))}
+            </linearGradient>
+          </defs>
+        )}
         {BRANDS[kind].paths.map((d, i) => (
           <path key={i} d={d} />
         ))}
@@ -320,7 +331,7 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
           {letters}
         </text>
       </mask>
-      <rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url(#${cut})`} />
+      <rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url("#${cut}")`} />
     </svg>
   );
 }

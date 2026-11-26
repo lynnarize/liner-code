@@ -8,11 +8,12 @@
   them. In a window too narrow for the card, its words are one line at the middle card's foot. The models are the ones
   each tool on this Mac said it runs, not a list kept in the app; one model a tool offers from several sources is one row.
 */
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { EffortInfo, ProviderInfo, Settings as EngineSettings } from "@contracts";
 import { castOf, familyOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
+import { tintPaint } from "./brands";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { allModels, effortsFor, everyModel, isGoModel, makerName, markOf, modelLabel, pairReady, shortName, sourceMarkOf, toolMarkOf, type ModelChoice } from "./model";
 import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, noLevels, PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut, pickerWide, priceSaid, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
@@ -297,6 +298,67 @@ export function ModelRow({ model: id, label, on, also, old, from, fromTitle, pri
   );
 }
 
+/**
+  The plate under the row the mouse is on, in a list that scrolls: one plate that slides from row to row instead of each
+  row lighting and going out on its own, so running down the models reads as one motion. Over a maker's name or a rule
+  it fades where it is, and slides on from there to the next row; it comes in place, without sliding, when the mouse
+  enters the list. `reset` (the list shown) changing puts it away. Moved by hand, outside React, so a move draws nothing
+  else. A keyboard walk has the focus ring instead.
+*/
+function HoverPlate({ within, reset }: { within: RefObject<HTMLElement | null>; reset: string }) {
+  const plate = useRef<HTMLSpanElement>(null);
+  const placed = useRef(false);
+  useEffect(() => {
+    const box = within.current;
+    const el = plate.current;
+    if (!box || !el) return;
+    const out = () => el.removeAttribute("data-on");
+    const forget = () => ((placed.current = false), out());
+    const over = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      const row = e.target instanceof Element ? e.target.closest<HTMLElement>(".lc-who-row") : null;
+      if (!row || !box.contains(row) || row.matches(":disabled")) return out();
+      const b = box.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      const fresh = !placed.current;
+      if (fresh) el.style.transition = "none";
+      el.style.transform = `translate(${r.left - b.left + box.scrollLeft}px, ${r.top - b.top + box.scrollTop}px)`;
+      el.style.width = `${r.width}px`;
+      el.style.height = `${r.height}px`;
+      if (fresh) (el.getBoundingClientRect(), (el.style.transition = ""));
+      placed.current = true;
+      el.setAttribute("data-on", "");
+    };
+    box.addEventListener("pointerover", over);
+    box.addEventListener("pointerleave", forget);
+    return () => (box.removeEventListener("pointerover", over), box.removeEventListener("pointerleave", forget));
+  }, [within]);
+  useEffect(() => ((placed.current = false), plate.current?.removeAttribute("data-on")), [reset]);
+  return <span ref={plate} className="lc-pk-plate" aria-hidden />;
+}
+
+/**
+  The side card's height follows what it holds in a short ease, so turning from a tall card (Fusion's) to a short one
+  (a model with no price) is one movement rather than a jump; the first height it takes comes without one.
+*/
+function useEasedHeight(card: RefObject<HTMLElement | null>, inner: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const box = card.current;
+    const el = inner.current;
+    if (!box || !el) return;
+    let first = true;
+    const fit = () => {
+      const pad = parseFloat(getComputedStyle(box).paddingTop) + parseFloat(getComputedStyle(box).paddingBottom);
+      if (first) box.style.transition = "none";
+      box.style.height = `${el.offsetHeight + pad}px`;
+      if (first) (box.getBoundingClientRect(), (box.style.transition = ""), (first = false));
+    };
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [card, inner]);
+}
+
 /** The rail's own entries past the tools (the Demo): a mark, a name, and what the middle card shows for it. */
 export type RailExtra = { id: string; label: string; mark: MarkKind; title?: string; body: ReactNode };
 /**
@@ -336,16 +398,18 @@ export type OwnCard = { label: string; body: ReactNode; line: ReactNode };
 export type Place = { id: string; label: string; icon: ReactNode; on?: boolean; note?: string; body: ReactNode };
 
 /** What Claude Code's extras do, in plain words, as claude.ts sends them; an extra of another name keeps its tool's description. */
-const EXTRA_SAID: Record<string, string> = { ultracode: "Extra high effort, and it may run workflows", ultrathink: "Asks it to think as hard as it can in every message" };
+const EXTRA_SAID: Record<string, string> = { ultracode: "Extra high, and it may run workflows", ultrathink: "Thinks its hardest in every message" };
 
 /**
   Effort, the same part wherever a level is picked: a head with the label and the level it runs at, whose list the levels
   are on a line under it, then one slider of exactly the model's own levels in its tool's order (never a list of the app's),
   and Claude Code's Ultracode and Ultrathink as switches under it, since they are the app's and not levels the model reports.
+  The head is one line: the label, whose levels they are in grey (cut first when the room runs out, the whole sentence on
+  its tooltip), and the level at its end. `tint` is the paint the pill fills with, the model's maker's colour (brands.ts).
   The engine holds one effort, an extra being one of its values: a switch on sets it, off goes back to the level picked
   before it while this part was up. A model with no levels says so, and offers none.
 */
-export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, said, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; said?: boolean; onPick: (id: string) => void }) {
+export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, said, tint, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; said?: boolean; tint?: string; onPick: (id: string) => void }) {
   const { levels, extras } = effortParts(list);
   const shown = effortShown(list, value, fallback, held);
   // The level picked before an extra went on, for the switch to go back to; kept for this model's levels only.
@@ -359,21 +423,21 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
   const own = !shown.extra && !level;
   return (
     <div className="lc-pk-ef">
-      <div className="lc-pk-eh">
-        <div className="lc-pk-eh-top">
+      <div className="lc-pk-eh" title={tool ? (own ? `The levels as ${tool} lists them. Its own default until you pick one` : `The levels as ${tool} lists them`) : undefined}>
+        <span className="lc-pk-eh-l">
           <b>{label}</b>
-          <span className="lc-pk-eh-now" data-own={!level || undefined}>
-            {name}
-          </span>
-        </div>
-        {tool && <span>{own ? `as ${tool} lists them · its own default until you pick` : `as ${tool} lists them`}</span>}
+          {tool && <span className="lc-pk-eh-by">from {tool}</span>}
+        </span>
+        <span className="lc-pk-eh-now" data-own={!level || undefined}>
+          {name}
+        </span>
       </div>
-      {levels.length > 0 && <EffortSlider levels={levels} shown={shown} fallback={fallback} label={label} name={name} onPick={onPick} />}
+      {levels.length > 0 && <EffortSlider levels={levels} shown={shown} fallback={fallback} label={label} name={name} tint={tint} onPick={onPick} />}
       {extras.map((e) => (
         <div key={e.id} className="lc-pk-xr">
           <span className="lc-pk-xr-t">
             <b>{levelName(e.label)}</b>
-            <span>{EXTRA_SAID[e.id] ?? e.description}</span>
+            <span title={EXTRA_SAID[e.id] ?? e.description}>{EXTRA_SAID[e.id] ?? e.description}</span>
           </span>
           <NamedSwitch name={levelName(e.label)} size="sm" rove checked={shown.extra === e.id} onCheckedChange={(on) => onPick(switchExtra(e.id, on, before.current.level))} />
         </div>
@@ -387,8 +451,11 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
   at and the fill up to the knob, a tick on each stop past it. A press by a stop picks that level (its own again, the tool's default); a drag moves through the
   stops and picks on release. One focus stop: Left and Right change the level, Home and End go to the ends, Delete goes
   back to the tool's default, and Up and Down are left to the card, which walks its parts with them (rove).
+  The fill is the model's maker's colour (`tint`, the app's accent for a maker drawn in ink), and a halftone of dots runs
+  through it, small and faint at the low end and grown and bright at the high end, so more effort reads as more ink before
+  a word is read: the same dot matrix as Home's whale.
 */
-function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels: EffortInfo[]; shown: EffortShown; fallback?: string; label: string; name: string; onPick: (id: string) => void }) {
+function EffortSlider({ levels, shown, fallback, label, name, tint, onPick }: { levels: EffortInfo[]; shown: EffortShown; fallback?: string; label: string; name: string; tint?: string; onPick: (id: string) => void }) {
   const n = levels.length;
   // Where a drag is, drawn while the pointer is down; the pick waits for the release.
   const [drag, setDrag] = useState<number | null>(null);
@@ -420,7 +487,7 @@ function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels
       aria-valuemax={n - 1}
       aria-valuenow={sliderNow(shown.at)}
       aria-valuetext={name}
-      style={{ "--lc-pk-fill": p } as CSSProperties}
+      style={{ "--lc-pk-fill": p, "--lc-pk-tint": tint } as CSSProperties}
       onKeyDown={keys}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -446,7 +513,13 @@ function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels
       }}
       onPointerCancel={() => ((press.current = null), setDrag(null))}
     >
-      <span className="lc-pk-slide-fill" aria-hidden />
+      <span className="lc-pk-slide-fill" aria-hidden>
+        <span className="lc-pk-slide-dots">
+          {DOTS.map((d, i) => (
+            <i key={i} data-odd={d.odd || undefined} style={{ "--d": d.at } as CSSProperties} />
+          ))}
+        </span>
+      </span>
       {levels.map((e, i) => (
         <span key={e.id} className="lc-pk-slide-stop" aria-hidden data-tick={i > at || undefined} data-end={i === n - 1 ? "end" : i === 0 ? "start" : undefined} data-half={(n > 1 && (i === 0 || i === n - 1)) || undefined} style={{ "--lc-pk-at": fillOf(i, n) } as CSSProperties} title={stopTitle(e, i, shown, fallback)} />
       ))}
@@ -454,6 +527,12 @@ function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels
     </div>
   );
 }
+/**
+  The pill's halftone: three rows of DOT_COLUMNS dots across the whole track, row by row, each knowing how far along the
+  track it stands (`at`, 0 to 1, which sizes and lights it) and the middle row set half a step over, so they sit staggered.
+*/
+const DOT_COLUMNS = 32;
+const DOTS = Array.from({ length: DOT_COLUMNS * 3 }, (_, k) => ({ at: (k % DOT_COLUMNS) / (DOT_COLUMNS - 1), odd: Math.floor(k / DOT_COLUMNS) === 1 }));
 /** A stop's name for a mouse user, and on the one it runs at what a press there does. */
 function stopTitle(e: EffortInfo, i: number, shown: EffortShown, fallback?: string) {
   const name = levelName(e.label);
@@ -527,7 +606,7 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
       )}
       {m.price?.note && <p className="lc-pk-pnote">{m.price.note}</p>}
       <div className="lc-pk-rule" />
-      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} onPick={(id) => effort.pick(m.ref, id)} />}
+      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} tint={tintPaint(markOf(m.ref))} onPick={(id) => effort.pick(m.ref, id)} />}
       <button type="button" className="lc-pk-star l-focus" data-rove aria-pressed={fav} onClick={() => star(row.offers.map((x) => x.ref))}>
         <I.star size={14} />
         {fav ? "Starred" : "Star this model"}
@@ -652,6 +731,9 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   const rail = useRef<HTMLDivElement>(null);
   const mid = useRef<HTMLElement>(null);
   const card_ = useRef<HTMLElement>(null);
+  const cardIn = useRef<HTMLDivElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  useEasedHeight(card_, cardIn);
   useEffect(() => {
     if (autoFocus && !open) find.current?.focus({ preventScroll: true });
   }, []);
@@ -690,6 +772,18 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   };
   // Another tool's would-be pair, or the place's own model, never stands in on another tool's rail (picker.ts cardKey).
   const shown = shownOf(dwell.shown) ?? shownOf(cardKey(null, fallback ?? value ?? null, toolId, home));
+  // The side card stands level with the list's top, or drops to its foot for a row pointed at in the list's lower half, so
+  // the card (and its Effort) sits beside the row and the pointer goes straight across to it. Two places only, never in
+  // between; with nothing pointed at, the top.
+  const [low, setLow] = useState(false);
+  useLayoutEffect(() => {
+    const m = mid.current;
+    const row = dwell.shown && m ? m.querySelector<HTMLElement>(`[data-aim="${CSS.escape(dwell.shown)}"]`) : null;
+    if (!m || !row) return setLow(false);
+    const a = m.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    setLow(r.top + r.height / 2 > a.top + a.height / 2);
+  }, [dwell.shown]);
 
   const refocus = (el: () => HTMLElement | null | undefined) => requestAnimationFrame(() => el()?.focus({ preventScroll: true }));
   const enter = (v: string) => (setView(v), refocus(() => mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove][data-on]:not([data-back]), .lc-pk-scroll [data-rove]:not([data-back])")));
@@ -801,7 +895,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       <>
         <BackRow name={effort.label ?? "Effort"} onBack={leave} />
         {/* Left open after a pick, as the card's is: a slider's Left and Right and the switches change it a step at a time. */}
-        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} said={said} onPick={(id) => effort.pick(effortOf, id)} />
+        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} said={said} tint={tintPaint(markOf(effortOf))} onPick={(id) => effort.pick(effortOf, id)} />
       </>
     );
   } else if (view === "card" && shown)
@@ -815,7 +909,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
   else if (extra) body = extra.body;
   else if (tool)
     body = (
-      <div className="lc-pk-models" role="group" aria-label={source === null ? `${tool.label}'s models` : `${tool.label}'s models from ${shortSource(source, tool.label)}`}>
+      <div key={tool.id} className="lc-pk-models lc-pk-fade" role="group" aria-label={source === null ? `${tool.label}'s models` : `${tool.label}'s models from ${shortSource(source, tool.label)}`}>
         {sections.map((s, i) => (
           <Fragment key={`${s.kind}:${s.label}:${i}`}>
             {i > 0 && (s.kind === "maker" || sections[i - 1].kind === "starred") && <div className="lc-pk-rule" role="presentation" />}
@@ -890,7 +984,10 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
         </div>
         {pinned && <div className="lc-pk-pin">{pinned}</div>}
         {head}
-        <div className="lc-pk-scroll">{body}</div>
+        <div ref={scroll} className="lc-pk-scroll">
+          <HoverPlate within={scroll} reset={`${toolId}/${view}/${query.trim() ? "find" : ""}/${source ?? ""}`} />
+          {body}
+        </div>
         {note && <div className="lc-pk-note">{note}</div>}
         {hasFoot && (
           <div className="lc-pk-foot">
@@ -916,8 +1013,13 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
         {side === "line" && shown && <div className="lc-pk-line">{shown.line}</div>}
       </section>
       {wide && (
-        <section ref={card_} className="lc-pk-card lc-pk-side" aria-label={shown?.label ?? "About the model"} onPointerEnter={() => ((overCard.current = true), window.clearTimeout(timer.current))} onPointerLeave={() => (overCard.current = false)}>
-          {shown?.body ?? <p className="lc-who-note">Point at a model to read about it.</p>}
+        <section ref={card_} className="lc-pk-card lc-pk-side" data-low={low || undefined} aria-label={shown?.label ?? "About the model"} onPointerEnter={() => ((overCard.current = true), window.clearTimeout(timer.current))} onPointerLeave={() => (overCard.current = false)}>
+          {/* Measured for the card's eased height; what it holds fades in afresh each time the card turns to another model. */}
+          <div ref={cardIn} className="lc-pk-side-in">
+            <div key={shown?.label ?? ""} className="lc-pk-side-in lc-pk-fade">
+              {shown?.body ?? <p className="lc-who-note">Point at a model to read about it.</p>}
+            </div>
+          </div>
         </section>
       )}
       {foot && <div className="lc-mp-foot lc-pk-under">{foot}</div>}
@@ -1038,7 +1140,7 @@ export function EffortPick({ modelRef, value, held = true, label = "Effort", onC
         <div className="lc-mp" onKeyDown={rove}>
           {/* Left open after a pick: the slider's Left and Right and the switches change it a step at a time. */}
           {/* The stored word, not `shown`: resolved, "" would come in as the tool's default and read as chosen. */}
-          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} said={all.said} onPick={onChange} />
+          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} said={all.said} tint={modelRef ? tintPaint(markOf(modelRef)) : undefined} onPick={onChange} />
         </div>
       )}
     </Pop>

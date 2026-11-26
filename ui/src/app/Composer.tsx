@@ -26,6 +26,7 @@ import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { Glyph, I, ModelMark, StateMark } from "./icons";
+import { tintPaint } from "./brands";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortIn, effortsFor, isModelAgent, levelName, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, wayOf, whoOf, type AccessLevel, type Way } from "./model";
 import { onComposerInsert, toComposer } from "./Find";
 import { loadDraftFiles, saveDraftFiles } from "./draftFiles";
@@ -1812,7 +1813,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           {/* The lead's effort is the same part as on Fusion's card above it (the slider and the switches), not a list of its own. */}
           {line === "effort" && (
             <>
-              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} onPick={(id) => pickLine("effort", id)} />
+              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} tint={leadRuns ? tintPaint(markOf(leadRuns.replace(/^@/, ""))) : undefined} onPick={(id) => pickLine("effort", id)} />
               {effortAuto && <p className="lc-who-note">{`${autoNote("effort")}: ${levelName(efforts.list.find((e) => e.id === effortAuto)?.label ?? effortAuto)}`}</p>}
             </>
           )}
@@ -1893,7 +1894,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           )}
           <div className="lc-pk-rule" />
           {/* The session's own pair holds the effort, so its stored word goes in; another tool's card shows the pair's level from Settings, which a press there picks. */}
-          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} onPick={(id) => pickFusion(t, id)} />
+          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} tint={pLeadModel ? tintPaint(markOf(pLeadModel)) : undefined} onPick={(id) => pickFusion(t, id)} />
         </>
       );
     return {

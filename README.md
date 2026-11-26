@@ -33,12 +33,9 @@ beside the lead for the work it can hand over.
 
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.webp">
-  <img src=".github/readme/hero-light.webp" width="100%" alt="Liner Code 0.3.2: a plan waiting for approval before the agent changes anything">
-</picture>
+<img src=".github/readme/hero.webp" width="100%" alt="Liner Code 0.3.2: Run the coding agents you already pay for, above a light-mode Code screen with a plan and agents at work">
 
-<p align="center"><sub>Liner Code 0.3.2 · a plan, before anything changes</sub></p>
+<p align="center"><sub>Liner Code 0.3.2 · the coding agents you already pay for</sub></p>
 
 </div>
 

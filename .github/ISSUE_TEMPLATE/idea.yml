@@ -1,6 +1,6 @@
-name: An idea
+name: Feature request
 description: Something Liner Code could do, or do better
-labels: [idea]
+labels: [enhancement]
 body:
   - type: textarea
     id: what

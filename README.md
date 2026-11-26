@@ -118,6 +118,7 @@ Stuck? Open a [Discussion](https://github.com/lynnarize/liner-code/discussions).
 something that won't start, Ideas for what it should do, and Early testers for how the beta feels.
 **Help › Report a Problem…** makes a zip with the log and versions and opens an
 [issue](https://github.com/lynnarize/liner-code/issues/new/choose).
+To change the code, start at [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Features
 

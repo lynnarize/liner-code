@@ -1,0 +1,271 @@
+/*
+  Liner MCP's app listener: only /mcp and the OAuth routes, only for its own address or the tunnel's public host, a key on
+  every call, tools listed by level, sessions held to their app, and a revoked app's open call ended. And LinerMcp: the
+  listener is there only while apps are let in, and a tunnel only when you picked one. Fakes only: no real tunnel.
+  Run with `node --test engine/test/mcp-http.test.ts`.
+*/
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { request } from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Thread } from "../../contracts/src/index.ts";
+import { emptyUsage } from "../../contracts/src/index.ts";
+import { McpApps, McpGate } from "../src/mcp-apps.ts";
+import { LinerMcp, startMcpHttp } from "../src/mcp-http.ts";
+import { createServer } from "node:net";
+import { existsSync, readFileSync } from "node:fs";
+import { McpOAuth } from "../src/mcp-oauth.ts";
+import { Outside } from "../src/outside-tools.ts";
+import { startServer } from "../src/server.ts";
+import { Store } from "../src/store.ts";
+import type { TunnelDeps } from "../src/tunnel.ts";
+
+/** A raw request, so the Host header can be anything (fetch won't let a test set it). */
+function hit(port: number, o: { method?: string; path: string; host?: string; headers?: Record<string, string>; body?: unknown }): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
+  return new Promise((resolve, reject) => {
+    const data = o.body === undefined ? undefined : typeof o.body === "string" ? o.body : JSON.stringify(o.body);
+    const req = request({ host: "127.0.0.1", port, agent: false, method: o.method ?? "GET", path: o.path, headers: { host: o.host ?? `127.0.0.1:${port}`, ...(data ? { "content-type": "application/json" } : {}), ...o.headers } }, (res) => {
+      let text = "";
+      res.on("data", (d) => (text += d));
+      // A stream the listener cut off (a revoked app) ends with close, not end.
+      res.on("close", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text }));
+    });
+    req.on("error", reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+function base() {
+  const home = mkdtempSync(join(tmpdir(), "lc-mcp-http-"));
+  const store = new Store(home);
+  store.putProject({ id: "p", name: "Foreshore", path: "/work/foreshore", git: true, createdAt: 1 });
+  store.putThread({ id: "th_1", projectId: "p", title: "Tide chart", agent: "forge", status: "running", access: "edits", turns: 1, usage: emptyUsage(), createdAt: 1, updatedAt: 2 } as Thread);
+  const outside = new Outside(store, { call: async () => null });
+  return { home, store, outside };
+}
+
+async function rig(publicHost: string | null = null) {
+  const { home, store, outside } = base();
+  const apps = new McpApps(home);
+  const gate = new McpGate({ apps, runner: outside, defaultAccess: () => "edits", stdioLevel: () => "trusted", log: () => {} });
+  const oauth = new McpOAuth(apps);
+  const l = await startMcpHttp({ port: 0, apps, gate, oauth, publicHost: () => publicHost });
+  apps.onGone = (id) => (l.endApp(id), gate.dropApp(id));
+  const read = apps.create({ name: "Muse", kind: "muse", level: "read" });
+  const ask = apps.create({ name: "Grok Bot", kind: "grokbot", level: "ask" });
+  const init = async (key: string, host?: string) => {
+    const r = await hit(l.port, { method: "POST", path: "/mcp", host, headers: { authorization: `Bearer ${key}`, accept: "application/json, text/event-stream" }, body: { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } } });
+    return { r, sid: String(r.headers["mcp-session-id"] ?? "") };
+  };
+  return { store, apps, gate, oauth, l, read, ask, init };
+}
+
+test("The app listener answers nothing of the engine's own: no /rpc, /events, /outside, /surface or app pages", async () => {
+  const { l } = await rig();
+  try {
+    for (const path of ["/rpc", "/events", "/outside", "/surface", "/", "/index.html", "/health", "/hooks/r/x"]) {
+      const r = await hit(l.port, { method: path === "/rpc" || path === "/outside" || path === "/surface" ? "POST" : "GET", path, body: path === "/rpc" ? { method: "state.get" } : undefined, headers: { "x-liner-token": "liner-dev" } });
+      assert.equal(r.status, 404, path);
+    }
+  } finally {
+    await l.close();
+  }
+});
+
+test("A call with no key, or a wrong one, is refused before its body is read, and says where to sign in", async () => {
+  const { l } = await rig();
+  try {
+    const r = await hit(l.port, { method: "POST", path: "/mcp", body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
+    assert.equal(r.status, 401);
+    assert.match(String(r.headers["www-authenticate"]), new RegExp(`resource_metadata="http://127.0.0.1:${l.port}/.well-known/oauth-protected-resource/mcp"`));
+    const bad = await hit(l.port, { method: "POST", path: "/mcp", headers: { authorization: "Bearer lc_nope" }, body: { jsonrpc: "2.0", id: 1, method: "initialize" } });
+    assert.equal(bad.status, 401);
+    assert.match(String(bad.headers["www-authenticate"]), /invalid_token/);
+  } finally {
+    await l.close();
+  }
+});
+
+test("Another name for 127.0.0.1 (DNS rebinding) and a foreign Origin are turned away; the tunnel's host is let in", async () => {
+  const { l, read, init } = await rig("liner.tail1234.ts.net");
+  try {
+    assert.equal((await hit(l.port, { path: "/.well-known/oauth-authorization-server", host: `evil.example:${l.port}` })).status, 403);
+    assert.equal((await hit(l.port, { path: "/.well-known/oauth-authorization-server", headers: { origin: "https://evil.example" } })).status, 403);
+    const meta = await hit(l.port, { path: "/.well-known/oauth-authorization-server", host: "liner.tail1234.ts.net" });
+    assert.equal(meta.status, 200);
+    assert.equal(JSON.parse(meta.text).authorization_endpoint, "https://liner.tail1234.ts.net/authorize");
+    const { r } = await init(read.key, "liner.tail1234.ts.net");
+    assert.equal(r.status, 200);
+  } finally {
+    await l.close();
+  }
+});
+
+test("The engine's own server never takes the tunnel's public host", async () => {
+  const { store } = base();
+  const s = await startServer({ store, api: { call: async () => null, ready: Promise.resolve() }, snapshot: async () => ({}) as never, token: "t", port: 0 });
+  try {
+    const r = await hit(s.port, { path: "/health", host: "liner.tail1234.ts.net" });
+    assert.equal(r.status, 403);
+  } finally {
+    s.close();
+  }
+});
+
+test("An app's session lists only the tools its level allows, and its calls go through the gate", async () => {
+  const { l, read, init } = await rig();
+  try {
+    const { r, sid } = await init(read.key);
+    assert.equal(JSON.parse(r.text).result.serverInfo.name, "liner-code");
+    assert.ok(sid);
+    const h = { authorization: `Bearer ${read.key}`, "mcp-session-id": sid, accept: "application/json, text/event-stream" };
+    assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", method: "notifications/initialized" } })).status, 202);
+    const list = JSON.parse((await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } })).text);
+    assert.deepEqual(list.result.tools.map((t: { name: string }) => t.name), ["liner_projects", "liner_sessions", "liner_read", "liner_pull_requests", "liner_issues", "liner_findings"]);
+    const call = JSON.parse((await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "liner_projects", arguments: {} } } })).text);
+    assert.match(call.result.content[0].text, /Foreshore/);
+    // Called anyway, a tool above its level is refused by the gate.
+    // A call that may wait answers as a stream; called anyway, a tool above its level is refused by the gate.
+    const streamed = await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "liner_start", arguments: { project: "p", message: "go" } } } });
+    assert.match(String(streamed.headers["content-type"]), /text\/event-stream/);
+    const start = JSON.parse(/^data: (.*)$/m.exec(streamed.text)![1]);
+    assert.equal(start.id, 4);
+    assert.equal(start.result.isError, true);
+  } finally {
+    await l.close();
+  }
+});
+
+test("One app's session id is no use to another, and a batch or an unknown session is refused", async () => {
+  const { l, read, ask, init } = await rig();
+  try {
+    const { sid } = await init(read.key);
+    const other = await hit(l.port, { method: "POST", path: "/mcp", headers: { authorization: `Bearer ${ask.key}`, "mcp-session-id": sid }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
+    assert.equal(other.status, 404);
+    assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: { authorization: `Bearer ${read.key}`, "mcp-session-id": sid }, body: [{ jsonrpc: "2.0", id: 2, method: "tools/list" }] })).status, 400);
+    assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: { authorization: `Bearer ${read.key}` }, body: { jsonrpc: "2.0", id: 2, method: "tools/list" } })).status, 400);
+    assert.equal((await hit(l.port, { method: "GET", path: "/mcp", headers: { authorization: `Bearer ${read.key}` } })).status, 405);
+  } finally {
+    await l.close();
+  }
+});
+
+test("Revoking an app ends the call it holds open, and its key stops working", async () => {
+  const { l, apps, gate, ask, init } = await rig();
+  try {
+    const { sid } = await init(ask.key);
+    const h = { authorization: `Bearer ${ask.key}`, "mcp-session-id": sid, accept: "application/json, text/event-stream" };
+    const held = hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "liner_send", arguments: { session: "th_1", message: "hi" } } } }).catch((e: Error) => ({ status: -1, text: e.message, headers: {} }));
+    for (let i = 0; i < 100 && !gate.list().length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gate.list().length, 1, "it waits on the card");
+    apps.revoke(ask.app.id);
+    const r = await held;
+    assert.doesNotMatch(r.text, /"Sent/);
+    assert.equal(gate.list().length, 0);
+    assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 6, method: "tools/list" } })).status, 401);
+  } finally {
+    await l.close();
+  }
+});
+
+test("The listener is there only while apps are let in, and the tunnel starts only when you picked one", async () => {
+  const { store, outside } = base();
+  const ran: string[] = [];
+  const deps: TunnelDeps = {
+    which: async (n) => (n === "tailscale" ? "/fake/tailscale" : null),
+    run: async (_cmd, args) => {
+      ran.push(args.join(" "));
+      if (args[0] === "status") return { code: 0, stdout: JSON.stringify({ BackendState: "Running", Self: { DNSName: "liner.tail1234.ts.net." } }), stderr: "" };
+      if (args[0] === "version") return { code: 0, stdout: "1.90.0\n", stderr: "" };
+      return { code: 0, stdout: "{}", stderr: "" };
+    },
+    spawn: () => {
+      throw new Error("no process in this test");
+    },
+  };
+  const mcp = new LinerMcp({ store, outside, env: {}, tunnelDeps: deps, port: 0, log: () => {} });
+  try {
+    await mcp.apply();
+    assert.equal(mcp.port, 0, "off: no listener");
+    store.setSettings({ outside: true });
+    await mcp.apply();
+    assert.ok(mcp.port > 0);
+    assert.equal(ran.length, 0, "no tunnel unless picked");
+    assert.equal((await mcp.status()).publicUrl, undefined);
+    store.setSettings({ mcpReach: "tailscale" });
+    await mcp.apply();
+    const s = await mcp.status();
+    assert.equal(s.publicUrl, "https://liner.tail1234.ts.net/mcp");
+    assert.ok(ran.includes(`funnel --bg ${mcp.port}`));
+    const key = mcp.addApp({ kind: "grokbot", level: "ask" });
+    assert.equal(key.url, "https://liner.tail1234.ts.net/mcp");
+    assert.equal(mcp.addApp({ kind: "other", level: "read" }).app.name, "Another app");
+    assert.equal(mcp.addApp({ kind: "other", level: "read" }).app.name, "Another app 2", "not a second Another app");
+    store.setSettings({ outside: false });
+    await mcp.apply();
+    assert.equal(mcp.port, 0);
+    assert.ok(ran.includes("funnel --https=443 off"), "taken down with the listener");
+  } finally {
+    await mcp.stop();
+  }
+});
+
+/** A port free now, for a listener asked to take that one. */
+const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, "127.0.0.1", () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
+
+test("A listener that failed to start is tried again, and off then on keeps the same port", async () => {
+  const { store, outside } = base();
+  const opts = { store, outside, env: {}, port: -1, log: () => {}, tunnelDeps: { which: async () => null, run: async () => ({ code: 0, stdout: "", stderr: "" }), spawn: () => { throw new Error("no"); } } };
+  const mcp = new LinerMcp(opts);
+  try {
+    store.setSettings({ outside: true });
+    await assert.rejects(mcp.apply());
+    opts.port = await freePort();
+    await mcp.apply();
+    assert.equal(mcp.port, opts.port, "the failed start isn't waited on for good");
+    const held = hit(mcp.port, { method: "POST", path: "/mcp", headers: { authorization: "Bearer lc_x" }, body: {} });
+    await held;
+    store.setSettings({ outside: false });
+    await mcp.apply();
+    store.setSettings({ outside: true });
+    await mcp.apply();
+    assert.equal(mcp.port, opts.port);
+  } finally {
+    await mcp.stop();
+  }
+});
+
+test("Changing what terminal agents may do is written for the stdio server at once", async () => {
+  const { store, outside } = base();
+  outside.url = "http://127.0.0.1:1";
+  const mcp = new LinerMcp({ store, outside, env: {}, port: 0, log: () => {}, tunnelDeps: { which: async () => null, run: async () => ({ code: 0, stdout: "", stderr: "" }), spawn: () => { throw new Error("no"); } } });
+  try {
+    store.setSettings({ outside: true });
+    outside.apply();
+    await mcp.apply();
+    assert.equal(JSON.parse(readFileSync(outside.file, "utf8")).level, "trusted");
+    store.setSettings({ mcpStdioLevel: "read" });
+    await mcp.apply();
+    assert.ok(existsSync(outside.file));
+    assert.equal(JSON.parse(readFileSync(outside.file, "utf8")).level, "read");
+  } finally {
+    await mcp.stop();
+  }
+});
+
+test("Refused sign-ins and registrations through the listener don't use up the limit for a real one", async () => {
+  const { l, oauth } = await rig();
+  try {
+    for (let i = 0; i < 40; i++) assert.equal((await hit(l.port, { path: "/authorize?client_id=forged.sig" })).status, 400);
+    for (let i = 0; i < 40; i++) assert.equal((await hit(l.port, { method: "POST", path: "/register", body: { client_name: "x", redirect_uris: ["http://evil.example/cb"] } })).status, 400);
+    const reg = JSON.parse((await hit(l.port, { method: "POST", path: "/register", body: { client_name: "Claude", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"] } })).text) as { client_id: string };
+    oauth.expect("claude");
+    const q = new URLSearchParams({ response_type: "code", client_id: reg.client_id, redirect_uri: "https://claude.ai/api/mcp/auth_callback", code_challenge: "a".repeat(43), code_challenge_method: "S256" });
+    assert.equal((await hit(l.port, { path: `/authorize?${q}` })).status, 302);
+  } finally {
+    await l.close();
+  }
+});

@@ -24,7 +24,8 @@ const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".j
 type Api = { call(method: string, params: unknown): Promise<unknown>; ready: Promise<unknown> };
 type Hooks = (id: string, key: string, body: unknown, headers: Record<string, string>) => boolean;
 /** `gone`: the caller let go of the call before its answer (its tool cancelled it, or its MCP server went away). */
-type Surface = (key: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal) => Promise<unknown> | null;
+/** `client`: the name a terminal agent gave the stdio server (outside.ts), for Liner MCP's list of apps. */
+type Surface = (key: string, tool: string, args: Record<string, unknown>, gone?: AbortSignal, client?: string) => Promise<unknown> | null;
 type Outside = Surface;
 /** A panel being checked out of sight (agent-tools.ts): its page, its bridge's calls, its report, and word once it has settled. */
 type Check = { page(token: string): string | null; call(token: string, body: Record<string, unknown>): Promise<unknown>; report(token: string, body: unknown): void; settle(token: string): Promise<void> };
@@ -169,10 +170,10 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       // The key first: any page in a browser can post here, and its body is read only once it has shown a key of ours.
       if (o.knows && !(outside ? o.knows.outside(key) : o.knows.surface(key))) return void res.writeHead(401).end("Unauthorized");
       try {
-        const { tool, args } = (await body(req)) as { tool?: string; args?: Record<string, unknown> };
+        const { tool, args, client } = (await body(req)) as { tool?: string; args?: Record<string, unknown>; client?: unknown };
         const gone = new AbortController();
         res.on("close", () => res.writableEnded || gone.abort());
-        const work = take(key, String(tool ?? ""), args ?? {}, gone.signal);
+        const work = take(key, String(tool ?? ""), args ?? {}, gone.signal, typeof client === "string" ? client : undefined);
         if (!work) return void res.writeHead(401).end("Unauthorized");
         // A call can wait on you (an add-on's install card) for minutes: the answer starts at once and a
         // space goes every 20 seconds, which JSON reads past, so the caller's fetch doesn't give up on it.
@@ -267,11 +268,13 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
     res.writeHead(404).end("Not found");
   };
 
-  return new Promise<{ port: number; close: () => void }>((resolve, reject) => {
+  return new Promise<{ port: number; close: () => void; windows: () => number }>((resolve, reject) => {
     server.once("listening", () => {
       const addr = server.address();
       resolve({
         port: typeof addr === "object" && addr ? addr.port : o.port,
+        // How many apps are reading the events now: Scan new PRs only looks while one is (security-watch.ts).
+        windows: () => clients.size,
         close: () => {
           flush();
           for (const c of clients) c.end();

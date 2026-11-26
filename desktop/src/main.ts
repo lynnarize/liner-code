@@ -668,7 +668,7 @@ async function handle(method: string, p: Record<string, unknown>): Promise<unkno
         // It was dropped (signed.ts waiting): the engine takes back its "ready" and says why on the update's notice, once. An
         // engine that doesn't answer reads refused.json at its next launch, and this says it meanwhile.
         await engineRpc("updates.refused", {}).catch(() => {
-          throw new Error("The downloaded update didn't check out, so it was removed. Download it again from Settings › Updates.");
+          throw new Error("The downloaded update didn't check out, so it was removed. Download it again from Settings › About and updates.");
         });
         return;
       }

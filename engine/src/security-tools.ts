@@ -115,6 +115,8 @@ export const TOOLS: ToolDef[] = [
         summary: { type: "string", description: "One sentence: what this lets someone do, or that nothing was found" },
         read: { type: "array", items: { type: "string" }, description: "What you read, a sentence each" },
         missed: { type: "array", items: { type: "string" }, description: "What you did not get to, and why, a sentence each" },
+        verdict: { type: "string", enum: ["real", "not-real", "unsure"], description: "Only when checking an issue against the code: whether what it describes is real here, not real, or you couldn't tell from reading" },
+        severity: { type: "string", enum: SEVERITY, description: "Only with verdict real: how bad it is for this project" },
       },
       required: ["summary"],
     },

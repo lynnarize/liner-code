@@ -1570,7 +1570,7 @@ export function BehindHome({ look, onClose }: { look: Look; onClose: () => void 
                   <p className="lc-bh-sub">
                     To have one drawn, add an AI pictures model in{" "}
                     <button type="button" className="lc-linkbtn l-focus" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" }))}>
-                      Settings › Models
+                      Settings › Agent tools
                     </button>
                     .
                   </p>

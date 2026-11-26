@@ -91,12 +91,14 @@ export type SecurityFinding = {
   scan?: string;
   /** An address outside Liner where it lives too (a GitHub alert's page). */
   url?: string;
+  /** The pull request or issue whose scan found it, when one did. */
+  target?: ScanTarget;
   foundAt: number;
   updatedAt: number;
 };
 
 /** What a scan, a free check or an import hands the store to add: the store fills in the rest (id, key, state, activity). */
-export type NewFinding = Pick<SecurityFinding, "title" | "severity" | "source"> & Partial<Pick<SecurityFinding, "file" | "line" | "endLine" | "rule" | "instance" | "explain" | "area" | "scan" | "url">> & { look?: SecondLook };
+export type NewFinding = Pick<SecurityFinding, "title" | "severity" | "source"> & Partial<Pick<SecurityFinding, "file" | "line" | "endLine" | "rule" | "instance" | "explain" | "area" | "scan" | "url" | "target">> & { look?: SecondLook };
 /** What adding a finding did: added it, merged it into one already there, or left it out because you dismissed it before. */
 export type SecurityFindingAdded = { finding: SecurityFinding; outcome: "new" | "already-open" | "reopened" | "dismissed-before" };
 
@@ -110,9 +112,35 @@ export function findingKey(projectId: string, f: { file?: string; rule?: string;
   return `${projectId}\n${(f.file ?? "").replace(/^\.\//, "")}\n${normalKey(f.rule || f.title)}${f.instance ? `\n${f.instance.trim()}` : ""}`;
 }
 
-/** How far a scan reads: the free checks only (no agent), what this branch changed, or the whole project. */
-export type ScanDepth = "checks" | "branch" | "project";
-export const DEPTH_LABEL: Record<ScanDepth, string> = { checks: "The free checks", branch: "This branch's changes", project: "The whole project" };
+/**
+  How far a scan reads: the free checks only (no agent), what this branch changed, the whole project, or one target someone
+  else opened: a pull request's changes ("pr"), or an issue checked against the code ("issue"). Both read the project as it
+  is and never check anything out over the person's working copy (security-targets.ts).
+*/
+export type ScanDepth = "checks" | "branch" | "project" | "pr" | "issue";
+export const DEPTH_LABEL: Record<ScanDepth, string> = { checks: "The free checks", branch: "This branch's changes", project: "The whole project", pr: "A pull request's changes", issue: "An issue, checked against the code" };
+
+/** A pull request or an issue a scan reads (ScanOptions.target): by its project and its number, or an issue's key ("#42", "LIN-12"). */
+export type ScanTarget = { kind: "pr"; projectId: string; number: number } | { kind: "issue"; projectId: string; key: string };
+/** A target's key for security.targetStatus's answer: "pr:<projectId>:<number>" or "issue:<projectId>:<key>". */
+export const targetKey = (t: ScanTarget) => (t.kind === "pr" ? `pr:${t.projectId}:${t.number}` : `issue:${t.projectId}:${t.key}`);
+/** A target as the UI writes it: "#128", "LIN-12". */
+export const targetName = (t: ScanTarget) => (t.kind === "pr" ? `#${t.number}` : /^\d+$/.test(t.key) ? `#${t.key}` : t.key);
+/** What an issue scan decided: the problem is in the code as described, it isn't, or it couldn't tell from reading. */
+export type IssueVerdict = "real" | "not-real" | "unsure";
+export const VERDICT_LABEL: Record<IssueVerdict, string> = { real: "Real", "not-real": "Not real", unsure: "Couldn't tell" };
+/**
+  A target's last scan, as a list's chip and the dock read it: its state (asking counts as running), what it found open by
+  severity (critical counted in high), its closing sentence, and for an issue what it decided.
+*/
+export type ScanSummary = { scanId: string; threadId: string; state: "running" | "done" | "stopped" | "failed"; high: number; medium: number; low: number; lead?: string; at: number; verdict?: IssueVerdict; /** An issue scan's severity, when it found the issue real. */ severity?: Severity };
+/**
+  Who can scan a target, as the "Who scans #128" menu lists them (security.readers): `id` is what scanTarget takes as
+  `reader` (a model ref "@<provider>:<model>", or a SpecialistSource id "cli:…"), `brand` the tool's id for its mark
+  (brands.ts). `default`: the one the chip runs with. `specialist`: a sealed Specialist scan. `look`: not a reader but the
+  second look a scan ends with (another maker's model), shown under its own heading.
+*/
+export type ScanReaderChoice = { id: string; label: string; brand: string; note?: string; default?: boolean; specialist?: boolean; look?: boolean; /** The tool's name for a group heading: "Claude Code". */ tool?: string };
 /**
   Who reads it. own: a tool you have (`agent`: a model ref "@<provider>:<model>" or one of your agents), the scan's
   lead. specialist: a security model leads (`model`, "@<provider>:<model>"; `source`: the SpecialistSource it came
@@ -137,6 +165,8 @@ export type ScanOptions = {
   lookFirst?: string;
   /** For depth "branch": what it is compared with (the main branch when unset). */
   base?: string;
+  /** For depth "pr" and "issue": the pull request or issue it reads. */
+  target?: ScanTarget;
 };
 export type ScanState = "running" | "asking" | "done" | "stopped" | "failed";
 /** One scan: the free checks alone, or a session of a tool (threadId). */
@@ -173,6 +203,18 @@ export type ScanRecord = {
   /** What it read and what it did not get to, as it said at its end (security_finish), each a sentence. */
   read?: string[];
   missed?: string[];
+  /** For depth "pr" and "issue": what it read, its title then, and the head commit a pull request was at (the watcher scans again when it moves). */
+  target?: ScanTarget;
+  targetTitle?: string;
+  headSha?: string;
+  /** Started by Scan new PRs, not by the person. */
+  auto?: boolean;
+  /** For a pull request: how many files it changes, and what the free checks found in the lines it adds. */
+  targetFiles?: number;
+  changedChecks?: { state: "clean" | "found" | "skipped"; count: number };
+  /** An issue scan's decision (security_finish's verdict), and how bad it is when real. */
+  verdict?: IssueVerdict;
+  verdictSeverity?: Severity;
 };
 
 /**

@@ -141,7 +141,7 @@ export const onNotify = (fn: (e: NotifyEvent) => void) => {
   is drawing which frame, a picture being made), Liner Security's findings and scans changing. A design shown (an item) goes to the state and
   here too, so the session can bring its Design surface up.
 */
-type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" | "security.changed" | "security.scan" | "commands" }> | Extract<EngineEvent, { type: "item" }>;
+type Stream = Extract<EngineEvent, { type: "term" | "term.exit" | "devlog" | "launch" | "settled" | "agent.browser" | "design.changed" | "panel.ai" | "canvas.changed" | "canvas.presence" | "pictures.progress" | "security.changed" | "security.scan" | "commands" | "mcp" }> | Extract<EngineEvent, { type: "item" }>;
 const streamListeners = new Set<(e: Stream) => void>();
 export const onStream = (fn: (e: Stream) => void) => {
   streamListeners.add(fn);
@@ -335,6 +335,7 @@ function apply(e: Numbered) {
     case "security.changed":
     case "security.scan":
     case "commands":
+    case "mcp":
       for (const fn of streamListeners) fn(e);
       return;
   }

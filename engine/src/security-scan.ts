@@ -100,7 +100,7 @@ export async function branchOf(path: string, env: NodeJS.ProcessEnv, base?: stri
 }
 
 /** Who a scan reads with unless you pick: the project's own tool, else the one Home starts with, else the Demo when it's shown. */
-function ownDefault(sec: Security, projectId: string): string {
+export function ownDefault(sec: Security, projectId: string): string {
   const providers = sec.host.providers();
   const p = sec.project(projectId);
   if (p.agent) return p.agent;
@@ -110,7 +110,7 @@ function ownDefault(sec: Security, projectId: string): string {
   const any = providers.find((x) => x.available && x.adapter && x.id !== "demo" && x.signedIn !== false);
   return any ? `@${any.id}:${any.models.find((m) => m.isDefault)?.id ?? any.models[0]?.id ?? "default"}` : "";
 }
-const refOf = (agent: string) => (agent.startsWith("@") ? agent.slice(1) : agent);
+export const refOf = (agent: string) => (agent.startsWith("@") ? agent.slice(1) : agent);
 const providerOf = (sec: Security, agent: string): ProviderInfo | undefined => {
   const id = refOf(agent).split(":")[0];
   return sec.host.providers().find((p) => p.id === id);
@@ -248,11 +248,23 @@ export function shownLine(o: Pick<ScanOptions, "depth" | "lookFirst">) {
   return `${ask} ${/[.!?]$/.test(first) || first.split(/\s+/).length > 12 ? first : `Look at ${first.replace(/^(?:at|look at)\s+/i, "")} first.`}`;
 }
 
-/** Starts a scan: the free checks alone for depth "checks", else a Read only session tagged as a scan (and the checks beside it). */
-export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: ScanRecord; thread?: Thread }> {
+/**
+  What a scan of a pull request or an issue hands startScan (security-targets.ts): its title, what its record carries (the
+  target, its head commit, whether Scan new PRs started it), what the person reads of its first message, and the message
+  itself, built once the scan's record is there (it runs its own free checks on the lines the pull request adds).
+*/
+export type TargetStart = {
+  title: string;
+  record: Pick<ScanRecord, "target" | "targetTitle" | "headSha" | "auto" | "targetFiles">;
+  shown: string;
+  prompt: (c: { scanId: string; model: ThreatModel; known: { open: number; dismissed: number }; sealed: boolean; lookBy?: string; stopsAfter?: number }) => Promise<string>;
+};
+
+/** Starts a scan: the free checks alone for depth "checks", else a Read only session tagged as a scan (and the checks beside it). A pull request's or an issue's comes with its `target`. */
+export async function startScan(sec: Security, o: ScanOptions, target?: TargetStart): Promise<{ scan: ScanRecord; thread?: Thread }> {
   wake(sec);
   const p = sec.project(o.projectId);
-  if (!["checks", "branch", "project"].includes(o.depth)) throw new Error("How far is the free checks, this branch's changes or the whole project.");
+  if (!["checks", "branch", "project"].includes(o.depth) && !(target && (o.depth === "pr" || o.depth === "issue"))) throw new Error("How far is the free checks, this branch's changes or the whole project.");
   // Stops after is optional: unset (or 0) is no limit, and the scan runs till it finishes or you stop it.
   const asked = Number(o.stopsAfter);
   const stopsAfter = asked > 0 ? Math.max(1, Math.min(240, Math.round(asked))) : undefined;
@@ -289,9 +301,9 @@ export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: 
   if (o.depth === "branch" && !branch!.files.length) throw new Error(`${branch!.name} has no changes${branch!.base ? ` against ${branch!.base}` : ""}. Scan the whole project instead.`);
   const secondLook = str(o.secondLook, 200)?.replace(/^@/, "");
   const lookFirst = str(o.lookFirst, 600);
-  const title = titleOf_(p.name, o.depth);
+  const title = target?.title ?? titleOf_(p.name, o.depth);
   const reader = r.kind === "specialist" ? { kind: r.kind, source: r.source, model: agent, ...(r.effort ? { effort: r.effort } : {}), ...(sidekick ? { sidekick } : {}) } : r;
-  const rec = sec.newScan({ projectId: p.id, depth: o.depth, reader, title, ...(stopsAfter ? { stopsAfter, endsAt: Date.now() + stopsAfter * clock.minuteMs } : {}), ...(secondLook ? { secondLook } : {}) });
+  const rec = sec.newScan({ projectId: p.id, depth: o.depth, reader, title, ...(stopsAfter ? { stopsAfter, endsAt: Date.now() + stopsAfter * clock.minuteMs } : {}), ...(secondLook ? { secondLook } : {}), ...(target?.record ?? {}) });
   // The Demo reading its own sample: the free checks aren't run for real (no npm audit on the sample).
   const demo = r.kind === "own" && refOf(agent).split(":")[0] === "demo";
   const live = keepLive(sec, rec.id, { asked: 0, write: o.threatModel?.write !== false, pending: [], tries: 0 });
@@ -310,14 +322,17 @@ export async function startScan(sec: Security, o: ScanOptions): Promise<{ scan: 
     let checks: FreeCheckRun | undefined;
     try {
       // On the Demo the sample's own result stays (the Overview reads as board A); anywhere else they run now.
-      checks = demo ? sec.checks(p.id) : await runChecks(sec, p.id, rec.id);
+      // A pull request's or an issue's scan runs its own (on the lines it adds), as its message is built.
+      checks = target ? undefined : demo ? sec.checks(p.id) : await runChecks(sec, p.id, rec.id);
     } catch {
       // A check that can't run doesn't hold the scan up: the scan says nothing of it.
     }
     const all = sec.findings(p.id);
-    const prompt = scanPrompt({ project: p.name, depth: o.depth as "branch" | "project", branch, lookFirst, stopsAfter, model: sec.model(p.id), write: live.write, checks, known: { open: all.filter((f) => f.state === "open").length, dismissed: all.filter((f) => f.state === "dismissed").length }, sealed, ...(secondLook ? { lookBy: sec.host.providers().find((x) => x.id === splitModel(secondLook).provider)?.label ?? secondLook } : {}) });
+    const known = { open: all.filter((f) => f.state === "open").length, dismissed: all.filter((f) => f.state === "dismissed").length };
+    const lookBy = secondLook ? (sec.host.providers().find((x) => x.id === splitModel(secondLook).provider)?.label ?? secondLook) : undefined;
+    const prompt = target ? await target.prompt({ scanId: rec.id, model: sec.model(p.id), known, sealed, ...(lookBy ? { lookBy } : {}), ...(stopsAfter ? { stopsAfter } : {}) }) : scanPrompt({ project: p.name, depth: o.depth as "branch" | "project", branch, lookFirst, stopsAfter, model: sec.model(p.id), write: live.write, checks, known, sealed, ...(lookBy ? { lookBy } : {}) });
     if (live.stopped) return;
-    await sec.host.call("thread.send", { id: thread.id, text: prompt, shown: { text: shownLine({ depth: o.depth, lookFirst }) } });
+    await sec.host.call("thread.send", { id: thread.id, text: prompt, shown: { text: target?.shown ?? shownLine({ depth: o.depth, lookFirst }) } });
   })().catch((e) => {
     sec.patchScan(rec.id, { state: "failed", finishedAt: Date.now(), endsAt: undefined, error: e instanceof Error ? e.message : String(e) });
     clearInterval(live.timer);
@@ -644,7 +659,7 @@ export const DATA_NOTE = "The finding below came from a scan, a report or the re
 /** Text put inside <finding>…</finding>: a closing tag in it can't end the quote early. */
 const quoted = (s: string) => s.replace(/<\/?\s*(?:finding|second-look)\b[^>]*>/gi, (m) => m.replace("<", "‹"));
 /** A finding as a brief, quoted: what is wrong, where, who and what, the steps, the code. */
-function briefOf(f: SecurityFinding): string {
+export function briefOf(f: SecurityFinding): string {
   return `${DATA_NOTE}\n\n<finding>\n${quoted(briefText(f))}\n</finding>`;
 }
 function briefText(f: SecurityFinding): string {
@@ -928,7 +943,7 @@ export async function call(sec: Security, name: string, args: Record<string, unk
         if (!explain) return fail("Give its lead (one sentence: what someone can do with it) and what is wrong.");
         const line = int(args.line);
         const endLine = int(args.end_line);
-        const n: NewFinding = { title, severity, source: "agent", ...(file ? { file } : {}), ...(line ? { line } : {}), ...(endLine && line && endLine >= line ? { endLine } : {}), ...(str(args.rule, 80) ? { rule: str(args.rule, 80), instance: `t:${normalKey(title)}` } : {}), ...(areaOf(sec, projectId, args.area) ? { area: areaOf(sec, projectId, args.area) } : {}), scan: scan!.id, explain };
+        const n: NewFinding = { title, severity, source: "agent", ...(file ? { file } : {}), ...(line ? { line } : {}), ...(endLine && line && endLine >= line ? { endLine } : {}), ...(str(args.rule, 80) ? { rule: str(args.rule, 80), instance: `t:${normalKey(title)}` } : {}), ...(areaOf(sec, projectId, args.area) ? { area: areaOf(sec, projectId, args.area) } : {}), scan: scan!.id, ...(scan!.target ? { target: scan!.target } : {}), explain };
         // Counted on its scan in the same write as the finding (a scan's record that went between: the finding stays, uncounted).
         const added: SecurityFindingAdded = sec.add(projectId, n, byOf(t, at.sidekick), scan!.id);
         sec.changed(["findings"], projectId);
@@ -974,7 +989,10 @@ export async function call(sec: Security, name: string, args: Record<string, unk
         const summary = str(args.summary, 500);
         if (!summary) return fail("Give the one sentence: what this code lets someone do, or that nothing was found.");
         const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x, 500)).filter((x): x is string => Boolean(x)).slice(0, 12) : undefined);
-        sec.patchScan(scan!.id, { summary, ...(list(args.read) ? { read: list(args.read) } : {}), ...(list(args.missed) ? { missed: list(args.missed) } : {}) });
+        // An issue's scan says what it decided: real (and how bad), not real, or it couldn't tell.
+        const verdict = scan!.depth === "issue" && (args.verdict === "real" || args.verdict === "not-real" || args.verdict === "unsure") ? args.verdict : undefined;
+        const bad = String(args.severity ?? "").toLowerCase() as Severity;
+        sec.patchScan(scan!.id, { summary, ...(list(args.read) ? { read: list(args.read) } : {}), ...(list(args.missed) ? { missed: list(args.missed) } : {}), ...(verdict ? { verdict } : {}), ...(verdict === "real" && SEVERITIES.includes(bad) ? { verdictSeverity: bad } : {}) });
         return text("Noted. Now say the same to the person in your last message.");
       }
       default:

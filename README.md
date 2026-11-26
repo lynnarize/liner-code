@@ -96,7 +96,7 @@ with Apple's command line tools (the Terminal uses Python), and the first run sa
 missing: `xcode-select --install`. On Windows, `git` needs to be on your PATH. The first run also
 asks for [ripgrep](https://github.com/BurntSushi/ripgrep) when an agent's search would have nothing
 to run. You can press Start before a tool is ready. A session needs one of those four, signed in,
-or an API key for Claude or Codex under Settings › Models.
+or an API key for Claude or Codex under Settings › Agent tools.
 
 **On a Mac it updates itself**, after you move it to Applications or another folder you can write.
 Opened from the disk image, macOS keeps it in a temporary folder and the app asks you to move it
@@ -109,7 +109,7 @@ attribute on the app it installs. The published betas are signed ad hoc and carr
 ID, so an update is checked for a signature that still holds and is not pinned to a developer. A
 copy a developer has signed takes an update only from that same Team ID. Windows doesn't update
 itself yet: run the next setup, which puts the new version in place of the old one. Settings ›
-Updates starts on Automatically, and can be Just tell me or Off. The checks are written out under
+About and updates starts on Automatically, and can be Just tell me or Off. The checks are written out under
 [Updates](#updates).
 
 On Windows the Terminal is PowerShell, without full-screen programs for now. Building it from a
@@ -214,7 +214,7 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
   opens the tool's own login in Terminal. It never sees, stores or forwards a sign-in.
 - **API keys** you add (an endpoint's too) are sealed in this Mac's keychain and handed to the
   tool's process in memory. For Claude, Anthropic asks apps built on its Agent SDK to use an API key (see its
-  [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Models lets Claude
+  [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Agent tools lets Claude
   Code bill to your Anthropic key.
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
   your account. Liner Code has no server in between and never sends your work anywhere. Once a day
@@ -236,9 +236,56 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
 - **OpenCode runs as a local server.** Liner Code starts `opencode serve` on 127.0.0.1 and talks
   to it over HTTP; the sessions in Liner Code share that one process, which stops a minute after the
   last one closes. Its model traffic goes to its providers as before.
+- **Pull requests and issues come through your own sign-ins.** The Pull requests and Issues pages
+  read each GitHub project's through `gh` in its folder (`gh pr list`, `gh pr view`, `gh issue
+  list`, `gh issue view`, and `gh api user` to tell which are yours), each list kept for the refresh
+  Settings › Source control & issues sets (two minutes unless you change it). Once you've opened
+  Pull requests on this Mac, the sidebar reads the open ones by itself to show when one waits on
+  your review: five seconds after the window comes up, then at that refresh (a minute at the
+  least) while the window shows; a refresh of 0 turns that off. Open on GitHub, Open on Linear and
+  Comment open the page in your browser, and Merge asks you first. Settings › Source control &
+  issues asks each tool it finds (git, gh, glab, az, fj or tea, Cursor's `origin`) for its version
+  and whether it's signed in; only names come back, never a token.
+- **Linear, once you add its key.** A Linear key you add in Settings › Source control & issues is
+  sealed in the keychain with the others and goes to api.linear.app and nowhere else: once when you
+  add it, to check it, then whenever Linear's issues are listed or opened while its switch is on.
+  A Bitbucket app password can be kept there too; this version sends it nowhere yet.
+- **Scans of pull requests and issues run on your own tool.** A scan is a read-only Liner Security
+  session of your own agent tool, on your plan, and a model of another maker, when one is ready,
+  gives what it found a second look. It reads a pull request through `gh` (`gh pr view`,
+  `gh pr diff`), or a GitHub issue (`gh issue view`; Linear's can't be scanned yet), and when the pull request's head commit isn't on
+  this Mac it fetches it from your `origin` (`git fetch origin pull/<n>/head`: objects only, no
+  branch, no checkout). Its summary goes on the pull request or issue (`gh pr comment`, `gh issue
+  comment`) only when you press Comment and then press it again. Scan new pull requests is off
+  until you turn it on in Settings › Source control & issues; then, while a window is open and no
+  more often than every five minutes, it lists your projects' open pull requests, asks `gh pr view`
+  for the head commit of those that changed (fifty at most a look), and scans one that's new or has
+  new commits: one at a time, never a draft, at most ten a day.
+- **Liner MCP lets apps outside Liner Code in, when you say so.** Nothing is let in until you turn
+  on Let apps outside Liner Code in (Settings › Liner MCP). Then a terminal agent reaches it on
+  stdio through `~/.liner-code/outside.json`, and other apps through a listener of its own on
+  127.0.0.1 (port 7318, or a free one), which takes only a key you made for that app (shown once,
+  kept only as a hash, good for 30 days, revoked in one press) or a sign-in you allowed on a card in
+  the app, which only comes within 15 minutes of starting it from Add an app. Each app has a level:
+  Read only; Asks first, where each start, message, answer, scan or stop waits for your Allow and
+  the sessions it starts run at Manual; or Trusted, whose sessions run at your default access but
+  never Full access. A message or an answer to a session at Full access always asks. No app answers
+  a permission ask or changes a setting, and each gets 60 calls a minute. A terminal agent you
+  revoke is turned away by the name it gives until you let it in again, and none gets in while the
+  switch is off. None of it is on the internet unless you pick a way under From
+  the internet: Tailscale Funnel (Liner Code runs `tailscale funnel --bg <port>`, reads the address
+  from `tailscale status --json`, and takes it down with `tailscale funnel --https=443 off`), a
+  Cloudflare quick tunnel (`cloudflared tunnel --url http://127.0.0.1:<port>`, through Cloudflare,
+  with a new trycloudflare.com address each time it starts), or an https address of your own that
+  already forwards there. Either way only that listener is reachable, never the rest of the app.
+- **Tell an app, if you set it up.** Give an https address under Settings › Liner MCP › Tell an
+  app, and whenever a session starts waiting on you Liner Code posts one line there: that a session
+  needs you, its title, and "Liner Code", with your secret as a bearer token if you gave one (kept in
+  the keychain). Nothing of the session's code or words goes with it. It goes whether or not apps
+  are let in, to https only, with no redirects, tried three times at most.
 - **AI pictures go to the endpoint you add.** When an agent or you ask for an AI picture in Liner
   Design, or you press Draw it for the dots behind Home, the words go to the AI pictures endpoint
-  set up in Settings › Models, with its key, billed to that account. Nothing goes there until you
+  set up in Settings › Agent tools, with its key, billed to that account. Nothing goes there until you
   add one. A picture of your own for the dots stays on this Mac.
 - **Links into the app.** Liner Code opens `liner-code://` links: one that names a session opens
   it, and one that names a folder asks you before adding it as a project.
@@ -246,7 +293,7 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
   model of another maker than the ones that wrote it whenever one is ready. So with Claude Code and
   Codex both here, diffs Claude writes also go to OpenAI through Codex, billed to that account. A
   pair's sidekick can be another maker's model too, and then its briefs and what it reads go to
-  that maker. Turn the Reviewer off in Settings › Agentic features, or for one session from its
+  that maker. Turn the Reviewer off in Settings › Fusion and review, or for one session from its
   word in the session's bar.
 - **Everything else is on this Mac**: sessions, snapshots and settings in `~/.liner-code` (see
   Where things live).
@@ -318,7 +365,7 @@ changes, and "done" is said once, when everything your message set off is done.
 
 **Picking who works.** The model picker starts with **Pair**, **Best** (the lead alone) and
 **Fast** (the sidekick alone), filled in from what's ready, then every model by tool, then your
-agents. Picking Pair shows who leads and who works beside it. Settings › Agentic features has two
+agents. Picking Pair shows who leads and who works beside it. Settings › Fusion and review has two
 parts: your pair (the lead, the sidekick, and what new sessions start with) and the Reviewer.
 
 | | Lead | Sidekick | Reviewer |
@@ -366,7 +413,7 @@ useful line. One of your agents can run alone instead.
 - **Small things go to the quickest model.** Commit messages, pull request text and Reviewer
   decides (ALLOW or ASK for one step) run on Haiku or a mini model, not the session's own.
 - **Checks have a limit.** At most 2 fix rounds by default (3 at most); after that it's yours.
-- **A spending cap.** Settings › General › Spending can stop a session at a dollar amount; your
+- **A spending cap.** Settings › General › Spend limit can stop a session at a dollar amount; your
   next message is the go-ahead for another cap's worth. A sidekick's use counts toward it. (Claude
   Code reports cost; other tools can't be held to it.)
 - **You can see it all.** Every turn's tokens, cache reads and cost, by agent and model, go to
@@ -480,13 +527,17 @@ docs/BACKEND.md            what the backend needs, now and later
 | The window's frame and material | `~/Library/Application Support/Liner Code/shell.json` |
 | Engine log | `~/Library/Logs/Liner Code/engine.log`, and `engine.previous.log` from the launch before (a test home's own: `$LINER_HOME/logs`) |
 | A downloaded update, waiting to go in | `~/.liner-code/updates/` |
+| Apps let in through Liner MCP: their levels, last call, and only the hashes of their keys and sign-ins | `~/.liner-code/mcp-apps.json`, readable only by you |
+| Where a terminal agent finds the engine, and its key and level (only while apps are let in) | `~/.liner-code/outside.json`, readable only by you |
+| What Scan new pull requests has seen: each pull request's head commit and the day's count | `~/.liner-code/security/watch.json` |
+| A Linear key, a Bitbucket app password, Tell an app's secret | with the API keys, in `keys.json` |
 
 </details>
 
 ## Updates
 
 Liner Code keeps itself and the agent tools current; both show on Home's corner and in
-Settings › Updates, each set to Automatically, Just tell me, or Off. Liner Code itself starts on
+Settings › About and updates, each set to Automatically, Just tell me, or Off. Liner Code itself starts on
 Automatically. The tools are yours, so they start on Just tell me.
 
 - **Liner Code** looks at the latest release of its GitHub repository (a draft or a release marked
@@ -528,7 +579,7 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |
 | Cursor, Grok Build | ACP (`cursor-agent acp`, `grok agent stdio`) | yes | when the agent can | Beta: the drivers haven't been run against the real tools yet |
 | Demo | scripted | yes | – | edits only its sample project |
-| API endpoints | through Claude Code, Codex or OpenCode, by protocol | as that tool | as that tool | Settings › Models › API endpoints |
+| API endpoints | through Claude Code, Codex or OpenCode, by protocol | as that tool | as that tool | Settings › Agent tools › API endpoints |
 
 ### API endpoints
 
@@ -543,7 +594,7 @@ with no agent loop of Liner Code's own (`engine/src/providers/endpoint.ts`):
 | OpenAI Responses | Codex | a model provider of its own (`-c model_provider=…`, `wire_api = "responses"`), given to its app server at start |
 | OpenAI Chat Completions | OpenCode | a provider of its own in `OPENCODE_CONFIG_CONTENT` (`@ai-sdk/openai-compatible`) |
 
-Add one in Settings › Models › API endpoints. Pick its service and the address and protocol fill
+Add one in Settings › Agent tools › API endpoints. Pick its service and the address and protocol fill
 in (`ui/src/app/services.ts`, each address checked against the service): Anthropic, DeepSeek,
 Kimi, GLM (Z.ai and Zhipu) and MiniMax through Claude Code; OpenAI and xAI through Codex;
 OpenRouter, Gemini, Qwen, Groq, Mistral, Together, Fireworks, SiliconFlow, NVIDIA NIM and Ollama

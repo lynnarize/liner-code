@@ -9,6 +9,9 @@ what the agents themselves send to their model providers. The one exception is a
 count the app sends once a day (see README, "Your accounts and your data"); Settings can turn it off.
 If you set up an AI pictures model, the words of a picture you ask for go to that endpoint of yours
 (see AI pictures below).
+If you add a Linear key, Linear's issues come from api.linear.app with it. If you set up Tell an app,
+one line goes to your webhook when a session needs you. Apps outside Liner Code reach it only once you
+let them in, and from the internet only through a way in you pick (see Liner MCP below).
 
 A cloud backend becomes necessary only for features on the roadmap: the phone app and remote
 access, routines triggered by webhooks, sharing with a team, licences and updates. The last part
@@ -42,16 +45,21 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
                                           ├─ OpenCode      (`opencode serve` on 127.0.0.1, HTTP + SSE, one process shared; ACP on older versions)
                                           ├─ git           (snapshots under refs/liner/, worktrees)
                                           ├─ gh            (pull requests, checks; the watch reads a session's open one each minute while its checks run, for two hours at most, or it waits on it; routines poll it; `#` in the message box lists open ones)
+                                          │                (the Pull requests and Issues pages, the sidebar's review dot, scans of a pull request or an issue, Scan new PRs)
+                                          ├─ Linear        (POST api.linear.app/graphql with the key you added, for the Issues page)
+                                          ├─ tailscale, cloudflared  (a way in from the internet to Liner MCP's listener, only the one you pick)
                                           ├─ python3 pty   (the Terminal surface)
                                           ├─ xcrun simctl  (the Device surface)
                                         POST /hooks/r/<id>?key=…  a routine's webhook (its own secret)
+                                        POST /outside    the stdio MCP server's calls (outside.ts), with the key in outside.json
+                                        127.0.0.1:7318   Liner MCP's own listener, while apps are let in: /mcp and OAuth, nothing else
                                         127.0.0.1:<n>    one proxy per dev-server port, for the Browser surface
 ```
 
 - **One contract.** `contracts/src/index.ts` types every item, event and method. The engine and
   the app both import it; change a shape there and both sides follow.
 - **Events, not polling.** The engine pushes `thread`, `item`, `delta` (streamed text),
-  `providers`, `settings`, `keys`, `notify`, `groups`, `routine`, `run`, `settled`, and the
+  `providers`, `settings`, `keys`, `notify`, `groups`, `routine`, `run`, `settled`, `mcp`, and the
   surfaces' streams (`term`, `devlog`). The app applies them to one store and re-renders at most
   once a frame (a timer stands in when the window paints no frames, so the Dock badge keeps up).
 - **The Reviewer.** After a coder turn that edited files, a model from another family reads the
@@ -68,6 +76,40 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   starts a run; AI steps read, audit or work in a session; then the gate, in code, checks its
   rules and only it acts (merge within a daily limit, comment, label, close, hand it to you).
   `routine.test` does everything but act.
+- **Liner MCP** (`mcp-http.ts`, `mcp-apps.ts`, `mcp-oauth.ts`, `tunnel.ts`, `mcp-webhook.ts`). Apps outside Liner Code
+  (Claude Code or Codex in a terminal, Claude, ChatGPT, Grok Bot, Muse) list and read sessions, pull requests, issues and
+  findings, start a session, message it, wait for it, scan a pull request or an issue, and stop one. Nothing is let in until
+  Settings › Liner MCP's Let apps outside Liner Code in is on. A terminal agent comes in on stdio (`outside.ts`, through
+  `/outside`); any other app through a listener of its own on 127.0.0.1:7318 (or a free port), which answers only POST/DELETE
+  `/mcp` with a Bearer key or OAuth access token, and the OAuth routes (`/.well-known/…`, `/register`, `/authorize`,
+  `/token`). An app added by hand gets an `lc_…` key, shown once and kept only as its SHA-256 in `mcp-apps.json` (0600),
+  for 30 days; an app that signs in itself gets a card in the app only within 15 minutes of your picking it in Add an app
+  (`mcp.expectSignIn`), and is let in only once you allow it there (at most 10 cards a minute; allowing one closes the
+  window; `/register`: 300 registrations a minute). Each
+  call goes through one gate at the app's level: Read only; Asks first, where a start, send, answer, scan or stop waits up
+  to ten minutes for your Allow; Trusted, whose sessions run at your default access but never Full access. A message or an
+  answer to a session at Full access always asks. A revoked terminal agent is turned away by its name until let in again. No app answers a permission ask or changes a
+  setting, and each gets 60 calls a minute. From the internet (off unless picked): Tailscale Funnel (`tailscale funnel --bg
+  <port>`, taken down with `tailscale funnel --https=443 off`), a Cloudflare quick tunnel (`cloudflared tunnel --url
+  http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. The engine's own
+  server still takes no host but its own. Tell an app posts `{event, session title, app}` with your secret to your https
+  webhook when a session starts waiting on you: no redirects, 10 seconds, two retries.
+- **Pull requests and issues** (`worklists.ts`, `sourcecontrol.ts`). GitHub's come from `gh` in each project's folder
+  (`gh pr list`, `gh pr view`, `gh issue list`, `gh issue view`, `gh api user`), Linear's from its API with your key; each
+  list is kept for Settings › Source control & issues' refresh (`worklistRefresh`, 120 seconds), and a project that can't be
+  read is named with why. Once Pull requests has been opened on this Mac, the sidebar reads the open list every refresh
+  (60 seconds at the least, 0 for never) while the window shows, for its review dot. Open a session on it and Start a
+  session from it use `thread.create`, Merge uses `pr.merge` after a confirm. The Source control scan asks each tool it
+  finds for its version and its sign-in, never a token; a Linear key or a Bitbucket app password sits in the keychain as
+  `scm.linear` or `scm.bitbucket` (the Bitbucket one is used for nothing yet).
+- **Scans of pull requests and issues** (`security-targets.ts`, `security-watch.ts`). A read-only Liner Security session of
+  your own tool (sealed when a Specialist runs it), reading through `gh pr view`, `gh pr diff` or `gh issue view` (a Linear
+  issue can't be scanned yet); a head
+  commit that isn't here is fetched with `git fetch --no-tags --no-write-fetch-head origin pull/<n>/head` (objects only).
+  Comment posts its summary with `gh pr|issue comment --body-file -` on a second press. Scan new PRs, off by default, is a
+  60-second timer that looks every five minutes at the least while a window is open, and scans a pull request that opens or
+  gets new commits: one at a time, never a draft, at most ten a day, resting one whose scan keeps failing to start
+  (`security/watch.json`).
 - **Worktrees.** A session can run in a worktree of its own; a project's setup command (like
   `npm install`) runs there before the first turn.
 - **Turns.** For each message: snapshot the tree, open or reuse the provider session, map its
@@ -80,14 +122,14 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   steering pushes into a running Claude Code turn at its next step.
 - **Model lists.** Each tool is asked which models it has, with each model's effort levels, by a listing that runs no
   model turn: at launch when the saved list (`models.json`) is half a day old or the tool's version changed, on Look
-  again in Models, and in Check my tools (30 seconds each). Claude Code: the Agent SDK's `supportedModels()` on a session
+  again in Agent tools, and in Check my tools (30 seconds each). Claude Code: the Agent SDK's `supportedModels()` on a session
   with no prompt (`~/.liner-code/probe`, your user settings only, 30 seconds), and a second one with the older models in
   its picker (`modelPicker`) only when its answer isn't kept yet for that account and `claude --version`. Codex: `codex
   debug models` (20 seconds). Antigravity: `agy models` (30 seconds). OpenCode 2 and later: `opencode api --standalone GET /api/model`
   in the probe folder, its whole process group ended past 30 seconds or on a stop; an older OpenCode, or one whose list
   fails, and every other ACP agent: `initialize` and `session/new` in the probe folder (45 seconds), then it is ended. All
   run with the engine's environment; only a model's id, name, description, group, levels, default and price are kept.
-- **AI pictures** (optional). An endpoint of yours that speaks OpenAI's Images API, set up in Settings › Models
+- **AI pictures** (optional). An endpoint of yours that speaks OpenAI's Images API, set up in Settings › Agent tools
   (`settings.pictures`, its key in the keychain as `pictureKey(id)`). The engine posts to its `/images/generations`
   for Liner Design's pictures (your press in the Picture pane, `pictures.make`; an agent's `design_picture` after a card,
   unless the design file says not to ask), with the lean's colours, and for one landscape picture for the dots behind
@@ -121,6 +163,9 @@ into the `TurnSink`. Any agent that speaks the Agent Client Protocol is one line
 - **Approvals** come from the agent's own permission system (Claude Code's `canUseTool`, ACP's
   `session/request_permission`). In Full access the **guard** still asks before force pushes,
   `rm -rf`, `sudo`, publishing, `curl | sh` and similar.
+- **Liner MCP's listener** is a second door on 127.0.0.1, open only while apps are let in. It serves `/mcp` and OAuth and
+  nothing of the app (`/rpc`, `/events`, `/surface`, `/outside` and the UI are 404 there), answers only its own address or
+  the tunnel's public host, and lets a call in only with an app's key or a sign-in you allowed, at that app's level.
 - ACP agents read and write files only **inside the project**; paths that resolve outside it are refused.
 - Snapshots go through a **throwaway git index**: your staging area is never touched, and undo
   writes files back without changing what's staged.

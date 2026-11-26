@@ -41,6 +41,7 @@ import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
 import { draftRead, draftSaves, wordRead } from "./kept";
 import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
+import { UsageRing } from "./UsageRing";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -1473,6 +1474,8 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
             <span className="lc-grow" />
             {editing ? <span className="lc-tray-note" title="Enter saves it, Esc leaves it as it was">Editing a queued message</span> : comparing && <span className="lc-tray-note">Sending to {compare.length + 1} models</span>}
             {steerNote}
+            {/* How much of the chosen tool's plan limit is used now, beside who works: gone when the tool reports none. */}
+            <UsageRing model={model} />
             <span className="lc-seg">
               <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="end" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} out={pickerOut("end", pickerWide)} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
                 {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} solo={aside} side={pickerWide ? "card" : "line"} />}
@@ -1973,7 +1976,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                   <span className="lc-who-opt-t">New agent</span>
                 </button>
               ) : (
-                yours.length === 0 && <p className="lc-who-note">None yet. Settings › Team makes one.</p>
+                yours.length === 0 && <p className="lc-who-note">None yet. Settings › Agents and modes makes one.</p>
               )}
             </>
           ),

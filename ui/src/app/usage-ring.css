@@ -1,0 +1,32 @@
+/* The message box's usage ring (UsageRing.tsx): a 14px ring and the percentage in the row's second ink, amber from 80%. */
+.lc-uring {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-uring > span {
+  color: var(--l-ink-2);
+}
+.lc-uring[data-high] {
+  color: var(--l-warn-text);
+}
+.lc-uring[data-high] > span {
+  color: var(--l-warn-text);
+}
+@media (hover: hover) {
+  .lc-uring:hover {
+    background: var(--l-wash);
+  }
+}

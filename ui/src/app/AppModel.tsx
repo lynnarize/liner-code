@@ -116,7 +116,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
       {any ? (
         <ModelPicker value={pick} onPick={(ref) => setPick(ref)} only={only} height={380} autoFocus foot={<span className="lc-appmodel-foot">Models that only run through Codex, OpenCode or Hermes aren't here: those tools bring tools of their own, which an app must never reach.</span>} />
       ) : (
-        <p className="lc-appmodel-none">None of your models can answer an app yet. Sign in to Claude Code, or add an API endpoint in Settings › Models, and it shows here.</p>
+        <p className="lc-appmodel-none">None of your models can answer an app yet. Sign in to Claude Code, or add an API endpoint in Settings › Agent tools, and it shows here.</p>
       )}
     </Dialog>
   );

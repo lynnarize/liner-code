@@ -118,7 +118,7 @@ test("Draw it asks the AI pictures model for one landscape picture of the words 
 test("With no AI pictures model Draw it says so in a plain sentence and asks nobody", async () => {
   const s = setup();
   assert.deepEqual((await s.call<{ models: unknown[] }>("wallpaper.info")).models, []);
-  await assert.rejects(s.call("wallpaper.draw", { prompt: "A harbour at dusk" }), /^Error: There's no AI pictures model, so nothing was drawn and nothing was charged\. Add one in Settings › Models, or use a picture of your own\.$/);
+  await assert.rejects(s.call("wallpaper.draw", { prompt: "A harbour at dusk" }), /^Error: There's no AI pictures model, so nothing was drawn and nothing was charged\. Add one in Settings › Agent tools, or use a picture of your own\.$/);
   await assert.rejects(s.call("wallpaper.draw", { prompt: "A harbour at dusk", model: "gone" }), /There's no AI pictures model/);
   assert.equal(existsSync(s.dots), false);
 });

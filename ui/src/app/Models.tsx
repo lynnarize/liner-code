@@ -852,7 +852,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
     }
   };
 
-  if (!tools.length && !railExtras.length) return <p className="lc-quiet lc-mp-none">No tool is signed in yet. Settings › Models connects one.</p>;
+  if (!tools.length && !railExtras.length) return <p className="lc-quiet lc-mp-none">No tool is signed in yet. Settings › Agent tools connects one.</p>;
   const row = (r: Offered<ModelChoice>, old?: boolean) => (
     <ModelRow
       key={r.key}

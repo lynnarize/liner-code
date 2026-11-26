@@ -40,6 +40,9 @@ const Usage = UsageScreen.View;
 const Wall = WallScreen.View;
 const RoutinesPage = lazyAgain(() => import("./Routines").then((m) => m.RoutinesPage));
 const Compare = lazyAgain(() => import("./Compare").then((m) => m.Compare));
+// Pull requests and Issues, from the sidebar's foot: they load the first time one is opened.
+const PullRequests = lazyAgain(() => import("./PullRequests").then((m) => m.PullRequests));
+const Issues = lazyAgain(() => import("./Issues").then((m) => m.Issues));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
@@ -65,6 +68,10 @@ const designSession = () => import("./design/session");
 // Liner Security's face and its sidebar body: loaded the first time the window shows Security, never for someone who doesn't.
 const SecurityShell = lazyAgain(() => import("./security/Shell").then((m) => m.SecurityShell));
 const SecuritySide = lazyAgain(() => import("./security/Side").then((m) => m.SecuritySide));
+// The scans of pull requests and issues running in the background, bottom right, on every face.
+const ScanDock = lazyAgain(() => import("./security/ScanDock").then((m) => m.ScanDock));
+// An app outside Liner Code asking first, or signing in (Liner MCP), bottom right above the scans, on every face.
+const AppAsk = lazyAgain(() => import("./AppAsk").then((m) => m.AppAsk));
 const DesignIntro = lazyAgain(() => import("./design/Intro").then((m) => m.DesignIntro));
 import * as os from "./os";
 import { markUnread, stopShows, unreadRow } from "./row-menu";
@@ -72,7 +79,7 @@ import { anyModal, MODAL } from "./menu-keys";
 import { toastRight } from "./toast-place";
 
 /** `wall` on a session: opened from the Wall, so its header has the way back and Esc goes there. */
-type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string; wall?: true } | { kind: "wall" } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View };
+type View = { kind: "home"; projectId?: string; mode?: SessionMode; prompt?: { text: string; at: number } } | { kind: "addons" } | { kind: "session"; id: string; beside?: string; wall?: true } | { kind: "wall" } | { kind: "usage" } | { kind: "routines" } | { kind: "routine"; id?: string; projectId?: string; back?: View } | { kind: "compare"; id: string } | { kind: "app"; id: string; back?: View } | { kind: "prs"; pick?: string } | { kind: "issues" };
 
 /** The same place: the same kind of screen, and the same session, app or comparison on it. */
 const samePlace = (a: View, b: View) => a.kind === b.kind && ("id" in a ? a.id : undefined) === ("id" in b ? b.id : undefined);
@@ -80,7 +87,7 @@ const samePlace = (a: View, b: View) => a.kind === b.kind && ("id" in a ? a.id :
 const trailed = (v: View): View => (v.kind === "home" ? { kind: "home", projectId: v.projectId } : { ...v });
 
 /** A kept place is trusted only for its outer kind, the words the View type names: a corrupted value starts at Home instead of passing its cast into the code. */
-const VIEW_KINDS = ["home", "addons", "session", "wall", "usage", "routines", "routine", "compare", "app"];
+const VIEW_KINDS = ["home", "addons", "session", "wall", "usage", "routines", "routine", "compare", "app", "prs", "issues"];
 const isView = (v: unknown): v is View => {
   const kind = typeof v === "object" && v !== null ? (v as { kind?: unknown }).kind : undefined;
   return typeof kind === "string" && VIEW_KINDS.includes(kind);
@@ -336,12 +343,12 @@ export function App() {
   // The two sides' boxes: F6 moves through the areas of the side you're in.
   const besides = useRef<HTMLDivElement>(null);
   // At Quick motion a view you open shows as it is, in its first frame (look.ts, entering): another
-  // session, Home, the Wall, Usage, a page. The sidebar too, when you come back to it from Settings.
+  // session, Home, the Wall, Usage, a page. Settings opens over them as a pop-up, so they stay as they are under it.
   const paper = useRef<HTMLElement>(null);
   const side = useRef<HTMLDivElement>(null);
   const opened = `${face}:${view.kind}:${current?.id ?? ("id" in view ? view.id : "")}:${besideThread?.id ?? ""}`;
-  useLayoutEffect(() => entering(paper.current), [opened, settings, ready, onboarded]);
-  useLayoutEffect(() => entering(side.current), [settings, ready, onboarded]);
+  useLayoutEffect(() => entering(paper.current), [opened, ready, onboarded]);
+  useLayoutEffect(() => entering(side.current), [ready, onboarded]);
   const sideEl = () => (besideThread ? besides.current?.children[sideFocus] : undefined) ?? document;
   // A press or focus in a side gives it your keys. A menu or a Pop opened from a side is portaled out
   // of both (React still passes its events up through here): it leaves the keys where they are.
@@ -571,6 +578,14 @@ export function App() {
     const on = () => wallRef.current();
     window.addEventListener("lc:wall", on);
     return () => window.removeEventListener("lc:wall", on);
+  }, []);
+  // The message box's usage ring opens Usage and cost (UsageRing.tsx).
+  const goRef = useRef(go);
+  goRef.current = go;
+  useEffect(() => {
+    const on = () => goRef.current({ kind: "usage" });
+    window.addEventListener("lc:usage", on);
+    return () => window.removeEventListener("lc:usage", on);
   }, []);
   // A session opened from the Wall: where it stands among the tiles the Wall showed, and the way back.
   const wallIds = wallShown.ids.filter((id) => threads.some((t) => t.id === id && !t.archived));
@@ -838,6 +853,8 @@ export function App() {
       { id: "next-needs", label: "Next session that needs you", group: "Actions", icon: <I.bell size={16} />, keywords: ["waiting", "jump"], shortcut: shortcutOf("next-needs"), onSelect: nextNeeds },
       { id: "wall", label: "The Wall", group: "Actions", icon: <I.wall size={16} />, keywords: ["every session", "all sessions", "grid", "overview"], shortcut: shortcutOf("wall"), onSelect: showWall },
       { id: "usage", label: "Usage and cost", group: "Actions", icon: <I.usage size={16} />, onSelect: () => go({ kind: "usage" }) },
+      { id: "prs", label: "Pull requests", group: "Actions", icon: <I.pr size={16} />, keywords: ["pr", "review", "github", "merge"], onSelect: () => go({ kind: "prs" }) },
+      { id: "issues", label: "Issues", group: "Actions", icon: <I.ring size={16} />, keywords: ["issue", "bug", "github", "linear"], onSelect: () => go({ kind: "issues" }) },
       // Direct face switch commands, with ⌥⌘E shown on the next face in cycle.
       ...(face !== "code" ? [{ id: "face-code", label: "Switch to Liner Code", group: "Actions", icon: <I.code size={16} />, keywords: ["code", "sessions", "face"], shortcut: face === "security" ? shortcutOf("face") : undefined, onSelect: () => setFace("code") }] : []),
       ...(face !== "design" ? [{ id: "face-design", label: "Switch to Liner Design", group: "Actions", icon: <I.edit size={16} />, keywords: ["design", "canvas", "face"], shortcut: face === "code" ? shortcutOf("face") : undefined, onSelect: () => setFace("design") }] : []),
@@ -977,19 +994,13 @@ export function App() {
     );
 
   return (
-    <div className="lc-app" data-sidebar={sidebar || settings || undefined}>
+    <div className="lc-app" data-sidebar={sidebar || undefined}>
       {still.hidden}
       {still.scene}
-      {settings ? (
-        // Its own code loads apart (early.ts): one that didn't load says so in its place, with Try again and Close.
-        <Boundary label="Settings" quiet place="page" onClose={closeSettings}>
-          <Suspense fallback={null}>
-            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
-          </Suspense>
-        </Boundary>
-      ) : (
+      {/* The app stays under Settings, which opens over it as a pop-up (below); while it's open nothing under it takes the keyboard. */}
+      {(
         <>
-          <div ref={side} className="lc-side" inert={!sidebar || undefined}>
+          <div ref={side} className="lc-side" inert={!sidebar || settings || undefined}>
             {/* Back and Forward walk Liner Code's places; Liner Design shows its own tabs over Home and a session alike, so there they rest. */}
             <Sidebar
               face={face}
@@ -1028,9 +1039,9 @@ export function App() {
                 </>
                 )
               }
-              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onSettings={() => setSettings(true)} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
+              current={view.kind === "session" ? view.id : null} homeOn={view.kind === "home" && !settings} onBack={face === "code" && trail.current.back.some(stillThere) ? goBack : undefined} onForward={face === "code" && trail.current.forward.some(stillThere) ? goForward : undefined} onOpen={(id) => openSession(id)} onNew={newSession} onWall={showWall} wallOn={view.kind === "wall"} onSettings={() => setSettings(true)} onRoutines={() => setView({ kind: "routines" })} routinesOn={view.kind === "routines" || view.kind === "routine"} onSearch={() => (setBesideOf(null), setMenu(true))} onHide={() => setSidebar(false)} onApp={(id) => setView({ kind: "app", id, back: view.kind === "app" ? view.back : view })} appOn={view.kind === "app" ? view.id : null} onAddons={() => setView({ kind: "addons" })} addonsOn={view.kind === "addons"} onPullRequests={() => go({ kind: "prs" })} prsOn={view.kind === "prs" && !settings} onIssues={() => go({ kind: "issues" })} issuesOn={view.kind === "issues" && !settings} onPutAway={leave} onBeside={(id) => (view.kind === "session" && view.id !== id ? (setSideFocus(1), setView({ kind: "session", id: view.id, beside: id })) : openSession(id))} />
           </div>
-          <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind}>
+          <main ref={paper} className="lc-paper" key={view.kind === "session" ? "s" : view.kind} inert={settings || undefined}>
             {still.backdrop}
             {/* A page or session whose code didn't load (or that broke) says so in its place, and the sidebar goes on; another page tries again. */}
             <Boundary label={view.kind === "session" ? "This session" : "This page"} quiet place="page" resetKey={`${face}:${view.kind}:${view.kind === "session" ? view.id : ""}`}>
@@ -1068,6 +1079,10 @@ export function App() {
               </Suspense>
             ) : view.kind === "compare" ? (
               <Compare id={view.id} sidebar={sidebar} onSidebar={() => setSidebar(true)} onOpen={(id) => openSession(id)} onDone={(id) => openSession(id)} />
+            ) : view.kind === "prs" ? (
+              <PullRequests key={view.pick ?? ""} sidebar={sidebar} onSidebar={() => setSidebar(true)} pick={view.pick} />
+            ) : view.kind === "issues" ? (
+              <Issues sidebar={sidebar} onSidebar={() => setSidebar(true)} onPr={(projectId, number) => go({ kind: "prs", pick: `${projectId}#${number}` })} />
             ) : view.kind === "usage" ? (
               <Usage sidebar={sidebar} onSidebar={() => setSidebar(true)} />
             ) : view.kind === "addons" ? (
@@ -1114,6 +1129,14 @@ export function App() {
           )}
         </>
       )}
+      {settings && (
+        // Its own code loads apart (early.ts): one that didn't load says so over the window, with Try again and Close.
+        <Boundary label="Settings" quiet place="float" onClose={closeSettings}>
+          <Suspense fallback={null}>
+            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
+          </Suspense>
+        </Boundary>
+      )}
       {!connected && (
         <div className="lc-offline" role="status">
           <span className="l-shimmer">Reconnecting to the engine</span>
@@ -1130,6 +1153,16 @@ export function App() {
         </Boundary>
       )}
       {still.host}
+      <Boundary label="The scans in the background" quiet place="float">
+        <Suspense fallback={null}>
+          <ScanDock />
+        </Suspense>
+      </Boundary>
+      <Boundary label="An app asking first" quiet place="float">
+        <Suspense fallback={null}>
+          <AppAsk />
+        </Suspense>
+      </Boundary>
       <Toaster className="lc-toaster" />
     </div>
   );

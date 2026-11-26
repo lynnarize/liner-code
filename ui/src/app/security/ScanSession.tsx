@@ -16,7 +16,7 @@
 */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Item, ScanRecord, SecurityFinding, SecurityItem, Thread } from "@contracts";
-import { DEPTH_LABEL, splitModel } from "@contracts";
+import { DEPTH_LABEL, splitModel, targetName } from "@contracts";
 import { useStickToBottom } from "@liner/pro/agents/agents";
 import { toast } from "@liner/components/toast/toast";
 import { AskDock, useDockAsk } from "../Ask";
@@ -400,7 +400,9 @@ function FirstMessage({ it }: { it: Extract<Item, { kind: "user" }> }) {
   const { scan } = useContext(View);
   const [told, setTold] = useState(false);
   const words = it.shown?.text ?? it.text.split(/\n\s*\n/)[0];
-  const meta = ["From Start a scan", scan && (scan.depth === "branch" ? "this branch's changes" : DEPTH_LABEL[scan.depth].toLowerCase()), scan?.stopsAfter && `stops after ${scan.stopsAfter} min`].filter(Boolean).join(" · ");
+  // A pull request's or an issue's scan was started from its chip (or Scan new PRs, or an app), not Start a scan.
+  const from = scan?.target ? `From ${scan.target.kind === "pr" ? "pull request" : "issue"} ${targetName(scan.target)}${scan.auto ? ", by Scan new PRs" : ""}` : "From Start a scan";
+  const meta = [from, scan && !scan.target && (scan.depth === "branch" ? "this branch's changes" : DEPTH_LABEL[scan.depth].toLowerCase()), scan?.stopsAfter && `stops after ${scan.stopsAfter} min`].filter(Boolean).join(" · ");
   return (
     <div className="lsc-first">
       <div className="lc-you">

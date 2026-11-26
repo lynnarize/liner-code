@@ -313,7 +313,7 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
 }
 
 /** What drawOne says when Settings has no AI pictures model. */
-export const NO_DRAW = "There's no AI pictures model, so nothing was drawn and nothing was charged. Add one in Settings › Models, or use a picture of your own.";
+export const NO_DRAW = "There's no AI pictures model, so nothing was drawn and nothing was charged. Add one in Settings › Agent tools, or use a picture of your own.";
 
 /**
   One picture from the words, for the dots behind Home (wallpaper.draw): not a design's, so no lean

@@ -137,7 +137,7 @@ async function makeFor(frame: string, node: { id: string; tag: string; rect: Rec
   const s = getDesign();
   if (shownOld()) return;
   const e = modelFor(s.file, getState().settings.pictures ?? []);
-  if (!e) return void toast("No AI pictures for this design", { description: "Pick a model in the dock's AI pictures menu, or add one in Settings › Models › AI pictures. Your own image files always work." });
+  if (!e) return void toast("No AI pictures for this design", { description: "Pick a model in the dock's AI pictures menu, or add one in Settings › Agent tools › AI pictures. Your own image files always work." });
   if (!prompt.trim()) return void toast("Say what the picture shows first");
   if (s.mock || !s.cwd || !s.file) return void toast("AI pictures need a design file", { description: "The sample canvas can't ask a model for one." });
   // A design with no session yet gets its session here, as its first ask would.
@@ -368,7 +368,7 @@ export function PictureTool() {
           <Row title="From a file" note="On this Mac" icon={<I.file size={16} />} onPick={() => (close(), void add((f, n) => fromFile(f, n)))} />
           <Row title="From the project" note="A picture it already has" icon={<I.folder size={16} />} onPick={() => (close(), (want = "project"), void add(() => {}))} />
           {!models.length && (
-            <Row title="Add a model for AI pictures" note="Settings › Models › AI pictures" icon={<I.plus size={16} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
+            <Row title="Add a model for AI pictures" note="Settings › Agent tools › AI pictures" icon={<I.plus size={16} />} onPick={() => (close(), window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "models" })))} />
           )}
         </>
       )}

@@ -5147,8 +5147,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     animation: none;
   }
 }
-/* ---------- Settings: the whole window ---------- */
-/* Settings' sidebar (you, the search, the places and the open one's sections): settings.css. */
+/* ---------- Settings: a pop-up over the app ---------- */
+/* The pop-up, its column of places and its header: settings.css, which also sets these rows' look inside it. */
 
 .lc-st-paper {
   display: flex;
@@ -5181,46 +5181,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transform: translateY(4px);
   }
 }
-.lc-st-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 14px;
-}
-.lc-st-hero-i {
-  display: grid;
-  grid-row: span 2;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--lc-r-card);
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-  color: var(--l-ink);
-}
-.lc-st-hero-i svg {
-  width: 20px;
-  height: 20px;
-}
-.lc-st-hero h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-}
-/* Focus lands on the heading when Settings opens, for a screen reader; it isn't a control, so no ring. */
-.lc-st-hero h1:focus {
-  outline: none;
-}
-.lc-st-hero p {
-  margin: 3px 0 0;
-  font-size: 14px;
-  color: var(--l-ink-3);
-}
-
 .lc-st-group {
   display: grid;
   gap: 10px;

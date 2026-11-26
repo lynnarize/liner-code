@@ -3,8 +3,38 @@
 Notes for the next release are collected here, then moved into `CHANGELOG.md` when it ships
 (the website is built from `CHANGELOG.md`).
 
+### Added
+
+- **Pull requests and Issues pages,** from the sidebar's foot or ⌘K: every open pull request in your
+  projects in Needs your review, Yours and Others, and the issues from GitHub and Linear in Assigned to
+  you and Everyone else. Pick one to read it beside the list, open a session on it, or merge it after
+  a confirm. Once you've opened Pull requests, a dot on its icon says when one waits on your review.
+- **Scan a pull request or an issue** with Liner Security from its row: a read-only scan on your own
+  tool, with a second look by another maker's model. A GitHub issue's check says whether what it describes
+  is real in the code, where and how bad. Comment posts the summary on GitHub after a second press,
+  and Fix them starts a session in a worktree of its own. **Scan new pull requests** (off until you
+  turn it on) scans one as it opens or gets new commits: one at a time, never a draft, at most ten a
+  day, while Liner Code is open.
+- **Settings › Source control & issues:** each tool that knows your code on this Mac (git, gh, glab,
+  az, fj or tea, Cursor's origin) and whether it's signed in, a Linear key for its issues, the default
+  merge method, how commit messages are written, and, if you turn it on, pull requests that follow
+  the repository's template.
+- **Liner MCP:** apps outside Liner Code (Claude Code or Codex in a terminal, Claude, ChatGPT, Grok
+  Bot, Muse) can read your sessions, pull requests, issues and findings, and start, message, scan and
+  stop, each at the level you give it: Read only, Asks first (you allow each start, message, answer,
+  scan or stop on a card) or Trusted (never Full access). An app gets a key shown once, or signs in
+  itself after you start it from Add an app and allow it on a card, and can be revoked in one press;
+  a terminal agent you revoke is turned away by name until you let it in again. From the internet is off until you
+  pick Tailscale Funnel, a Cloudflare quick tunnel or an address of your own.
+- **Tell an app:** an https webhook of yours hears when a session needs you, with its title and
+  nothing else, so an app on your phone can say so.
+
 ### Changed
 
+- Settings opens as a pop-up over the window, with its places regrouped: General (Notifications are
+  in it now), Appearance and Keyboard; Agent tools, Agents and modes, Fusion and review and
+  Permissions; Projects, Source control & issues and Worktrees; Liner MCP and Add-ons; then Archive
+  and About and updates. A link to an old place opens the new one.
 - The model picker draws each model's and tool's logo in its maker's colour, and the Effort pill fills in that colour
   with a halftone of dots that grow toward the high end. The Effort head is one line, the card beside the list follows
   the row you point at (at the list's top, or its foot for a row in its lower half), and a hover plate slides from row

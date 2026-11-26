@@ -7,6 +7,7 @@
 */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { OverviewDay, ScanRecord } from "@contracts";
+import { targetName } from "@contracts";
 import { plural } from "../model";
 
 // The plot is 150px tall at least (the compact Overview); when the boxes beside it make its box taller, it grows to fill
@@ -31,7 +32,7 @@ const dateOf = (at: number) => new Date(at).toLocaleDateString("en-GB", { day: "
 export function scanSentence(s: ScanRecord | undefined) {
   if (!s) return "A scan ran";
   const found = s.state === "running" || s.state === "asking" ? "is reading" : s.counts.found ? `found ${s.counts.found}` : "found nothing";
-  return s.depth === "checks" ? `Free checks ${found}` : s.depth === "branch" ? `A scan of the branch ${found}` : `A scan of the whole project ${found}`;
+  return s.depth === "checks" ? `Free checks ${found}` : s.depth === "branch" ? `A scan of the branch ${found}` : s.depth === "pr" || s.depth === "issue" ? `A scan of ${s.target ? targetName(s.target) : s.depth === "pr" ? "a pull request" : "an issue"} ${found}` : `A scan of the whole project ${found}`;
 }
 
 /** What happened on a day, a line each. */

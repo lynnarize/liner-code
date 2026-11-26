@@ -1,0 +1,264 @@
+/* Settings › Liner MCP (LinerMcp.tsx) and its Add an app sheet: boards Mcp, Pair and PairMuse. The rows are parts.tsx's
+   (.lc-st-*); only what they don't have is here. Colours are the app's tokens. */
+
+.lc-mcp-logo {
+  display: block;
+  border-radius: 5px;
+}
+.lc-mcp-quiet {
+  color: var(--l-ink-4);
+  font-size: 12.5px;
+}
+.lc-mcp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.lc-mcp-tools small {
+  margin-left: auto;
+  color: var(--l-ink-4);
+  font-size: 12.5px;
+}
+.lc-mcp-addr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lc-mcp-addr code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mcp-own input {
+  width: 280px;
+}
+.lc-mcp-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lc-mcp-state > i {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+}
+.lc-mcp-state[data-state="up"] > i {
+  background: var(--l-ok, oklch(0.72 0.16 150));
+}
+.lc-mcp-state[data-state="starting"] > i {
+  background: var(--l-warn);
+}
+.lc-mcp-state[data-state="down"] > i {
+  background: var(--l-danger, oklch(0.63 0.2 25));
+}
+.lc-mcp-acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- Add an app ---------- */
+
+.lc-sheet.lc-mcp-add {
+  width: min(620px, calc(100vw - 48px));
+  /* Held at the top, as on the board: changing the app or the level grows it downwards instead of moving it. */
+  margin: max(24px, 8vh) auto auto;
+}
+.lc-mcp-add .lc-sheet-frame {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.lc-mcp-add-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 22px 4px;
+}
+.lc-mcp-add-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.lc-mcp-add-body h3:first-child {
+  margin-top: 4px;
+}
+.lc-mcp-add-body h3 > i {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+}
+.lc-mcp-kinds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.lc-mcp-kind,
+.lc-mcp-level {
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--l-ink-2);
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  cursor: pointer;
+  font: inherit;
+}
+.lc-mcp-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 6px 12px;
+  font-size: 13px;
+}
+.lc-mcp-kind-logo {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--l-surface);
+  box-shadow: 0 0 0 1px var(--l-line);
+}
+.lc-mcp-kind:hover,
+.lc-mcp-level:hover {
+  background: var(--l-wash);
+}
+.lc-mcp-kind[data-on],
+.lc-mcp-level[data-on] {
+  background: color-mix(in oklab, var(--l-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+  color: var(--l-ink);
+}
+.lc-mcp-levels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.lc-mcp-level {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  text-align: left;
+}
+.lc-mcp-level > span {
+  display: grid;
+  gap: 4px;
+}
+.lc-mcp-level b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-mcp-level small {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+.lc-mcp-radio {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-2);
+}
+.lc-mcp-level[data-on] .lc-mcp-radio {
+  box-shadow: inset 0 0 0 4px var(--l-accent);
+}
+.lc-mcp-step {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-mcp-step p {
+  margin: 0;
+  line-height: 1.5;
+}
+.lc-mcp-msg {
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  color: var(--l-ink);
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  /* Only what has no break of its own (the key, the address) breaks mid-word. */
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.lc-mcp-keyrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.lc-mcp-keyrow > span {
+  flex: none;
+}
+.lc-mcp-keyrow code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-mcp-add-foot {
+  justify-content: space-between;
+}
+.lc-mcp-add-foot small {
+  color: var(--l-ink-3);
+  font-size: 12.5px;
+}
+@media (max-width: 560px) {
+  .lc-mcp-kinds {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .lc-mcp-levels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lc-mcp-named {
+  width: 100%;
+  margin-top: 8px;
+}
+.lc-mcp-named input {
+  width: 100%;
+  font-family: inherit;
+}
+.lc-mcp-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+}
+.lc-mcp-name:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.lc-mcp-rename input {
+  width: 200px;
+  font-family: inherit;
+}

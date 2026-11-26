@@ -352,7 +352,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                             <Row key={s.id} title={s.label} icon={<ModelMark kind={markOf(s.ref)} size={14} />} which={s.via} on={who === "specialist" && src.id === s.id} onPick={() => (use(s), close())} />
                           ))}
                           <Sep />
-                          <Row title="Another API endpoint" note="Settings › Models: add an endpoint, then mark it as a security model" icon={<I.plus size={14} />} which="an unrestricted model" onPick={() => (close(), addEndpoint())} />
+                          <Row title="Another API endpoint" note="Settings › Agent tools: add an endpoint, then mark it as a security model" icon={<I.plus size={14} />} which="an unrestricted model" onPick={() => (close(), addEndpoint())} />
                         </>
                       )}
                     </Pop>
@@ -379,7 +379,7 @@ export function StartScan({ sidebar, onSidebar, projectId }: { sidebar: boolean;
                       title="An API endpoint"
                       note="an unrestricted model"
                       action={
-                        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" title="Settings › Models: add an endpoint, then mark it as a security model" onClick={(e) => (e.stopPropagation(), addEndpoint())}>
+                        <button type="button" className="lc-btn l-focus" data-kind="ghost" data-size="sm" title="Settings › Agent tools: add an endpoint, then mark it as a security model" onClick={(e) => (e.stopPropagation(), addEndpoint())}>
                           Add
                         </button>
                       }

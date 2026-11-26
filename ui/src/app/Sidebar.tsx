@@ -27,11 +27,11 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { createPortal } from "react-dom";
-import type { AgentProfile, ProviderInfo, RecentSession, RoutineRun, Thread } from "@contracts";
+import type { AgentProfile, McpAsk, ProviderInfo, RecentSession, RoutineRun, Thread } from "@contracts";
 import { bridge } from "./bridge";
-import { isSubagent, itemsWhere, rpc, useEngine } from "./engine";
+import { isSubagent, itemsWhere, onStream, rpc, useEngine } from "./engine";
 import { appIcon } from "./Addon";
-import { I, ModelMark, N, type MarkKind } from "./icons";
+import { I, ModelMark, N, wt, type MarkKind } from "./icons";
 import { agentOf, ago, bucketOf, codeProjects, designWhere, markOf, modelLabel, money, onTheWall, plural, since, type Bucket } from "./model";
 import { ContextMenu, Num, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
 import { PaneField } from "./Pane";
@@ -45,6 +45,10 @@ import { agentState, ROUTINES_ON, updateModes } from "@contracts";
 import { shortcutOf } from "./keymap";
 import { FACE_NAME, type Face } from "./face";
 import * as os from "./os";
+import { APP_LOGO } from "./app-logos";
+import { appAskWords, prLine } from "./worklists-logic";
+import { usePrDot, usePrWatch } from "./worklists-store";
+import "./sidebar-foot.css";
 import { toast } from "@liner/components/toast/toast";
 
 type Props = {
@@ -72,6 +76,11 @@ type Props = {
   addonsOn?: boolean;
   /** Opens a session beside the one on screen. */
   onBeside?: (id: string) => void;
+  /** Pull requests and Issues, the icons at the foot beside Settings, lit while their page is open. */
+  onPullRequests?: () => void;
+  prsOn?: boolean;
+  onIssues?: () => void;
+  issuesOn?: boolean;
   /** A session was archived from here: if it's on screen, the window moves off it. */
   onPutAway?: (id: string) => void;
   /** Liner Code, Liner Design or Liner Security: the switch under the name, the same in each. */
@@ -169,7 +178,7 @@ function snoozeTimes() {
   ];
 }
 
-export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPutAway, face = "code", onFace, faceBody, recentProject, onCarryOn }: Props) {
+export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, onRoutines, routinesOn, onSearch, onHide, homeOn, onBack, onForward, onApp, appOn, onAddons, addonsOn, onBeside, onPullRequests, prsOn, onIssues, issuesOn, onPutAway, face = "code", onFace, faceBody, recentProject, onCarryOn }: Props) {
   const addons = useEngine((s) => s.addons);
   const pages = addons.filter((a) => a.panel?.place === "page" && a.enabled && !a.removed);
   const update = useEngine((s) => s.updates);
@@ -225,6 +234,24 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
     six leave it shut, and if the sixth opened it after all, it shuts again, uncounted.
   */
   const showDemo = useEngine((s) => s.settings.showDemo === true);
+  // A pull request waiting on your review: an amber dot on Pull requests at the foot (worklists-store.ts says when it is read).
+  usePrWatch();
+  const prDot = usePrDot();
+  // What apps outside Liner Code wait on you for (Liner MCP's Asks first): the session each is about says so in amber (board Approve).
+  const [appAsks, setAppAsks] = useState<McpAsk[]>([]);
+  useEffect(() => {
+    let live = true;
+    void rpc("mcp.cards", {}).then(
+      (c) => live && setAppAsks(c.asks),
+      () => {},
+    );
+    const off = onStream((e) => e.type === "mcp" && setAppAsks(e.asks));
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  const askFor = useMemo(() => new Map(appAsks.filter((a) => a.threadId).map((a) => [a.threadId!, a] as const)), [appAsks]);
   const taps = useRef<number[]>([]);
   const ownTap = useRef(false);
   const tapMe = (e: React.MouseEvent) => {
@@ -679,6 +706,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
         described={card?.id === t.id}
         menuOpen={menu?.t.id === t.id}
         looking={looking(t)}
+        appAsk={askFor.get(t.id)}
         forks={forks?.n}
         forksOpen={forks?.open}
         seen={seenRows.current}
@@ -1217,6 +1245,18 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
           </span>
         )}
         <span className="lc-grow" />
+        {/* Pull requests and Issues beside Settings (T3 Code's foot), lit while their page is open: Code's pages, so in Code alone (Design's and Security's longer names need the room). */}
+        {onPullRequests && face === "code" && (
+          <button type="button" className="lc-ib lc-sb-fi l-focus" aria-current={prsOn ? "page" : undefined} aria-label={prDot ? "Pull requests, one waits for your review" : "Pull requests"} title={prDot ? "Pull requests: one waits for your review" : "Pull requests"} onClick={onPullRequests}>
+            <N.pr />
+            {prDot && <span className="lc-sb-fdot" aria-hidden />}
+          </button>
+        )}
+        {onIssues && face === "code" && (
+          <button type="button" className="lc-ib lc-sb-fi l-focus" aria-current={issuesOn ? "page" : undefined} aria-label="Issues" title="Issues" onClick={onIssues}>
+            <IssuesNav />
+          </button>
+        )}
         <button type="button" className="lc-ib l-focus" aria-label="Settings and your account" title="Settings and your account" onClick={onSettings}>
           <N.settings />
         </button>
@@ -1745,6 +1785,8 @@ type RowProps = {
   menuOpen: boolean;
   /** The open session in a focused window: being looked at, so nothing in it is news (session-state.ts, seenAsk). */
   looking: boolean;
+  /** An app outside Liner Code waits on you to allow something for it (Liner MCP): its row says so in amber. */
+  appAsk?: McpAsk;
   /** Its forks, and whether they show. */
   forks?: number;
   forksOpen?: boolean;
@@ -1752,7 +1794,7 @@ type RowProps = {
   seen: Set<string>;
   ctl: MutableRefObject<RowCtl>;
 };
-const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agents, providers, run, working, current, renaming, picked, picking, described, menuOpen, looking, forks, forksOpen, seen, ctl }: RowProps) {
+const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agents, providers, run, working, current, renaming, picked, picking, described, menuOpen, looking, appAsk, forks, forksOpen, seen, ctl }: RowProps) {
   // Pinned is where it's kept, not how it stands: one that waits on you shows it, as the Dock counts it.
   const bucket = standing(t, shelf, now);
   const on = onIt(t, agents, providers);
@@ -1798,8 +1840,21 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
   const said = rowWords(t, { busy, agents: agentsNow, seenQ, snoozed: bucket === "snoozed", now });
   // Where it is, with no folder over it: a question takes the project's place (it matters more), and a plain "Finished" gives way to it (the mark says it).
   const where = said.asks ? undefined : loose;
-  const sub = where && said.text === "Finished" ? undefined : said.text;
-  const facts = <SideFacts branch={t.worktree?.branch} model={markOf(on.ref)} modelName={modelLabel(on.ref, providers)} pr={t.pr && { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text }} />;
+  /*
+    Who and what (board Approve): a session an app started through Liner MCP leads with the app's logo and name, then what
+    it does now; one whose line is its pull request says it with the PR mark, "#129 is ready to merge", and the number
+    leaves the facts so it isn't said twice.
+  */
+  const fromPr = Boolean(t.pr && said.text === prSaid(t.pr).text);
+  const pr = fromPr && t.pr ? prLine(t.pr) : null;
+  const by = t.startedBy;
+  const text = pr ? pr.text : said.text;
+  // An app waiting on your yes for this session says only that, in amber: "Grok Bot asks to start it".
+  const words = appAsk ? appAskWords(appAsk.appName, appAsk.tool) : by ? (text && text !== "Finished" ? `${by.name} · ${text}` : by.name) : text;
+  const sub = where && !by && !appAsk && words === "Finished" ? undefined : words;
+  const tone = appAsk ? "warn" : pr ? pr.tone : said.tone;
+  const lead = appAsk ? <AppLogo kind={appAsk.appKind} name={appAsk.appName} /> : by ? <AppLogo kind={by.kind} name={by.name} /> : pr ? <span className="lc-sb-prmk" data-s={pr.num} aria-hidden><I.pr size={12} /></span> : undefined;
+  const facts = <SideFacts branch={t.worktree?.branch} model={markOf(on.ref)} modelName={modelLabel(on.ref, providers)} pr={t.pr && !pr ? { number: t.pr.number, tone: prSaid(t.pr).num, said: prSaid(t.pr).text } : undefined} />;
   // Finished and nothing waits on you, or settled: the title steps back. One at work keeps full ink, and so does one that left files for you to review.
   const quiet = !busy && said.tone !== "strong" && (Boolean(t.archived) || bucket === "settled" || (bucket !== "needs" && t.status !== "running" && t.status !== "error" && t.status !== "limited" && t.turns > 0));
   // At the title's end while you point at it or it has the keyboard (board RowMenu): Pin (P), Settle (D) and the ··· that opens the row's menu (the right-click's), hung under it.
@@ -1848,13 +1903,14 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
       current={current}
       quiet={quiet}
       // One that waits on you, or finished while you were away and not read: its title in full ink, as the open one's.
-      loud={needsYou(t, now)}
-      mark={<SideMark state={mark} brand={markOf(on.ref)} label={seenQ ? "Waits for your answer" : markLabelOf(t, mark)} />}
+      loud={needsYou(t, now) || Boolean(appAsk)}
+      mark={appAsk ? <SideMark state="needs" label={appAskWords(appAsk.appName, appAsk.tool)} /> : <SideMark state={mark} brand={markOf(on.ref)} label={seenQ ? "Waits for your answer" : markLabelOf(t, mark)} />}
       title={title}
       ago={ago(t.updatedAt, now)}
       sub={sub}
-      tone={said.tone}
+      tone={tone}
       where={where}
+      lead={lead}
       facts={facts}
       acts={acts}
       draggable={!renaming && !t.archived}
@@ -1907,6 +1963,23 @@ const SessionRow = memo(function SessionRow({ t, shelf, where: loose, now, agent
     </SideRow>
   );
 });
+
+/** Issues at the foot: a ringed dot drawn on the navigation grid (icons.tsx N), so it weighs what Pull requests beside it does. */
+function IssuesNav({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={wt(size, 20)} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="10" cy="10" r="7" />
+      <circle cx="10" cy="10" r="1.5" />
+    </svg>
+  );
+}
+
+/** The logo of the app that started a session through Liner MCP (app-logos.ts), or a terminal's or a cube's mark for one without (as Settings and the ask card draw it). */
+function AppLogo({ kind, name }: { kind: NonNullable<Thread["startedBy"]>["kind"]; name: string }) {
+  const src = APP_LOGO[kind];
+  if (src) return <img className="lc-sb-applogo" src={src} alt="" title={`Started by ${name}`} draggable={false} />;
+  return <span className="lc-sb-applogo" data-none title={`Started by ${name}`}>{kind === "terminal" ? <I.terminal size={12} /> : <I.cube size={12} />}</span>;
+}
 
 /** Who's on a session (a pair as one: "Opus 5.5 + Sol"), and the model its lead runs on. */
 function onIt(t: Thread, agents: AgentProfile[], providers: ProviderInfo[]) {

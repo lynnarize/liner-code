@@ -188,6 +188,8 @@ type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   tone?: "warn" | "danger" | "strong";
   /** Where it is, when no folder over the row says it (By status, Pinned, a group): a small folder and the project's name start the second line, before " · " and `sub`. */
   where?: string;
+  /** A small mark that starts the second line in the folder's place: the logo of the app that started the session, its pull request's mark. */
+  lead?: ReactNode;
   /** Its facts, small and grey at the second line's end (SideFacts). They never wrap: the words give way. Never a state: the mark says that. */
   facts?: ReactNode;
   /** The open one: a small card, its title in full ink. Say it to a screen reader too (aria-current, aria-selected) in the root's props. */
@@ -214,14 +216,14 @@ type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   with its facts at the line's end. The open one (`current`) is a small card (app.css). Its root
   takes a ref and any props (drag, a context menu, a hover card); its words are in `pick`.
 */
-export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow({ mark, title, ago, sub, tone, where, facts, current, quiet, wrap, acts, pick, compact, loud, children, className, ...rest }, ref) {
+export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow({ mark, title, ago, sub, tone, where, lead, facts, current, quiet, wrap, acts, pick, compact, loud, children, className, ...rest }, ref) {
   const words = where ? (sub ? `${where} · ${sub}` : where) : sub;
   // The second line is drawn anew when it says something else ("Reading a.ts", then "Running npm test"), so the new words fade in
   // over the old one's place; a line other than the one the row came with is a swap, which fades even where the row came without its fade (data-fresh, app.css).
   const first = useRef(words);
   const second = words && (
     <span key={words} className="lc-sl-sub" data-tone={tone} data-swap={words !== first.current || undefined}>
-      {where && <I.folder size={12} />}
+      {lead ?? (where && <I.folder size={12} />)}
       <span className="lc-sl-words">{words}</span>
     </span>
   );

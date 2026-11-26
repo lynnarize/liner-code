@@ -25,8 +25,8 @@ import "./overview.css";
 type Tab = "all" | "open" | "never";
 const neverScanned = (p: SecurityProject) => !p.lastScan && !p.checks;
 /** A scan's kind as a project's facts say it. */
-const DEPTH_SHORT = { project: "The whole project", branch: "This branch", checks: "Free checks" } as const;
-const LAST_SHORT = { project: "Whole project", branch: "This branch", checks: "Free checks" } as const;
+const DEPTH_SHORT = { project: "The whole project", branch: "This branch", checks: "Free checks", pr: "A pull request", issue: "An issue" } as const;
+const LAST_SHORT = { project: "Whole project", branch: "This branch", checks: "Free checks", pr: "A pull request", issue: "An issue" } as const;
 
 export function Projects({ sidebar, onSidebar, projectId }: { sidebar: boolean; onSidebar: () => void; /** The card open, when one is. */ projectId?: string }) {
   const { data: everyOne, error, reload } = useSec("security.projects", {});

@@ -134,7 +134,7 @@ const text = (t: string): McpResult => ({ content: [{ type: "text", text: t }] }
 const fail = (t: string): McpResult => ({ content: [{ type: "text", text: t }], isError: true });
 /** What a model that takes no pictures is told in a picture's place. */
 export const NO_PICTURE =
-  "The picture was left out: the model this session runs on doesn't take pictures (Settings › Models says so for it), so sending it would fail or be lost. What it shows is said in words above, so work from that; to know how it looks to the eye, ask the person to look at it.";
+  "The picture was left out: the model this session runs on doesn't take pictures (Settings › Agent tools says so for it), so sending it would fail or be lost. What it shows is said in words above, so work from that; to know how it looks to the eye, ask the person to look at it.";
 /** A result as a model that takes no pictures gets it: its words, the pictures out, and why. */
 export function wordsOnly(r: McpResult): McpResult {
   const content = r.content;
@@ -994,7 +994,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     const { answer } = this.host!.askLiner(threadId, {
       tool: ADDON_TOOL,
       title: `Add the mode ${name}`,
-      description: `${description ? `${description} ` : ""}It's a set of instructions for whichever model a session runs: pick it when you start one. It sits with your agents in Settings › Team, where you can change it.`,
+      description: `${description ? `${description} ` : ""}It's a set of instructions for whichever model a session runs: pick it when you start one. It sits with your agents in Settings › Agents and modes, where you can change it.`,
       risk: "low",
       fields: [
         // Whole: every session in this mode is told all of it, so all of it is what the person reads (the card scrolls it).
@@ -1009,7 +1009,7 @@ const img=new Image();img.alt="";img.style.display="none";img.src=at+"/settle";d
     const model = t.model ?? (t.agent.startsWith("@") ? t.agent.slice(1) : (this.store.agents.find((a) => a.id === t.agent)?.model ?? t.agent));
     // The session's level when the person gave it one, else none: a mode an agent wrote isn't the person picking a level.
     this.store.setAgents([...this.store.agents, { id, name, role: description || "A mode", glyph: "spark", specialty: "custom", model, effort: t.effort ?? "", soul: instructions, ...(skills.length ? { skills } : {}), ...(contextFiles.length ? { contextFiles } : {}) }]);
-    return text(`applied: the mode ${name} is added (agent:${id}). The person picks it beside the project when they start a session, and can set it as the new-session default in Settings › Modes. It gives a model these instructions; it doesn't choose the model.`);
+    return text(`applied: the mode ${name} is added (agent:${id}). The person picks it beside the project when they start a session, and can set it as the new-session default in Settings › Agents and modes. It gives a model these instructions; it doesn't choose the model.`);
   }
 
   /** addon_remove: asks on a card, and removes it (on disk still, so it can be restored) if the person says yes. */

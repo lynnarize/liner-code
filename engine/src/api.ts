@@ -52,6 +52,9 @@ import type { Sources } from "./sources.ts";
 import type { DshHosts } from "./dsh-hosts.ts";
 import { Updater } from "./updates.ts";
 import { Doctor } from "./doctor.ts";
+import { SourceControl, checkScmPatch, commitStyleNote, mergeMethodFor, prTemplateNote } from "./sourcecontrol.ts";
+import { useWorklists } from "./worklists.ts";
+import { checkMcpPatch, type LinerMcp } from "./mcp-http.ts";
 
 type Handlers = { [M in RpcMethod]: (p: Rpc[M][0]) => Promise<Rpc[M][1]> | Rpc[M][1] };
 
@@ -247,7 +250,7 @@ const isInfo = (d: unknown): d is ProviderInfo => {
 */
 const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "thread.tryAgain", "compare.start", "git.message", "pr.draft", "desk.ask", "agent.commands", "usage.limits"]);
 
-type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
+type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; mcp?: LinerMcp; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
   syncProviders(store.settings, runtime.keys);
@@ -482,6 +485,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // Liner Code's releases and the tools' own updaters; a tool that was updated is found again.
   const updates = new Updater(store, env, runtime, () => void detect());
   const keyList = () => [...runtime.keys.keys()];
+  // Settings › Source control & issues, and the Pull requests and Issues lists (one Worklists, shared with Liner's MCP server).
+  const scm = new SourceControl({ env, keys: runtime.keys });
+  const lists = useWorklists({ env, keys: runtime.keys });
   // A side chat works in its session's own folder, so letting it go never touches the worktree.
   const dropSide = (id: string) => {
     store.thread(id);
@@ -889,6 +895,10 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const broughtIn = () => new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))));
   // One picture drawn for the dots at a time: each is billed, so a second press while one is on its way (the panel closed and opened again) isn't sent.
   let drawing = false;
+  const mcpOf = () => {
+    if (!x.mcp) throw new Error("Liner MCP isn't running.");
+    return x.mcp;
+  };
   const handlers: Handlers = {
     "state.get": async () => {
       // With last launch's list on disk the snapshot answers at once; the look's answer follows as a providers event.
@@ -1004,25 +1014,27 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const cwd = project.path;
       const [cur, list, trees, base] = await Promise.all([
         branchOf(cwd),
-        git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%09%(committerdate:unix)", "refs/heads"]),
+        git(cwd, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%09%(committerdate:unix)%09%(objectname)", "refs/heads"]),
         git(cwd, ["worktree", "list", "--porcelain"]),
         mainBranch(cwd),
       ]);
       const branches = list.stdout.split("\n").filter(Boolean).slice(0, 60).map((l) => {
-        const [name, at] = l.split("\t");
-        return { name, lastCommitAt: at ? Number(at) * 1000 : undefined };
+        // Its tip's SHA too: a pull request's branch is only used as a base when its tip is the pull request's head (PullRequests.tsx).
+        const [name, at, sha] = l.split("\t");
+        return { name, lastCommitAt: at ? Number(at) * 1000 : undefined, ...(sha ? { sha } : {}) };
       });
       // Worktrees other than the checkout itself, with the session that made each, if any.
-      const worktrees: { path: string; branch?: string; threadId?: string }[] = [];
-      let cur2: { path?: string; branch?: string } = {};
+      const worktrees: { path: string; branch?: string; threadId?: string; sha?: string }[] = [];
+      let cur2: { path?: string; branch?: string; sha?: string } = {};
       // Real paths on both sides, as worktrees.clean does; one deleted by hand is still listed (prunable) and skipped.
       const here = realOf(cwd);
       for (const line of [...trees.stdout.split("\n"), ""]) {
         if (line.startsWith("worktree ")) cur2 = { path: line.slice(9) };
+        else if (line.startsWith("HEAD ")) cur2.sha = line.slice(5).trim();
         else if (line.startsWith("branch ")) cur2.branch = line.slice(7).replace(/^refs\/heads\//, "");
         else if (!line && cur2.path) {
           const real = existsSync(cur2.path) ? realOf(cur2.path) : undefined;
-          if (real && real !== here) worktrees.push({ path: cur2.path, branch: cur2.branch, threadId: store.threads.find((t) => t.worktree && !t.archived && realOf(t.worktree.root ?? t.worktree.path) === real)?.id });
+          if (real && real !== here) worktrees.push({ path: cur2.path, branch: cur2.branch, ...(cur2.sha ? { sha: cur2.sha } : {}), threadId: store.threads.find((t) => t.worktree && !t.archived && realOf(t.worktree.root ?? t.worktree.path) === real)?.id });
           cur2 = {};
         }
       }
@@ -1335,6 +1347,18 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         codex: `codex mcp add liner-code${vars.map((v) => ` --env ${q(v)}`).join("")} -- ${argv}`,
       };
     },
+    // Liner MCP (mcp-http.ts): set up after the api, so it's asked for when called.
+    "mcp.status": () => mcpOf().status(),
+    "mcp.cards": () => mcpOf().cards(),
+    "mcp.addApp": (p) => mcpOf().addApp(p),
+    "mcp.setLevel": ({ id, level }) => mcpOf().setLevel(id, level),
+    "mcp.revoke": ({ id }) => (mcpOf().apps.revoke(id), null),
+    "mcp.decide": ({ id, allow, trust }) => (mcpOf().gate.decide(id, allow === true, trust === true), null),
+    "mcp.signIn": ({ id, allow, level }) => (mcpOf().oauth.decide(id, allow === true, level), null),
+    "mcp.retry": async () => (await mcpOf().retry(), mcpOf().status()),
+    "mcp.unblock": ({ id }) => (mcpOf().apps.unblock(id), null),
+    "mcp.rename": ({ id, name }) => mcpOf().apps.rename(id, String(name ?? "")),
+    "mcp.expectSignIn": ({ kind }) => (mcpOf().oauth.expect(kind === "claude" || kind === "chatgpt" ? kind : "other"), null),
     "memory.list": ({ projectId }) => factsOf(store.home, store.project(projectId).id),
     "memory.add": ({ projectId, fact }) => remember(store.home, store.project(projectId).id, fact).facts,
     "memory.forget": ({ projectId, fact }) => forgetFact(store.home, store.project(projectId).id, fact),
@@ -1906,9 +1930,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         patch.swarmReaderModel = !ref || ref === "same" ? undefined : ref;
       }
       if (patch.swarmReaderEffort !== undefined && patch.swarmReaderEffort !== "same" && patch.swarmReaderEffort !== "lower") throw new Error('Reader effort must be "same" or "lower".');
+      checkScmPatch(patch);
+      checkMcpPatch(patch);
       pairSettings(patch as Record<string, unknown>);
       const settings = store.setSettings(patch);
+      if (patch.hosts || patch.trackers) lists.forget();
       if (patch.outside !== undefined) x.outside?.apply();
+      // Let in again: the terminal agents you turned away one by one are let in with the rest.
+      if (patch.outside === true) x.mcp?.apps.unblockStdio();
+      if (patch.outside !== undefined || patch.mcpReach !== undefined || patch.mcpOwnUrl !== undefined || patch.mcpStdioLevel !== undefined) void x.mcp?.apply().catch((e) => console.error("[mcp]", e));
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
       if (patch.accounts || patch.endpoints) {
         syncProviders(settings, runtime.keys);
@@ -2177,7 +2207,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const by = runtime.writerFor(t);
       // A few lines of text: three minutes is plenty, and a model that never answers says so rather than spinning for good.
       signal.throwIfAborted();
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths), signal, "reviewer", 3 * 60_000);
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("commit", asksOf(threadId), diff, paths) + commitStyleNote(store.settings), signal, "reviewer", 3 * 60_000);
       const m = /<message>([\s\S]*?)<\/message>/.exec(out)?.[1]?.trim() || out.trim().split("\n\n")[0];
       if (!m) throw new Error("The model didn't write a message.");
       return { message: m, by };
@@ -2192,7 +2222,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const checks = store.timeline(threadId).flatMap((x) => (x.kind === "tool" && x.toolKind === "exec" && x.status === "done" && /test|lint|check|build|tsc/i.test(x.title) ? [x.title.replace(/^Run /, "")] : []));
       const by = runtime.writerFor(t);
       signal.throwIfAborted();
-      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)), signal, "reviewer", 3 * 60_000);
+      const out = await runtime.quiet(threadId, by, cwd, writePrompt("pr", asksOf(threadId), diff.stdout, [], log.stdout, [...new Set(checks)].slice(0, 8)) + prTemplateNote(store.settings, cwd), signal, "reviewer", 3 * 60_000);
       const title = /<title>([\s\S]*?)<\/title>/.exec(out)?.[1]?.trim();
       const body = /<body>([\s\S]*?)<\/body>/.exec(out)?.[1]?.trim();
       if (!title) throw new Error("The model didn't write a title.");
@@ -2237,7 +2267,27 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { prs, gh: "ready" };
     },
     "pr.merge": async ({ projectId, number, method, deleteBranch }) => {
-      await prMerge(store.project(projectId).path, number, env, { method, deleteBranch });
+      // None picked: Settings › Source control's default merge method.
+      await prMerge(store.project(projectId).path, number, env, { method: mergeMethodFor(store.settings, method), deleteBranch });
+      return null;
+    },
+    "worklists.prs": (q) => lists.prs(store, q ?? {}),
+    "worklists.issues": (q) => lists.issues(store, q ?? {}),
+    "worklists.pr": ({ projectId, number }) => lists.pr(store, projectId, number),
+    "worklists.issue": ({ projectId, key }) => lists.issue(store, projectId, key),
+    "sourcecontrol.scan": (p) => scm.scan(p?.force === true),
+    "sourcecontrol.setToken": async ({ id, token }) => {
+      if (id !== "bitbucket" && id !== "linear") throw new Error("Liner keeps a key for Bitbucket or Linear only.");
+      const tool = await scm.setToken(id, token);
+      lists.forget();
+      store.emit({ type: "keys", keys: keyList() });
+      return tool;
+    },
+    "sourcecontrol.clearToken": ({ id }) => {
+      if (id !== "bitbucket" && id !== "linear") throw new Error("Liner keeps a key for Bitbucket or Linear only.");
+      scm.clearToken(id);
+      lists.forget();
+      store.emit({ type: "keys", keys: keyList() });
       return null;
     },
     "ports.list": ({ threadId }) => (threadId ? listeningPorts(env, mine(threadId)) : listeningPorts(env)),

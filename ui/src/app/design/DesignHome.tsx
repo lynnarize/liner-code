@@ -19,9 +19,10 @@ import { bridge } from "../bridge";
 import { ChoiceChip, Composer, type PlusChoice, type RunSettings } from "../Composer";
 import { getState, onStream, rpc, subscribe as subscribeEngine, useEngine } from "../engine";
 import { getTabs, lastDesignTab, moveTab, openTab, showTab, tabKey, useTabs } from "../face";
-import { I } from "../icons";
+import { I, N } from "../icons";
 import { ago, codeProjects, markOf, modelLabel, threadModel } from "../model";
 import * as os from "../os";
+import { PaneField } from "../Pane";
 import { ProjectChooser } from "../Projects";
 import { SideFacts, SideHead, SideLabel, SideMark, SideRow } from "../SideList";
 import { ConfirmRow, ContextMenu, MenuFoot, PanelHead, Pop, Row, Sep, ShowSidebar, SubMenu } from "../ui";
@@ -389,6 +390,8 @@ export function DesignFiles() {
   const providers = useEngine((s) => s.providers);
   const { list: tabs } = useTabs();
   const [q, setQ] = useState("");
+  // The Filter in the heading opens the field, as the Sessions list's does in Code and Security; it shuts when left empty.
+  const [filtering, setFiltering] = useState(false);
   const [show, setShow] = useState<string>("all");
   const [menu, setMenu] = useState<Menu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -437,6 +440,7 @@ export function DesignFiles() {
     return (
       <SideRow
         key={k}
+        compact
         quiet={state === "done"}
         mark={<SideMark state={markOfTab(s, false)} brand={brand} />}
         title={title}
@@ -494,7 +498,7 @@ export function DesignFiles() {
   const folderOf = (p: Project, f: DesignFileInfo) => (p.kind === "design" ? p.path : `${p.path.replace(/\/+$/, "")}/.liner/designs/${f.id}`);
   return (
     <div className="ld-side">
-      <SideHead title="All designs" note={shownName} menuLabel="Which designs the list shows">
+      <SideHead title="All designs" note={shownName} menuLabel="Which designs the list shows" filtering={filtering} onFilter={() => (setFiltering(!filtering), setQ(""))}>
         {(close) => (
           <>
             <Row title="All designs" icon={<I.list size={16} />} keepIcon on={show === "all"} onPick={() => (close(), setShow("all"))} />
@@ -506,10 +510,11 @@ export function DesignFiles() {
           </>
         )}
       </SideHead>
-      <label className="ld-filter">
-        <I.search size={14} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter designs" aria-label="Filter designs" />
-      </label>
+      {filtering && (
+        <PaneField className="lc-sb-filter" icon={<N.search size={14} />}>
+          <input value={q} autoFocus onChange={(e) => setQ(e.target.value)} placeholder="Filter designs" aria-label="Filter designs" onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setQ(""), setFiltering(false))} onBlur={(e) => !e.target.value.trim() && setFiltering(false)} />
+        </PaneField>
+      )}
       {list === null ? (
         listFailed ? (
           <div className="ld-none">

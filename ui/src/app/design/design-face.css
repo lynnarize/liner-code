@@ -89,7 +89,8 @@
 .ld-side .lc-pop > .ld-tr-add {
   color: var(--l-ink-2);
 }
-.ld-side .lc-pop {
+/* Only the Pop that wraps a whole "add" row is as wide as the list: a heading's ··· keeps its own width, at the heading's end. */
+.ld-side .lc-pop:has(> .ld-tr-add) {
   width: 100%;
 }
 .ld-side .lc-pop > .ld-tr-add {
@@ -267,31 +268,6 @@ button.ld-tr:hover {
   padding: 8px 10px;
   font-size: 13px;
   color: var(--l-ink-3);
-}
-/* The filter: a 30px field, as the app's small fields are. */
-.ld-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  margin: 4px 0;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: var(--lc-well);
-  color: var(--l-ink-3);
-}
-.ld-filter input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.ld-filter input::placeholder {
-  color: var(--l-ink-4);
 }
 /* ---------- the face ---------- */
 .ld-face {

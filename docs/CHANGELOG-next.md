@@ -52,6 +52,15 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   plan-limits ring left the foot (Usage and cost is in ⌘K).
 - Liner's own mark inside the app (Workshop, the sample project, a pull request's draft, an agent with no logo) is the
   line comment, as the app icon and the website have it, not the two turns.
+- What moves while something works is in colour: the working mark and running checks are a warm yellow everywhere, and
+  there are fewer of them at once. The header's team and agents chips no longer carry their own working mark (the live
+  line and the session's row already move for it).
+- Teamwork and a Swarm are no longer pinned over the chat or kept as a card at its end: their chip, and turning a team
+  on, open the team in the Agents panel on the right. Liner Design's chat and a Liner Security scan, which have no
+  Agents panel, keep the team's card.
+- The sidebar is a little wider (240, Capy's default) so titles say more, and it reads the same in Code, Design and
+  Security: every session or design is a one-line title with its state at the right end and the time on the second
+  line, and each list's heading has the same Filter and ··· at its right end.
 
 ### Fixed
 
@@ -67,3 +76,6 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - Liner MCP through Tailscale Funnel no longer sits on Starting when Funnel isn't turned on for your tailnet: it says
   so at once, with Open Tailscale for the page that turns it on. A Tailscale command that hangs now ends when its time
   is up, also when `tailscale` is the Mac app's wrapper script.
+- The Code, Design and Security menu at the sidebar's foot no longer scrolls sideways with a bar over its last row.
+- A panel's heading (an agent's "Gemini 4 Neon, sent by Teamwork") no longer runs under Full canvas and Close in a
+  narrow panel: its words end in "…" and say the rest when you point at them.

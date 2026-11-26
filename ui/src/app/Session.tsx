@@ -43,7 +43,7 @@ import { toComposer as putInComposer } from "./Find";
 import { onFullCanvas, onOpenSurface, SideKeys } from "./TopBar";
 import { askPicker } from "./pr-pick";
 import { ModeChip } from "./Modes";
-import { CrewChip, LoneStop, openAgents, pairOf, showTeam, TeamPin } from "./Crew";
+import { CrewChip, LoneStop, openAgents, pairOf, showTeam } from "./Crew";
 import { setSessionPinned, useSessionPinned } from "./pinned";
 import { LiveLine, Timeline } from "./Timeline";
 import { Disc, Kbd, Lines, NamedSwitch, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
@@ -549,7 +549,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
       if (tw) {
         const wantMode = tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork";
         if (!isSwarm(thread) || (thread.swarm?.mode ?? "teamwork") !== wantMode) await rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: wantMode });
-        // The team's card pinned at the chat's right, not the Agents panel: it opens there on its own while the team is on.
+        // The team in the Agents panel (the right tab), which opens by itself when the team is turned on.
         showTeam(thread.id);
         const body = (tw[2] ?? "").trim();
         if (!body && !m.files.length) return;
@@ -775,9 +775,9 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
           </header>
           <div className="lc-stage" hidden={view !== "chat"}>
             {/*
-              The pinned column at the chat's right, as T3 Code has its card: the Session card while its icon is pressed,
-              and under it, while Teamwork or a Swarm is on, the team's card. They stay until shut; a row that opens
-              something else leaves them up. Where the thread is wide the chat and the message box make room for them.
+              The pinned column at the chat's right, as T3 Code has its card: the Session card while its icon is pressed.
+              It stays until shut; a row that opens something else leaves it up. Where the thread is wide the chat and
+              the message box make room for it. A Teamwork or a Swarm is not pinned here: the Agents panel holds it.
             */}
             <aside className="lc-pin" aria-label="Session details">
               {sessionOpen && (
@@ -787,7 +787,6 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   </Suspense>
                 </div>
               )}
-              <TeamPin thread={thread} />
             </aside>
             <div ref={scroller} className="lc-scroll">
               <div ref={contentRef} className="lc-scroll-in">
@@ -811,7 +810,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                     {slow && <span className="l-shimmer">Opening the session</span>}
                   </div>
                 ) : (
-                  <Timeline threadId={thread.id} docked seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
+                  <Timeline threadId={thread.id} docked teamCard={false} seen={seen.current ?? NONE_SEEN} onReview={review} reviewing={dock.open && dock.panes.some((p) => p.tab === "changes") ? focus : null} onGrow={follow} />
                 )}
                 <ShipCard thread={thread} />
               </div>

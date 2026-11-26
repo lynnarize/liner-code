@@ -35,7 +35,7 @@ test("A Working mark is never tinted by the holder, except on a coloured chip wh
   const icons = src("icons.tsx");
   assert.ok(!/"--mk-tint":\s*tint/.test(icons), "StateMark still hands its tint to the dots");
   const css = sheet("app.css");
-  assert.equal(value(blocks(css, '.lc-mk[data-s="working"]')[0], "color"), "var(--l-ink-2)");
+  assert.equal(value(blocks(css, '.lc-mk[data-s="working"]')[0], "color"), "var(--lc-progress)");
   for (const chip of [".ld-ptag", ".lc-dm-tag"]) assert.equal(value(blocks(css, `${chip} > .lc-mk[data-s="working"]`)[0] ?? "", "color"), "inherit", `a mark on ${chip} is grey on the chip's colour, not its white`);
 });
 

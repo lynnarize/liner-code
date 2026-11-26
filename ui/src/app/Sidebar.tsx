@@ -1,5 +1,5 @@
 /*
-  The sidebar, in Liner 2.0 and since 2026-11-26 in Capy's layout, 224 wide: no colour but a
+  The sidebar, in Liner 2.0 and since 2026-11-26 in Capy's layout, 240 wide: no colour but a
   session's state, no boxes, space between its parts. Its top row has nothing but the traffic
   lights at its left, the window's drag area, and at its right end Search (⌘K), Hide, Back and
   Forward (every face has this row). The name is at the foot, "Liner Code", "Liner Design" or

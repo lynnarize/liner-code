@@ -131,7 +131,7 @@ export function MultiAgentRow({ thread, close }: { thread: Thread; close: () => 
     done();
     close();
     if (to === "off") void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail);
-    // On, the team's card pins at the chat's right (Crew.tsx TeamPin), where the Agents panel opened before.
+    // On, the team opens in the Agents panel (Crew.tsx showTeam), the right tab that lists it.
     else void rpc("swarm.enable", { threadId: thread.id, enabled: true, mode: to }).then(() => showTeam(thread.id), fail);
   };
   return (

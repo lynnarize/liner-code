@@ -293,7 +293,7 @@ test("the classes nothing references are gone from every stylesheet", () => {
 test("the sidebar's width is said once", () => {
   const css = sheet("app.css");
   assert.equal((css.match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
-  assert.ok(css.includes("--lc-side: 224px"), "the one declaration is not --lc-side: 224px (Capy's layout, 2026-11-26), so a wrong width would pass");
+  assert.ok(css.includes("--lc-side: 240px"), "the one declaration is not --lc-side: 240px (Capy's default, 2026-11-26), so a wrong width would pass");
 });
 
 test("the corner scale declares its four tokens", () => {

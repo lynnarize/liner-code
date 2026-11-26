@@ -191,7 +191,9 @@ export function SecuritySide() {
         <SideRow
           key={`scan:${s.id}`}
           data-row={s.threadId}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
@@ -224,7 +226,9 @@ export function SecuritySide() {
         <SideRow
           key={`fix:${t.id}`}
           data-row={t.id}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
@@ -258,7 +262,9 @@ export function SecuritySide() {
         <SideRow
           key={`ask:${t.id}`}
           data-row={t.id}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
@@ -317,23 +323,20 @@ export function SecuritySide() {
         </button>
       </div>
 
-      <SideHead title="Sessions" note={showArchived ? "Archived" : view === "kind" ? "By kind" : undefined} menuLabel="What the list shows">
+      <SideHead title="Sessions" note={showArchived ? "Archived" : view === "kind" ? "By kind" : undefined} menuLabel="What the list shows" filtering={search !== null} onFilter={() => setSearch((s) => (s === null ? "" : null))}>
         {(close) => (
           <>
             <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
             <Row title="By kind" icon={<I.list size={16} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
-            <Row title={search !== null ? "Hide Find" : "Find a session"} icon={<I.search size={16} />} keepIcon on={search !== null} onPick={() => (close(), setSearch((s) => (s === null ? "" : null)))} />
             <Row title="Show archived" icon={<I.box size={16} />} keepIcon on={showArchived} onPick={() => (close(), setShowArchived((a) => !a))} />
           </>
         )}
       </SideHead>
       {/* The app's one find field (PaneField), as the panel's and the Findings page's. */}
       {search !== null && (
-        <div className="ls-side-find">
-          <PaneField icon={<I.search size={14} />}>
-            <input value={search} placeholder="Find a session" aria-label="Find a session" autoFocus onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))} />
-          </PaneField>
-        </div>
+        <PaneField className="lc-sb-filter" icon={<N.search size={14} />}>
+          <input value={search} placeholder="Filter by title or project" aria-label="Filter the sessions by title or project" autoFocus onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))} onBlur={(e) => !e.target.value.trim() && setSearch(null)} />
+        </PaneField>
       )}
 
       <div className="ls-side-list lc-sl-list">

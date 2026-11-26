@@ -202,6 +202,8 @@ export function OpenDesigns() {
         key={k}
         data-row={s?.id ?? k}
         data-design-tab={k}
+        compact
+        loud={state === "needs" && !seen}
         current={on}
         quiet={state === "done"}
         mark={<SideMark state={mark} brand={brand} label={seen ? "Waits for your answer" : undefined} />}

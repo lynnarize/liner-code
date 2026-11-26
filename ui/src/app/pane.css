@@ -17,8 +17,12 @@
   padding: 0 8px 0 16px;
   border-bottom: 1px solid var(--l-line);
 }
+/* The name and what the head shows give way before the tools and Full canvas and Close, never under them ("Test & Build QA
+   Gemini 4 Neon, sent by Teamwork" in a narrow panel): the words go to an ellipsis first; the name keeps its width up to
+   60% of the head, where a long one is cut. */
 .lc-pane-name {
   flex: none;
+  max-width: 60%;
   margin: 0 6px 0 0;
   overflow: hidden;
   font-size: 13.5px;
@@ -30,7 +34,7 @@
 }
 .lc-pane-shows {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 1000 auto;
   align-items: center;
   gap: 2px;
   min-width: 0;
@@ -123,9 +127,12 @@
   }
 }
 .lc-pane-words {
+  min-width: 0;
+  overflow: hidden;
   padding: 0 8px;
   font-size: 13px;
   color: var(--l-ink-3);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .lc-pane-field {

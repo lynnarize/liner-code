@@ -118,7 +118,12 @@ export function PaneTool({ label, icon, pressed, disabled, onClick }: { label: s
 }
 
 /** Quiet words in the head or a foot ("2 files", "+12 −1", "Knows up to turn 4"). */
-export const PaneWords = ({ children }: { children: ReactNode }) => <span className="lc-pane-words">{children}</span>;
+export const PaneWords = ({ children }: { children: ReactNode }) => (
+  // Cut to an ellipsis in a narrow panel, so the whole line is its tooltip.
+  <span className="lc-pane-words" title={typeof children === "string" ? children : undefined}>
+    {children}
+  </span>
+);
 
 /** A field in the head (Files' find, the Browser's address): 30px on a wash, a 10px corner, its icon then what it holds; it takes the room left. */
 export const PaneField = ({ icon, children, className }: { icon?: ReactNode; children: ReactNode; className?: string }) => (

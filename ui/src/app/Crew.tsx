@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSPro
 import { toast } from "@liner/components/toast/toast";
 import { SWARM_SELF_TURNS_MAX, agentState, isPair, isSwarm, type AgentProfile, type AgentStep, type FileChange, type Item, type PairShare, type PlanEntry, type ProviderInfo, type SwarmMember, type SwarmPost, type SwarmSnapshot, type Thread } from "@contracts";
 import { getState, rpc, threadOf, useEngine, useItemsWhere, useSwarm } from "./engine";
-import { I, ModelMark, StateMark, StepMark, type StepState } from "./icons";
+import { I, ModelMark, StepMark, type StepState } from "./icons";
 import { useLaunch } from "./launch";
 import { agentOf, compact, duration, isModelAgent, markOf, modelLabel, planEnd, planStatus, plural, sumLines, type PlanEnd } from "./model";
 import { ModelPop } from "./Models";
@@ -305,37 +305,19 @@ function ChipPop({ threadId, label, trigger, children }: { threadId: string; lab
 }
 
 /**
-  Teamwork's and a Swarm's chip: it pins the team's card at the chat's right, under the Session card (TeamPin), and a
-  second press takes it away. The card shows from the moment the team is on until you shut it.
+  Teamwork's and a Swarm's chip: it opens the team in the Agents panel (the right tab), which lists every member, the
+  board, the worktrees and the team's actions. Nothing of the team is pinned over the chat: the panel already holds it.
 */
 function TeamChip({ threadId, label, children }: { threadId: string; label: string; children: ReactNode }) {
-  const shown = usePopOpen(threadId, true);
-  // Shut is for now only: the card shows again each time the team is on and its session opens (the chip mounts).
-  useEffect(() => {
-    chipsShown.add(threadId);
-    return () => void (chipsShown.delete(threadId), popOpen.delete(threadId));
-  }, [threadId]);
   return (
-    <button type="button" className="lc-crew l-focus" aria-pressed={shown} aria-label={`${label}: who works, the board and the worktrees${shown ? ", pinned. Press to unpin" : ""}`} onClick={() => setPop(threadId, !shown)}>
+    <button type="button" className="lc-crew l-focus" aria-label={`${label}: who works, the board and the worktrees, in the Agents panel`} onClick={() => showTeamView(threadId, "all")}>
       {children}
     </button>
   );
 }
-/** Shows the team's card in the pinned column: what turning Teamwork or a Swarm on opens, in place of the Agents panel. */
+/** Opens the team in the Agents panel: what turning Teamwork or a Swarm on shows, as the chip does. */
 export function showTeam(threadId: string) {
-  setPop(threadId, true);
-}
-/** The team's card in the pinned column at the chat's right (Session.tsx), what the chip's popup held, up while the team is on and you haven't shut it. */
-export function TeamPin({ thread }: { thread: Thread }) {
-  const on = isSwarm(thread);
-  const swarm = useSwarm(thread.id, on);
-  const shown = usePopOpen(thread.id, true);
-  if (!on || !swarm || !shown) return null;
-  return (
-    <div className="lc-pin-card lc-pop-panel">
-      <TeamPop thread={thread} swarm={swarm} close={() => {}} />
-    </div>
-  );
+  showTeamView(threadId, "all");
 }
 
 /**
@@ -354,7 +336,6 @@ export function CrewChip({ thread }: { thread: Thread }) {
     const label = swarm.mode === "swarm" ? "Swarm" : "Teamwork";
     return (
       <TeamChip threadId={thread.id} label={label}>
-        <StateMark state={working ? "working" : "done"} size={12} />
         <span className="lc-crew-t">
           {label}
           <span className="lc-quiet"> {swarm.paused ? "paused" : working ? `${working} of ${live.length} working` : live.length > 1 ? `${live.length - 1} parked` : "ready"}</span>
@@ -375,8 +356,7 @@ export function CrewChip({ thread }: { thread: Thread }) {
       label="Who's on this session"
       trigger={
         <>
-          {/* It shows only while two or more work: the working mark says so, as everywhere, and the faces say who. */}
-          <StateMark state="working" size={12} />
+          {/* It shows only while two or more work; the faces say who. No working mark: the live line and the session's row move for it. */}
           <span className="lc-cr-faces" aria-hidden>
             <span>
               <ModelMark kind={markOf(pair ? pair.leadRef : lead.model)} size={12} />
@@ -454,91 +434,6 @@ function useTeamView(threadId: string): [TeamView, (v: TeamView) => void] {
   return [v, (to) => (teamViews.set(threadId, to), viewWatchers.forEach((w) => w()))];
 }
 
-/**
-  The agents popup for Teamwork and a Swarm (board Agents): the coordinator "(N agents)" with a fold chevron, its agents
-  on a guide line under it, an agent's own agents nested the same way, finished ones folded to "N finished ›"; then the
-  Board and the Worktrees; then the actions (a Swarm: Add a worker, Hibernate all, Pause, Turn it off behind a confirm;
-  Teamwork: Pause, Turn it off); a grey foot line of slots or counts. An agent opens in the panel.
-*/
-function TeamPop({ thread, swarm, close }: { thread: Thread; swarm: SwarmSnapshot; close: () => void }) {
-  const providers = useEngine((s) => s.providers);
-  const swarmMode = swarm.mode === "swarm";
-  const live = swarm.members.filter((m) => m.state !== "killed");
-  const coord = live.find((m) => m.name === "coordinator");
-  const workers = live.filter((m) => m.name !== "coordinator");
-  const now = useNow(workers.some((m) => m.state === "working"));
-  const tree = useMemo(() => teamTree(swarm.members), [swarm.members]);
-  const [shut, setShut] = useState(false);
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
-  const worktrees = workers.filter((m) => m.workspace === "share");
-  const landed = worktrees.filter((m) => m.landed).length;
-  const label = swarmMode ? "Swarm" : "Teamwork";
-  const open = (m: SwarmMember) => (close(), m.itemId ? showAgent(thread.id, m.itemId) : showTeamView(thread.id, "all"));
-  const row = (m: SwarmMember, kids: number) => (
-    <Row
-      key={m.name}
-      title={
-        <>
-          {memberName(m, swarmMode)}
-          {swarmMode && m.role ? <span className="lc-quiet"> {m.role}</span> : null}
-          {kids > 0 ? <span className="lc-quiet"> ({plural(kids, "agent")})</span> : null}
-        </>
-      }
-      icon={<StepMark size={14} state={memberStep(m)} />}
-      end={memberEnd(m, now)}
-      onPick={() => open(m)}
-    />
-  );
-  // A level of the tree on a guide line; its members that ended fold to one row that opens them in place.
-  const branch = (lv: TeamLevel<SwarmMember>, at: string): ReactNode => (
-    <div className="lc-ap-kids">
-      {lv.kids.map((n) => (
-        <div key={n.m.name}>
-          {row(n.m, n.kids.length + n.finished.length)}
-          {(n.kids.length > 0 || n.finished.length > 0) && branch(n, n.m.name)}
-        </div>
-      ))}
-      {lv.finished.length > 0 && (unfolded.has(at) ? lv.finished.map((m) => row(m, 0)) : <Row title={`${lv.finished.length} finished`} icon={<StepMark size={14} state="done" />} chevron onPick={() => setUnfolded((was) => new Set([...was, at]))} />)}
-    </div>
-  );
-  const coordWorking = coord?.state === "working" || swarm.activeSlots > 0;
-  return (
-    <div className="lc-ap">
-      <PanelHead end={[coord ? shortModel(modelLabel(coord.model, providers)) : "", swarm.rssMb > 0 ? `~${swarm.rssMb} MB` : ""].filter(Boolean).join(" · ") || undefined}>{swarm.title || label}</PanelHead>
-      <Row
-        title={
-          <>
-            Coordinator<span className="lc-quiet"> ({plural(workers.length, "agent")})</span>
-          </>
-        }
-        icon={<StepMark size={14} state={coordWorking ? "working" : swarm.paused ? "waiting" : "done"} />}
-        end={
-          <>
-            {coordWorking && coord?.startedAt ? duration((now - coord.startedAt) / 1000) : swarm.paused ? "paused" : ""}
-            {shut ? <I.chevR size={14} /> : <I.chevD size={14} />}
-          </>
-        }
-        onPick={() => setShut(!shut)}
-      />
-      {!shut && workers.length > 0 && branch(tree, "coordinator")}
-      <Sep />
-      {swarmMode && <Row title="Board" icon={<I.comment size={14} />} end={plural(swarm.posts.length, "post")} chevron onPick={() => (close(), showTeamView(thread.id, "board"))} />}
-      {(swarmMode || worktrees.length > 0) && <Row title="Worktrees" icon={<I.branch size={14} />} end={worktrees.length ? `${worktrees.length}, ${landed ? `${landed} landed` : "none landed"}` : "none yet"} chevron onPick={() => (close(), showTeamView(thread.id, "worktrees"))} />}
-      <Row title="Every agent, in the panel" icon={<I.panel size={14} />} chevron onPick={() => (close(), showTeamView(thread.id, "all"))} />
-      <Sep />
-      {swarmMode && <Row title="Add a worker" icon={<I.plus size={14} />} onPick={() => (close(), showTeamView(thread.id, "add"))} />}
-      {swarmMode && workers.some((m) => m.state === "working" || m.state === "waiting") && <Row title="Hibernate all" icon={<I.snooze size={14} />} onPick={() => (close(), void rpc("swarm.hibernate", { threadId: thread.id }).catch(fail))} />}
-      {swarm.paused ? (
-        <Row title="Carry on" icon={<I.play size={14} />} onPick={() => (close(), void rpc("swarm.resume", { threadId: thread.id }).catch(fail))} />
-      ) : (
-        <Row title={swarmMode ? "Pause the swarm" : "Pause Teamwork"} icon={<I.stop size={14} />} disabled={!workers.some((m) => m.state === "working" || m.state === "queued" || m.state === "waiting")} onPick={() => (close(), void rpc("swarm.stopAll", { threadId: thread.id }).catch(fail))} />
-      )}
-      <ConfirmRow title={swarmMode ? "Turn the swarm off" : "Turn Teamwork off"} sure="Turn it off: every worker stops" icon={<I.close size={14} />} red onConfirm={() => (close(), void rpc("swarm.enable", { threadId: thread.id, enabled: false }).catch(fail))} />
-      <Sep />
-      <MenuFoot>{swarm.paused ? pausedWords(swarm) : swarmMode ? `${swarm.activeSlots} of ${swarm.maxActive} slots busy${swarm.queuedCount ? `, ${plural(swarm.queuedCount, "agent")} ${swarm.queuedCount === 1 ? "waits" : "wait"}` : ""}` : teamCounts(swarm.members) || "No agent yet: say what to do in the chat"}</MenuFoot>
-    </div>
-  );
-}
 /** Why a team waits for you, in a few words. */
 const pausedWords = (swarm: SwarmSnapshot) => (swarm.paused?.reason === "limit" ? `Paused after ${swarm.paused.turns ?? SWARM_SELF_TURNS_MAX} turns it started by itself` : swarm.paused?.reason === "restart" ? "Paused: Liner Code restarted" : "Paused by you");
 
@@ -664,15 +559,21 @@ export function useCardFold(threadId: string, card: string): [boolean, (open: bo
   A plain crew (agents a model sent) has the same card while two or more work, or one goes on past its turn: one agent
   while the turn runs is the live line's to say. It took the place of the strips over the message box.
 */
-export function CrewCard({ threadId }: { threadId: string }) {
+export function CrewCard({ threadId, team = true }: { threadId: string; team?: boolean }) {
   const thread = useEngine((s) => threadOf(s, threadId));
   if (!thread) return null;
-  return <CrewCardOf thread={thread} />;
+  return <CrewCardOf thread={thread} team={team} />;
 }
-function CrewCardOf({ thread }: { thread: Thread }) {
+/*
+  `team` false: a Teamwork or a Swarm has no card here. A Code session's own Agents panel (the right tab) lists the team,
+  opens by itself when the team is turned on, and the header's chip reopens it, so a card kept at the chat's end only
+  said it twice. Liner Design's chat and a Liner Security scan have no such panel, so theirs stays.
+*/
+function CrewCardOf({ thread, team }: { thread: Thread; team: boolean }) {
   const crew = useCrew(thread);
   const swarmOn = isSwarm(thread);
-  const swarm = useSwarm(thread.id, swarmOn);
+  const swarm = useSwarm(thread.id, swarmOn && team);
+  if (swarmOn && !team) return null;
   if (swarmOn && swarm) {
     const workers = swarm.members.filter((m) => m.name !== "coordinator" && m.state !== "killed");
     const busy = workers.some((m) => m.state === "working" || m.state === "queued") || swarm.members.some((m) => m.name === "coordinator" && m.state === "working");

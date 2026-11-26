@@ -144,9 +144,18 @@ test("a step's mark has the dots only while it runs: finished is a tick, waiting
   const css = app("app.css");
   assert.match(css, /\.lc-mk\[data-step="tick"\] \{\s*color: var\(--l-ink-4\);/, "a finished step's tick isn't in the fourth ink");
   assert.match(css, /\.lc-mk\[data-step="cross"\] \{\s*color: var\(--l-danger\);/, "a failed step's cross isn't in the danger colour");
-  // Working is three lit dots with nothing behind them, in the second ink, whoever's model it is.
+  // Working is three lit dots with nothing behind them, in the progress yellow (as Capy's), whoever's model it is.
   // No holder tints it either (RULING 5): only a mark on a coloured chip takes the chip's white (app.css).
-  assert.match(css, /\.lc-mk\[data-s="working"\] \{\s*--mk-loop: 1\.2s;\s*color: var\(--l-ink-2\);/, "working isn't in the second ink");
+  assert.match(css, /\.lc-mk\[data-s="working"\] \{\s*--mk-loop: 1\.2s;\s*color: var\(--lc-progress\);/, "working isn't in the progress yellow");
   assert.ok(!/\.lc-mk\[data-s="working"\][^{]*data-brand/.test(css), "working is tinted by its model again");
   assert.match(css, /\.lc-mk\[data-s="working"\] > i \{\s*opacity: 0;/, "working draws a dim grid behind its light");
+});
+
+test("What moves while something runs is in colour, as Capy's progress marks are: Working and Checks in a yellow of their own, light and dark, apart from Needs you's amber", () => {
+  const css = app("app.css");
+  const light = /:root \{[\s\S]*?--lc-progress: (oklch\([^)]*\));/.exec(css);
+  const dark = /\[data-theme="dark"\] \{[^}]*?--lc-progress: (oklch\([^)]*\));/.exec(css);
+  assert.ok(light && dark, "the progress yellow isn't set for both looks");
+  for (const state of ["working", "checks"]) assert.match(css, new RegExp(`\\.lc-mk\\[data-s="${state}"\\] \\{\\s*--mk-loop: [\\d.]+s;\\s*color: var\\(--lc-progress\\);`), `${state} is still grey`);
+  assert.match(css, /\.lc-mk:is\(\[data-s="needs"\], \[data-s="limit"\]\) \{\s*color: var\(--l-warn\);/, "Needs you lost its amber");
 });

@@ -16,8 +16,9 @@
   --lc-font-name: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --l-track-body: -0.005em;
   --l-track-display: -0.02em;
-  /* The sidebar's width: 224 since it took Capy's layout (2026-11-26), 264 before. */
-  --lc-side: 224px;
+  /* The sidebar's width: 240, Capy's own default, since 2026-11-26 when 224 (the width in a post of Capy's) cut every title
+     short and left the face menu no room; 264 before Capy's layout. */
+  --lc-side: 240px;
   /* The one top row: the sidebar's head, the session's header and the panel's tabs share it (44, as
      the approved one-row header has it; 52 before 0.2.5). Its centre, the window's gap plus half of
      it, is where both shells put the traffic lights: 28px from the window's top. */
@@ -77,6 +78,9 @@ html[data-action="ink"] {
   --lc-hair: color-mix(in oklab, var(--l-ink) 8%, transparent);
   /* A merged pull request's purple: Liner has no token of its own for it (the state mark, .lc-mk). */
   --lc-merged: oklch(0.6 0.19 300);
+  /* What moves while something runs (the state mark's Working and Checks): Capy's progress yellow, a gold on the light
+     paper so three small dots still show. Yellow, not the amber of Needs you, which stands still in its own shape. */
+  --lc-progress: oklch(0.79 0.165 89);
   /* No text lighter than this: the fourth grey is 4.6:1 on the paper (it was 3.6:1). */
   --l-ink-4: oklch(0.545 0.006 265);
   --lc-float-shadow: 0 0 0 0.5px oklch(0.3 0.04 265 / 0.08), 0 1px 2px oklch(0.3 0.04 265 / 0.06), 0 20px 48px -18px oklch(0.3 0.04 265 / 0.3), 0 4px 12px -4px oklch(0.3 0.04 265 / 0.08);
@@ -102,6 +106,7 @@ html[data-action="ink"] {
   --lc-ctl-ink: oklch(0.94 0.003 265);
   --lc-ctl-ink-2: oklch(0.66 0.006 265);
   --lc-merged: oklch(0.72 0.15 300);
+  --lc-progress: oklch(0.85 0.14 95);
   --l-ink-4: oklch(0.64 0.005 265);
   --lc-float-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4), 0 20px 48px -14px oklch(0 0 0 / 0.7);
 }
@@ -1429,8 +1434,8 @@ html[data-native="mac"] .lc-sb-head {
    turn, agent, step, scan, design, add-on build, pull request). A state is which dots show and in
    what colour (dots 1 to 9, row by row). A change runs across them corner to corner, 35ms a
    diagonal: the dots leaving shrink and fade, the ones arriving grow in, and the colour follows.
-   Working is a light running round the outer eight in the tint of whose model it is; checks is a
-   light crossing from one corner to the other. They always move, whatever Reduce motion and the
+   Working is a light running round the outer eight in the progress yellow; checks is a light
+   crossing from one corner to the other, in the same yellow. They always move, whatever Reduce motion and the
    app's Motion setting say: they are how a person reads state, not decoration (the block's end
    holds them against foundation.css; look.ts HINTS keeps Quick's entering window off the dots). */
 .lc-mk {
@@ -1488,7 +1493,7 @@ html[data-native="mac"] .lc-sb-head {
 }
 .lc-mk[data-s="checks"] {
   --mk-loop: 1.5s;
-  color: var(--l-ink-3);
+  color: var(--lc-progress);
 }
 .lc-mk[data-s="ready"] {
   color: var(--l-ok);
@@ -1499,11 +1504,11 @@ html[data-native="mac"] .lc-sb-head {
 .lc-mk[data-s="problem"] {
   color: var(--l-danger);
 }
-/* Working (choice B, board Marks): three lit dots travel round the ring with nothing behind them, in the second ink. No dim
-   grid, no accent and no tint by model or agent, whatever the holder passes. */
+/* Working (choice B, board Marks): three lit dots travel round the ring with nothing behind them, in the progress yellow as
+   Capy's do (2026-11-26: the grey read as nothing happening). No tint by model or agent, whatever the holder passes. */
 .lc-mk[data-s="working"] {
   --mk-loop: 1.2s;
-  color: var(--l-ink-2);
+  color: var(--lc-progress);
 }
 /* A mark on a coloured chip (a Design frame's lead or sidekick tag, on the canvas and in the panel's mini view) takes the
    chip's own white, or a grey dot would sit on the lead's colour. */
@@ -7074,11 +7079,13 @@ html[data-motion="quick"][data-native="mac"] .lc-top {
   background: var(--l-ok);
   color: #fff;
 }
+/* min-width 0: the menu's grid column would otherwise grow to an option's whole words and scroll sideways under the last row. */
 .lc-face-opt {
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   padding: 5px 7px;
   border: 0;

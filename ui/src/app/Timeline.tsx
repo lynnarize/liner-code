@@ -119,6 +119,8 @@ type Props = {
   onReview?: (checkpointId: string, path?: string) => void;
   /** Where onReview takes you, after a file's name in a row's label: "in Changes" unless the face says otherwise ("in Liner Code"). */
   reviewIn?: string;
+  /** False where the session's own Agents panel lists its Teamwork or Swarm (a Code session): the team then has no card at the chat's end. */
+  teamCard?: boolean;
   reviewing?: { id: string; path?: string } | null;
   onGrow?: () => void;
   /**
@@ -136,7 +138,7 @@ type Props = {
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 
-export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "in Changes", reviewing, onGrow, docked, draw }: Props) {
+export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "in Changes", teamCard = true, reviewing, onGrow, docked, draw }: Props) {
   const own = useItems(given ? undefined : threadId);
   const items = given ?? own;
   const agents = useEngine((s) => s.agents);
@@ -166,7 +168,7 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "i
       ))}
       <Ahead threadId={threadId} items={items} providers={providers} />
       <Boundary label="The cards" quiet>
-        <ChatCards threadId={threadId} items={items} card={card} />
+        <ChatCards threadId={threadId} items={items} card={card} teamCard={teamCard} />
       </Boundary>
     </div>
     </ReviewIn.Provider>
@@ -179,11 +181,11 @@ export function Timeline({ threadId, items: given, seen, onReview, reviewIn = "i
   the live line at the chat's foot; a newer answer comes in above them. Every face that draws a Timeline has them: the
   session, Liner Design's chat, a Liner Security scan and the side chat.
 */
-function ChatCards({ threadId, items, card }: { threadId: string; items: Item[]; card: ReturnType<typeof planCard> }) {
+function ChatCards({ threadId, items, card, teamCard }: { threadId: string; items: Item[]; card: ReturnType<typeof planCard>; teamCard: boolean }) {
   return (
     <div className="lc-cards">
       {card && <PlanCard threadId={threadId} it={card.plan} foldDone={card.foldDone} end={planEnd(planStatus(items, card.plan.turn))} />}
-      <CrewCard threadId={threadId} />
+      <CrewCard threadId={threadId} team={teamCard} />
     </div>
   );
 }

@@ -371,10 +371,9 @@ const markGrid = (size: number): [number, number] => {
 /**
   How anything stands, as one mark everywhere (session-state.ts MarkState): nine dots in a 3×3 grid,
   each state a shape and a colour. Working (choice B, board Marks, 2026-11-25) is three lit dots
-  travelling round the ring with nothing behind them, in the second ink: no dim grid, no accent and no
-  tint by model, so a row that works weighs what its neighbours do. `brand` is still taken (the places
-  that pass a model's mark need no change) but no longer colours it, and nor does `tint`: a Working mark
-  is the second ink wherever it is. Only a mark on a coloured chip (a Design frame's lead or sidekick tag)
+  travelling round the ring with nothing behind them, in the progress yellow (Capy's, 2026-11-26): no dim
+  grid and no tint by model. `brand` is still taken (the places that pass a model's mark need no change)
+  but no longer colours it, and nor does `tint`: a Working mark is the same yellow wherever it is. Only a mark on a coloured chip (a Design frame's lead or sidekick tag)
   takes the chip's own white, from app.css, so a dark dot never sits on the lead's colour. Checks is a light
   crossing corner to corner. A change of `state` plays across the dots, so keep the mark mounted and
   change the state (don't key it by its state). With a `label` it is an image that says its state;

@@ -10,14 +10,25 @@ test("The Session icon pins its card at the chat's right as T3 Code does, one ch
   assert.match(switcher, /aria-pressed=\{session\.open\}[\s\S]*?onClick=\{\(\) => session\.onOpen\(!session\.open\)\}/, "the Session icon isn't a toggle");
   const session = read("Session.tsx");
   assert.match(session, /const sessionOpen = useSessionPinned\(\);/, "the pin isn't the shared choice (pinned.ts)");
-  assert.match(session, /<aside className="lc-pin"[\s\S]*?<SessionPopup thread=\{thread\}[\s\S]*?onClose=\{\(\) => \{\}\}[\s\S]*?<TeamPin thread=\{thread\} \/>\s*<\/aside>/, "the pinned column doesn't hold the Session card and the team's under it");
+  assert.match(session, /<aside className="lc-pin"[\s\S]*?<SessionPopup thread=\{thread\}[\s\S]*?onClose=\{\(\) => \{\}\}[\s\S]*?<\/aside>/, "the pinned column doesn't hold the Session card");
   assert.match(read("pinned.ts"), /localStorage\.setItem\(KEY, v \? "1" : "0"\)/, "the pin isn't kept across launches");
 });
 
-test("Teamwork's and a Swarm's chip pins the team's card under the Session card, shown from the moment the team is on", () => {
+test("Teamwork and a Swarm are not pinned over the chat: their chip opens the team in the Agents panel, the right tab that lists it", () => {
   const crew = read("Crew.tsx");
-  assert.match(crew, /function TeamChip[\s\S]*?const shown = usePopOpen\(threadId, true\);[\s\S]*?aria-pressed=\{shown\}[\s\S]*?onClick=\{\(\) => setPop\(threadId, !shown\)\}/, "the team's chip isn't a toggle that starts pinned");
-  assert.match(crew, /export function TeamPin[\s\S]*?<div className="lc-pin-card lc-pop-panel">\s*<TeamPop thread=\{thread\} swarm=\{swarm\} close=\{\(\) => \{\}\} \/>/, "the team's card isn't the popup's own rows in a pinned card");
+  assert.doesNotMatch(crew, /export function TeamPin/, "the team still has a card pinned at the chat's right");
+  assert.match(crew, /function TeamChip[\s\S]*?onClick=\{\(\) => showTeamView\(threadId, "all"\)\}/, "the team's chip doesn't open the Agents panel");
+  assert.doesNotMatch(read("Session.tsx"), /<TeamPin\b/, "the pinned column still holds a team card");
+});
+
+test("A Code session keeps no Teamwork or Swarm card at the chat's end, where its Agents panel lists the team; Liner Design's chat and a Security scan, with no such panel, keep theirs", () => {
+  const session = read("Session.tsx");
+  assert.match(session, /<Timeline threadId=\{thread\.id\} docked teamCard=\{false\}/, "the Code session still pins the team's card at the chat's end");
+  assert.match(read("Timeline.tsx"), /teamCard = true,/, "the other faces lost the team's card");
+  assert.doesNotMatch(read("design/Chat.tsx"), /teamCard=\{false\}/);
+  assert.doesNotMatch(read("security/ScanSession.tsx"), /teamCard=\{false\}/);
+  const crew = read("Crew.tsx");
+  assert.match(crew, /function CrewCardOf\(\{ thread, team \}[\s\S]*?if \(swarmOn && !team\) return null;/, "the card doesn't stand aside for the panel");
 });
 
 test("Where the thread is wide, the chat and the message box make room for the pinned column; narrower, the message box stays over it", () => {
@@ -27,18 +38,13 @@ test("Where the thread is wide, the chat and the message box make room for the p
   assert.match(pin, /z-index: 4;/, "the column isn't under the message box's 5");
 });
 
-test("Turning Teamwork or a Swarm on shows its pinned card, not the Agents panel, from /teamwork, /swarm and Multi-agent alike", () => {
+test("Turning Teamwork or a Swarm on opens the team in the Agents panel, from /teamwork, /swarm and Multi-agent alike", () => {
   const session = read("Session.tsx");
   const send = session.slice(session.indexOf("const send = async"), session.indexOf("const send = async") + 1200);
-  assert.match(send, /showTeam\(thread\.id\);/, "/teamwork doesn't show the team's card");
-  assert.doesNotMatch(send, /openTab\(d, "agents"\)/, "/teamwork still opens the Agents panel");
+  assert.match(send, /showTeam\(thread\.id\);/, "/teamwork doesn't show the team");
   const info = read("SessionInfo.tsx");
-  assert.match(info, /rpc\("swarm\.enable", \{ threadId: thread\.id, enabled: true, mode: to \}\)\.then\(\(\) => showTeam\(thread\.id\), fail\)/, "Multi-agent still opens the Agents panel");
-});
-
-test("A team's card that was shut shows again the next time the team is on or its session opens", () => {
-  const crew = read("Crew.tsx");
-  assert.match(crew, /function TeamChip[\s\S]*?return \(\) => void \(chipsShown\.delete\(threadId\), popOpen\.delete\(threadId\)\);/, "a shut card stays shut");
+  assert.match(info, /rpc\("swarm\.enable", \{ threadId: thread\.id, enabled: true, mode: to \}\)\.then\(\(\) => showTeam\(thread\.id\), fail\)/, "Multi-agent doesn't show the team");
+  assert.match(read("Crew.tsx"), /export function showTeam\(threadId: string\) \{\s*showTeamView\(threadId, "all"\);/, "showing the team doesn't open the Agents panel");
 });
 
 test("Picking Off, Teamwork or Swarm shuts Multi-agent's side menu, which the pinned Session card, closing nothing, left up", () => {

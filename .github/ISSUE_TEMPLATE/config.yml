@@ -1,1 +1,5 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/lynnarize/liner-code/discussions
+    about: Questions go in Discussions. Q&A is for something that won't start, Ideas for what it should do, and Early testers for how the beta feels.

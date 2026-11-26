@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for trying the alpha. **Help › Report a Problem…** in the app makes a zip with the engine's log and the versions; look through the log before you attach it (it can hold folder names and parts of what the agents did).
+        Thanks for trying the beta. **Help › Report a Problem…** in the app makes a zip with the engine's log and the versions; look through the log before you attach it (it can hold folder names and parts of what the agents did).
   - type: textarea
     id: what
     attributes:
@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: Liner Code version
-      placeholder: "0.1.0"
+      placeholder: "0.3.2"
     validations:
       required: true
   - type: input

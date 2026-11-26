@@ -323,3 +323,13 @@ test("Liner's mark in the app is the line comment, two slanted strokes with the 
   assert.match(main, /"docs\/brand\/line-comment", `liner-code-icon-\$\{look\}\.png`/, "the Dock is given the two turns when run from source");
   for (const look of ["light", "dark"]) assert.ok(readFileSync(new URL(`../../docs/brand/line-comment/liner-code-icon-${look}.png`, import.meta.url)).length > 1000, `the ${look} icon is missing`);
 });
+
+test("Picking an effort level on a model's card leaves the picker open, whether the model is the session's or another one it then picks", () => {
+  const composer = code("Composer.tsx");
+  const at = composer.indexOf("const effort: EffortHook = {");
+  assert.ok(at >= 0, "the composer's effort hook is gone");
+  const hook = composer.slice(at, composer.indexOf("\n  };", at));
+  assert.match(hook, /if \(ref === runs\) return onSettings\(\{ effort: id \}\);/);
+  assert.match(hook, /onSettings\(\{ agent: `@\$\{ref\}`, sidekick: undefined, model: undefined, effort: id \}\);/, "another model's level doesn't pick that model");
+  assert.doesNotMatch(hook, /close\(\)|shut\(\)/, "an effort pick closes the picker");
+});

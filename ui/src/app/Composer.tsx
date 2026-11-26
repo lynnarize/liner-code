@@ -1931,7 +1931,9 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   /*
     How hard a model works, in its tool's levels: the session's model takes the press as its effort; another is picked at that
     level. The stored word goes to every card, unresolved, so "" reads as the tool's own default; only the session's model
-    holds it, so on another model's card the level carried over is one a press picks, never takes back.
+    holds it, so on another model's card the level carried over is one a press picks, never takes back. Either way the
+    picker stays open, as Fusion's effort leaves it: the level can be tried a step at a time, and a click on the model's
+    row or outside closes it.
   */
   const effort: EffortHook = {
     of: () => settings.effort,
@@ -1940,7 +1942,6 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       if (ref === runs) return onSettings({ effort: id });
       onSettings({ agent: `@${ref}`, sidekick: undefined, model: undefined, effort: id });
       onCompare?.(compare.filter((x) => x !== `@${ref}`));
-      close();
     },
   };
   const agentsOn = !settings.sidekick && yours.some((a) => a.id === settings.agent);

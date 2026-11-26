@@ -40,7 +40,8 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { applyLook, DESK_MAX, deskSee, deskShow, entering, homeInOf, homeOf, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type BehindHome, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { openBehindHome } from "./Dots";
 import { keptWrite, wordRead, wordWrite } from "./kept.ts";
 import { jsonFault } from "./json-words";
 import { PaneCheck, PaneNote } from "./Pane";
@@ -67,7 +68,7 @@ type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "m
 /** Each place: where it sits, what it covers, and the words a search finds it by. */
 const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
   { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns anonymous usage counts analytics telemetry tokens install id opencode go key sign-in limits hermes" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, the sea on Home, where designs open, and a picture behind the session.", words: "sea whale ascii ocean fish home theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
+  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, the sea or your own dots behind Home, where designs open, and a picture behind the session.", words: "sea whale ascii ocean fish home behind dots dot dither dithered halftone mosaic pixel pixels wallpaper moon dusk aurora words shows in dark only light only theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
   { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
   { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
   { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
@@ -210,7 +211,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
       wordWrite(localStorage, "lc:enter", "queue");
     },
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
-    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined }),
+    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined, sea: undefined, home: "sea", homeIn: undefined, dots: undefined }),
     notifications: () => {
       save({ notify: true, badge: true, menuBar: true });
       feedback.setEnabled(false);
@@ -868,6 +869,13 @@ const DESIGNS: { value: DesignsWhere; title: string; note: string; picture: Reac
   },
 ];
 
+/** What's behind Home, under its control. */
+const HOME_NOTES: Record<BehindHome, string> = {
+  none: "Plain paper.",
+  sea: "A whale in fine dots swims through the water.",
+  dots: "A picture, words or a drawing of your own, drawn in dots on this Mac.",
+};
+
 /** What each level of Motion does, under its control. */
 const MOTION_NOTES: Record<Motion, string> = {
   full: "Every view slides in and comes into focus each time you open it.",
@@ -959,10 +967,42 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           />
         </Field>
       </Group>
-      <Group title="Home" tag={<New />} note="Behind the message box on Home, a whale drawn in fine dots swims through the water. Your pointer stirs it, a click lets out bubbles, and a click on the whale makes it blow.">
-        <Field title="The sea and its whale">
-          <NamedSwitch name="The sea and its whale" checked={look.sea !== false} onCheckedChange={(sea) => set({ sea })} />
+      <Group title="Home" tag={<New />} note="Behind the message box on Home: the sea, where a whale drawn in fine dots swims (your pointer stirs it, a click lets out bubbles, a click on the whale makes it blow), or your own dots, from a picture, words or a drawing you ask for.">
+        <Field title="Behind Home" note={HOME_NOTES[homeOf(look)]}>
+          <Segmented
+            size="sm"
+            value={homeOf(look)}
+            onValueChange={(home) => set({ home })}
+            options={[
+              { value: "none", label: "Nothing" },
+              { value: "sea", label: "The sea" },
+              { value: "dots", label: "Your dots" },
+            ]}
+            aria-label="Behind Home"
+          />
         </Field>
+        {homeOf(look) !== "none" && (
+          <Field title="Shows in" note="In the other look Home is plain paper, and nothing is drawn.">
+            <Segmented
+              size="sm"
+              value={homeInOf(look)}
+              onValueChange={(homeIn) => set({ homeIn })}
+              options={[
+                { value: "both", label: "Both looks" },
+                { value: "dark", label: "Dark only" },
+                { value: "light", label: "Light only" },
+              ]}
+              aria-label="Shows in"
+            />
+          </Field>
+        )}
+        {homeOf(look) === "dots" && (
+          <Field title="Your dots" note="Their picture, style, colour and light, changed on Home so you see each one as you make it.">
+            <button type="button" className="lc-btn" data-kind="secondary" data-size="sm" onClick={openBehindHome}>
+              Change on Home
+            </button>
+          </Field>
+        )}
       </Group>
       <Group title="Designs and pages" tag={<New />} note="Where a design or an HTML page an agent shows you opens. Any one of them can still open the other way from its own buttons.">
         <Field title="Open them" below>

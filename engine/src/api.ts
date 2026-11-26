@@ -887,6 +887,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
 
   /** Every Claude Code and Codex session already brought in here ("claude:<id>"), so neither list offers it again. */
   const broughtIn = () => new Set(store.threads.flatMap((t) => [t.providerSession, ...Object.values(t.sessions ?? {})].filter((s): s is string => Boolean(s))));
+  // One picture drawn for the dots at a time: each is billed, so a second press while one is on its way (the panel closed and opened again) isn't sent.
+  let drawing = false;
   const handlers: Handlers = {
     "state.get": async () => {
       // With last launch's list on disk the snapshot answers at once; the look's answer follows as a providers event.
@@ -1768,6 +1770,25 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "background.image": ({ id, dark }) => backgrounds.image(id, dark),
     "background.save": async ({ data, name }) => (await backgrounds.save(data, name), null),
     "background.remove": () => (backgrounds.remove(), null),
+    "wallpaper.info": () => ({ picture: backgrounds.has("dots"), models: pictures.models({ store }).map((m) => ({ id: m.id, name: m.name })) }),
+    "wallpaper.image": () => backgrounds.image("dots"),
+    "wallpaper.save": async ({ data, name }) => (await backgrounds.save(data, name, "dots"), null),
+    "wallpaper.remove": () => (backgrounds.remove("dots"), null),
+    // Drawn into the dots' slot the way your own picture is kept; the person's press is their yes, as in the inspector's Picture pane.
+    "wallpaper.draw": async ({ prompt, model }) => {
+      if (drawing) throw new Error("A picture is already being drawn for the dots. Wait for it before asking for another.");
+      drawing = true;
+      try {
+        const r = await pictures.drawOne({ store, keys: runtime.keys }, { prompt, model, size: "1536x1024" });
+        // What sips can't read here came from the model, not from you: the sentence says so, rather than asking for a JPEG.
+        await backgrounds.keep(r.bytes, r.kind, "dots").catch(() => {
+          throw new Error(`${r.model} sent a picture Liner Code couldn't read, so nothing was kept.`);
+        });
+        return { model: r.model, ms: r.ms, ...(r.cost !== undefined ? { cost: r.cost } : {}) };
+      } finally {
+        drawing = false;
+      }
+    },
     "apps.open": async ({ path, app }) => (await openWith(path, app, env), null),
     "git.commit": async ({ threadId, message, paths: only }) => {
       const t = store.thread(threadId);

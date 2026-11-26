@@ -4,6 +4,8 @@
   detail), and one image of your own. Chromium can't show HEIC, so each is made a JPEG once with
   `sips` and kept under <home>/backgrounds. A dynamic wallpaper's small copy shows day and night
   split down a diagonal, so its Light or Dark copy is used instead, matching the app's theme.
+  The dots behind Home keep a picture of their own in a second slot (dots.jpg), apart from own.jpg,
+  so changing one never changes the other.
 */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
@@ -14,6 +16,10 @@ const APPLE = "/System/Library/Desktop Pictures";
 const PHOTOS = /^(Big Sur|Catalina|Sonoma|Peak|The Beach|The Cliffs|The Desert|The Lake|Tree|Valley)\b(?!.*\b(Graphic|Light|Dark)\b)/;
 
 export type Picture = { id: string; name: string };
+/** The pictures of your own: behind the session ("own") and drawn as dots behind Home ("dots"). */
+export type Slot = "own" | "dots";
+// The dots are drawn a few pixels a cell, so their picture needs less than a session's background.
+const LONG: Record<Slot, number> = { own: 2600, dots: 2000 };
 
 export class Backgrounds {
   private dir: string;
@@ -32,12 +38,17 @@ export class Backgrounds {
     } catch {
       // not macOS, or the folder moved: your own image still works
     }
-    return { pictures: names.map((name) => ({ id: `apple:${name}`, name })), own: existsSync(this.file("own")) };
+    return { pictures: names.map((name) => ({ id: `apple:${name}`, name })), own: this.has("own") };
+  }
+
+  /** Whether a picture of your own is kept in that slot. */
+  has(slot: Slot) {
+    return existsSync(this.file(slot));
   }
 
   /** The picture as a JPEG, or null when there isn't one; `dark` picks a dynamic one's night side. */
   async image(id: string, dark = false): Promise<{ data: string; type: string } | null> {
-    if (id === "own") return existsSync(this.file("own")) ? { data: readFileSync(this.file("own")).toString("base64"), type: "image/jpeg" } : null;
+    if (id === "own" || id === "dots") return this.has(id) ? { data: readFileSync(this.file(id)).toString("base64"), type: "image/jpeg" } : null;
     const name = id.startsWith("apple:") ? id.slice(6) : "";
     if (!this.list().pictures.some((p) => p.name === name)) return null;
     // The full picture when macOS keeps it here; otherwise the small copy of the side that fits the theme.
@@ -50,19 +61,25 @@ export class Backgrounds {
   }
 
   /** Your own image, from base64; anything `sips` reads (JPEG, PNG, HEIC, TIFF, GIF). */
-  async save(data: string, name: string) {
+  async save(data: string, name: string, slot: Slot = "own") {
+    await this.keep(Buffer.from(data, "base64"), extname(name), slot);
+  }
+
+  /** A picture's bytes into a slot, made a JPEG; `ext` only names the file sips is handed. */
+  async keep(bytes: Buffer, ext: string, slot: Slot) {
     mkdirSync(this.dir, { recursive: true });
-    const tmp = join(this.dir, `incoming${extname(name).toLowerCase().replace(/[^.\w]/g, "") || ".img"}`);
-    writeFileSync(tmp, Buffer.from(data, "base64"));
+    // Each slot has its own incoming file, so the dots and the background can be saved at once.
+    const tmp = join(this.dir, `incoming-${slot}${ext.toLowerCase().replace(/[^.\w]/g, "").replace(/^(?=\w)/, ".") || ".img"}`);
+    writeFileSync(tmp, bytes);
     try {
-      await this.convert(tmp, this.file("own"), 2600);
+      await this.convert(tmp, this.file(slot), LONG[slot]);
     } finally {
       rmSync(tmp, { force: true });
     }
   }
 
-  remove() {
-    rmSync(this.file("own"), { force: true });
+  remove(slot: Slot = "own") {
+    rmSync(this.file(slot), { force: true });
   }
 
   private file(id: string) {

@@ -478,6 +478,16 @@ export function App() {
     window.addEventListener("lc:open-settings", on);
     return () => window.removeEventListener("lc:open-settings", on);
   }, []);
+  // "Change on Home" in Settings, Appearance: Home, where the Behind Home panel opens as it comes (Dots.tsx).
+  useEffect(() => {
+    const on = () => {
+      setSettings(false);
+      if (getFace() !== "code") setFace("code");
+      setView((v) => (v.kind === "home" ? v : { kind: "home" }));
+    };
+    window.addEventListener("lc:behind-home", on);
+    return () => window.removeEventListener("lc:behind-home", on);
+  }, []);
 
   /** Going somewhere from ⌘K, the menu bar or the keys: Settings would otherwise stay over the place you went to. */
   const go = (v: View) => {

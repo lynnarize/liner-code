@@ -236,6 +236,10 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
 - **OpenCode runs as a local server.** Liner Code starts `opencode serve` on 127.0.0.1 and talks
   to it over HTTP; the sessions in Liner Code share that one process, which stops a minute after the
   last one closes. Its model traffic goes to its providers as before.
+- **AI pictures go to the endpoint you add.** When an agent or you ask for an AI picture in Liner
+  Design, or you press Draw it for the dots behind Home, the words go to the AI pictures endpoint
+  set up in Settings › Models, with its key, billed to that account. Nothing goes there until you
+  add one. A picture of your own for the dots stays on this Mac.
 - **Links into the app.** Liner Code opens `liner-code://` links: one that names a session opens
   it, and one that names a folder asks you before adding it as a project.
 - **Changes are checked by another maker.** By default the Reviewer reads each change, and it's a

@@ -1831,6 +1831,15 @@ export type Rpc = {
   /** Keeps an image of your own (base64), made a JPEG. */
   "background.save": [{ data: string; name: string }, null];
   "background.remove": [Record<string, never>, null];
+  /** The dots behind Home: whether a picture of their own is kept, and the AI pictures models from Settings › Models (no url, no key). */
+  "wallpaper.info": [Record<string, never>, { picture: boolean; models: { id: string; name: string }[] }];
+  /** The dots' picture as a JPEG (base64), or null when there isn't one. */
+  "wallpaper.image": [Record<string, never>, { data: string; type: string } | null];
+  /** Keeps a picture of your own (base64) for the dots, made a JPEG; separate from the session background's own image. */
+  "wallpaper.save": [{ data: string; name: string }, null];
+  "wallpaper.remove": [Record<string, never>, null];
+  /** One landscape picture from the words, by the AI pictures model (`model`, else the first), kept as the dots' picture. */
+  "wallpaper.draw": [{ prompt: string; model?: string }, { model: string; ms: number; cost?: number }];
   /** A commit message written from the changes still to commit and what you asked for. */
   "git.message": [{ threadId: string }, { message: string; by: string }];
   /** A pull request title and description, from the branch's changes and the session. */

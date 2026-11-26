@@ -20,13 +20,15 @@
   It's cheap on purpose (memory, browser-panel-perf: measure frames): 30 frames a second at most,
   the dots filled as one path per size, the middle of the paper dimmed in the drawing itself rather
   than with a mask, and nothing drawn while the window is hidden. Reduce motion gets one still
-  frame. Settings, Appearance turns it off (look.ts, `sea`); the first time it shows, a small card
-  says so.
+  frame. Settings, Appearance chooses what's behind Home (look.ts, `home`): the sea, your own dots
+  (Dots.tsx), or nothing; the first time the sea shows, a small card says so, and offers to make
+  your own.
 */
 import { useEffect, useRef, useState } from "react";
 import { toast } from "@liner/components/toast/toast";
+import { BehindHome, Dots, DotsHello, onWater, useBehindHome } from "./Dots";
 import { I } from "./icons";
-import { updateLook, useLook } from "./look";
+import { homeShown, updateLook, useLook } from "./look";
 
 /** The small card on the sea stays, visit after visit, until its × closes it for good. */
 const HELLO_KEY = "liner-code:sea-hello";
@@ -842,13 +844,27 @@ function run(canvas: HTMLCanvasElement, still: boolean, boxOf: BoxEdges) {
   };
 }
 
-/** Whether a click or a move landed on the water, not on something to use. */
-const onWater = (target: EventTarget | null) => target instanceof Element && !target.closest("button, a, input, textarea, select, [role='button'], [role='menu'], [role='dialog'], .lc-home-compose, .lc-home-top, .lc-sea-hello, .lc-up-home, .lc-noproj");
-
-/** The sea, filling Home's paper behind everything on it, and the card that introduces it the first time. */
+/**
+  What's behind Home (look.ts, `home`): the sea, your dots or nothing, their cards, and the Behind
+  Home panel when it's open. In a look `homeIn` leaves out, neither is mounted, so nothing runs;
+  the theme changing (system's at sunset too) comes as a new look and puts it back.
+*/
 export function Sea() {
   const look = useLook();
-  const on = look.sea !== false;
+  const home = homeShown(look);
+  const [open, setOpen] = useBehindHome();
+  return (
+    <>
+      {home === "sea" && <Whale card={!open} onMake={() => (updateLook({ home: "dots" }), setOpen(true))} />}
+      {home === "dots" && <Dots look={look} />}
+      {home === "dots" && !open && <DotsHello onChange={() => setOpen(true)} />}
+      {open && <BehindHome look={look} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** The sea, filling Home's paper behind everything on it, and the card that introduces it the first time (not while Behind Home is open). */
+function Whale({ card, onMake }: { card: boolean; onMake: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [hello, setHello] = useState(() => {
     try {
@@ -859,7 +875,7 @@ export function Sea() {
   });
   useEffect(() => {
     const canvas = ref.current;
-    if (!on || !canvas) return;
+    if (!canvas) return;
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const sea = run(canvas, still, () => {
       const box = canvas.parentElement?.querySelector(".lc-home-compose")?.getBoundingClientRect();
@@ -881,7 +897,7 @@ export function Sea() {
       home.removeEventListener("pointermove", move);
       home.removeEventListener("pointerdown", down);
     };
-  }, [on]);
+  }, []);
   const seen = () => {
     setHello(false);
     try {
@@ -890,18 +906,20 @@ export function Sea() {
       // storage is off: it shows again next time
     }
   };
-  if (!on) return null;
   return (
     <>
       <canvas ref={ref} className="lc-sea" aria-hidden />
-      {hello && (
+      {hello && card && (
         <div className="lc-sea-hello" role="status">
           <span className="lc-sea-hello-mark" aria-hidden />
           <span className="lc-sea-hello-words" title="Move through the water to stir it, click for bubbles, or click the whale to make it blow.">
             A whale swims here
           </span>
-          {/* Neither of these closes the card: only its × does. Turned off, the sea and the card go together, and come back together. */}
-          <button type="button" className="lc-sea-hello-act" onClick={() => (updateLook({ sea: false }), toast("The whale is off", { description: "Settings, Appearance brings it back." }))}>
+          {/* None of these closes the card: only its × does. Turned off, the sea and the card go together, and come back together. */}
+          <button type="button" className="lc-sea-hello-act" onClick={onMake}>
+            Make your own
+          </button>
+          <button type="button" className="lc-sea-hello-act" onClick={() => (updateLook({ home: "none" }), toast("The whale is off", { description: "Settings, Appearance brings it back." }))}>
             Turn off
           </button>
           <button type="button" className="lc-sea-hello-act" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "appearance" }))}>

@@ -7,6 +7,8 @@ app starts and stops. It talks to the agent CLIs on the Mac, and they talk to th
 providers with your own sign-ins. Nothing about your code or sessions leaves the machine except
 what the agents themselves send to their model providers. The one exception is an anonymous usage
 count the app sends once a day (see README, "Your accounts and your data"); Settings can turn it off.
+If you set up an AI pictures model, the words of a picture you ask for go to that endpoint of yours
+(see AI pictures below).
 
 A cloud backend becomes necessary only for features on the roadmap: the phone app and remote
 access, routines triggered by webhooks, sharing with a team, licences and updates. The last part
@@ -85,6 +87,16 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   in the probe folder, its whole process group ended past 30 seconds or on a stop; an older OpenCode, or one whose list
   fails, and every other ACP agent: `initialize` and `session/new` in the probe folder (45 seconds), then it is ended. All
   run with the engine's environment; only a model's id, name, description, group, levels, default and price are kept.
+- **AI pictures** (optional). An endpoint of yours that speaks OpenAI's Images API, set up in Settings › Models
+  (`settings.pictures`, its key in the keychain as `pictureKey(id)`). The engine posts to its `/images/generations`
+  for Liner Design's pictures (your press in the Picture pane, `pictures.make`; an agent's `design_picture` after a card,
+  unless the design file says not to ask), with the lean's colours, and for one landscape picture for the dots behind
+  Home (`wallpaper.draw`, your press of Draw it: the words you typed and nothing else). Both go through one request in `engine/src/pictures.ts`: https only (http only on this Mac), no
+  redirects, the answer capped at 40 MB, a linked picture fetched without the key and never from a private network, only
+  picture bytes kept, the key only in the header and taken out of every error. Each picture is charged to that account.
+- **Pictures of your own.** The one behind a session (`background.*`) and the one drawn as dots behind Home
+  (`wallpaper.*`) are kept apart under `~/.liner-code/backgrounds` (`own.jpg`, `dots.jpg`), made JPEGs with `sips`;
+  neither is sent anywhere. The dots are drawn in the app from that picture, words or a built-in scene.
 - **Storage.** `state.json` (written atomically, debounced) and one append-only JSONL log per
   thread; the newest line for an item wins and the log is rewritten when it grows. This is fine
   to tens of thousands of items per thread. Past that, move to `node:sqlite` (built into Node)

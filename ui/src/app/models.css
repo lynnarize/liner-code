@@ -405,6 +405,8 @@
 */
 /* The cards' one height: 476, or less where the bare Pop holding them was given less room on either side of its chip (--lc-pop-room, ui.tsx). */
 .lc-pk {
+  /* A row's corner: in the cards, the card's 14 less the 4 a row stands in from its edge, so a row at a card's corner follows it. */
+  --lc-pk-r: var(--lc-r-row);
   --lc-pk-tall: min(var(--lc-pk-h, 476px), calc(100vh - 96px), var(--lc-pop-room, 100vh));
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
@@ -418,6 +420,9 @@
 }
 .lc-pk[data-side="card"] {
   grid-template-columns: 40px 312px 268px;
+}
+.lc-pk[data-side] {
+  --lc-pk-r: 10px;
 }
 .lc-pk[data-side] .lc-pk-card {
   border-radius: 14px;
@@ -441,8 +446,9 @@
   overflow: hidden auto;
   scrollbar-width: none;
 }
+/* The rail takes the cards' 14 corner: 6 in, a tool's 8 follows it. */
 .lc-pk[data-side] .lc-pk-rail {
-  border-radius: 12px;
+  border-radius: 14px;
 }
 .lc-pk:not([data-side]) .lc-pk-rail {
   padding: 0;
@@ -465,8 +471,36 @@
   background: var(--lc-plate);
   color: var(--l-ink);
 }
+/* The hairline between the tools and the places under them (your agents). */
+.lc-pk-rail-rule {
+  flex: none;
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--l-line);
+}
+/* A place whose list holds the pick (one of your agents is picked): a small dot at its corner, in ink. */
+.lc-pk-tool[data-on] {
+  position: relative;
+}
+.lc-pk-tool[data-on]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--l-ink);
+}
 .lc-pk-tool[data-off] {
   color: var(--l-ink-4);
+}
+/* In the picker every mark is drawn in its maker's own colour (brands.ts TINTS), a maker drawn in black keeping the ink; a tool not signed in stays grey. */
+.lc-pk .lc-mark[data-brand] {
+  fill: var(--lc-tint, currentColor);
+}
+.lc-pk-tool[data-off] .lc-mark[data-brand] {
+  fill: currentColor;
 }
 @media (hover: hover) {
   .lc-pk-tool:hover:not([aria-pressed="true"]) {
@@ -595,7 +629,9 @@
     background: var(--l-wash-2);
   }
 }
+/* The hover plate (below) is placed in it, and scrolls with the rows. */
 .lc-pk-scroll {
+  position: relative;
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -651,10 +687,63 @@
   gap: 8px;
   min-height: 28px;
   padding: 0 8px;
+  border-radius: var(--lc-pk-r);
 }
 .lc-pk .lc-mp-pick {
   min-height: 28px;
   padding: 0 8px;
+  border-radius: var(--lc-pk-r);
+}
+/*
+  The list's one hover plate (Models.tsx HoverPlate): it slides to the row the mouse is on in 160ms and fades in and out
+  in 120ms, under the rows, so a picked row's own plate still shows over it. The rows in the list don't light themselves.
+*/
+.lc-pk-scroll .lc-who-row,
+.lc-pk-scroll .lc-who-mrow {
+  position: relative;
+}
+.lc-pk-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: var(--lc-pk-r);
+  background: var(--l-wash-2);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 160ms var(--l-ease-out),
+    height 160ms var(--l-ease-out),
+    width 160ms var(--l-ease-out),
+    opacity 120ms ease;
+}
+.lc-pk-plate[data-on] {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .lc-pk-scroll .lc-who-row:not(:disabled):hover {
+    background: none;
+  }
+  .lc-pk-scroll .lc-who-row[data-on]:not(:disabled):hover {
+    background: var(--lc-plate);
+  }
+}
+/* What fades in afresh: a tool's models when the rail turns to it, and the side card's words when it turns to another model. */
+.lc-pk-fade {
+  animation: lc-pk-in 180ms var(--l-ease-out) both;
+}
+@keyframes lc-pk-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pk-fade {
+    animation: none;
+  }
+  .lc-pk-plate {
+    transition: none;
+  }
 }
 .lc-pk .lc-mp-row + .lc-mp-row {
   margin-top: 0;
@@ -803,11 +892,37 @@
   box-sizing: border-box;
   max-height: var(--lc-pk-tall);
   padding: 4px;
+  overflow: hidden;
+  /* Its height is set from what it holds (Models.tsx useEasedHeight) and eases to it. */
+  transition:
+    height 220ms var(--l-ease-out),
+    transform 220ms var(--l-ease-out);
+}
+/*
+  Beside a row in the list's lower half the card drops to the list's foot: its bottom on the middle card's bottom (476 less
+  its own height), moved rather than laid out again, so it slides there; while its height eases the bottom stays put.
+*/
+.lc-pk-side[data-low] {
+  transform: translateY(calc(var(--lc-pk-tall) - 100%));
+}
+/* What the card holds, measured for that height; past the card's height it scrolls inside, so the easing never shows a scrollbar. */
+.lc-pk-side > .lc-pk-side-in {
+  max-height: calc(var(--lc-pk-tall) - 8px);
   overflow: hidden auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+.lc-pk-side-in {
+  display: flex;
+  flex-direction: column;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-pk-side {
+    transition: none;
+  }
+}
 .lc-pk-side > *,
+.lc-pk-side-in > *,
 .lc-pk-own > * {
   flex: none;
 }
@@ -864,29 +979,44 @@
   line-height: 16px;
   color: var(--l-ink-3);
 }
-/* The Effort head: the label at the left and the level it runs at at the right, as the card's other lines read; whose list it is on its own line under them, wrapping as plain text, never squeezed beside the label. */
+/*
+  The Effort head, one line as the card's other lines read: the label, whose levels they are in a lighter grey ("from
+  Claude Code"), and the level it runs at at the right, never cut. Short of room, whose levels goes whole rather than cut
+  to "from Cl…": it wraps onto a second line the head's one line hides (its sentence stays on the head's tooltip).
+*/
 .lc-pk-eh {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 1px;
+  align-items: center;
+  gap: 8px;
   padding: 2px 8px 4px;
   font-size: 12px;
+  line-height: 20px;
   color: var(--l-ink-3);
 }
-.lc-pk-eh-top {
+.lc-pk-eh-l {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 20px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
 }
-.lc-pk-eh-top > b {
+.lc-pk-eh-l > b {
+  overflow: hidden;
   font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--l-ink-3);
+}
+.lc-pk-eh-by {
+  flex: none;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--l-ink-4);
 }
 .lc-pk-eh-now {
-  min-width: 0;
+  flex: none;
   overflow: hidden;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -895,12 +1025,6 @@
 }
 .lc-pk-eh-now[data-own] {
   font-weight: 400;
-  color: var(--l-ink-3);
-}
-.lc-pk-eh > span {
-  font-size: 11px;
-  line-height: 14px;
-  text-align: left;
   color: var(--l-ink-3);
 }
 /*
@@ -915,6 +1039,7 @@
 */
 .lc-pk-slide {
   position: relative;
+  container-type: inline-size;
   display: flex;
   flex: none;
   height: 24px;
@@ -932,9 +1057,40 @@
   width: calc(var(--lc-pk-fill, 0) * (100% - 18px) + 18px);
   /* The track's own corner, which is the knob's 5 and the 3 it sits in from the fill's edge: the fill ends round about the knob, not in a straight cut beside it. */
   border-radius: 8px;
-  background: var(--l-ink);
+  /* The model's maker's colour (its gradient for Gemini), the app's accent for a maker drawn in ink. */
+  background: var(--lc-pk-tint, var(--l-accent));
+  /* A gradient is laid across the whole track, as the ASCII is: a low level shows its first colour, not all of it squeezed. */
+  background-size: 100cqw 100%;
+  background-repeat: no-repeat;
+  overflow: hidden;
   pointer-events: none;
   transition: width 180ms var(--l-ease-out);
+}
+/*
+  The halftone through the fill (Models.tsx DOTS): three staggered rows of round dots laid across the whole track (100cqw)
+  and cut by the fill, so a higher level shows more of them and bigger. A dot grows from 1px at the low end to 3.4px at
+  the high end and goes from a third to most of white, over the colour; the knob's end is where they are thickest.
+*/
+.lc-pk-slide-dots {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: grid;
+  grid-template-columns: repeat(32, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  width: 100cqw;
+  padding: 4px 8px 4px 6px;
+}
+.lc-pk-slide-dots > i {
+  width: calc(1px + var(--d) * 2.4px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: oklch(1 0 0 / calc(0.32 + var(--d) * 0.58));
+}
+/* The middle row half a column over, so the dots sit staggered as a halftone's do. */
+.lc-pk-slide-dots > i[data-odd] {
+  translate: calc((100cqw - 14px) / 64) 0;
 }
 .lc-pk-slide[data-empty] .lc-pk-slide-fill {
   width: 0;
@@ -1001,8 +1157,11 @@
   color: var(--l-ink);
 }
 .lc-pk-xr-t > span {
+  overflow: hidden;
   font-size: 11px;
   line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--l-ink-3);
 }
 .lc-pk-ef {
@@ -1024,7 +1183,7 @@
   height: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--lc-pk-r);
   background: none;
   font: inherit;
   font-size: 12.5px;
@@ -1057,10 +1216,11 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 26px;
+  height: 28px;
   margin-top: 2px;
   border: 0;
-  border-radius: 6px;
+  /* It sits at the card's foot, 4 in from its 14 corners: its own corners follow them. */
+  border-radius: var(--lc-pk-r);
   background: var(--l-wash-2);
   font: inherit;
   font-size: 12.5px;

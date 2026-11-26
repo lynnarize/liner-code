@@ -14,11 +14,24 @@ const BLOCKED_MS = 1500;
 const OPEN_MS = 4000;
 const TRANSPORTS = ["stun", "turn-udp", "turn-tcp"];
 
-/** A server for one transport: what reaches it counts, whatever it is. */
+// The first line of an HTTP request: what a running Liner Code sends every port that listens over TCP,
+// its Browser looking for dev servers to open. No TURN client sends one; its first bytes are STUN's.
+const HTTP_ASK = /^[A-Z]+ \S+ HTTP\/1\.[01]\r\n/;
+
+/**
+  A server for one transport: what reaches it counts, whatever it is, save over TCP a connection
+  that opens by asking for a page. That one is set apart as a stray, so the count stays WebRTC's
+  while the app runs beside the test; one that sends nothing, or anything else, still counts.
+*/
 const listen = async (kind) => {
-  const seen = { hits: 0 };
+  const seen = { hits: 0, strays: 0 };
   if (kind === "turn-tcp") {
-    const s = net.createServer((c) => (seen.hits++, c.on("error", () => {}), c.resume()));
+    const s = net.createServer((c) => {
+      seen.hits++;
+      c.on("error", () => {});
+      c.once("data", (b) => HTTP_ASK.test(b.toString("latin1")) && (seen.hits--, seen.strays++));
+      c.resume();
+    });
     await new Promise((ok) => s.listen(0, "127.0.0.1", ok));
     return { seen, close: () => s.close(), url: `turn:127.0.0.1:${s.address().port}?transport=tcp` };
   }
@@ -99,7 +112,7 @@ async function run({ name, kinds = TRANSPORTS, page, sealed = true, wait = BLOCK
   });
   wc.loadURL(origin + path).catch(() => {});
   await new Promise((ok) => setTimeout(ok, wait));
-  const out = { name, opened, hits: Object.fromEntries(servers.map(([k, s]) => [k, s.seen.hits])) };
+  const out = { name, opened, hits: Object.fromEntries(servers.map(([k, s]) => [k, s.seen.hits])), strays: Object.fromEntries(servers.map(([k, s]) => [k, s.seen.strays])) };
   try {
     out.hostAlive = !died && (await Promise.race([wc.mainFrame.executeJavaScript("1+1"), new Promise((ok) => setTimeout(() => ok(0), 1000))])) === 2;
     if (out.hostAlive) out.page = await wc.mainFrame.executeJavaScript(`({heard:self.heard,got:self.got,origin:self.origin,asked:self.asked,lineEnds:self.lineEnds})`);

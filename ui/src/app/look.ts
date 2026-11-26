@@ -20,15 +20,80 @@ import { clearTheme, inkOn, readThemes, varsOf } from "./themes";
   then how much of the desktop comes through, and `bgFrost` (off unless true) blurs it.
   `motion`: Full plays every view's way in each time it opens; Quick shows a view you open as it is
   and keeps the motion for what arrives while you watch. The system's Reduce motion stops both.
-  `sea`: the sea with its whale, drawn in dots, behind Home (Sea.tsx); on unless it's false.
+  `home`: what's behind Home: the sea with its whale (Sea.tsx), your own dots (Dots.tsx), or
+  nothing. `sea` is the switch it replaced: a look saved with the sea off and no `home` reads as
+  nothing. `homeIn`: whether it shows in both looks or only the dark or the light one.
+  `dots`: how your dots are drawn (DotLook), only what was chosen.
 */
 export type Glass = "clear" | "tinted" | "solid";
 export type ActionColour = "red" | "accent" | "ink" | "own";
 export type DesignsWhere = "panel" | "chat";
 export type Motion = "full" | "quick";
-export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; bgFrost?: boolean; sea?: boolean; v?: number };
+export type BehindHome = "sea" | "dots" | "none";
+/** In which looks what's behind Home shows: in the other, Home is plain paper. */
+export type HomeIn = "both" | "dark" | "light";
+export type DotSource = "picture" | "words" | "moon" | "ridges" | "aurora";
+export type DotStyle = "squares" | "halftone" | "round";
+export type DotTone = "duo" | "ink" | "picture";
+export type DotMove = "still" | "breathe" | "stir";
+/**
+  The dots behind Home. `source`: your picture (kept by the engine, wallpaper.*), words, or one of
+  the three scenes the app draws. `prompt`: the words last asked of the AI pictures model.
+  `cell`: the grid's cell in CSS pixels, one dot each (2 to 12; unset, 2 on light paper and 5 in the dark). `light` and `fade` are 0 to 100. `focus`:
+  the point of your picture that stays in view when it's cropped to fill Home, 0 to 1 each way.
+  `pic` goes up when the saved picture changes, so it's fetched again.
+*/
+export type DotLook = { source: DotSource; words: string; prompt: string; style: DotStyle; tone: DotTone; ink: string; cell: number; light: number; fade: number; move: DotMove; focus: { x: number; y: number }; pic: number };
+export type Look = { theme: "light" | "dark" | "system"; accent: string; composer: Glass; designs: DesignsWhere; designsAuto: boolean; action: ActionColour; motion: Motion; custom?: string; accentColor?: string; actionColor?: string; background?: string; bgBlur?: number; bgShow?: number; bgFrost?: boolean; sea?: boolean; home?: BehindHome; homeIn?: HomeIn; dots?: Partial<DotLook>; v?: number };
 export const LOOK_KEY = "liner-code:look";
 const MOTIONS: Motion[] = ["full", "quick"];
+const HOMES: BehindHome[] = ["sea", "dots", "none"];
+/** The inks the dots can take, by name. */
+export const DOT_INKS = [
+  { name: "Indigo", color: "#6f5cff" },
+  { name: "Sea", color: "#2fb4c8" },
+  { name: "Ember", color: "#ff7442" },
+  { name: "Moss", color: "#7ccf5e" },
+  { name: "Bone", color: "#e6e2d6" },
+];
+/** Still by default: drawn once, it costs nothing after. */
+export const DOTS_DEFAULT: DotLook = { source: "moon", words: "liner", prompt: "", style: "squares", tone: "duo", ink: "#6f5cff", cell: 5, light: 50, fade: 70, move: "still", focus: { x: 0.5, y: 0.5 }, pic: 0 };
+const oneOf = <T extends string>(v: unknown, all: readonly T[], or: T): T => (all.includes(v as T) ? (v as T) : or);
+const within = (v: unknown, lo: number, hi: number, or: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : or);
+/** What's behind Home, from a look. */
+export const homeOf = (l: Look): BehindHome => oneOf(l.home, HOMES, l.sea === false ? "none" : "sea");
+/** In which looks it shows. */
+export const homeInOf = (l: Look): HomeIn => oneOf(l.homeIn, ["both", "dark", "light"], "both");
+/** Whether the look on the page now is the dark one (applyLook sets it, a theme of your own by its base). */
+export const darkNow = () => document.documentElement.dataset.theme === "dark";
+/** What's behind Home in the look on the page now: nothing in a look `homeIn` leaves out. */
+export const homeShown = (l: Look): BehindHome => {
+  const where = homeInOf(l);
+  return where === "both" || (where === "dark") === darkNow() ? homeOf(l) : "none";
+};
+/**
+  A look's dots as they can be drawn: a word this build doesn't know, or a number out of range,
+  goes back to its default. A size never chosen is 2 px on light paper (the fine mosaic) and 5 in
+  the dark; once you choose one it holds in both.
+*/
+export const dotsOf = (l: Look, paper: "light" | "dark" = "dark"): DotLook => {
+  const d: Partial<DotLook> = l.dots ?? {};
+  const f = d.focus;
+  return {
+    source: oneOf(d.source, ["picture", "words", "moon", "ridges", "aurora"], DOTS_DEFAULT.source),
+    words: typeof d.words === "string" ? d.words : DOTS_DEFAULT.words,
+    prompt: typeof d.prompt === "string" ? d.prompt : DOTS_DEFAULT.prompt,
+    style: oneOf(d.style, ["squares", "halftone", "round"], DOTS_DEFAULT.style),
+    tone: oneOf(d.tone, ["duo", "ink", "picture"], DOTS_DEFAULT.tone),
+    ink: typeof d.ink === "string" && /^#[0-9a-f]{6}$/i.test(d.ink) ? d.ink : DOTS_DEFAULT.ink,
+    cell: Math.round(within(d.cell, 2, 12, paper === "light" ? 2 : DOTS_DEFAULT.cell)),
+    light: within(d.light, 0, 100, DOTS_DEFAULT.light),
+    fade: within(d.fade, 0, 100, DOTS_DEFAULT.fade),
+    move: oneOf(d.move, ["still", "breathe", "stir"], DOTS_DEFAULT.move),
+    focus: { x: within(f?.x, 0, 1, 0.5), y: within(f?.y, 0, 1, 0.5) },
+    pic: within(d.pic, 0, Number.MAX_SAFE_INTEGER, 0),
+  };
+};
 export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "tinted", designs: "panel", designsAuto: true, action: "red", motion: "quick" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
@@ -44,6 +109,8 @@ export const readLook = (): Look => {
   const look = { ...LOOK_DEFAULT, ...rest, v: 3 };
   // A look saved before there was a choice, or with a word this build doesn't know, moves as Quick.
   if (!MOTIONS.includes(look.motion)) look.motion = LOOK_DEFAULT.motion;
+  // Before the dots, the sea's switch was all there was: off is nothing behind Home.
+  if (!HOMES.includes(look.home as BehindHome)) look.home = look.sea === false ? "none" : "sea";
   // The desktop's "Shows through" went to 75% before 0.2.8; past DESK_MAX it comes back to it.
   if (look.background === "desktop" && typeof look.bgShow === "number" && look.bgShow > DESK_MAX) look.bgShow = DESK_MAX;
   return look;
@@ -150,6 +217,22 @@ export function useLook() {
     return () => window.removeEventListener("lc:look", on);
   }, []);
   return look;
+}
+
+/** Changes part of the dots behind Home, and puts the look on the page. */
+export function updateDots(patch: Partial<DotLook>) {
+  // Only what was chosen is kept, so a size never chosen still follows the look (dotsOf).
+  const was = readLook();
+  const next = { ...was, dots: { ...was.dots, ...patch } };
+  try {
+    localStorage.setItem(LOOK_KEY, JSON.stringify(next));
+  } catch {
+    // storage is off: it lasts while the app is open
+  }
+  // The dots change with every keystroke and drag: the look goes round without being put on the
+  // page again (applyLook rewrites the theme's colours and tells the shell), since none of that changed.
+  window.dispatchEvent(new CustomEvent("lc:look", { detail: next }));
+  return next;
 }
 
 /** Changes part of the look from outside Settings (a design's own menu), and puts it on the page. */

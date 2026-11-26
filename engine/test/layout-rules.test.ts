@@ -293,7 +293,7 @@ test("the classes nothing references are gone from every stylesheet", () => {
 test("the sidebar's width is said once", () => {
   const css = sheet("app.css");
   assert.equal((css.match(/--lc-side:/g) ?? []).length, 1, "--lc-side is declared more than once");
-  assert.ok(css.includes("--lc-side: 264px"), "the one declaration is not --lc-side: 264px, so a wrong width would pass");
+  assert.ok(css.includes("--lc-side: 224px"), "the one declaration is not --lc-side: 224px (Capy's layout, 2026-11-26), so a wrong width would pass");
 });
 
 test("the corner scale declares its four tokens", () => {
@@ -715,4 +715,25 @@ test("The chat's Plan and crew cards have a class of their own, so the message b
   const tsx = (file: string) => readFileSync(new URL(`../../ui/src/app/${file}`, import.meta.url), "utf8");
   for (const file of ["Crew.tsx", "Timeline.tsx"]) assert.doesNotMatch(tsx(file), /className="lc-card"/, `${file} draws a chat card with the message box's class`);
   assert.match(tsx("Composer.tsx"), /<div className="lc-card">/, "the message box lost its card");
+});
+
+test("A finding's tick box stands clear of its row's plate, and takes the severity square's place when a finding is open", () => {
+  const css = sheet("security/findings.css");
+  const px = (v: string | undefined) => Number.parseFloat(v ?? "NaN");
+  const box = px(value(blocks(sheet("pane.css"), ".lc-pane-check")[0], "width"));
+  // How far a row's plate reaches into the column's margin (.lf-rw: margin 0 -6px).
+  const bleed = -px(value(blocks(css, ".lf-rw")[0], "margin")?.split(/\s+/)[1]);
+  const left = px(value(blocks(css, ".lf-li > .lc-pane-check")[0], "left"));
+  // With no finding open the column keeps 32px at each side (max-width: calc(100% - 64px)): the box is in it, off the plate.
+  assert.ok(left + box <= -bleed - 2, `the box (left ${left}px, ${box}px wide) lies on the row's plate, which starts at ${-bleed}px`);
+  assert.ok(-left <= 32, "the box runs out of the column's margin");
+  // With a finding open the margin is the title's 20px, less than the box needs beside the plate: it is on the row then.
+  assert.equal(value(blocks(css, ".lf[data-panel] .lf-col")[0], "margin"), "0 20px");
+  const open = px(value(blocks(css, ".lf[data-panel] .lf-li > .lc-pane-check")[0] ?? "", "left"));
+  assert.ok(open >= -bleed, `with a finding open the box (left ${open}px) is cut by the pane's edge or straddles the plate's`);
+  const gives = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].includes("[data-panel]") && m[1].includes(".ls-sev i") && value(m[2], "visibility") === "hidden");
+  assert.equal(gives.length, 1, "the severity square doesn't give its place to the box");
+  // A row that was clicked keeps the focus, which once kept the box showing on the open finding: only the keyboard's focus shows it.
+  assert.equal(blocks(css, ".lf-li:focus-within > .lc-pane-check").length, 0, "any focus in a row still shows its box");
+  assert.equal(blocks(css, ".lf-li:has(:focus-visible) > .lc-pane-check").length, 1, "the keyboard's focus doesn't show a row's box");
 });

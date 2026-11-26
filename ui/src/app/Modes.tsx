@@ -206,7 +206,7 @@ export function ModesPlace({ onAgent, onClose }: { onAgent: (agent?: AgentProfil
               guide={{
                 intro: `Pick ${a.name} beside the project when you start a session. The model is still yours to choose.`,
                 details: [
-                  { h: "What it gives the model", p: `Its instructions${a.skills?.length ? `, ${a.skills.length} skill${a.skills.length === 1 ? "" : "s"}` : ""}${a.contextFiles?.length ? ` and ${a.contextFiles.length} context file${a.contextFiles.length === 1 ? "" : "s"}` : ""}, on top of whichever model the session runs. It's one of your agents in Settings › Team, where you change them.` },
+                  { h: "What it gives the model", p: `Its instructions${a.skills?.length ? `, ${a.skills.length} skill${a.skills.length === 1 ? "" : "s"}` : ""}${a.contextFiles?.length ? ` and ${a.contextFiles.length} context file${a.contextFiles.length === 1 ? "" : "s"}` : ""}, on top of whichever model the session runs. It's one of your agents in Settings › Agents and modes, where you change them.` },
                   { h: "Its instructions", p: a.soul.length > 900 ? `${a.soul.slice(0, 900)}…` : a.soul || "None yet." },
                 ],
                 examples: [{ h: "Start one", ask: `In ${a.name} mode: `, expect: "A session that works the way its instructions say. Safety still decides what it may do." }],

@@ -8,9 +8,10 @@
   stroke sits on a quarter pixel (x.25 or x.75), so at 16px a 1.5 stroke fills whole device pixels
   on a 2x screen instead of smearing across two. Where a centre line can't be on one (±, the
   globe's equator) the glyph sits a quarter pixel off centre, which the eye doesn't see.
-  The mark is two turns that share one centre: the outer in ink, the inner in the accent, set in
-  like an inside lane (docs/brand/icon-2026). `turn` is that mark in small, for whatever an agent
-  made or is; `turnMono` is the same in one ink, where the accent would shout.
+  The mark is the line comment, two slanted strokes, the first in ink and the second in the accent,
+  as the app icon, the website and its favicon have it (docs/brand/line-comment). `mark` is that mark
+  in small, for whatever an agent made or is; `markMono` is the same in one ink, where the accent
+  would shout. (The two turns round one centre, docs/brand/icon-2026, was the mark before it.)
 
   The weight rule. This file used to say an icon is only ever shown at the size it was drawn for.
   It wasn't true: the call sites asked for 11, 12, 13, 14 and 15 as often as 16, and the stroke
@@ -22,7 +23,7 @@
 */
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
-import { BRANDS, type Brand } from "./brands";
+import { BRANDS, TINTS, type Brand } from "./brands";
 import type { MarkState } from "./session-state";
 export type { MarkState } from "./session-state";
 
@@ -199,10 +200,14 @@ export const I = {
   /** Actual size, 100%: a 1:1, as no other glyph here says it and `expand` already means the full canvas. */
   actual: (p: P) => <S {...p}><path d="M4.25 5.5 5.75 4.25v7.5M10.25 5.5l1.5-1.25v7.5M8 6.75h.01M8 9.75h.01" /></S>,
   tool: (p: P) => <S {...p}><path d="M10.2 2.9a3.25 3.25 0 0 0-4 4.25L2.9 10.45a1.4 1.4 0 0 0 2 2L8.2 9.15a3.25 3.25 0 0 0 4.25-4l-2 2-1.6-.4-.4-1.6Z" /></S>,
-  /** Liner's mark in small: two L-shaped turns round one centre, down and then along, the outer in ink and the inner in the accent (docs/brand/icon-2026/favicon.svg). For what an agent made, or an agent with no logo. */
-  turn: (p: P) => <S {...p}><path d="M3 2.75V7.5a5.75 5.75 0 0 0 5.75 5.75H13" /><path d="M6.25 6v1.5a2.5 2.5 0 0 0 2.5 2.5h1" stroke="var(--l-accent)" /></S>,
-  /** The turn in one ink, where the accent would shout (the Demo's mark, a custom agent's disc). */
-  turnMono: (p: P) => <S {...p}><path d="M3 2.75V7.5a5.75 5.75 0 0 0 5.75 5.75H13M6.25 6v1.5a2.5 2.5 0 0 0 2.5 2.5h1" /></S>,
+  /**
+    Liner's mark in small: the line comment, two slanted strokes, the first in ink and the second in the accent, the site's
+    24 grid (site/src/components/Mark.astro) scaled onto this 16 one about its centre. Drawn at 2, heavier than the family's
+    1.5 on purpose, as the logo is a bold mark and not a line glyph. For what an agent made, or an agent with no logo.
+  */
+  mark: (p: P) => <S {...p} w={2}><path d="M3.45 13.05 7.05 2.95" /><path d="M8.95 13.05 12.55 2.95" stroke="var(--l-accent)" /></S>,
+  /** The mark in one ink, where the accent would shout (the Demo's mark, a custom agent's disc). */
+  markMono: (p: P) => <S {...p} w={2}><path d="M3.45 13.05 7.05 2.95M8.95 13.05 12.55 2.95" /></S>,
   /** Best: a cut stone, the finest you have; a star would read as a favourite or a rating. */
   gem: (p: P) => <S {...p}><path d="M5 3.25h6l2.75 3.5L8 13 2.25 6.75Z" /><path d="M2.25 6.75h11.5M6.25 6.75 8 13l1.75-6.25" /></S>,
   /** Fast: a step forward with motion lines. The bolt stays for triggers. */
@@ -248,7 +253,7 @@ export function Glyph({ glyph, size = 14 }: { glyph: AgentGlyph; size?: number }
     case "leaf":
       return <S size={size}><path d="M3.25 12.75C3.25 7.25 6.5 3.75 12.75 3.25c-.25 6-3.75 9.5-9.5 9.5ZM3.25 12.75 8.5 7.5" /></S>;
     default:
-      return <I.turnMono size={size} />;
+      return <I.markMono size={size} />;
   }
 }
 
@@ -301,15 +306,26 @@ export const N = {
 export type MarkKind = Brand | "other" | "demo";
 export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }) {
   const cut = useId();
+  // The logo's own colour rides on --lc-tint, which only a place that wants colour (the model picker, models.css) paints with.
+  const tint = kind !== "demo" && kind !== "other" ? TINTS[kind] : undefined;
   if (kind !== "demo" && kind !== "other" && BRANDS[kind].paths.length)
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lc-mark" data-brand={kind} fill="currentColor" fillRule="evenodd">
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="lc-mark" data-brand={kind} fill="currentColor" fillRule="evenodd" style={tint ? ({ "--lc-tint": typeof tint === "string" ? tint : `url("#${cut}")` } as CSSProperties) : undefined}>
+        {Array.isArray(tint) && (
+          <defs>
+            <linearGradient id={cut} x1="0" y1="0" x2="1" y2="1">
+              {tint.map((c, i) => (
+                <stop key={c} offset={i / (tint.length - 1)} stopColor={c} />
+              ))}
+            </linearGradient>
+          </defs>
+        )}
         {BRANDS[kind].paths.map((d, i) => (
           <path key={i} d={d} />
         ))}
       </svg>
     );
-  if (kind === "demo") return <I.turnMono size={size} />;
+  if (kind === "demo") return <I.markMono size={size} />;
   if (kind === "other") return <I.cube size={size} className="lc-mark" />;
   const { letters } = BRANDS[kind];
   return (
@@ -320,7 +336,7 @@ export function ModelMark({ kind, size = 12 }: { kind: MarkKind; size?: number }
           {letters}
         </text>
       </mask>
-      <rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url(#${cut})`} />
+      <rect width="16" height="16" rx="4.5" fill="currentColor" mask={`url("#${cut}")`} />
     </svg>
   );
 }

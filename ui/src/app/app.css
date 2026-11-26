@@ -16,7 +16,8 @@
   --lc-font-name: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --l-track-body: -0.005em;
   --l-track-display: -0.02em;
-  --lc-side: 264px;
+  /* The sidebar's width: 224 since it took Capy's layout (2026-11-26), 264 before. */
+  --lc-side: 224px;
   /* The one top row: the sidebar's head, the session's header and the panel's tabs share it (44, as
      the approved one-row header has it; 52 before 0.2.5). Its centre, the window's gap plus half of
      it, is where both shells put the traffic lights: 28px from the window's top. */
@@ -582,6 +583,12 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   background: var(--lc-ctl);
   color: var(--lc-ctl-ink);
 }
+/* In dark the tray's control is near black, as the paper is now, so a card's primary button (Approve and start,
+   Next, Try again) would vanish into its card: there it takes the ink button's inverted pill instead. */
+[data-theme="dark"] .lc-btn[data-kind="primary"] {
+  background: var(--l-ink);
+  color: var(--lc-paper);
+}
 .lc-btn[data-kind="accent"] {
   background: var(--lc-act);
   color: var(--lc-act-ink);
@@ -614,7 +621,8 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   .lc-btn[data-kind="accent"]:hover:not(:disabled) {
     filter: brightness(1.08);
   }
-  .lc-btn[data-kind="ink"]:hover:not(:disabled) {
+  .lc-btn[data-kind="ink"]:hover:not(:disabled),
+  [data-theme="dark"] .lc-btn[data-kind="primary"]:hover:not(:disabled) {
     background: color-mix(in oklab, var(--l-ink) 84%, var(--lc-paper));
   }
 }
@@ -973,14 +981,20 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 
 /* ---------- Sidebar ---------- */
 /* With no lights to follow (Windows, a browser), the head row's 32px sit centred on the top row's 44,
-   which starts at the window's gap like the sidebar does. */
+   which starts at the window's gap like the sidebar does. Since Capy's layout (2026-11-26) every part
+   is 8 in from both edges and sets its own space above it (no gap), as the board measures them; the
+   foot reaches to the edges for its hairline. */
 .lc-sb {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   height: 100%;
   box-sizing: border-box;
-  padding: calc(var(--lc-head) / 2 - 16px) 8px 6px 12px;
+  padding: calc(var(--lc-head) / 2 - 16px) 8px 0;
+}
+/* The places, or another face's body, 8 under the head row. */
+.lc-sb > .lc-sb-head + * {
+  margin-top: 8px;
 }
 /* The head row's centre sits on the traffic lights' centre, which the shell reports from the
    window's top: the window's gap is above the sidebar already. */
@@ -989,11 +1003,12 @@ html[data-native="mac"] .lc-sb {
 }
 .lc-sb-head {
   display: flex;
+  flex: none;
   align-items: center;
   min-height: 32px;
-  padding: 2px 2px 2px 4px;
+  padding: 2px 0 2px 4px;
 }
-/* The traffic lights sit at the top left of the window, so the name moves past them. */
+/* The traffic lights sit at the top left of the window: the row is as high as they are round their centre, and its buttons are at its right end. */
 html[data-native="mac"] .lc-sb-head {
   height: 34px;
   min-height: 34px;
@@ -1045,21 +1060,21 @@ html[data-native="mac"] .lc-sb-head {
   flex: none;
 }
 /*
-  One row for every place in a sidebar: the session sidebar's New session, Routines and Search.
-  32px, the icon in ink-3 at 16, the name at 13 medium; the place you're on sits on the white
-  plate, the same plate the open session wears. (Settings' places: settings.css.)
+  One row for every place in a sidebar: the session sidebar's New session, The Wall, Add-ons and
+  More. 28px with a 6px corner, the icon in ink-3 at 14, the name at 13 medium in the second ink;
+  the place you're on sits on the plate in full ink. (Settings' places: settings.css.)
 */
 .lc-sb-nav {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  height: 32px;
+  height: 28px;
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: none;
   font: inherit;
   font-weight: 500;
@@ -1091,6 +1106,11 @@ html[data-native="mac"] .lc-sb-head {
   background: var(--lc-plate);
   box-shadow: none;
 }
+/* More, while its menu is open. */
+.lc-sb-nav[data-open]:not([aria-current]) {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
 @media (hover: hover) {
   .lc-sb-nav:not([aria-current]):hover {
     background: var(--l-wash-2);
@@ -1111,11 +1131,11 @@ html[data-native="mac"] .lc-sb-head {
   initial-value: 0px;
 }
 /* Where the list runs on past an edge it dissolves: it fades out and, at the foot, blurs on its
-   way under the tray. Nothing draws a line. */
+   way under the tray. Nothing draws a line. Its first row starts 6 under the heading. */
 .lc-sb-scroll {
   flex: 1;
   min-height: 0;
-  margin: calc(var(--lc-ring) * -1) calc(var(--lc-ring) * -1) 0;
+  margin: calc(6px - var(--lc-ring)) calc(var(--lc-ring) * -1) 0;
   padding: var(--lc-ring) var(--lc-ring) 0;
   overflow: hidden auto;
   scrollbar-width: none;
@@ -1286,31 +1306,33 @@ html[data-native="mac"] .lc-sb-head {
   line-height: 18px;
   color: var(--l-ink-3);
 }
-/* Along the foot, your places as icons and you at the end. A dot on an icon: routines handed
-   back to you (warn), or sessions at work (accent) on the team's. */
+/* Along the foot, 48 high under a half-pixel hairline across the whole sidebar: the name, which
+   switches the face, and Settings at the end. */
 .lc-sb-foot {
   display: flex;
+  flex: none;
   align-items: center;
-  min-height: 40px;
+  height: 48px;
+  box-sizing: border-box;
+  box-shadow: inset 0 0.5px 0 var(--lc-hair);
 }
 .lc-sb-foot .lc-ib {
   display: grid;
   place-items: center;
-  border-radius: 10px;
-}
-.lc-sb-fi {
-  position: relative;
+  border-radius: 8px;
 }
 /*
-  The sidebar in Liner 2.0: your places as rows on top (New session, Search, The Wall, Routines),
-  then Add-ons with your apps, then "Sessions" with its one menu (SideList.tsx, the block at the
-  end of this sheet), and the list taking the room down to the foot: the name, your plans' limits
-  and Settings.
+  The sidebar in Liner 2.0, in Capy's layout: your places as short rows on top (New session, The
+  Wall, Routines while they're on, Add-ons, More), 1px apart, then "Sessions" with its Filter and
+  its one menu (SideList.tsx, the block at the end of this sheet), and the list taking the room
+  down to the foot: the name and Settings.
 */
 .lc-sb-top {
   display: flex;
+  flex: none;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  padding: 4px 0;
 }
 .lc-sb-nav > span:first-of-type {
   flex: 1;
@@ -1348,8 +1370,10 @@ html[data-native="mac"] .lc-sb-head {
 /* A new Liner Code, over the foot. */
 .lc-sb-update {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
+  margin: 8px 0;
   padding: 8px 8px 8px 11px;
   border-radius: var(--lc-r-card);
   background: var(--lc-well);
@@ -1386,14 +1410,6 @@ html[data-native="mac"] .lc-sb-head {
   font-weight: 500;
   color: var(--l-ink);
   cursor: pointer;
-}
-.lc-sb-ring {
-  display: grid;
-  place-items: center;
-  color: var(--l-ink-2);
-}
-.lc-sb-ring[data-warn] {
-  color: var(--l-warn);
 }
 .lc-me-av {
   display: grid;
@@ -5131,8 +5147,8 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     animation: none;
   }
 }
-/* ---------- Settings: the whole window ---------- */
-/* Settings' sidebar (you, the search, the places and the open one's sections): settings.css. */
+/* ---------- Settings: a pop-up over the app ---------- */
+/* The pop-up, its column of places and its header: settings.css, which also sets these rows' look inside it. */
 
 .lc-st-paper {
   display: flex;
@@ -5165,46 +5181,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     transform: translateY(4px);
   }
 }
-.lc-st-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 14px;
-}
-.lc-st-hero-i {
-  display: grid;
-  grid-row: span 2;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--lc-r-card);
-  background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
-  color: var(--l-ink);
-}
-.lc-st-hero-i svg {
-  width: 20px;
-  height: 20px;
-}
-.lc-st-hero h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-}
-/* Focus lands on the heading when Settings opens, for a screen reader; it isn't a control, so no ring. */
-.lc-st-hero h1:focus {
-  outline: none;
-}
-.lc-st-hero p {
-  margin: 3px 0 0;
-  font-size: 14px;
-  color: var(--l-ink-3);
-}
-
 .lc-st-group {
   display: grid;
   gap: 10px;
@@ -6791,20 +6767,6 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
     background: var(--l-wash-2);
   }
 }
-.lc-limm {
-  display: grid;
-  gap: 10px;
-}
-.lc-limm-tool {
-  display: grid;
-  gap: 8px;
-}
-.lc-limm .lc-limits-w {
-  margin: 0 9px;
-}
-.lc-limm .lc-pop-foot {
-  margin-top: -2px;
-}
 
 /* ---------- Toasts: at the top right, under the title bar, out of the composer's way ---------- */
 /* Liner's toaster stacks up from the bottom; here it hangs from the top, the older ones peeking below. While a session's
@@ -6859,6 +6821,7 @@ html[data-composer="solid"] .lc-thread-foot .lc-tray:has(> .lc-tray-head > *) {
   flex: none;
   align-items: center;
   gap: 2px;
+  margin-top: 8px;
   padding: 4px 6px 4px 12px;
   border-radius: var(--lc-r-card);
   font-size: 13px;
@@ -7045,10 +7008,12 @@ html[data-motion="quick"][data-native="mac"] .lc-top {
 .lc-sb-head {
   gap: 0;
 }
+/* The head row's Search, Hide, Back and Forward: 28 square ghosts with a 6px corner and 14px drawings in the third ink. */
 .lc-sb-hb {
   width: 28px;
   height: 28px;
-  color: var(--l-ink-2);
+  border-radius: 6px;
+  color: var(--l-ink-3);
 }
 .lc-sb-hb:disabled {
   opacity: 0.38;
@@ -7057,7 +7022,7 @@ html[data-motion="quick"][data-native="mac"] .lc-top {
 .lc-sb-nav > svg {
   width: auto;
   height: auto;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
 }
 /*
   The foot's option: an 18px tile with a 12px drawing, Code or Design at 13, and the arrow that
@@ -7299,12 +7264,9 @@ body,
   font-synthesis: none;
   text-rendering: auto;
 }
-/* The sidebar: places at 13 regular; the lit place at 500 (the list's labels: SideList's block). */
+/* The sidebar: places at 13 medium, lit or not, as Capy's (the list's labels: SideList's block). */
 .lc-sb-nav {
   font-size: 13px;
-  font-weight: 400;
-}
-.lc-sb-nav[aria-current] {
   font-weight: 500;
 }
 /* The composer's controls (the Reviewer and the mode chip: in their own sheets). */
@@ -7343,32 +7305,28 @@ body,
 }
 
 /*
-  The sidebar against the approved mockup (home-canvas, Centred): Add-ons is the fourth of the
-  top rows, 1px under The Wall like the others; everything starts on one left edge (the places'
-  icons, the name, the Sessions heading, group labels and the foot's tile, 10px inside the
-  sidebar's inset); session rows stack with no gap at a 10px corner; the foot's buttons are 30
-  square with 20px drawings, 4 apart, 4 from the edge, like the head's.
+  The sidebar against the approved board (Capy's layout, 2026-11-26): the head row's buttons end 8
+  in from the sidebar's edge; session rows stack with no gap at a 6px corner; the foot runs to the
+  sidebar's edges (its hairline) with the name 8 in and Settings, 32 square with its 20px drawing, 6
+  from the right.
 */
 .lc-sb-head {
-  padding-right: 4px;
+  padding-right: 0;
 }
 .lc-sb-sec {
   gap: 0;
 }
 .lc-sb-plate {
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .lc-sb-foot {
-  gap: 4px;
-  padding: 0 4px 0 2px;
+  gap: 2px;
+  margin: 0 -8px;
+  padding: 0 6px 0 8px;
 }
 .lc-sb-foot .lc-ib {
-  width: 30px;
-  height: 30px;
-}
-.lc-sb-ring > svg {
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
 }
 /* Home: the project's row stands where the mockup puts it. */
 .lc-home-top {
@@ -7451,7 +7409,8 @@ html[data-bg] .lc-session .lc-body > .lc-panel {
   Hide the sidebar, then the window's drag area, then Back and Forward (0.2.8: the name went to the
   foot, and the arrows to the row's right end, where they end with the list's + under them; they
   no longer run into the sidebar's right inset to make room for "Liner Design"). On macOS the row
-  starts just past the traffic lights.
+  starts just past the traffic lights. Since Capy's layout (2026-11-26) the drag area comes first
+  and Search, Hide, Back and Forward sit together at the right end; Settings' own head still starts here.
 */
 html[data-native="mac"] .lc-sb-head {
   padding-left: max(4px, calc(var(--lc-lights-x, 70px) - 4px));
@@ -7503,10 +7462,9 @@ html[data-native="mac"] .lc-sb-head {
 
 /* ---------- 0.2.8: the sidebar's name at the foot, its list on one grid, and Carry on ---------- */
 /*
-  The top row: Hide, Back and Forward together just past the traffic lights, the drag area, and the
-  counts pill at the far right (Sidebar.tsx; the pill's rules are in the list parts' block at the end
-  of this sheet). With no lights (Windows, Linux, a browser) the row is the same, as Claude's and
-  Codex's apps have it, and Hide's drawing sits over the places' icons.
+  The top row: the drag area, then Search, Hide, Back and Forward at the right end (Sidebar.tsx;
+  the counts pill that stood there went with Capy's layout, 2026-11-26). With no lights (Windows,
+  Linux, a browser) the row is the same, as Claude's and Codex's apps have it.
 */
 html:not([data-native="mac"]) .lc-sb-head {
   padding-left: 7px;
@@ -7515,7 +7473,7 @@ html:not([data-native="mac"]) .lc-sb-head {
   gap: 0;
 }
 .lc-sb-inner .lc-sb-hint {
-  margin: 2px 10px 6px 40px;
+  margin: 2px 8px 6px;
 }
 .lc-carry {
   display: grid;
@@ -7638,23 +7596,23 @@ html:not([data-native="mac"]) .lc-sb-head {
   }
 }
 /*
-  The name at the foot, set as the brand kit's wordmark: "Liner" in ink at 650 and the face in grey
-  at 600 after it, in the name's own type at 17 and drawn a little tight, then the small arrow that
-  says it opens the switch, level with the middle of the small letters. No tile; its words start on
-  the places' icons. The foot is 40 high (its rule above) with the name 34 in it, the usage ring and
-  Settings centred on the same line.
+  The name at the foot, set as the brand kit's wordmark: "Liner" in ink and the face in grey after
+  it, both at 600, in the name's own type at 16 (Capy's layout) and drawn a little tight, then the
+  small arrow that says it opens the switch, level with the middle of the small letters. No tile;
+  its words start 16 in, on the Sessions heading. The foot is 48 high (its rule above) with the name
+  34 in it and Settings centred on the same line.
 */
 .lc-sb-foot .lc-sb-name {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
   height: 34px;
   box-sizing: border-box;
-  padding: 0 7px 0 8px;
+  padding: 0 8px;
   border-radius: var(--lc-r-row);
   font-family: var(--lc-font-name);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -7664,7 +7622,7 @@ html:not([data-native="mac"]) .lc-sb-head {
 .lc-sb-name .lc-brand {
   display: inline;
   font: inherit;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: inherit;
   line-height: inherit;
   cursor: inherit;
@@ -7700,6 +7658,7 @@ span.lc-sb-name {
   it or it's folded, and folded, what hides in it at its end; a row two lines and 44 high on the
   same grid, the mark level with the title, the title at 13.5, under it what it is doing or how it
   ended at 12.5, a 20px end. No borders, no fills but the open row's plate and the pointer's wash.
+  Code's sidebar draws them smaller, in Capy's layout (the `compact` rules after these, 2026-11-26).
 */
 .lc-sl-head {
   display: flex;
@@ -7736,13 +7695,14 @@ span.lc-sb-name {
   border-radius: var(--lc-r-row);
   color: var(--l-ink-3);
 }
-.lc-sl-head .lc-sl-head-b[data-open] {
+.lc-sl-head .lc-sl-head-b[data-open],
+.lc-sl-head .lc-sl-head-b[aria-pressed="true"] {
   background: var(--lc-plate);
   box-shadow: none;
   color: var(--l-ink);
 }
 @media (hover: hover) {
-  .lc-sl-head .lc-sl-head-b:not([data-open]):hover {
+  .lc-sl-head .lc-sl-head-b:not([data-open], [aria-pressed="true"]):hover {
     background: var(--l-wash-2);
     color: var(--l-ink);
   }
@@ -8142,7 +8102,7 @@ span.lc-sb-name {
   height: 24px;
   border-radius: 6px;
 }
-:is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row:has(> .lc-sl-acts [data-open])) .lc-sl-ago {
+:is(.lc-sl-row:not([data-compact]):is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row:not([data-compact]):has(> .lc-sl-acts [data-open])) .lc-sl-ago {
   display: none;
 }
 :is(.lc-sl-row:is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row:has(> .lc-sl-acts [data-open])) .lc-sl-title {
@@ -8162,36 +8122,6 @@ span.lc-sb-name {
   box-shadow: none;
   color: var(--l-ink);
 }
-/* The top row's counts: how many work and how many wait on you, at its far right; it opens The Wall. */
-.lc-sl-counts {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  box-sizing: border-box;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: var(--l-wash-2);
-  font: inherit;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--l-ink-2);
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-@media (hover: hover) {
-  .lc-sl-counts:hover {
-    background: var(--l-wash-3);
-    color: var(--l-ink);
-  }
-}
-/* The needs mark after the working count keeps a little more room than the gap, so the two counts read as two. */
-.lc-sl-counts-needs:not(:first-child) {
-  margin-left: 6px;
-}
-
 /*
   Code's sessions on those parts. The moving plate marks the open row (Sidebar.tsx measures it), so
   the row's own plate steps aside for it. A session's forks: their toggle on the second line, left
@@ -8247,7 +8177,7 @@ span.lc-sb-name {
 }
 .lc-sb-inner .lc-sb-kids {
   gap: 0;
-  margin-left: 20px;
+  margin-left: 12px;
   padding-left: 4px;
 }
 .lc-sb-inner .lc-sb-kids::before {
@@ -8257,21 +8187,225 @@ span.lc-sb-name {
 .lc-sb-listhead {
   position: relative;
   flex: none;
+  margin-top: 12px;
 }
 .lc-sb-carry-at {
   position: absolute;
-  top: 8px;
+  top: 0;
   right: 0;
   width: 1px;
-  height: 30px;
+  height: 28px;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
 }
 .lc-sb-carry-at .lc-sb-carry {
   width: 1px;
-  height: 30px;
+  height: 28px;
   padding: 0;
+}
+/*
+  The sidebar in Capy's layout (approved board Main, 2026-11-26). In every face the heading is at 13
+  medium 16 in from the sidebar's edge, 32 high with 4 under it, its buttons at the right, and a
+  group's header is one 28px line at 12 in the third grey with its count in the fourth right after
+  the name (folders add their icon at 12 and a chevron after the count while folded or pointed at).
+  In Code the Filter's field is right under the heading, groups (Pinned too) are 12 apart, and a row is 46
+  high and its rows touch: the title at 13 in the second ink (full ink for the open one and one that
+  waits on you) with the state mark at its end, and under it at 12 in the fourth ink the live words,
+  the facts and the time, 6 apart. Pointing at a row, its buttons take the mark's place.
+*/
+.lc-sb .lc-sl-head {
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 0 4px;
+}
+/* Code's heading has its 12 above it from the places (.lc-sb-listhead). */
+.lc-sb-listhead .lc-sl-head {
+  margin-top: 0;
+}
+.lc-sb .lc-sl-head > h2 {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+.lc-sb .lc-sl-head-note {
+  margin-left: 0;
+}
+.lc-sb .lc-sl-head .lc-sl-head-b {
+  border-radius: 6px;
+}
+/* The ··· 4 after the Filter. */
+.lc-sb .lc-sl-head > .lc-pop {
+  margin-left: 4px;
+}
+/* The Filter's field (Pane.tsx PaneField, the app's one find field), 28 high on the well. */
+.lc-sb .lc-sb-filter {
+  flex: none;
+  gap: 6px;
+  height: 28px;
+  margin: 2px 0 0;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--lc-well);
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  animation: lc-row-in 160ms ease-out backwards;
+}
+.lc-sb .lc-sb-filter > input::placeholder {
+  color: var(--l-ink-4);
+}
+/* Groups 12 apart, nothing above the first (past the plate that marks the open row). */
+.lc-sb-inner > :is(.lc-sb-sec, .lc-sl-folder) {
+  margin-top: 12px;
+}
+.lc-sb-inner > .lc-sb-plate + :is(.lc-sb-sec, .lc-sl-folder),
+.lc-sb-inner .lc-sb-sec > .lc-sl-folder {
+  margin-top: 0;
+}
+.lc-sb .lc-sl-label {
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+/* Code's sections carry the space between groups; Design's and Security's labels keep their own 12 above. */
+.lc-sb-inner .lc-sl-label {
+  margin-top: 0;
+}
+.lc-sb .lc-sl-label-i {
+  margin-right: 0;
+  color: inherit;
+}
+.lc-sb-inner .lc-sb-gx {
+  margin: 0 -6px 0 0;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold {
+  border-radius: 6px;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-b {
+  display: flex;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-i {
+  color: inherit;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-n {
+  flex: 0 1 auto;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-n > span {
+  font-weight: 400;
+  color: inherit;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-b > svg {
+  flex: none;
+  color: var(--l-ink-4);
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    rotate 200ms ease;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold-b[aria-expanded="true"] > svg {
+  rotate: 90deg;
+}
+.lc-sl-folder[data-compact] .lc-sl-fold:hover .lc-sl-fold-b > svg,
+.lc-sl-folder[data-compact] .lc-sl-fold-b:focus-visible > svg,
+.lc-sl-folder[data-compact] .lc-sl-fold-b[aria-expanded="false"] > svg {
+  opacity: 1;
+}
+/* What waits or works in a folded one, a small mark after its chevron. */
+.lc-sl-folder[data-compact] .lc-sl-fold-b > .lc-mk {
+  margin-left: 2px;
+}
+.lc-sl-folder[data-compact] .lc-sl-acts .lc-sb-a {
+  border-radius: 6px;
+}
+/* Rows touch: the plate and the wash meet the next row's edge. */
+:is(.lc-sl-row, .lc-sl-fold) + .lc-sl-row[data-compact],
+.lc-sb-kids > .lc-sl-row[data-compact]:first-child,
+.lc-sb-kids + .lc-sl-row[data-compact] {
+  margin-top: 0;
+}
+.lc-sl-row[data-compact] {
+  border-radius: 6px;
+}
+.lc-sl-row[data-compact] .lc-sl-pick {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 20px 16px;
+  align-content: start;
+  min-height: 46px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.lc-sl-row[data-compact] .lc-sl-title {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--l-ink-2);
+}
+.lc-sl-row[data-compact]:is([data-current], [data-loud]) .lc-sl-title {
+  color: var(--l-ink);
+}
+.lc-sl-row[data-compact] .lc-sl-mark {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  height: 20px;
+}
+.lc-sl-row[data-compact] .lc-sl-l2 {
+  grid-column: 1 / -1;
+  gap: 6px;
+  height: 16px;
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lc-sl-row[data-compact] .lc-sl-sub {
+  gap: 4px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.lc-sl-row[data-compact] .lc-sl-sub:not([data-tone]) {
+  color: inherit;
+}
+.lc-sl-row[data-compact] .lc-sl-facts {
+  gap: 6px;
+  margin-left: auto;
+}
+.lc-sl-row[data-compact] .lc-sl-pr {
+  font-size: 11px;
+  line-height: 16px;
+}
+.lc-sl-row[data-compact] .lc-sl-ago {
+  flex: none;
+  font-size: 12px;
+  line-height: 16px;
+}
+.lc-sl-row[data-compact] .lc-sl-title .lc-sb-rename {
+  height: 20px;
+  font-size: 13px;
+  font-weight: 400;
+}
+/* Pointing at it, its buttons take the mark's place, level with the title. */
+.lc-sl-row[data-compact]:has(.lc-sl-l2) > .lc-sl-acts {
+  margin-top: 3px;
+}
+:is(.lc-sl-row[data-compact]:is(:hover, :focus-within):has(> .lc-sl-acts), .lc-sl-row[data-compact]:has(> .lc-sl-acts [data-open])) .lc-sl-mark {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sl-folder[data-compact] .lc-sl-fold-b > svg {
+    transition: none;
+  }
+  .lc-sb .lc-sb-filter {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-sl-fold-n > svg,

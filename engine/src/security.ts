@@ -23,6 +23,7 @@ import type { Runtime } from "./runtime.ts";
 import { uid, writeAtomic, type Store } from "./store.ts";
 import { bringGitHub, bringSarif, githubReach } from "./security-bringin.ts";
 import { askAbout, fixFinding, lookFinding, scanOptions, startScan, stopScan } from "./security-scan.ts";
+import { targetRpc } from "./security-targets.ts";
 import { outside } from "./exec.ts";
 import { maskFinding, maskText } from "./security-checks.ts";
 
@@ -74,7 +75,7 @@ const isFinding = (f: unknown): f is SecurityFinding => {
 };
 const isScan = (s: unknown): s is ScanRecord => {
   const x = s as ScanRecord;
-  return Boolean(x) && typeof x === "object" && str(x.id) && str(x.title) && ["checks", "branch", "project"].includes(x.depth) && ["running", "asking", "done", "stopped", "failed"].includes(x.state) && num(x.startedAt) && Boolean(x.counts) && typeof x.counts === "object";
+  return Boolean(x) && typeof x === "object" && str(x.id) && str(x.title) && ["checks", "branch", "project", "pr", "issue"].includes(x.depth) && ["running", "asking", "done", "stopped", "failed"].includes(x.state) && num(x.startedAt) && Boolean(x.counts) && typeof x.counts === "object";
 };
 /** A scan's own words (what it said it read, and missed), masked as a finding's are: stored by an earlier build, they may not be. */
 const maskScan = (s: ScanRecord): ScanRecord => ({ ...s, ...(str(s.summary) ? { summary: maskText(s.summary) } : {}), ...(Array.isArray(s.read) ? { read: s.read.map((x) => maskText(String(x))) } : {}), ...(Array.isArray(s.missed) ? { missed: s.missed.map((x) => maskText(String(x))) } : {}) });
@@ -540,6 +541,7 @@ export class Security {
       area: n.area,
       scan: n.scan,
       url: n.url,
+      ...(n.target ? { target: n.target } : {}),
       foundAt: now,
       updatedAt: now,
     };
@@ -851,5 +853,7 @@ export function rpc(x: () => Security): SecurityRpc {
       const s = x();
       return specialists(await s.host.refreshProviders(), s.store.settings);
     },
+    // A pull request's or an issue's scan, its status for the lists, who can read one, and what follows it (security-targets.ts).
+    ...targetRpc(x),
   };
 }

@@ -1,0 +1,190 @@
+/* An app waiting on you (AppAsk.tsx, board Approve): cards at the bottom right, above the message box and the scans' dock.
+   The float look is the scans' dock's (security/scans.css), so the two read as one stack. */
+
+.lc-appask {
+  position: fixed;
+  right: 16px;
+  z-index: 61;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  transition: bottom 220ms var(--l-ease-out);
+}
+.lc-appask-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--l-float);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  color: var(--l-ink);
+  animation: l-pop-up 220ms var(--l-ease-enter) backwards;
+}
+.lc-appask-card > header {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--l-line);
+  font-size: 13.5px;
+}
+.lc-appask-card > header b {
+  font-weight: 600;
+}
+.lc-appask-card > header small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--l-ink-4);
+  font-size: 12.5px;
+}
+.lc-appask-logo {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--l-ink-3);
+}
+.lc-appask-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  font-size: 13.5px;
+}
+.lc-appask-body p {
+  margin: 0;
+  line-height: 1.5;
+}
+.lc-appask-body dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 18px;
+  margin: 0;
+  font-size: 13px;
+}
+.lc-appask-body dt {
+  color: var(--l-ink-4);
+}
+.lc-appask-body dd {
+  margin: 0;
+  color: var(--l-ink-2);
+}
+.lc-appask-body blockquote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--l-wash);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.lc-appask-trust {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-appask-card > footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--l-line);
+}
+.lc-appask-card > footer > span {
+  flex: 1;
+}
+/* Over .lc-btn[data-kind="ghost"]'s colour (app.css), which a lone class doesn't outrank. */
+.lc-appask-card .lc-btn.lc-appask-deny {
+  color: var(--l-danger-text, var(--l-danger, oklch(0.63 0.2 25)));
+}
+.lc-appask-levels {
+  display: grid;
+  gap: 6px;
+}
+.lc-appask-level {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-appask-level:hover {
+  background: var(--l-wash);
+}
+.lc-appask-level[data-on] {
+  background: color-mix(in oklab, var(--l-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--l-accent);
+}
+.lc-appask-level > i {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--l-line-2);
+}
+.lc-appask-level[data-on] > i {
+  box-shadow: inset 0 0 0 4px var(--l-accent);
+}
+.lc-appask-level > span {
+  display: grid;
+  gap: 2px;
+}
+.lc-appask-level b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-appask-level small {
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-appask {
+    transition: none;
+  }
+  .lc-appask-card {
+    animation: none;
+  }
+}
+/* Where a sign-in goes back to: the one thing on its card the app can't make up, so it leads. */
+.lc-appask-body .lc-appask-host {
+  font-size: 14px;
+  color: var(--l-ink-2);
+}
+.lc-appask-body .lc-appask-host b {
+  font-family: var(--l-font-mono);
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-appask-body dd.lc-appask-runs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

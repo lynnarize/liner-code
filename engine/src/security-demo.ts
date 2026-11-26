@@ -17,10 +17,11 @@
 */
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { FindingEvent, NewFinding, ScanRecord, SecurityFinding } from "../../contracts/src/index.ts";
+import type { FindingEvent, NewFinding, ScanRecord, ScanTarget, SecurityFinding } from "../../contracts/src/index.ts";
 import { noSeverities } from "../../contracts/src/index.ts";
 import type { OpenOptions, TurnSink } from "./providers/types.ts";
 import type { Security } from "./security.ts";
+import type { TargetInfo } from "./security-targets.ts";
 
 /** Who looked again at the sample's seeded findings: Codex, as board F draws it. A label on sample data only; no Codex is run. */
 export const DEMO_LOOK_BY = "codex:gpt-5.5";
@@ -299,6 +300,8 @@ export const DEMO_QUESTIONS = [
   would a real scan's; the second look follows from the engine, after the turn.
 */
 export async function demoScan(o: OpenOptions, sink: TurnSink, signal: AbortSignal, t: string, text = "") {
+  // A pull request's or an issue's scan (security-targets.ts names its target on a line of its own): the sample's own script.
+  if (/^Target: (?:pull request|issue) \S+$/m.test(text)) return demoTargetScan(o, sink, signal, t, text);
   const lookBy = /^When you finish, (.+?) gives what you found a second look/m.exec(text)?.[1];
   const planAt = planOf(lookBy);
   const call = async (key: string, title: string, tool: string, args: Record<string, unknown>, ms = 350) => {
@@ -423,4 +426,154 @@ export async function demoFix(text: string, sink: TurnSink, signal: AbortSignal,
     signal,
   );
   sink.usage({ inputTokens: 2400, outputTokens: 300, cacheReadTokens: 900, costUsd: 0 });
+}
+
+
+/* ---------- The sample's pull requests and issues (security-targets.ts) ---------- */
+
+/**
+  Whether a project is one of the Demo's own while the Demo is shown (its Sample project, a folder it made for Security's
+  sample, or one added as the Demo's): a scan of its pull requests and issues is played by the Demo, never sent to GitHub.
+*/
+export function demoProject(sec: Security, projectId: string): boolean {
+  if (sec.store.settings.showDemo !== true) return false;
+  const p = sec.store.projects.find((x) => x.id === projectId);
+  return Boolean(p) && (resolve(p!.path) === sampleOf(sec) || p!.demoFor === "security" || p!.agent === "demo" || resolve(p!.path).startsWith(demoHome(sec)));
+}
+
+/** The pull request the boards scan: Foreshore's #131, nine files, 342 lines in and 58 out. */
+const PR_131 = {
+  title: "Store tide alerts per harbour",
+  body: "Alerts were one list for every harbour. This keeps them per harbour in SQLite, so a harbour master sees only theirs, and adds a page to edit them.",
+  head: "liner/alerts",
+  base: "main",
+  files: [
+    { path: "src/alerts/store.ts", additions: 128, deletions: 12 },
+    { path: "src/alerts/AlertCard.tsx", additions: 64, deletions: 20 },
+    { path: "src/pages/harbour-admin.tsx", additions: 97, deletions: 0 },
+    { path: "db/0007_alerts.sql", additions: 22, deletions: 0 },
+    { path: "src/alerts/list.ts", additions: 11, deletions: 9 },
+    { path: "src/routes/alerts.js", additions: 8, deletions: 6 },
+    { path: "src/alerts/store.test.ts", additions: 9, deletions: 0 },
+    { path: "src/pages/alerts.tsx", additions: 2, deletions: 8 },
+    { path: "README.md", additions: 1, deletions: 3 },
+  ],
+};
+/** The sample's other pull requests and issues, by number, as the lists show them (their titles only). */
+const DEMO_PRS: Record<number, string> = { 128: "A wind slider and falling leaves", 129: "Fix the tide time after midnight", 126: "Read tides from the new harbour API", 58: "The site's footer drawn like the page", 124: "Bump vite from 7.1.4 to 7.2.0" };
+const DEMO_ISSUES: Record<string, { title: string; body: string }> = {
+  "#42": { title: "Harbour alerts show for the wrong harbour", body: "Signed in as the Whitby harbour master, I can see Scarborough's storm alerts too, and edit them. Started after last week's release." },
+  "#35": { title: "Script in an alert's text runs on the editor page", body: "I put a script tag in an alert's note and it ran when the harbour master opened the editor." },
+  "#40": { title: "The tide chart is blank on Safari 18", body: "The chart draws nothing on Safari 18; the table under it is fine." },
+  "#37": { title: "Tide times in Spanish", body: "Could the tide times be shown in Spanish?" },
+};
+
+/** A sample pull request or issue as the scan reads it, when the lists' own Demo path doesn't answer. */
+export function demoTarget(target: ScanTarget): TargetInfo {
+  if (target.kind === "pr") {
+    if (target.number === 131) return { target, ...PR_131, demo: true };
+    const title = DEMO_PRS[target.number] ?? `Pull request #${target.number}`;
+    return { target, title, body: "", head: `liner/pr-${target.number}`, base: "main", files: [{ path: "src/tides.js", additions: 12, deletions: 1 }], draft: target.number === 126, demo: true };
+  }
+  const known = DEMO_ISSUES[target.key];
+  return { target, title: known?.title ?? `Issue ${target.key}`, body: known?.body ?? "", demo: true };
+}
+
+/**
+  A pull request's or an issue's scan on the Demo, as boards PullRequests, ScanDone and Issues show it: #131 finds the SQL
+  built from the harbour id (high) and alert text drawn without escaping (low); #58 one low; issue #42 is real (medium) and
+  #35 real (low); the rest find nothing. Every step is a call to Liner's own tools, as for any agent.
+*/
+async function demoTargetScan(o: OpenOptions, sink: TurnSink, signal: AbortSignal, t: string, text: string) {
+  const m = /^Target: (pull request|issue) (\S+)$/m.exec(text)!;
+  const pr = m[1] === "pull request";
+  const name = m[2];
+  const lookBy = /^When you finish, (.+?) gives what you found a second look/m.exec(text)?.[1];
+  const call = async (key: string, title: string, tool: string, args: Record<string, unknown>, ms = 400) => {
+    const row = { key: `${t}-${key}`, tool: `mcp__liner__${tool}`, toolKind: "other" as const, title, input: JSON.stringify(args) };
+    sink.tool({ ...row, status: "running" });
+    await wait(ms, signal);
+    const r = await liner(o, tool, args, signal);
+    sink.tool({ ...row, status: r.failed ? "failed" : "done", output: r.text.slice(0, 2000) });
+    return r;
+  };
+  const read = async (key: string, path: string, ms: number) => {
+    sink.tool({ key: `${t}-${key}`, tool: "Read", toolKind: "read", title: `Read ${path}`, path, status: "running" });
+    await wait(ms, signal);
+    sink.tool({ key: `${t}-${key}`, tool: "Read", toolKind: "read", title: `Read ${path}`, path, status: "done" });
+  };
+  const steps = pr ? ["Read what it changes", "Look for injection, access and escaping", ...(lookBy ? [`Hand what I found to ${lookBy} for a second look`] : [])] : ["Read the issue and the code it names", "Decide whether it's real, where, and how bad"];
+  const plan = (done: number) => sink.plan(steps.map((title, i) => ({ title, status: i < done ? ("completed" as const) : i === done ? ("in_progress" as const) : ("pending" as const) })));
+  await stream((d) => sink.reasoning(d, `${t}-r`), pr ? `A scan of ${name}. I'll see what's known already, read the files it changes as the pull request has them, and look at how each one takes what a visitor sends.` : `An issue to check against the code. I'll read what it says, find the code it's about, and decide whether it holds.`, signal, 18);
+  plan(0);
+  await call("known", "List what's known already", "security_list_findings", {});
+  await call("model", "Read the threat model", "security_read_model", {});
+  const alertCard = {
+    title: "Alert text drawn without escaping",
+    severity: "low",
+    file: "src/alerts/AlertCard.tsx",
+    line: 18,
+    area: "Saved alerts",
+    lead: "A harbour master who saves an alert with markup in its note has it drawn as HTML on the alerts page.",
+    wrong: "AlertCard sets the note with `dangerouslySetInnerHTML`, so whatever the note holds is drawn as HTML. Only the admin page writes a note, which needs a signed-in harbour master.",
+    where: [{ file: "src/alerts/AlertCard.tsx", start: 17, lines: ["  return (", "    <p className=\"note\" dangerouslySetInnerHTML={{ __html: alert.note }} />"], hit: [18] }],
+    who: "A signed-in harbour master, who can write an alert's note.",
+    gets: "A script running in the page of whoever reads that harbour's alerts.",
+    why: "Only the admin page writes it, so it takes an account: Low.",
+  };
+  if (pr && name === "#131") {
+    for (const [i, f] of PR_131.files.slice(0, 4).entries()) await read(`f${i}`, f.path, 700);
+    plan(1);
+    await call("f1", "Report a finding: SQL built from the harbour id", "security_report_finding", {
+      title: "SQL built from the harbour id",
+      severity: "high",
+      file: "src/alerts/store.ts",
+      line: 42,
+      rule: "CWE-89",
+      area: "Saved alerts",
+      lead: "Anyone who can name a harbour can read every harbour's alerts, by putting a piece of SQL in the harbour's id.",
+      wrong: "`alertsFor` in src/alerts/store.ts pastes the harbour id from the address into the text of its query, so whatever the address holds becomes part of the SQL. The id is never handed to `db.all` as a value of its own.",
+      where: [{ file: "src/alerts/store.ts", start: 41, lines: ["export function alertsFor(harbour: string) {", "  return db.all(`SELECT * FROM alerts WHERE harbour = '${harbour}'`);", "}"], hit: [42] }],
+      who: "Anyone who can open the alerts page. A harbour's id is in its address.",
+      gets: "Every saved alert of every harbour, and the e-mail addresses they go to.",
+      see: ["Open a harbour's alerts and note its address, like /alerts/whitby.", "Ask for a harbour whose id ends the query early, like /alerts/x' OR '1'='1.", "The page lists every harbour's alerts."],
+      why: "It needs no account and reaches every harbour's data: High.",
+    }, 300);
+    await read("f4", "src/alerts/AlertCard.tsx", 900);
+    await call("f2", "Report a finding: Alert text drawn without escaping", "security_report_finding", alertCard, 300);
+    plan(lookBy ? 2 : 3);
+    const summary = "Anyone who can name a harbour can read every harbour's alerts: the id goes straight into a SQL string.";
+    await call("end", "Say how the scan ended", "security_finish", { summary, read: ["The four files that hold the change, and what they call.", "The free checks on the lines it adds: no secrets."], missed: ["The five smaller files: tests, a page's markup and the README."] }, 200);
+    await stream((d) => sink.text(d, `${t}-z`), `${summary} A smaller one: an alert's note is drawn as HTML, though only the admin page writes it.${lookBy ? ` ${lookBy} gives both a second look next.` : ""}`, signal, 20);
+  } else if (pr && name === "#58") {
+    await read("f0", "src/components/Footer.astro", 900);
+    plan(1);
+    await call("f1", "Report a finding: The footer's links open other sites without rel=noopener", "security_report_finding", { title: "The footer's links open other sites without rel=noopener", severity: "low", file: "src/components/Footer.astro", line: 12, lead: "A site the footer links to can move this tab to a page of its own when it opens.", wrong: "The footer's outside links use `target=\"_blank\"` without `rel=\"noopener\"`, so the page they open gets a handle on this one.", who: "Whoever runs a site the footer links to.", gets: "The tab the visitor came from, sent to a page of their choosing." }, 300);
+    plan(lookBy ? 2 : 3);
+    await call("end", "Say how the scan ended", "security_finish", { summary: "Nothing in it lets someone in; one small finding about the footer's links." }, 200);
+    await stream((d) => sink.text(d, `${t}-z`), "Nothing in it lets someone in. One small finding: the footer's links open other sites without rel=noopener.", signal, 20);
+  } else if (pr) {
+    await read("f0", "src/tides.js", 1200);
+    plan(lookBy ? 2 : 3);
+    const summary = "It lets nobody do anything they couldn't before: nothing worth acting on.";
+    await call("end", "Say how the scan ended", "security_finish", { summary }, 200);
+    await stream((d) => sink.text(d, `${t}-z`), summary, signal, 20);
+  } else if (name === "#42" || name === "#35") {
+    const real42 = name === "#42";
+    await read("f0", real42 ? "src/alerts/list.ts" : "src/alerts/AlertCard.tsx", 1400);
+    plan(1);
+    if (real42)
+      await call("f1", "Report a finding: Alerts read without the harbour", "security_report_finding", { title: "Alerts read without the harbour", severity: "medium", file: "src/alerts/list.ts", line: 17, area: "Saved alerts", lead: "Anyone signed in sees and edits every harbour's alerts, not only their own harbour's.", wrong: "`listAlerts` in src/alerts/list.ts reads every alert and never filters by the signed-in person's harbour; the edit page trusts that list. #131 fixes it, and brings a SQL hole of its own.", where: [{ file: "src/alerts/list.ts", start: 16, lines: ["export async function listAlerts(user: User) {", "  return db.all(\"SELECT * FROM alerts\");"], hit: [17] }], who: "Anyone with an account: a harbour master of another harbour.", gets: "Every harbour's alerts, and the power to change them." }, 300);
+    else await call("f1", "Report a finding: Alert text drawn without escaping", "security_report_finding", alertCard, 300);
+    const summary = real42 ? "It's real, and it is about access, not display: the alert list is read without the harbour, so anyone signed in sees and edits every harbour's alerts." : "It's real: an alert's note is drawn as HTML, though only a signed-in harbour master can write one.";
+    await call("end", "Say how the scan ended", "security_finish", { summary, verdict: "real", severity: real42 ? "medium" : "low" }, 200);
+    await stream((d) => sink.text(d, `${t}-z`), summary, signal, 20);
+  } else {
+    await read("f0", "src/tides.js", 1000);
+    plan(1);
+    const summary = "It isn't a security problem: nothing it describes lets someone reach what isn't theirs.";
+    await call("end", "Say how the scan ended", "security_finish", { summary, verdict: "not-real" }, 200);
+    await stream((d) => sink.text(d, `${t}-z`), summary, signal, 20);
+  }
+  sink.usage({ inputTokens: 6200, outputTokens: 700, cacheReadTokens: 3100, costUsd: 0, contextTokens: 14000, contextWindow: 200000 });
 }

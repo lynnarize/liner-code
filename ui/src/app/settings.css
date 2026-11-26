@@ -1,33 +1,67 @@
 /*
-  Settings' sidebar, on the ground: the way back with Settings' name, you, a bordered field that
-  finds a setting, the places in their groups (the first unlabelled, a hairline between them),
-  and under the open place the sections of its page on a thin line, a bright bar gliding to the
-  one you're reading. The way back is the one at the top (and Esc). The places' rows are 32px at
-  13.5, as the sidebar's places are; the open one wears the plate and a semibold name.
+  Settings as a pop-up over the app (Settings.tsx), in T3 Code's shape: the window dims, and a large rounded sheet
+  sits over it, 96px in from the sides and 36px from the top and bottom on a 1440 by 900 window, less on a smaller
+  one. The sheet is solid paper whatever is behind the window, as every overlay is. Down its left, on a tint of the
+  ground: Find a setting, then the places in five groups, the first unlabelled and the last (Archive, About and
+  updates) at the foot. Its right: a header with where you are and the ×, then the page.
 */
+.lc-st-pop {
+  position: fixed;
+  inset: 0;
+  /* Under the app's menus (110), tooltips (50) and toasts, which open over it; over everything on the page. */
+  z-index: 40;
+  display: grid;
+  padding: clamp(10px, 4vh, 36px) clamp(10px, 6.67vw, 96px);
+  background: oklch(0.2 0.01 265 / 0.28);
+  animation: lc-st-dim 220ms ease backwards;
+}
+[data-theme="dark"] .lc-st-pop {
+  background: oklch(0 0 0 / 0.55);
+}
+@keyframes lc-st-dim {
+  from {
+    background: transparent;
+  }
+}
+.lc-st-sheet {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  width: 100%;
+  max-width: 1400px;
+  min-height: 0;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: var(--lc-r-sheet);
+  background: var(--lc-paper);
+  box-shadow:
+    0 0 0 1px var(--l-line-2),
+    0 24px 64px oklch(0 0 0 / 0.32);
+  /* The app's bars under it move the window in the Electron shell; nothing in the sheet does. */
+  -webkit-app-region: no-drag;
+  animation: lc-st-rise 280ms var(--l-ease-out) backwards;
+}
+@keyframes lc-st-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+@media (max-width: 760px) {
+  .lc-st-sheet {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}
+
+/* The column of places. Its rows are 32px at 14, as the sidebar's places are; the open one wears the plate. */
 .lc-st-side {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  /* As the sidebar's (app.css, .lc-sb): its 32px head centred on the 44px top row. */
-  padding: calc(var(--lc-head) / 2 - 16px) 8px 6px 12px;
-  animation: l-unblur 320ms var(--l-ease-out) backwards;
-}
-html[data-native="mac"] .lc-st-side {
-  padding-top: max(0px, calc(var(--lc-lights-y, 28px) - var(--lc-gap) - 17px));
-}
-/* Settings' name sits where Liner Code's does, in the same type; the way back is beside it. */
-.lc-st-head {
-  flex: none;
-  margin-bottom: 10px;
-}
-.lc-st-head .lc-brand {
-  gap: 2px;
-}
-.lc-st-head .lc-ib {
-  margin-left: -6px;
+  padding: 12px 10px 10px;
+  background: color-mix(in oklab, var(--lc-ground) 60%, var(--lc-paper));
+  box-shadow: inset -1px 0 0 var(--l-line);
 }
 .lc-st-side .lc-sb-key {
   font-family: var(--l-font-mono);
@@ -35,71 +69,15 @@ html[data-native="mac"] .lc-st-side {
   letter-spacing: 0;
 }
 
-/* You: your initial on a disc, your name, and a quiet way to your settings. */
-.lc-st-me {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 12px;
-  padding: 2px 6px 14px;
-}
-.lc-st-av {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(140deg, var(--lc-plate), var(--lc-well));
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--l-ink);
-}
-.lc-st-me-t {
-  display: grid;
-  justify-items: start;
-  min-width: 0;
-}
-.lc-st-me-t b {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-st-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin: 1px 0 0 -4px;
-  padding: 1px 4px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink-3);
-  cursor: pointer;
-  transition: color 140ms ease;
-}
-@media (hover: hover) {
-  .lc-st-edit:hover {
-    color: var(--l-ink);
-  }
-}
-
-/* Find a setting: a field with a 1px ring, lit in the accent while you type. */
+/* Find a setting: a field on a wash, lit in the accent while you type. */
 .lc-sb-find.lc-st-find {
   flex: none;
-  gap: 9px;
-  height: 36px;
-  padding: 0 5px 0 12px;
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  gap: 8px;
+  height: 32px;
+  padding: 0 5px 0 10px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+  box-shadow: none;
   color: var(--l-ink-3);
   transition: box-shadow 160ms ease;
 }
@@ -109,17 +87,17 @@ html[data-native="mac"] .lc-st-side {
     0 0 0 3px var(--l-accent-soft);
 }
 .lc-st-find input {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 .lc-st-find .lc-sb-key {
-  padding-right: 7px;
+  padding-right: 6px;
 }
 
 /* The places. The list scrolls with a ring's room on each side, and fades where it runs on. */
 .lc-st-nav {
   flex: 1;
   min-height: 0;
-  margin: 8px calc(var(--lc-ring) * -1) 0;
+  margin: 6px calc(var(--lc-ring) * -1) 0;
   padding: var(--lc-ring);
   overflow: hidden auto;
   scrollbar-width: none;
@@ -137,44 +115,48 @@ html[data-native="mac"] .lc-st-side {
 .lc-st-nav[data-down] {
   --lc-fade-down: 28px;
 }
-.lc-st-rule {
-  display: block;
-  height: 1px;
-  margin: 10px 6px;
-  background: var(--l-line);
+/* One column as tall as the list, so the last group can sit at its foot. */
+.lc-st-nav-in {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+}
+.lc-st-grp[data-foot] {
+  margin-top: auto;
+  padding-top: 14px;
 }
 .lc-st-label {
-  display: block;
+  display: flex;
+  align-items: flex-end;
+  height: 26px;
+  box-sizing: border-box;
   padding: 0 10px 6px;
   font-size: 12px;
   font-weight: 500;
   color: var(--l-ink-3);
 }
-.lc-st-places,
-.lc-st-secs ul {
+.lc-st-places {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.lc-st-places {
-  gap: 2px;
-}
 .lc-st-place {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
   height: 32px;
   box-sizing: border-box;
-  padding: 0 10px;
+  padding: 0 8px 0 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--lc-r-field);
   background: none;
   font: inherit;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13.5px;
   letter-spacing: -0.005em;
   color: var(--l-ink-2);
   text-align: left;
@@ -204,13 +186,13 @@ html[data-native="mac"] .lc-st-side {
 .lc-st-count {
   flex: none;
   font-size: 12px;
-  font-weight: 400;
   color: var(--l-ink-3);
   font-variant-numeric: tabular-nums;
 }
 .lc-st-place[aria-current] {
   background: var(--lc-plate);
-  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--l-line);
+  font-weight: 500;
   color: var(--l-ink);
 }
 .lc-st-place[aria-current] .lc-st-place-i {
@@ -218,7 +200,7 @@ html[data-native="mac"] .lc-st-side {
 }
 @media (hover: hover) {
   .lc-st-place:not([aria-current]):hover {
-    background: var(--l-wash-2);
+    background: var(--l-wash);
     color: var(--l-ink);
   }
   .lc-st-place:hover .lc-st-place-i {
@@ -226,81 +208,230 @@ html[data-native="mac"] .lc-st-side {
   }
 }
 
-/* The open place's sections: indented on a 1px line, the bar on the line at the one you're on. */
-.lc-st-secs {
-  --row: 30px;
-  position: relative;
-  margin: 2px 0 6px 18px;
-  padding-left: 16px;
-  box-shadow: inset 1px 0 0 var(--l-line-2);
-  animation: l-unblur 320ms var(--l-ease-out) backwards;
+/* The right: the header (where you are, and the ×), then the page, which scrolls under it. */
+.lc-st-paper {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
-.lc-st-bar {
-  position: absolute;
-  top: 5px;
-  left: 0;
-  width: 2px;
-  height: calc(var(--row) - 10px);
-  border-radius: 1px;
-  background: var(--l-ink);
-  transform: translateY(calc(var(--at, 0) * var(--row)));
-  transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.lc-st-sec {
-  display: block;
-  width: calc(100% + 8px);
-  height: var(--row);
+.lc-st-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
   box-sizing: border-box;
-  margin-left: -8px;
-  padding: 0 8px;
-  overflow: hidden;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  line-height: var(--row);
-  color: var(--l-ink-3);
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 200ms ease;
+  padding: 0 12px 0 28px;
+  box-shadow: inset 0 -1px 0 var(--l-line);
 }
-.lc-st-sec[aria-current] {
-  font-weight: 500;
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-st-sec:hover {
-    color: var(--l-ink);
-  }
-}
-
-/* The header's trail stays on one line: Settings / the place / the section you're reading. */
+/* The header's trail stays on one line: Settings / the place. */
 .lc-st-crumbs ol {
   flex-wrap: nowrap;
 }
+.lc-st-paper > .lc-st-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.lc-st-paper .lc-st-col {
+  gap: 30px;
+  max-width: 824px;
+  padding: 32px 32px 40px;
+}
+/* Focus lands on the page's heading when Settings opens or changes place, for a screen reader; it isn't drawn. */
+.lc-st-col > h1:focus {
+  outline: none;
+}
+/* Restore defaults, quiet, at the foot of the pages that have one. */
+.lc-st-restore {
+  margin: -8px 0 0;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lc-st-restore .lc-linkbtn {
+  color: var(--l-ink-3);
+}
 
-/* ---------- Appearance ---------- */
-/* Something new: a small tag in the accent's tint. */
-.lc-st-new {
+/*
+  Every page's one shape (settings/parts.tsx): a 15px title over each group, the group a card with a 1px edge on a
+  fill a step up from the paper, and in it rows of a name (14, 500), one line on why (13, grey) and a control at
+  the right end. Agentic.tsx draws its rows with the same classes, so it takes the same look.
+*/
+.lc-st-paper .lc-st-group {
+  gap: 10px;
+}
+.lc-st-paper .lc-st-group > header {
+  align-items: center;
+  min-height: 30px;
+  padding: 0 2px;
+}
+.lc-st-paper .lc-st-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.lc-st-paper .lc-st-group > header p {
+  margin-top: 2px;
+}
+.lc-st-paper .lc-st-card,
+.lc-st-paper .lc-fcard.lc-st-card {
+  overflow: hidden;
+  border-radius: var(--lc-r-card);
+  background: color-mix(in oklab, var(--l-ink) 2.5%, var(--lc-paper));
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lc-st-paper .lc-st-card {
+  padding: 0 18px;
+}
+.lc-st-paper .lc-st-card[data-flush] {
+  padding: 0;
+}
+.lc-st-paper .lc-st-row {
+  gap: 18px;
+  min-height: 62px;
+  padding: 12px 0;
+}
+.lc-st-paper .lc-st-row[data-below] {
+  padding: 14px 0 16px;
+}
+.lc-st-paper .lc-st-t {
+  gap: 3px;
+}
+.lc-st-paper .lc-st-t small {
+  line-height: 1.45;
+}
+/* A line's parts each on a line of their own (a project's path, then its sessions; app.css) unless it is one sentence
+   with a command in it (Mono), whose words run on round the code. */
+.lc-st-paper .lc-st-t small:has(> .lc-st-code) > span {
+  display: inline;
+}
+/* An old name the page took in, or something new: a small tag beside a title, a place or a name. */
+.lc-st-tag {
   display: inline-flex;
   flex: none;
   align-items: center;
-  height: 18px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--l-accent-soft);
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--l-wash-2);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
-  color: var(--l-accent-text);
-  vertical-align: 1px;
+  color: var(--l-ink-3);
 }
-.lc-st-group h2 .lc-st-new {
-  margin-left: 6px;
+.lc-st-tag[data-tone="new"] {
+  background: var(--l-accent-soft);
+  color: var(--l-accent-text);
+}
+.lc-st-tag[data-tone="ok"] {
+  background: color-mix(in oklab, var(--l-ok) 14%, transparent);
+  color: var(--l-ok-text);
+}
+.lc-st-tag[data-tone="warn"] {
+  background: color-mix(in oklab, var(--l-warn) 16%, transparent);
+  color: var(--l-warn-text);
+}
+.lc-st-place .lc-st-tag {
+  margin-left: auto;
+  height: 18px;
+}
+/* A version or a command, in mono and quiet, in a name or a line. */
+.lc-st-code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--l-wash);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+b > .lc-st-code {
+  padding: 0;
+  background: none;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+/* A logo on a small tile, with a dot at its corner: green when the thing is there and working, grey when not. */
+.lc-st-tile {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+}
+.lc-st-tile > img,
+.lc-st-tile > svg {
+  max-width: 18px;
+  max-height: 18px;
+}
+.lc-st-dot {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--l-ink-4);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--l-ink) 2.5%, var(--lc-paper));
+}
+.lc-st-dot[data-on] {
+  background: var(--l-ok);
+}
+/* Your dots, drawn small: indigo dots on a dark tile. */
+.lc-st-tile.lc-st-dots {
+  background-color: oklch(0.16 0.01 280);
+  background-image: radial-gradient(circle, #6f5cff 1.2px, transparent 1.6px);
+  background-size: 5px 5px;
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+/* What an opened row holds: quieter sub-rows in line with its words. */
+.lc-st-more {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 12px;
+}
+.lc-st-more[data-lead] {
+  padding-left: 46px;
+}
+.lc-st-paper .lc-st-card > .lc-st-more {
+  box-shadow: none;
+}
+.lc-st-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-st-sub-t {
+  flex: 1;
+  min-width: 0;
+}
+.lc-st-sub-v {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--l-ink-3);
+}
+
+/* ---------- Appearance ---------- */
+/* A swatch keeps a faint ring outside it, so a colour near the paper's (Ink on dark) still reads as a choice. */
+.lc-st-paper .lc-swatch:not([data-on]) {
+  box-shadow:
+    inset 0 0 0 1px oklch(0 0 0 / 0.1),
+    0 0 0 1px var(--l-line-2);
 }
 /* A row that doesn't apply now (its switch is off too). */
 .lc-st-row[data-off] .lc-st-t {
@@ -376,12 +507,9 @@ html[data-native="mac"] .lc-st-side {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lc-st-side,
-  .lc-st-secs {
+  .lc-st-pop,
+  .lc-st-sheet {
     animation: none;
-  }
-  .lc-st-bar {
-    transition: none;
   }
 }
 

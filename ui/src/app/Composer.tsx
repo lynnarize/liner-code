@@ -26,6 +26,7 @@ import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { Glyph, I, ModelMark, StateMark } from "./icons";
+import { tintPaint } from "./brands";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortIn, effortsFor, isModelAgent, levelName, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, wayOf, whoOf, type AccessLevel, type Way } from "./model";
 import { onComposerInsert, toComposer } from "./Find";
 import { loadDraftFiles, saveDraftFiles } from "./draftFiles";
@@ -40,6 +41,7 @@ import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
 import { draftRead, draftSaves, wordRead } from "./kept";
 import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
+import { UsageRing } from "./UsageRing";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -1472,6 +1474,8 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
             <span className="lc-grow" />
             {editing ? <span className="lc-tray-note" title="Enter saves it, Esc leaves it as it was">Editing a queued message</span> : comparing && <span className="lc-tray-note">Sending to {compare.length + 1} models</span>}
             {steerNote}
+            {/* How much of the chosen tool's plan limit is used now, beside who works: gone when the tool reports none. */}
+            <UsageRing model={model} />
             <span className="lc-seg">
               <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="end" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} out={pickerOut("end", pickerWide)} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
                 {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} solo={aside} side={pickerWide ? "card" : "line"} />}
@@ -1812,7 +1816,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           {/* The lead's effort is the same part as on Fusion's card above it (the slider and the switches), not a list of its own. */}
           {line === "effort" && (
             <>
-              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} onPick={(id) => pickLine("effort", id)} />
+              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} tint={leadRuns ? tintPaint(markOf(leadRuns.replace(/^@/, ""))) : undefined} onPick={(id) => pickLine("effort", id)} />
               {effortAuto && <p className="lc-who-note">{`${autoNote("effort")}: ${levelName(efforts.list.find((e) => e.id === effortAuto)?.label ?? effortAuto)}`}</p>}
             </>
           )}
@@ -1893,7 +1897,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           )}
           <div className="lc-pk-rule" />
           {/* The session's own pair holds the effort, so its stored word goes in; another tool's card shows the pair's level from Settings, which a press there picks. */}
-          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} onPick={(id) => pickFusion(t, id)} />
+          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} tint={pLeadModel ? tintPaint(markOf(pLeadModel)) : undefined} onPick={(id) => pickFusion(t, id)} />
         </>
       );
     return {
@@ -1960,7 +1964,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
         {
           id: AGENTS_TAB,
           label: "Your agents",
-          icon: <I.agents size={14} />,
+          icon: <I.agents size={16} />,
           on: agentsOn,
           note: yours.length === 0 ? "None yet" : undefined,
           body: (
@@ -1972,7 +1976,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
                   <span className="lc-who-opt-t">New agent</span>
                 </button>
               ) : (
-                yours.length === 0 && <p className="lc-who-note">None yet. Settings › Team makes one.</p>
+                yours.length === 0 && <p className="lc-who-note">None yet. Settings › Agents and modes makes one.</p>
               )}
             </>
           ),

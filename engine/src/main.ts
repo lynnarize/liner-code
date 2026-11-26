@@ -21,13 +21,15 @@ import { AgentTools } from "./agent-tools.ts";
 import { Designs } from "./designs.ts";
 import { designCtx, resetWatches, turnReady } from "./canvas.ts";
 import { Security } from "./security.ts";
+import { Watcher } from "./security-watch.ts";
 import { Addons } from "./addons.ts";
 import { Offers } from "./offers.ts";
 import { Sources } from "./sources.ts";
 import { DshHosts } from "./dsh-hosts.ts";
-import type { Thread } from "../../contracts/src/index.ts";
+import type { PrItem, Thread } from "../../contracts/src/index.ts";
 import { ROUTINES_ON } from "../../contracts/src/index.ts";
 import { Outside } from "./outside-tools.ts";
+import { LinerMcp } from "./mcp-http.ts";
 import { Awake } from "./awake.ts";
 import { dropMarks, firstLine, linkHelpers, marksKept, secretsFrom, sweepMarks, takeSecrets, withPath } from "./exec.ts";
 import { devWaits } from "./providers/acp.ts";
@@ -167,6 +169,14 @@ sources.network = () => store.settings.addonNetwork ?? "ask";
 extras.sources = sources;
 tools.offers = offers;
 outside.now = new Outside(store, api);
+// A session an app starts runs at its tool's usual effort for its model, never a level the lead's profile names that the model lacks.
+outside.now.usualEffort = (t) => {
+  const r = runtime.resolve(t);
+  return runtime.defaultEffortOf(r.provider, r.model) || undefined;
+};
+// Liner MCP: apps outside Liner Code, through the stdio server and through a listener of their own (mcp-http.ts), each held to its level.
+const mcp = new LinerMcp({ store, outside: outside.now, env, command: async () => ((await api.call("outside.info", {})) as { claude: string }).claude, runsOn: (id) => runtime.whoIs(id), runsOnRef: (id) => ((r) => `${r.provider}:${r.model}`)(runtime.resolve(store.thread(id))), secret: () => runtime.keys.get("mcp.webhook") });
+extras.mcp = mcp;
 
 // In dev the token is written where the Vite dev server can read it; the shell passes its own.
 const token = secrets.token || (dev ? "liner-dev" : randomBytes(24).toString("hex"));
@@ -185,7 +195,7 @@ const server = await startServer({
     const threadId = key ? tools.threadOf(key) : undefined;
     return threadId ? tools.call(threadId, tool, args, gone) : null;
   },
-  outside: (key, tool, args) => (outside.now?.allows(key) ? outside.now.call(tool, args) : null),
+  outside: (key, tool, args, gone, client) => (outside.now?.allows(key) ? mcp.callStdio(client, tool, args, gone) : null),
   knows: { surface: (key) => Boolean(key && tools.threadOf(key)), outside: (key) => Boolean(outside.now?.allows(key)) },
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
   dsh: (token, rest, search, req, res) => dsh.serve(token, rest, search, req, res),
@@ -197,6 +207,11 @@ outside.now.url = tools.url;
 // Where a ported plugin's tools bring your agents' calls (dsh-mcp.ts).
 dsh.url = tools.url;
 outside.now.apply();
+// Its own listener (and the tunnel you picked) only while apps are let in.
+void mcp.apply().catch((e) => console.error("[mcp]", e));
+// Scan new PRs (Settings › Source control): looks at the open pull requests now and then while a window is open, and scans a new one.
+const watcher = new Watcher(security, { listPrs: async () => ((await api.call("worklists.prs", { state: "open" })) as { items: PrItem[] }).items, windows: () => server.windows() > 0 });
+watcher.start();
 // No idle sleep while a session or a routine run works.
 const awake = new Awake(store, () => routines.busy || store.threads.some((t) => t.status === "running"));
 // What an engine that died hard (a crash, a SIGKILL) left running, found by the markers in its folder, ends before anything here
@@ -230,7 +245,7 @@ const quit = () => {
   // Each on its own, so one that fails (the last save, on a full disk) doesn't leave the rest undone
   // and the engine running with nothing to stop it: its signal has been sent, and its stdin has closed.
   const waits: Promise<void>[] = [];
-  const steps = [() => waits.push(dsh.stopAll(QUIT_WAIT)), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => waits.push(launch.quit(QUIT_WAIT)), () => design.close(), () => proxies.closeAll(), () => logs.stopAll(), () => waits.push(runtime.shutdown()), () => store.keepStreaming(), () => store.flush(), () => server.close()];
+  const steps = [() => waits.push(dsh.stopAll(QUIT_WAIT)), () => waits.push(mcp.stop()), () => awake.stop(), () => routines.stop(), () => watch.stop(), () => api.updates.stop(), () => terms.closeAll(), () => waits.push(launch.quit(QUIT_WAIT)), () => design.close(), () => proxies.closeAll(), () => logs.stopAll(), () => waits.push(runtime.shutdown()), () => store.keepStreaming(), () => store.flush(), () => server.close()];
   for (const step of steps) {
     try {
       step();

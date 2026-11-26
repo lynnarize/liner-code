@@ -333,7 +333,7 @@ function MoreMenu() {
             <Row title={`Three takes by ${who}`} note="One message, three new frames" icon={<I.layers size={16} />} onPick={() => go(() => threeHere(m.frame, m.node))} />
             <Row
               title={tools.length ? `One each by ${tools.map((t) => t.name).join(", ")}` : "One each by your other tools"}
-              note={mock ? "Not on the sample canvas" : tools.length ? "One after another, each in a session here that asks before edits" : tools.unready.length ? `Sign in to ${tools.unready.slice(0, 3).join(" or ")} in Settings › Models` : "Set up another tool in Settings › Models"}
+              note={mock ? "Not on the sample canvas" : tools.length ? "One after another, each in a session here that asks before edits" : tools.unready.length ? `Sign in to ${tools.unready.slice(0, 3).join(" or ")} in Settings › Agent tools` : "Set up another tool in Settings › Agent tools"}
               icon={<I.fanout size={16} />}
               disabled={mock || !tools.length}
               onPick={() => go(() => onePerTool(m.frame, tools))}

@@ -22,8 +22,12 @@ export const backFromSide = (key: string, typing: boolean) => key === "Escape" |
 /** What a side menu focuses as it opens: its text field when it has one (the chooser's find field), else its first row. A switch is not a text field. */
 export const FIRST_FOCUS = "input:not([type='checkbox']):not([type='radio']):not([type='range']):not(:disabled), textarea:not(:disabled), [data-autofocus]";
 
-/** What hasOpenModal (App.tsx) looks for: a dialog, a popup layer, a sheet, or a part that says it is a dialog. */
-export const MODAL = "dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog']";
+/**
+  What hasOpenModal (App.tsx) looks for: a dialog, a popup layer, a sheet, or a part that says it is a dialog. Settings'
+  pop-up (.lc-st-sheet) is a dialog too, but the app's keys go on working over it, as they did when it was a page: ⌘,
+  closes it and ⌘N or ⌘K go somewhere and close it. A dialog opened inside it still holds the keys.
+*/
+export const MODAL = "dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog']:not(.lc-st-sheet)";
 /**
   Whether any of the elements found for MODAL holds the app's keys: one that shows, and is not one of the ask cards left
   over a page (the Browser's, the Device's, a design's comment), which stay up while you work round them. `hidden` on

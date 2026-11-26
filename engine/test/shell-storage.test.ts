@@ -44,12 +44,15 @@ test("Settings' preference reads validate their values and guard storage", () =>
   assert.ok(/wordRead\(/.test(settings), "Settings' reads do not go through the helper");
   assert.ok(!/localStorage\.getItem\("lc:enter"\)/.test(settings), "the lc:enter read is still a bare cast into the union");
   assert.ok(/wordRead\(localStorage, "lc:enter", \["queue", "steer"\], "queue"\)/.test(settings), "the lc:enter read does not validate against the known words");
-  // The page read lists the SettingsPage union's own values, not a cast of whatever is stored.
-  const type = span(settings, "type SettingsPage = ", ";");
+  // The page read lists the SettingsPage union's own values (settings/places.ts, where the places live since Settings
+  // became a pop-up) and the old places' names, not a cast of whatever is stored.
+  const places = app("settings/places.ts");
+  const type = span(places, "type SettingsPage = ", ";");
   const pages = [...type.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
-  assert.ok(pages.length >= 15, "the SettingsPage union's values could not be read");
-  const pageRead = span(settings, "const [page, setPage]", "const [query");
-  for (const p of pages) assert.ok(pageRead.includes(`"${p}"`), `the lc:settings read does not know the page "${p}"`);
+  assert.ok(pages.length >= 14, "the SettingsPage union's values could not be read");
+  const list = span(places, "export const PLACES", "];");
+  for (const p of pages) assert.ok(list.includes(`id: "${p}"`), `PLACES, which the lc:settings read is checked against, does not have the page "${p}"`);
+  assert.ok(/wordRead\(sessionStorage, "lc:settings", \[\.\.\.PAGE_IDS, \.\.\.Object\.keys\(MOVED\)\]/.test(settings), "the lc:settings read does not validate against the places and the old places' names");
   assert.ok(!/localStorage\.getItem\(/.test(settings) && !/sessionStorage\.getItem\(/.test(settings) && !/\.setItem\(/.test(settings), "a bare storage call remains in Settings");
 });
 

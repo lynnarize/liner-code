@@ -97,7 +97,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
     <Dialog
       open
       onOpenChange={(o) => !o && asking.resolve(null)}
-      icon={<I.turn size={16} />}
+      icon={<I.mark size={16} />}
       title={`${asking.name} wants to use a model`}
       description="Pick one of your models for it. It's just a model: it gets what the app sends and answers with text, with no tools, files or agent. Each ask is billed to that model's account."
       size="md"
@@ -116,7 +116,7 @@ function AppModelDialog({ asking }: { asking: Asking }) {
       {any ? (
         <ModelPicker value={pick} onPick={(ref) => setPick(ref)} only={only} height={380} autoFocus foot={<span className="lc-appmodel-foot">Models that only run through Codex, OpenCode or Hermes aren't here: those tools bring tools of their own, which an app must never reach.</span>} />
       ) : (
-        <p className="lc-appmodel-none">None of your models can answer an app yet. Sign in to Claude Code, or add an API endpoint in Settings › Models, and it shows here.</p>
+        <p className="lc-appmodel-none">None of your models can answer an app yet. Sign in to Claude Code, or add an API endpoint in Settings › Agent tools, and it shows here.</p>
       )}
     </Dialog>
   );
@@ -130,7 +130,7 @@ export function AppModelChip({ addon, name }: { addon: string; name: string }) {
   const ready = appModelReady(ref, providers, settings);
   return (
     <button type="button" className="lc-appmodel-chip l-focus" title={ready ? "The model this app asks. Change it" : "Pick the model this app may ask"} onClick={() => void pickAppModel(addon, name)}>
-      {ref && ready ? <ModelMark kind={markOf(ref)} size={14} /> : <I.turn size={14} />}
+      {ref && ready ? <ModelMark kind={markOf(ref)} size={14} /> : <I.mark size={14} />}
       <span className="lc-chip-name">{ref && ready ? modelLabel(ref, providers) : ref ? "Its model isn't ready" : "Pick a model"}</span>
     </button>
   );

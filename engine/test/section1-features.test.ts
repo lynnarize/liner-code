@@ -120,7 +120,9 @@ test("Updater has no Cursor Agent row whose look could run its installer, picks 
   const home = mkdtempSync(join(tmpdir(), "lc-upd-"));
   const store = new Store(home);
   try {
-    const updater = new Updater(store, { ...process.env, LINER_APP_PACKAGED: "1" }, { working: () => 1, restartIdle: () => {} }, () => {});
+    // Only the LINER_APP_ and LINER_UPDATE_ variables this test sets: run from a Liner Code session, the tests inherit its bundle and version, which made this copy look installable.
+    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("LINER_APP_") && !k.startsWith("LINER_UPDATE_"))), LINER_APP_PACKAGED: "1" };
+    const updater = new Updater(store, env, { working: () => 1, restartIdle: () => {} }, () => {});
     assert.equal(updater.state.app.can, "manual");
     const cancelled = updater.cancelTool();
     assert.ok(cancelled);

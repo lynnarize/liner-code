@@ -167,7 +167,7 @@ function YourPair({ c }: { c: Pair }) {
   return (
     <Part
       title="Fusion"
-      note="The lead owns a session and hands bounded work to its sidekick, a quicker model, then reads what it changed. Each session can change them from its composer."
+      note="The lead owns a session and hands bounded work to a quicker sidekick, then reads what it changed."
       end={
         picks.lead || picks.sidekick ? (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => clearPair(settings)}>
@@ -184,7 +184,7 @@ function YourPair({ c }: { c: Pair }) {
           <Line title="Sidekick" note={<>Does the work the lead hands it: edits it can specify, the same change across files, slow test runs.{gone(c, picks.sidekick) ? " Your pick's tool isn't ready, so it's automatic for now." : ""}</>}>
             <Pick c={c} title="Sidekick model" part="sidekick" fallback={c.fall.sidekick} />
           </Line>
-          <Line title="New sessions start with" note={two || shown !== c.lead ? line : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for Fusion.` : lead ? `Fusion needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Models.` : "No model is ready yet."}>
+          <Line title="New sessions start with" note={two || shown !== c.lead ? line : lead && c.models > 1 ? `No model of a lead's class is ready, so ${label(lead)} does it all. Pick a lead above for Fusion.` : lead ? `Fusion needs a second model, and ${label(lead)} is the only one ready. Sign in to another tool, or add an API endpoint in Settings › Agent tools.` : "No model is ready yet."}>
             <StartPick value={start} onPick={(v) => save({ start: v })} />
           </Line>
         </div>
@@ -288,7 +288,7 @@ function PairClasses({ c }: { c: Pair }) {
   return (
     <Part
       title="How Fusion works"
-      note="The lead writes for the sidekick it has. Each of your models sits in a class, and the class sets how the lead briefs it and checks its work."
+      note="Each of your models sits in a class, which sets how the lead briefs it and checks its work."
       end={
         Object.keys(moved).length ? (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => save({ classes: {} })}>
@@ -368,7 +368,7 @@ function LeadInPair({ c }: { c: Pair }) {
     <Part title="The lead in Fusion">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
-          <Line title="Hands over" note="A frontier-class lead hands over slow runs and spelled-out edits by default. Any other lead tends to keep the work, so it is told more firmly.">
+          <Line title="Hands over" note="A frontier-class lead hands over slow runs and spelled-out edits; any other is told more firmly.">
             <Pop
               menu
               width={300}
@@ -394,7 +394,7 @@ function LeadInPair({ c }: { c: Pair }) {
               {(close) => HAND_OVER.map((h) => <Row key={h.id} title={h.title} note={h.note} on={hand === h.id} onPick={() => (save({ handOver: h.id === "auto" ? UNSET : h.id }), close())} />)}
             </Pop>
           </Line>
-          <Line title="The lead's effort" note="In Fusion, in the levels your lead's model takes. Planning and reading a diff rarely need its most. Alone, the lead keeps its own effort.">
+          <Line title="The lead's effort" note="The lead's effort in Fusion; planning and reading a diff rarely need its most.">
             {/* The levels your lead's model takes, as its tool lists them: Settings' word shows as the nearest it takes, unset as the lead's default. Its own default picked is no word (null): the engine refuses "". */}
             <EffortPick modelRef={c.lead} value={settings.pairEffort ?? ""} label="The lead's effort" onChange={(v) => save({ pairEffort: settingLevel(v) ?? UNSET })} />
           </Line>
@@ -417,7 +417,7 @@ function Reviewer({ c }: { c: Pair }) {
   const now = writers.length ? reviewerFor(writers, providers, picks) : null;
   const auto = writers.length ? reviewerFor(writers, providers, picks, true) : null;
   return (
-    <Part title="The Reviewer" note="Reads each change before it's yours and sends back what must be fixed. Each session can turn it off from the word in its bar.">
+    <Part title="The Reviewer" note="Reads each change before it's yours and sends back what must be fixed.">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
           <Line title="Read each change" note={on ? (now && start ? `In new sessions ${label(now)} reads what ${label(writers[0])}${start.sidekick ? " and its sidekick" : ""} change${start.sidekick ? "" : "s"}.` : "Nobody else is ready to read changes yet.") : "Off: changes in new sessions are yours as they are."}>
@@ -448,10 +448,10 @@ function Subagents({ c }: { c: Pair }) {
     choices.sort((a, b) => a - b);
   }
   return (
-    <Part title="Subagents" note="For tools without native subagents (Cursor, Grok, added ACP agents). Claude Code, Codex, OpenCode, Hermes and Antigravity use their own.">
+    <Part title="Subagents" note="For tools without subagents of their own: Cursor, Grok and added ACP agents.">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
-          <Line title="Parallel read-only subagents" note="How many read-only subagents run side by side per session; extra calls queue until a slot opens. Higher values start more processes and use more RAM and API concurrency. Write subagents always run one at a time.">
+          <Line title="Parallel read-only subagents" note="Read-only subagents side by side in a session; more use more memory, and writers go one at a time.">
             <Segmented size="sm" value={String(max)} onValueChange={(v) => save({ maxActiveSubagents: Number(v) })} options={choices.map((v) => ({ value: String(v), label: String(v) }))} aria-label="Parallel read-only subagents" />
           </Line>
         </div>
@@ -501,7 +501,7 @@ function Teamwork({ c }: { c: Pair }) {
     ),
   };
   return (
-    <Part title="Multi-agent: Teamwork and Swarm" note="Liner Code's own multi-agent board and worker pool, working across every CLI and API endpoint. Waiting workers hibernate to 0 MB RAM until mentioned again.">
+    <Part title="Multi-agent: Teamwork and Swarm" note="Liner Code's own board and pool of workers, across every CLI and API endpoint.">
       <div className="lc-frame">
         <div className="lc-fcard lc-st-card lc-ag-pair">
           <Line
@@ -528,16 +528,16 @@ function Teamwork({ c }: { c: Pair }) {
           <Line title="Reader effort" note="One lower runs read-only workers, the auditor aside, one effort level under your session's.">
             <Segmented size="sm" value={readerEffort} onValueChange={(v) => save({ swarmReaderEffort: v as "same" | "lower" })} options={[{ value: "same", label: "Same" }, { value: "lower", label: "One lower" }]} aria-label="Reader effort" />
           </Line>
-          <Line title="Active worker processes" note="How many CLI workers run at the same time in a Swarm. Larger rosters queue at 0 MB until a slot opens.">
+          <Line title="Active worker processes" note="How many CLI workers run at once in a Swarm; the rest wait their turn.">
             <Segmented size="sm" value={String(maxActive)} onValueChange={(v) => save({ swarmMaxActive: Number(v) })} options={[1, 2, 3, 4].map((v) => ({ value: String(v), label: String(v) }))} aria-label="Active worker processes" />
           </Line>
           <Line title="Hibernate waiting workers" note="Closes a parked worker's process after it posts to the board and resumes it on the next @mention.">
             <Segmented size="sm" value={hibVal} onValueChange={(v) => save({ swarmHibernateSec: Number(v) })} options={HIBERNATE_CHOICES} aria-label="Hibernate waiting workers" />
           </Line>
-          <Line title="Writer workspace" note="Isolated git worktrees let parallel writers edit without colliding; researchers and verifiers always stay read-only.">
+          <Line title="Writer workspace" note="Parallel writers each get a worktree; researchers and verifiers stay read-only.">
             <Segmented size="sm" value={workspace} onValueChange={(v) => save({ swarmWorkspace: v as "share" | "inherit" })} options={[{ value: "share", label: "Worktree" }, { value: "inherit", label: "Shared folder" }]} aria-label="Writer workspace" />
           </Line>
-          <Line title="Stall monitor" note="Deterministic engine timer (0 MB RAM, 0 tokens) that nudges unanswered @mentions or unread board results.">
+          <Line title="Stall monitor" note="A timer in the engine, free, that nudges unanswered @mentions and unread board results.">
             <NamedSwitch name="Stall monitor" checked={stall} onCheckedChange={(swarmStallMonitor) => save({ swarmStallMonitor })} />
           </Line>
           <Line title="Auto-post fallback" note="Publishes a worker's final reply to @coordinator if it ends a turn without calling swarm_post.">

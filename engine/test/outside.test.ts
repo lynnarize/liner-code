@@ -60,7 +60,7 @@ test("outside: projects, sessions, a session read with what waits on you, and st
   const read = out(await o.call("liner_read", { session: "th_1" }));
   assert.match(read, /^Reset button · waiting \(it asks the person something in Liner Code\)[\s\S]*The person: Add a Reset button\.\n- Edit index\.html\nWaiting on the person: Run npm test/);
   assert.match(out(await o.call("liner_start", { project: "/work/counter", message: "Write the tests", agent: "codex:gpt-6-luna" })), /^Started th_new in Counter/);
-  assert.deepEqual(calls, [["thread.create", { projectId: "p", agent: "@codex:gpt-6-luna" }], ["thread.send", { id: "th_new", text: "Write the tests" }]]);
+  assert.deepEqual(calls, [["thread.create", { projectId: "p", title: "Write the tests", agent: "@codex:gpt-6-luna" }], ["thread.send", { id: "th_new", text: "Write the tests" }]]);
   const nope = await o.call("liner_read", { session: "th_x" });
   assert.equal(nope.isError, true);
   assert.match(out(nope), /No session "th_x"/);
@@ -101,7 +101,8 @@ test("outside: the MCP server on stdio lists its tools and passes a call to the 
     for (let i = 0; i < 200 && replies.length < 3; i++) await new Promise((r) => setTimeout(r, 20));
     const by = (id: number) => replies.find((r) => r.id === id) as { result: Record<string, unknown> };
     assert.equal((by(1).result.serverInfo as { name: string }).name, "liner-code");
-    assert.deepEqual((by(2).result.tools as { name: string }[]).map((t) => t.name), ["liner_projects", "liner_sessions", "liner_read", "liner_start", "liner_send", "liner_wait"]);
+    // No level in outside.json (an engine from before levels): Trusted, every tool.
+    assert.deepEqual((by(2).result.tools as { name: string }[]).map((t) => t.name), ["liner_projects", "liner_sessions", "liner_read", "liner_pull_requests", "liner_issues", "liner_findings", "liner_start", "liner_send", "liner_wait", "liner_answer", "liner_scan", "liner_stop"]);
     assert.equal(((by(3).result.content as { text: string }[])[0]).text, "p · Counter · /work/counter");
     assert.deepEqual(seen, [{ key: "k123", tool: "liner_projects" }]);
   } finally {

@@ -42,3 +42,14 @@ test("Group's value is the name of the group a session is in, and nothing when i
   assert.equal(groupValue({}, groups), undefined);
   assert.equal(groupValue({ group: "gone" }, groups), undefined);
 });
+
+test("A project's folder in the sidebar has a + beside its ··· that starts a session in that project, and Designs and sessions of no project have none", () => {
+  const side = app("Sidebar.tsx");
+  const plus = side.match(/\{x\.id && x\.id !== DESIGNS && \(\s*<button type="button" className="lc-sb-a l-focus" data-new aria-label=\{`New session in \$\{x\.name\}`\}[^\n]*onClick=\{\(\) => onNew\(x\.id\)\}>\s*<I\.plus size=\{14\} \/>/);
+  assert.ok(plus, "a project's folder has no + that starts a session in it");
+  // Before the ···, in the folder's actions, which show while you point at it.
+  const acts = side.slice(side.indexOf("actions={", side.indexOf("<SideFolder")));
+  assert.ok(acts.indexOf("data-new") < acts.indexOf('aria-haspopup="menu"'), "the + isn't before the ···");
+  // The menu's New session here stays for a right-click, and starts the same way.
+  assert.match(side, /<Row title="New session here" icon=\{<I\.plus size=\{16\} \/>\} onPick=\{\(\) => \(close\(\), onNew\(projMenu\.id\)\)\} \/>/);
+});

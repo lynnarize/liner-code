@@ -9,16 +9,16 @@ export const TOOLS: ToolDef[] = [
   {
     name: "design_picture",
     description:
-      "Asks for an AI picture, one a model generates from words (a photograph, an illustration, a texture), from the AI pictures model the person set up, and saves it under the design file's assets/. AI pictures are optional: with none set up, or off for the design file, it makes nothing and says so, and you leave a labelled empty box where the picture goes. With into, it goes straight into that element of a frame. The design file says whether the person is asked first; this waits for their answer. Returns the file's path, from the design's folder, to use in a frame's HTML.",
+      "Asks the AI pictures model the person set up for a picture made from words (a photograph, an illustration, a texture) and saves it under the design file's assets/. It's optional: with none set up, or off for this design, it makes nothing and says so, and you leave a labelled empty box there. With into, it goes straight into that element. It may wait for the person's yes. Returns the file's path from the design's folder, for a frame's HTML.",
     inputSchema: {
       type: "object",
       properties: {
-        prompt: { type: "string", description: "What the picture shows, its light and its style, in a few sentences" },
-        width: { type: "number", description: "Its width in px" },
-        height: { type: "number", description: "Its height in px" },
-        into: { type: "object", description: "Where it goes: {frame, id}, a frame's id or name and the data-l id of an img or a box to fill" },
-        lean: { type: "boolean", description: "false to leave the lean's colours out of the ask (they go with it otherwise)" },
-        design: { type: "string", description: "The design file's slug" },
+        prompt: { type: "string", description: "What it shows, its light and style, in a few sentences" },
+        width: { type: "number" },
+        height: { type: "number" },
+        into: { type: "object", description: "{frame, id}: a frame and the data-l id of an img or box" },
+        lean: { type: "boolean", description: "false: without the lean's colours" },
+        design: { type: "string" },
       },
       required: ["prompt", "width", "height"],
     },

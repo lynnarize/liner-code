@@ -1,0 +1,535 @@
+/* The scan chip (ScanChip.tsx) and the scan dock (ScanDock.tsx): Liner Security on a pull request or an issue, outside the
+   Security face. Every class is `lst-`; colours are the app's tokens, and the severities Liner Security names (security.css
+   isn't loaded here). Numbers from boards PullRequests, ScanDone and Issues. One severity scale everywhere a target's scan
+   shows (the chip, the dock, the detail's Security row): the app's red for high and critical, amber for medium, grey for low. */
+[data-theme] {
+  --lst-high: var(--l-danger);
+  --lst-medium: var(--l-warn);
+  --lst-low: var(--l-ink-4);
+}
+
+/* ---------- The chip ---------- */
+
+.lst-chip,
+.lst-split {
+  height: 24px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: var(--lc-r-row);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lst-chip {
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  cursor: pointer;
+}
+.lst-chip:hover {
+  background: var(--l-wash-2);
+}
+/* Found: tinted by the worst it found. */
+.lst-chip[data-state="found"] {
+  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
+  color: var(--l-warn-text);
+  box-shadow: none;
+}
+.lst-chip[data-state="found"]:hover {
+  background: color-mix(in oklab, var(--l-warn) 22%, transparent);
+}
+.lst-chip[data-state="found"][data-worst="high"] {
+  background: color-mix(in oklab, var(--l-danger) 13%, transparent);
+  color: var(--l-danger-text);
+}
+.lst-chip[data-state="found"][data-worst="high"]:hover {
+  background: color-mix(in oklab, var(--l-danger) 20%, transparent);
+}
+.lst-chip[data-state="found"][data-worst="low"] {
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+}
+.lst-chip[data-state="found"][data-worst="low"]:hover {
+  background: var(--l-wash-2);
+}
+.lst-chip[data-state="clean"] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--l-ink-4);
+}
+.lst-chip[data-state="clean"]:hover {
+  color: var(--l-ink-2);
+}
+.lst-split {
+  background: var(--l-wash);
+  color: var(--l-ink-2);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lst-split:hover,
+.lst-split:has([data-open]) {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lst-split[data-again] {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-warn) 40%, transparent);
+}
+.lst-run {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: var(--lc-r-row) 0 0 var(--lc-r-row);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.lst-run:disabled {
+  color: var(--l-ink-4);
+  cursor: default;
+}
+.lst-split .lc-pop {
+  display: inline-flex;
+}
+.lst-split .lst-who {
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 4px 0 0;
+  padding: 0 4px 0 7px;
+  border: 0;
+  border-left: 1px solid var(--l-line-2);
+  border-radius: 0;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lst-split .lst-who:hover,
+.lst-split .lst-who[data-open] {
+  color: var(--l-ink);
+}
+
+/* A severity's square. */
+.lst-sq {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--lst-low);
+}
+.lst-sq[data-sev="high"] {
+  background: var(--lst-high);
+}
+.lst-sq[data-sev="medium"] {
+  background: var(--lst-medium);
+}
+
+/* The "Who scans" menu's headings, its tag, and its foot. */
+.lst-mlab {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-4);
+}
+.lst-tag {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ---------- The dock ---------- */
+
+.lst-dock {
+  position: fixed;
+  right: 16px;
+  z-index: 60;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  transition: bottom 220ms var(--l-ease-out);
+}
+.lst-dock > * {
+  pointer-events: auto;
+}
+.lst-card,
+.lst-pill {
+  background: var(--l-float);
+  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  backdrop-filter: var(--l-lens,) var(--l-backdrop);
+  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  color: var(--l-ink);
+  animation: l-pop-up 220ms var(--l-ease-enter) backwards;
+}
+.lst-card {
+  width: 100%;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.lst-head {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--l-line);
+  font-size: 13.5px;
+}
+.lst-head > svg {
+  flex: none;
+  color: var(--l-accent-text);
+}
+.lst-head > b {
+  flex: none;
+  font-weight: 600;
+}
+.lst-head-sub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-ib {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lst-ib:hover {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lst-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  overflow: hidden auto;
+}
+.lst-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lst-who .lst-tag {
+  margin-left: 0;
+}
+.lst-dot {
+  color: var(--l-ink-4);
+}
+.lst-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lst-step {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lst-step[data-step="done"] {
+  color: var(--l-ink-4);
+}
+.lst-step[data-step="waiting"] {
+  color: var(--l-ink-4);
+}
+.lst-num {
+  margin-left: auto;
+  color: var(--l-ink-4);
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lst-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--l-ink-3);
+}
+.lst-live > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-mono {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+}
+.lst-q {
+  flex: none;
+  color: var(--l-ink-4);
+}
+.lst-lead {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--l-ink);
+}
+.lst-find {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--l-wash);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.lst-find:hover {
+  background: var(--l-wash-2);
+}
+.lst-find > .lst-sq {
+  grid-row: 1 / 3;
+  align-self: start;
+  margin-top: 5px;
+}
+.lst-find > b {
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--l-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-sev {
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lst-find > small {
+  grid-column: 2 / 4;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A finding's path, cut from its left when long. */
+.lst-find > small {
+  display: flex;
+  min-width: 0;
+  gap: 0;
+}
+.lst-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-find > small > span:not(.lst-path) {
+  flex: none;
+  white-space: pre;
+}
+.lst-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--l-line);
+}
+.lst-bubble {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: var(--l-wash-2);
+  font-size: 13px;
+}
+.lst-ans {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--l-ink-2);
+  white-space: pre-wrap;
+}
+.lst-mini {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 10px;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
+  background: var(--l-wash);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lst-mini:focus-within {
+  box-shadow: 0 0 0 1px var(--l-line-strong);
+}
+.lst-mini input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+}
+.lst-mini input::placeholder {
+  color: var(--l-ink-4);
+}
+.lst-send {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--l-accent);
+  color: var(--l-on-ink, #fff);
+  cursor: pointer;
+}
+.lst-send:disabled {
+  background: var(--l-wash-2);
+  color: var(--l-ink-4);
+  cursor: default;
+}
+.lst-foot {
+  min-height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 14px;
+  border-top: 1px solid var(--l-line);
+}
+.lst-grow {
+  flex: 1;
+}
+.lst-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--l-wash);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lst-btn:hover {
+  background: var(--l-wash-2);
+}
+.lst-btn:disabled {
+  color: var(--l-ink-4);
+  cursor: default;
+}
+.lst-ghost {
+  background: none;
+  box-shadow: none;
+  color: var(--l-ink-2);
+}
+.lst-ghost[data-danger] {
+  color: var(--l-danger-text);
+}
+.lst-ghost[data-asking] {
+  color: var(--l-warn-text);
+}
+.lst-ink {
+  background: var(--l-ink);
+  box-shadow: none;
+  color: var(--l-bg);
+}
+.lst-ink:hover {
+  background: var(--l-ink-2);
+}
+.lst-pill {
+  max-width: 100%;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 14px;
+  border-radius: 19px;
+  font-size: 13px;
+}
+.lst-pill > b {
+  flex: none;
+  font-weight: 600;
+}
+.lst-pill-what {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-link {
+  flex: none;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--l-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.lst-link:hover {
+  background: var(--l-wash-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lst-dock {
+    transition: none;
+  }
+  .lst-card,
+  .lst-pill {
+    animation: none;
+  }
+}

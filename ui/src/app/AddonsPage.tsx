@@ -152,7 +152,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
               <Pop label="More ways to add one" menu align="end" width={260} triggerClass="lc-ao-split-more" trigger={<I.chevD size={12} />}>
                 {(close) => (
                   <>
-                    <Row title="Make one with an agent" note="Describe it, and Workshop builds it" icon={<I.turn size={14} />} onPick={() => (close(), onMake())} />
+                    <Row title="Make one with an agent" note="Describe it, and Workshop builds it" icon={<I.mark size={14} />} onPick={() => (close(), onMake())} />
                     <Row title="From GitHub, npm or a folder" note="One someone else made, or a DeepSeek Harness plugin" icon={<I.link size={14} />} onPick={() => (close(), setAdding("source"))} />
                     <Row title="Connect a service" note="Linear, Sentry and others, with a key" icon={<I.plug size={14} />} onPick={() => (close(), setAdding("connect"))} />
                   </>
@@ -192,7 +192,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                 action={
                   // Add one, beside the title, is the page's one ink action, so this one is plain.
                   <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onMake}>
-                    <I.turn size={14} />
+                    <I.mark size={14} />
                     Make one with an agent
                   </button>
                 }
@@ -324,7 +324,7 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
                   {prev > 0 && <Row title={`Back to v${prev}`} icon={<I.undo size={14} />} onPick={() => (close(), void update({ version: prev }).then(() => toast(`${a.name} is back to v${prev}`), fail))} />}
                   {a.version < latest && <Row title={`Up to v${latest}`} icon={<I.download size={14} />} onPick={() => (close(), void update({ version: latest }).then(() => toast(`${a.name} is on v${latest}`), fail))} />}
                   {/* Someone else's package: it changes with its next version from npm, not by an agent's edit. */}
-                  {!a.panel?.dsh && <Row title="Ask an agent to change it" icon={<I.turn size={14} />} onPick={() => (close(), change())} />}
+                  {!a.panel?.dsh && <Row title="Ask an agent to change it" icon={<I.mark size={14} />} onPick={() => (close(), change())} />}
                   <Row title="Its files" note="The list, here in the sheet" icon={<I.file size={14} />} on={Boolean(files)} onPick={() => (close(), void showFiles())} />
                   <Sep />
                   <ConfirmRow title="Remove" sure="Remove it" sureNote="It turns off everywhere. Its files are kept, so it can come back." icon={<I.trash size={14} />} onConfirm={() => (close(), remove())} />
@@ -451,7 +451,7 @@ function AddFrom({ onClose, onMake }: { onClose: () => void; onMake: () => void 
             {busy ? (/github/i.test(source) ? "Fetching it from GitHub…" : /^\s*[~/.]|^\s*[A-Za-z]:\\/.test(source) ? "Reading it…" : "Fetching it from npm…") : "Add"}
           </button>
           <button type="button" className="lc-ao-quiet lc-ao-make l-focus" onClick={onMake}>
-            <I.turn size={14} />
+            <I.mark size={14} />
             Or describe it, and an agent makes it in Workshop
           </button>
         </form>

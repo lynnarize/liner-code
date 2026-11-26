@@ -89,7 +89,7 @@ export function PageCard({ threadId, it }: { threadId: string; it: Extract<Item,
         <iframe ref={frame} className="lc-page-f" title={it.title} sandbox="allow-scripts" srcDoc={doc} onLoad={() => frame.current?.contentWindow?.postMessage({ __linerPing: 1 }, "*")} style={{ height: Math.min(height, cap) }} />
       </div>
       <figcaption className="lc-dz-capline">
-        <I.turn size={14} />
+        <I.mark size={14} />
         <b>{it.title}</b>
         <span className="lc-dz-capnote">· HTML page</span>
         <span className="lc-grow" />

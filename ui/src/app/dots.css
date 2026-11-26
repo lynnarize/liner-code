@@ -1,0 +1,301 @@
+/* Your dots behind Home (Dots.tsx). The canvas takes the sea's place and rules (.lc-sea, app.css);
+   its colour is the paper's, read back by the drawing to know a light paper from a dark one. */
+.lc-dots {
+  color: var(--lc-paper);
+}
+
+/* Behind Home: over Home on the right, under the top row, on Liner's float surface. It scrolls
+   inside, so its foot stays where Done is. No rules between its parts: room and small headings. */
+.lc-bh {
+  position: absolute;
+  top: var(--lc-head);
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: min(344px, calc(100% - 24px));
+  max-height: 760px;
+  border-radius: var(--lc-r-sheet);
+  background: var(--lc-float);
+  box-shadow: var(--lc-float-shadow);
+  font-size: 13px;
+  color: var(--l-ink);
+  outline: none;
+  animation: lc-bh-in 260ms var(--l-ease-enter) backwards;
+}
+@keyframes lc-bh-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+.lc-bh-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 12px 12px 18px;
+}
+.lc-bh-head > span {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+.lc-bh-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.lc-bh-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-bh-x:hover {
+  background: var(--lc-plate);
+  color: var(--l-ink);
+}
+.lc-bh-sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--l-ink-3);
+}
+.lc-bh-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: 2px 18px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lc-bh-part {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lc-bh-part h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-bh-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lc-bh-drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 92px;
+  padding: 0 12px;
+  border-radius: var(--lc-r-card);
+  background: var(--lc-well);
+  color: var(--l-ink-2);
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+.lc-bh-drop:hover {
+  background: var(--lc-plate);
+}
+.lc-bh-drop[data-drag] {
+  background: color-mix(in oklab, var(--l-accent) 14%, var(--lc-float));
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--l-accent) 70%, transparent);
+}
+.lc-bh-drop[data-busy] {
+  cursor: progress;
+}
+.lc-bh-drop input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.lc-bh-drop-t {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lc-bh-thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.lc-bh-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--l-ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.lc-bh-thumb canvas {
+  display: block;
+  width: 100%;
+  height: 50px;
+  border-radius: var(--lc-r-row);
+  background: var(--lc-paper);
+  color: var(--lc-paper);
+  transition: box-shadow 200ms var(--l-spring-smooth);
+}
+.lc-bh-thumb:hover {
+  color: var(--l-ink-2);
+}
+.lc-bh-thumb[data-on] {
+  color: var(--l-ink);
+}
+.lc-bh-thumb[data-on] canvas {
+  box-shadow:
+    0 0 0 2px var(--lc-float),
+    0 0 0 3.5px var(--l-ink);
+}
+.lc-bh-focus {
+  display: grid;
+  gap: 6px;
+}
+.lc-bh-focus-pic {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--lc-r-row);
+  cursor: crosshair;
+  touch-action: none;
+}
+.lc-bh-focus-pic canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* The part that fills Home: the rest of the picture dimmed round it. */
+.lc-bh-focus-frame {
+  position: absolute;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1.5px oklch(1 0 0 / 0.9),
+    0 0 0 999px oklch(0 0 0 / 0.42);
+  pointer-events: none;
+}
+.lc-bh-focus-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: oklch(1 0 0);
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.3), 0 1px 4px oklch(0 0 0 / 0.4);
+  pointer-events: none;
+}
+.lc-bh-remove {
+  align-self: flex-start;
+  font-size: 12px;
+}
+.lc-bh-ta {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--lc-r-field);
+  background: var(--lc-well);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--l-ink);
+  outline: none;
+}
+.lc-bh-ta:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--l-accent) 60%, transparent);
+}
+.lc-bh-ta::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-bh .lc-swatches {
+  padding: 2px 0;
+}
+.lc-bh .lc-swatch[data-on] {
+  box-shadow:
+    0 0 0 2px var(--lc-float),
+    0 0 0 3.5px var(--l-ink);
+}
+.lc-bh-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 14px 18px;
+}
+.lc-bh-foot .lc-bh-sub {
+  flex: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-bh {
+    animation: none;
+  }
+}
+/* Behind Home hidden in this look (Advanced › Shows in): said once, at the top. */
+.lc-bh-hidden {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--lc-r-field);
+  background: var(--lc-well);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--l-ink-2);
+}
+.lc-bh-adv > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 2px 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--l-ink-3);
+  cursor: pointer;
+  list-style: none;
+}
+.lc-bh-adv > summary::-webkit-details-marker {
+  display: none;
+}
+.lc-bh-adv > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+.lc-bh-adv[open] > summary::before {
+  transform: rotate(45deg);
+}
+.lc-bh-adv > summary:hover {
+  color: var(--l-ink);
+}
+.lc-bh-adv > .lc-bh-part {
+  margin-top: 10px;
+}

@@ -1,0 +1,678 @@
+/*
+  The Pull requests and Issues pages (PullRequests.tsx, Issues.tsx, worklists-parts.tsx; boards PullRequests, ScanDone
+  and Issues): the list on the paper, and beside it, once one is picked, its detail in a column 520 wide under a
+  hairline. Rows are 58 high, 12 in from the paper's edge, a plate under the open one; no boxes round the groups, a
+  small label over each. Measured from the boards, drawn in the app's own tokens.
+*/
+.lc-wl {
+  flex-direction: row;
+  min-width: 0;
+}
+.lc-wl-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.lc-wl-top {
+  gap: 8px;
+}
+.lc-wl-title {
+  flex: none;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--l-ink);
+}
+.lc-wl-count {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--l-ink-4);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The toolbar: the search field takes the room, the two chips and the two icons after it. */
+.lc-wl-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 20px 0 24px;
+}
+.lc-wl-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+  color: var(--l-ink-4);
+  transition: box-shadow 140ms ease;
+}
+.lc-wl-field:focus-within {
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lc-wl-field > svg {
+  flex: none;
+}
+.lc-wl-field > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--l-ink);
+}
+.lc-wl-field > input::placeholder {
+  color: var(--l-ink-4);
+}
+.lc-wl-tools .lc-pop {
+  flex: none;
+}
+.lc-wl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--l-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-wl-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-wl-chip > svg {
+  flex: none;
+  color: var(--l-ink-4);
+}
+@media (hover: hover) {
+  .lc-wl-chip:hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-wl-chip[data-open] {
+  background: var(--l-wash-2);
+}
+.lc-wl-ib {
+  width: 30px;
+  height: 30px;
+}
+.lc-wl-spin {
+  animation: lc-wl-spin 900ms linear infinite;
+}
+@keyframes lc-wl-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-wl-spin {
+    animation: none;
+  }
+}
+
+/* The list, its groups and their labels. */
+.lc-wl-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+.lc-wl-sec + .lc-wl-sec {
+  margin-top: 6px;
+}
+.lc-wl-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 24px 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-wl-group-n {
+  font-weight: 400;
+  color: var(--l-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.lc-wl-note {
+  margin: 0;
+  padding: 18px 24px;
+  font-size: 13.5px;
+  color: var(--l-ink-3);
+}
+
+/* A row: the words as one button, the scan chip beside it. */
+.lc-wl-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 12px;
+  padding-right: 12px;
+  border-radius: var(--lc-r-field);
+  transition: background 120ms ease;
+}
+@media (hover: hover) {
+  .lc-wl-row:hover {
+    background: var(--l-wash);
+  }
+}
+.lc-wl-row[data-on] {
+  background: var(--lc-plate);
+  box-shadow: 0 0 0 1px var(--lc-hair);
+}
+.lc-wl-pick {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-width: 0;
+  min-height: 58px;
+  box-sizing: border-box;
+  padding: 0 0 0 12px;
+  border: 0;
+  border-radius: var(--lc-r-field);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--l-ink);
+  cursor: pointer;
+}
+.lc-wl-mark {
+  display: grid;
+  grid-row: 1 / 3;
+  align-self: start;
+  margin-top: 2px;
+}
+.lc-wl-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.lc-wl-cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wl-t > :not(.lc-wl-cut) {
+  flex: none;
+}
+.lc-wl-meta {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wl-meta > .lc-mono {
+  font-size: 12px;
+}
+.lc-wl-end {
+  display: flex;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wl-chipat {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.lc-wl-checks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-wl-checks[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-wl-checks[data-tone="bad"] {
+  color: var(--l-danger-text);
+}
+.lc-wl-checks[data-tone="pending"] {
+  color: var(--l-ink-3);
+}
+.lc-wl-diff {
+  font-family: var(--l-font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lc-wl-diff > [data-s="add"] {
+  color: var(--l-ok-text);
+}
+.lc-wl-diff > [data-s="del"] {
+  color: var(--l-danger-text);
+}
+
+/* Someone, a label and a state, small. */
+.lc-wl-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lc-wl-av {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: oklch(0.22 0.01 265);
+}
+.lc-wl-who[data-small] .lc-wl-av {
+  width: 16px;
+  height: 16px;
+  font-size: 9.5px;
+}
+.lc-wl-lbl {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px currentColor;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  /* GitHub's own colour, pulled toward the ink so a dark or pale one still reads on either paper. */
+  color: color-mix(in oklab, var(--lbl, var(--l-ink-3)) 72%, var(--l-ink));
+}
+.lc-wl-lbls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lc-wl-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--l-wash-2);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--l-ink-3);
+  white-space: nowrap;
+}
+.lc-wl-tag[data-tone="ok"] {
+  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
+  color: var(--l-ok-text);
+}
+.lc-wl-tag[data-tone="merged"] {
+  background: color-mix(in oklab, var(--lc-merged) 18%, transparent);
+  color: var(--lc-merged);
+}
+.lc-wl-tag[data-tone="danger"] {
+  background: color-mix(in oklab, var(--l-danger) 14%, transparent);
+  color: var(--l-danger-text);
+}
+.lc-wl-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--l-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--l-line-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.lc-wl-link:hover:not(:disabled) {
+  color: var(--l-ink);
+}
+.lc-wl-link:disabled {
+  text-decoration: none;
+  cursor: default;
+}
+
+/* Projects that couldn't be read, under the list. */
+.lc-wl-unav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 24px 0;
+}
+.lc-wl-unav > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-wl-unav > p > svg {
+  flex: none;
+}
+.lc-wl-unav b {
+  font-weight: 500;
+  color: var(--l-ink-2);
+}
+.lc-wl-unav .lc-wl-link {
+  margin-left: auto;
+  flex: none;
+}
+
+/* The detail column. */
+.lc-wl-det {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: min(520px, 48%);
+  min-width: 340px;
+  min-height: 0;
+  box-shadow: inset 0.5px 0 0 var(--lc-hair), inset 1px 0 0 var(--lc-hair);
+  animation: lc-wl-in 220ms var(--l-ease-out) backwards;
+}
+@keyframes lc-wl-in {
+  from {
+    opacity: 0;
+    translate: 12px 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-wl-det {
+    animation: none;
+  }
+}
+.lc-wl-dhead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--lc-head);
+  padding: 4px 10px 4px 20px;
+  box-sizing: border-box;
+  box-shadow: inset 0 -1px 0 var(--lc-hair);
+}
+.lc-wl-dnum {
+  margin-left: 2px;
+  font-family: var(--l-font-mono);
+  font-size: 13px;
+  color: var(--l-ink-2);
+}
+.lc-wl-dbody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 22px 24px;
+}
+.lc-wl-dfoot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  box-sizing: border-box;
+  padding: 0 14px 0 20px;
+  box-shadow: inset 0 1px 0 var(--lc-hair);
+}
+.lc-wl-dfoot .lc-btn[data-size="sm"],
+.lc-wl-chk .lc-btn[data-size="sm"] {
+  border-radius: var(--lc-r-row);
+}
+.lc-wl-h {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--l-ink);
+}
+.lc-wl-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  font-size: 13px;
+}
+.lc-wl-kv > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+}
+.lc-wl-kv dt {
+  color: var(--l-ink-4);
+}
+.lc-wl-kv dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--l-ink-2);
+}
+.lc-wl-branch {
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wl-who-line,
+.lc-wl-linked {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.lc-wl-linked .lc-wl-link {
+  max-width: 100%;
+  text-decoration: none;
+}
+.lc-wl-linked-t {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--l-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wl-hr {
+  flex: none;
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--lc-hair);
+}
+.lc-wl-prose {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--l-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lc-wl-flab {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--l-ink-2);
+}
+.lc-wl-files {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: -6px;
+}
+.lc-wl-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  min-width: 0;
+  height: 30px;
+  font-family: var(--l-font-mono);
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-wl-file-p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-wl-file-d {
+  color: var(--l-ink-4);
+}
+.lc-wl-files > .lc-wl-link {
+  height: 30px;
+  font-size: 12.5px;
+}
+
+/* Security: a severity's square, a finding's row and the issue's "Checked against the code" card. */
+.lc-wl-secl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lc-wl-sev {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--l-ink-4);
+}
+.lc-wl-sev[data-s="h"] {
+  background: var(--l-danger);
+}
+.lc-wl-sev[data-s="m"] {
+  background: var(--l-warn);
+}
+.lc-wl-chk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--lc-r-field);
+  background: var(--lc-well);
+  box-shadow: 0 0 0 1px var(--l-line-2);
+}
+.lc-wl-chk-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-wl-chk-h > svg {
+  flex: none;
+  color: var(--l-warn-text);
+}
+.lc-wl-chk-h > b {
+  font-weight: 600;
+  color: var(--l-ink);
+}
+.lc-wl-lead {
+  color: var(--l-ink);
+}
+.lc-wl-chk-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.lc-wl-find {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+  font-size: 13px;
+}
+.lc-wl-find > .lc-wl-sev {
+  grid-row: 1 / 3;
+  align-self: start;
+  margin-top: 5px;
+}
+.lc-wl-find > b {
+  min-width: 0;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-wl-find-s {
+  font-size: 12px;
+  color: var(--l-ink-4);
+}
+.lc-wl-find > small {
+  grid-column: 2 / 4;
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.lc-wl-find .lc-mono {
+  font-size: 11.5px;
+}
+
+/* A narrow window: the detail lies over the list rather than squeezing it. */
+@media (max-width: 980px) {
+  .lc-wl {
+    position: relative;
+  }
+  .lc-wl-det {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(520px, 100%);
+    min-width: 0;
+    background: var(--lc-paper);
+    box-shadow: inset 1px 0 0 var(--lc-hair), -24px 0 48px -24px oklch(0 0 0 / 0.25);
+  }
+}

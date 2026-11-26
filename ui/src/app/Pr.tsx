@@ -615,7 +615,7 @@ export function PrSurface({ thread, agentName, visible, onOpenSession }: { threa
         what={
           !pr && (
             <PaneSection label="What it does" note={editing || title || body ? "Yours" : "Written from the branch when it opens"}>
-              <PaneRow icon={<I.turn size={14} />} value={drafting ? "Writing it" : undefined} quiet onClick={drafting || !st.ahead ? undefined : () => (setEditing(true), void draftIt())} title="From the branch's changes, its commits and what the session checked">
+              <PaneRow icon={<I.mark size={14} />} value={drafting ? "Writing it" : undefined} quiet onClick={drafting || !st.ahead ? undefined : () => (setEditing(true), void draftIt())} title="From the branch's changes, its commits and what the session checked">
                 Write it for me
               </PaneRow>
               <div className="lc-pr-fields">

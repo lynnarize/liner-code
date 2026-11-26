@@ -99,18 +99,32 @@
   display: flex;
   align-items: center;
 }
-/* In the column's margin, so the rows keep the title's edge whether it shows or not. */
+/* In the column's margin, so the rows keep the title's edge whether it shows or not: 4px clear of the row's plate, which
+   reaches 6px into that margin (at -19px the box lay 3px on it). */
 .lf-li > .lc-pane-check {
   position: absolute;
-  left: -19px;
+  left: -26px;
   z-index: 1;
   opacity: 0;
   transition: opacity 140ms ease;
 }
+/* Pointing shows it, and so does the keyboard's focus. A row that was clicked keeps the focus too, which kept the box
+   showing on the open finding with the pointer long gone, so any focus does not. */
 .lf-li:hover > .lc-pane-check,
-.lf-li:focus-within > .lc-pane-check,
+.lf-li:has(:focus-visible) > .lc-pane-check,
 .lf[data-picking] .lf-li > .lc-pane-check {
   opacity: 1;
+}
+/* With a finding open the margin is the title's 20px, 14 beside the plate and so too narrow for a 16px box: it was cut
+   by the pane's edge and crowded the severity square. There it stands on that square, 16px about the square's 8, and
+   the square gives it the place while it shows. The row still says how bad in words. */
+.lf[data-panel] .lf-li > .lc-pane-check {
+  left: -4px;
+}
+.lf[data-panel] .lf-li:hover .ls-sev i,
+.lf[data-panel] .lf-li:has(:focus-visible) .ls-sev i,
+.lf[data-panel][data-picking] .lf-li .ls-sev i {
+  visibility: hidden;
 }
 .lf-rw {
   position: relative;

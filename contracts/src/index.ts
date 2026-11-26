@@ -16,6 +16,9 @@ import type { CanvasVersion, FrameOp, FramePlaced, DesignFile, DesignFileInfo, D
 import type { HandOver, PairTuning, SidekickClass } from "./tuning.ts";
 import type { BringInResult, DismissReason, FindingState, SecurityFinding, ScanChoices, ScanOptions, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, SecuritySide, SecurityTag, SpecialistSource, ThreatModel, SecurityItem } from "./security.ts";
 import type { SwarmConfig, SwarmMode, SwarmPreset, SwarmSnapshot, SwarmWorkspace } from "./swarm.ts";
+import type { McpApp, McpAppKind, McpAsk, McpEvent, McpLevel, McpNewKey, McpReach, McpSignIn, McpStatus } from "./mcp.ts";
+import type { ScmSettings, ScmTool, ScmTokenId } from "./sourcecontrol.ts";
+import type { IssueItem, PrDetail, PrItem, WorklistQuery, WorklistResult } from "./worklists.ts";
 
 /** The tools Liner Code knows by name. */
 export type BuiltinProvider = "claude" | "codex" | "hermes" | "opencode" | "cursor" | "grok" | "antigravity" | "demo";
@@ -448,6 +451,8 @@ export type Thread = {
     plugins, hooks or add-ons (OpenOptions.sealed). Such sessions show in Security's sidebar, not Code's.
   */
   security?: SecurityTag;
+  /** An app outside Liner Code started it through Liner MCP (contracts/src/mcp.ts): the sidebar shows whose it is. */
+  startedBy?: { appId: string; name: string; kind: McpAppKind; /** It waits for your Allow before its first message goes (an app at Asks first). */ asks?: boolean };
   /**
     How the agent works in it, fixed for the session's life (DeepSeek Harness's agent presets):
     unset is Standard; "creator" is Workshop, which adds to Liner Code itself (its connections,
@@ -1253,6 +1258,20 @@ export type Settings = {
   usagePing?: boolean;
   /** Liner Code may read the OpenCode Go key OpenCode or Hermes saved (READS_GO_KEY), to ask opencode.ai for Go's limits with it. Off unless true: another tool's sign-in is read only once you agree. */
   readGoKey?: boolean;
+  /** Settings › Liner MCP (contracts/src/mcp.ts): how apps on the internet reach the app listener (off unless picked), your own https address for "own", what a terminal agent on stdio may do (Trusted when unset), and the https address told when a session needs you. */
+  mcpReach?: McpReach;
+  mcpOwnUrl?: string;
+  mcpStdioLevel?: McpLevel;
+  mcpWebhook?: string;
+  /** Settings › Source control & issues (sourcecontrol.ts, ScmSettings): each unset key is its SCM_DEFAULTS value (scmSettings). */
+  mergeMethod?: ScmSettings["mergeMethod"];
+  commitStyle?: ScmSettings["commitStyle"];
+  commitInstructions?: string;
+  followPrTemplates?: boolean;
+  scanNewPrs?: boolean;
+  worklistRefresh?: number;
+  hosts?: ScmSettings["hosts"];
+  trackers?: ScmSettings["trackers"];
 };
 
 /** The tools whose saved sign-in Liner Code reads for OpenCode Go's limits, and only with Settings.readGoKey. */
@@ -1627,7 +1646,9 @@ export type EngineEvent =
   /** Liner Security: a scan moved on (started, asks, read an area, found, finished): its record as it is now. */
   | { type: "security.scan"; scan: ScanRecord }
   /** Liner Swarm: a session's message board, roster, plan or RAM pool changed. */
-  | { type: "swarm.changed"; threadId: string; snapshot: SwarmSnapshot };
+  | { type: "swarm.changed"; threadId: string; snapshot: SwarmSnapshot }
+  /** Liner MCP: an app asks first, or signs in, and waits for you (AppAsk.tsx); or that ended. */
+  | McpEvent;
 
 /** `shot` isn't the Browser's: the app draws a page of this Mac out of sight and answers with its picture (a design's, for its agent). */
 export type AgentBrowserOp = "open" | "read" | "click" | "type" | "press" | "screenshot" | "shot";
@@ -1697,7 +1718,7 @@ export type Rpc = {
   "project.add": [{ path: string; agent?: string }, Project];
   "project.update": [{ id: string; name?: string; agent?: string; setup?: string; scripts?: ProjectScript[] }, Project];
   /** The project's branches and worktrees, for starting a session from one. */
-  "git.branches": [{ projectId: string }, { current?: string; base?: string; branches: { name: string; lastCommitAt?: number }[]; worktrees: { path: string; branch?: string; threadId?: string }[]; npmScripts: string[] }];
+  "git.branches": [{ projectId: string }, { current?: string; base?: string; branches: { name: string; lastCommitAt?: number; sha?: string }[]; worktrees: { path: string; branch?: string; threadId?: string; sha?: string }[]; npmScripts: string[] }];
   /** Removes worktrees whose sessions are archived or gone. */
   "worktrees.clean": [{ projectId?: string }, { removed: number; kept: number; reasons?: { path: string; reason: string }[] }];
   "project.remove": [{ id: string }, null];
@@ -1711,6 +1732,24 @@ export type Rpc = {
   "thread.load": [{ id: string }, { items: Item[]; seq: number }];
   /** Agents outside Liner Code: whether they may in, and the commands that add its MCP server to Claude Code and Codex. */
   "outside.info": [Record<string, never>, { on: boolean; claude: string; codex: string }];
+  /**
+    Liner MCP (engine/src/mcp-http.ts): its state for Settings; the cards waiting (an app asking first, an app signing in);
+    a key for a new app (shown once); an app's level, revoked; your answer on a card (`trust`: it asks no more); your answer
+    on a sign-in, at a level; the tunnel tried again.
+  */
+  "mcp.status": [Record<string, never>, McpStatus];
+  "mcp.cards": [Record<string, never>, { asks: McpAsk[]; signIns: McpSignIn[] }];
+  "mcp.addApp": [{ kind: McpAppKind; level: McpLevel; name?: string }, McpNewKey];
+  "mcp.setLevel": [{ id: string; level: McpLevel }, McpApp];
+  "mcp.revoke": [{ id: string }, null];
+  "mcp.decide": [{ id: string; allow: boolean; trust?: boolean }, null];
+  "mcp.signIn": [{ id: string; allow: boolean; level?: McpLevel }, null];
+  "mcp.retry": [Record<string, never>, McpStatus];
+  /** A terminal agent you turned away, let in again; and a sign-in expected for the next 15 minutes (Add an app, an app that signs in itself). */
+  "mcp.unblock": [{ id: string }, null];
+  /** An app's name in Settings, changed (Another app 2 → Home Assistant). */
+  "mcp.rename": [{ id: string; name: string }, McpApp];
+  "mcp.expectSignIn": [{ kind: McpAppKind }, null];
   /** What agents remember about a project (memory_add), oldest first; add, and forget by place. */
   "memory.list": [{ projectId: string }, string[]];
   "memory.add": [{ projectId: string; fact: string }, string[]];
@@ -1831,6 +1870,15 @@ export type Rpc = {
   /** Keeps an image of your own (base64), made a JPEG. */
   "background.save": [{ data: string; name: string }, null];
   "background.remove": [Record<string, never>, null];
+  /** The dots behind Home: whether a picture of their own is kept, and the AI pictures models from Settings › Models (no url, no key). */
+  "wallpaper.info": [Record<string, never>, { picture: boolean; models: { id: string; name: string }[] }];
+  /** The dots' picture as a JPEG (base64), or null when there isn't one. */
+  "wallpaper.image": [Record<string, never>, { data: string; type: string } | null];
+  /** Keeps a picture of your own (base64) for the dots, made a JPEG; separate from the session background's own image. */
+  "wallpaper.save": [{ data: string; name: string }, null];
+  "wallpaper.remove": [Record<string, never>, null];
+  /** One landscape picture from the words, by the AI pictures model (`model`, else the first), kept as the dots' picture. */
+  "wallpaper.draw": [{ prompt: string; model?: string }, { model: string; ms: number; cost?: number }];
   /** A commit message written from the changes still to commit and what you asked for. */
   "git.message": [{ threadId: string }, { message: string; by: string }];
   /** A pull request title and description, from the branch's changes and the session. */
@@ -1900,6 +1948,15 @@ export type Rpc = {
   "pr.picture": [{ threadId: string }, PrPicture];
   /** Runs the project's tests on this Mac for the PR card `itemId`, asking first as the session's access says. */
   "pr.test": [{ threadId: string; itemId: string }, PrTestResult];
+  /** Pull requests and issues across your projects (worklists.ts), and one of each with its detail. */
+  "worklists.prs": [WorklistQuery, WorklistResult<PrItem>];
+  "worklists.issues": [WorklistQuery, WorklistResult<IssueItem>];
+  "worklists.pr": [{ projectId: string; number: number }, PrDetail];
+  "worklists.issue": [{ projectId: string; key: string }, IssueItem];
+  /** Settings › Source control & issues: the tools found on this Mac, and the two keys Liner keeps in the keychain (never returned). */
+  "sourcecontrol.scan": [{ force?: boolean }, ScmTool[]];
+  "sourcecontrol.setToken": [{ id: ScmTokenId; token: string }, ScmTool];
+  "sourcecontrol.clearToken": [{ id: ScmTokenId }, null];
   /**
     The servers listening on this Mac. With a session: whose each is (`session`: its agent or its
     Terminal started it; `project`: it runs in the session's folder), the session's first, and
@@ -2115,6 +2172,18 @@ export type Rpc = {
   "security.scan.stop": [{ id: string }, ScanRecord];
   "security.scans.list": [{ projectId?: string }, ScanRecord[]];
   "security.specialist.look": [Record<string, never>, SpecialistSource[]];
+  /**
+    Liner Security on a pull request or an issue (engine/src/security-targets.ts): `scanTarget` starts a sealed, read only scan
+    of one (`reader`: a model ref or a SpecialistSource id; the person's default when unset); `targetStatus` is each target's
+    last scan, keyed by targetKey; `readers` who can scan one in a project (only sealable tools lead a Specialist scan);
+    `targetComment` posts a short summary of a finished scan on its pull request or issue (gh), after the person's yes.
+  */
+  "security.scanTarget": [{ target: import("./security.ts").ScanTarget; reader?: string; /** false: no second look at its end (on unless said). */ look?: boolean }, { scanId: string; threadId: string }];
+  "security.targetStatus": [{ targets: import("./security.ts").ScanTarget[] }, Record<string, import("./security.ts").ScanSummary>];
+  "security.readers": [{ projectId: string }, import("./security.ts").ScanReaderChoice[]];
+  "security.targetComment": [{ scanId: string }, { url?: string }];
+  /** Fix them: a session in a worktree of its own on the pull request's branch, with what the scan found open as its brief. */
+  "security.targetFix": [{ scanId: string; agent?: string }, Thread];
   "precheck.split": [{ projectId: string; threadId?: string; /** The draft as it is when Split is pressed: its tasks are read again from it (precheck.ts tasksOf). */ text?: string; tasks?: string[]; agent: string; sidekick?: string; model?: string; effort: Effort; access: Access; mode?: SessionMode; tuning?: PairTuning; review?: boolean }, { made: Thread[]; left: string[]; why?: string }];
   /** Universal Liner-native Swarm & Teamwork controls. */
   "swarm.get": [{ threadId: string }, SwarmSnapshot | null];
@@ -2168,3 +2237,6 @@ export * from "./design.ts";
 export * from "./security.ts";
 export * from "./doing.ts";
 export * from "./swarm.ts";
+export * from "./mcp.ts";
+export * from "./worklists.ts";
+export * from "./sourcecontrol.ts";

@@ -302,17 +302,17 @@ export function SecuritySide() {
     <div className="ls-side">
       <div className="lc-sb-top">
         <button type="button" className="lc-sb-nav l-focus" aria-current={on("start")} onClick={() => goSecurity({ kind: "start" })}>
-          <N.plus />
+          <N.plus size={14} />
           <span>Start a scan</span>
         </button>
         <button type="button" className="lc-sb-nav l-focus" aria-current={on("overview")} onClick={() => goSecurity({ kind: "overview" })}>
-          <N.shield />
+          <N.shield size={14} />
           <span>Overview</span>
         </button>
         {/* The engine leaves the Sample project out of the count itself (Security.projects) unless the Demo is shown. */}
         <FindingsNav current={on("findings")} open={data?.open ?? 0} />
         <button type="button" className="lc-sb-nav l-focus" aria-current={on("projects")} onClick={() => goSecurity({ kind: "projects" })}>
-          <N.folder />
+          <N.folder size={14} />
           <span>Projects</span>
         </button>
       </div>
@@ -353,7 +353,7 @@ export function SecuritySide() {
           folders.map((p) => {
             const working = p.items.find((x) => x.state === "working");
             return (
-              <SideFolder key={p.id} name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs" && !x.seen)} working={Boolean(working)}>
+              <SideFolder key={p.id} compact name={p.name} count={p.items.length} open={!shut.includes(p.id)} onToggle={() => toggle(p.id)} needs={p.items.some((x) => x.state === "needs" && !x.seen)} working={Boolean(working)}>
                 {p.items.map((x) => x.row)}
               </SideFolder>
             );
@@ -403,7 +403,7 @@ export function SecuritySide() {
 function FindingsNav({ current, open }: { current?: "page"; open: number }) {
   return (
     <button type="button" className="lc-sb-nav l-focus" aria-current={current} aria-label={`Findings, ${open} open`} onClick={() => goSecurity({ kind: "findings" })}>
-      <N.findings />
+      <N.findings size={14} />
       <span>Findings</span>
       {open > 0 && <span className="ls-num">{open}</span>}
     </button>

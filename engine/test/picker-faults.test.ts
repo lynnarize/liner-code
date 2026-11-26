@@ -117,22 +117,28 @@ test("The picker's cards are never taller than the room its bare Pop was given, 
   assert.equal(value(blocks(css, ".lc-pk-scroll")[0], "flex"), "1 1 0", "the models' part doesn't give way");
 });
 
-test("The Effort head has the label at the left and the level at the right, and puts whose list it is on its own line under them, left-aligned and wrapping as plain text", () => {
+test("The Effort head is one line: the label, whose levels they are going whole when there is no room, and the level at the right, never cut", () => {
   const css = sheet("models.css");
   const head = blocks(css, ".lc-pk-eh")[0];
-  assert.equal(value(head, "flex-direction"), "column", "the source line is squeezed beside the label and wraps into a ragged block");
-  assert.equal(value(head, "align-items"), "stretch");
-  assert.equal(value(blocks(css, ".lc-pk-eh-top")[0], "justify-content"), "space-between", "the level isn't at the head's right end");
+  assert.equal(value(head, "flex-direction"), undefined, "the head is a column of two lines again");
+  assert.equal(value(head, "align-items"), "center");
+  // Whose levels wraps onto a line the head hides, rather than being cut to "from Cl…".
+  const left = blocks(css, ".lc-pk-eh-l")[0];
+  assert.equal(value(left, "flex-wrap"), "wrap", "whose levels is cut mid-word instead of going whole");
+  assert.equal(value(left, "height"), "20px");
+  assert.equal(value(left, "overflow"), "hidden");
+  assert.equal(value(blocks(css, ".lc-pk-eh-by")[0], "flex"), "none");
+  assert.equal(value(blocks(css, ".lc-pk-eh-by")[0], "white-space"), "nowrap");
+  assert.equal(value(blocks(css, ".lc-pk-eh-now")[0], "flex"), "none", "the level is cut");
   assert.equal(value(blocks(css, ".lc-pk-eh-now")[0], "font-weight"), "500");
   assert.equal(value(blocks(css, ".lc-pk-eh-now[data-own]")[0], "color"), "var(--l-ink-3)", "the tool's own default isn't in the third ink");
-  const line = blocks(css, ".lc-pk-eh > span")[0];
-  assert.equal(value(line, "text-align"), "left");
-  assert.equal(value(line, "font-size"), "11px");
-  assert.equal(value(line, "color"), "var(--l-ink-3)");
   const part = body(code("Models.tsx"), "export function EffortPart(");
-  assert.match(part, /<b>\{label\}<\/b>\s*<span className="lc-pk-eh-now" data-own=\{!level \|\| undefined\}>\s*\{name\}/, "the head doesn't name the level at its right");
+  assert.match(part, /<span className="lc-pk-eh-l">\s*<b>\{label\}<\/b>\s*\{tool && <span className="lc-pk-eh-by">from \{tool\}<\/span>\}\s*<\/span>\s*<span className="lc-pk-eh-now" data-own=\{!level \|\| undefined\}>\s*\{name\}/, "the head isn't the label, whose levels, then the level");
   assert.match(part, /const name = level \? levelName\(level\.label\) : "Its own default";/);
-  assert.match(part, /its own default until you pick/, "the source line lost its ending while the tool's own default runs");
+  assert.match(part, /Its own default until you pick one/, "the head's tooltip lost its ending while the tool's own default runs");
+  // An extra's words are one line too, whole on their tooltip.
+  assert.equal(value(blocks(css, ".lc-pk-xr-t > span")[0], "white-space"), "nowrap");
+  assert.equal(value(blocks(css, ".lc-pk-xr-t > span")[0], "text-overflow"), "ellipsis");
   // The lead's effort uses the same part.
   assert.match(code("Composer.tsx"), /<EffortPart list=\{pEfforts\.list\} [^\n]*label="The lead's effort"/);
 });
@@ -171,7 +177,19 @@ test("Effort is one slider of the model's own levels with no shared list of leve
   const css = sheet("models.css");
   assert.equal(value(blocks(css, ".lc-pk-slide")[0], "height"), "24px");
   assert.equal(value(blocks(css, ".lc-pk-slide")[0], "border-radius"), "8px");
-  assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background"), "var(--l-ink)", "the fill isn't in ink");
+  // The fill is the model's maker's colour, the app's accent for one drawn in ink, a gradient laid across the whole track.
+  assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background"), "var(--lc-pk-tint, var(--l-accent))", "the fill isn't in the model's colour");
+  assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background-size"), "100cqw 100%", "a gradient is squeezed into a low level's fill");
+  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "container-type"), "inline-size");
+  assert.match(slider, /"--lc-pk-tint": tint/, "the slider doesn't take its model's colour");
+  for (const where of ["function ModelCard(", "export function EffortPick("]) assert.match(body(models, where), /tint=\{[^}]*tintPaint\(markOf\(/, `${where} doesn't hand the slider its model's colour`);
+  // A halftone of dots runs small and faint to big and bright across the whole track, and the fill shows as much of it as the level reaches.
+  assert.match(models, /const DOTS = Array\.from\(\{ length: DOT_COLUMNS \* 3 \}, \(_, k\) => \(\{ at: \(k % DOT_COLUMNS\) \/ \(DOT_COLUMNS - 1\)/, "a dot doesn't know how far along the track it stands");
+  assert.match(slider, /<span className="lc-pk-slide-dots">/);
+  assert.doesNotMatch(models, /lc-pk-slide-ascii|const RAMP/, "the ASCII ramp is left behind");
+  assert.equal(value(blocks(css, ".lc-pk-slide-dots")[0], "width"), "100cqw", "the dots are squeezed into the fill instead of cut by it");
+  assert.equal(value(blocks(css, ".lc-pk-slide-dots > i")[0], "width"), "calc(1px + var(--d) * 2.4px)", "the dots don't grow toward the high end");
+  assert.equal(value(blocks(css, ".lc-pk-slide-dots > i")[0], "border-radius"), "50%", "the dots aren't round");
   assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "width"), "12px");
   assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "height"), "18px");
   assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "border-radius"), "5px");
@@ -237,4 +255,71 @@ test("The Effort knob is white in both looks with the switch thumb's shadow, and
   const raw = read("models.css");
   const note = raw.slice(raw.lastIndexOf("/*", raw.indexOf(".lc-pk-lv {")), raw.indexOf(".lc-pk-lv {"));
   assert.doesNotMatch(note, /Effort/, "the note over the source rows still says Effort uses them");
+});
+
+test("In the picker the marks are in their makers' colours, a row's corner follows its card's, and the hover and the side card move instead of jumping", () => {
+  const css = sheet("models.css");
+  // Colour only in the picker, only on a logo (a stroke icon such as the cube would fill solid), and grey for a tool not signed in.
+  assert.equal(value(blocks(css, ".lc-pk .lc-mark[data-brand]")[0] ?? "", "fill"), "var(--lc-tint, currentColor)", "the picker's marks aren't in their makers' colours");
+  assert.equal(value(blocks(css, ".lc-pk-tool[data-off] .lc-mark[data-brand]")[0] ?? "", "fill"), "currentColor", "a tool not signed in is drawn in colour");
+  assert.equal(blocks(css, ".lc-pk .lc-mark").length, 0, "a stroke icon in the picker is filled solid");
+  assert.match(code("icons.tsx"), /"--lc-tint": typeof tint === "string" \? tint : `url\("#\$\{cut\}"\)`/, "a mark doesn't carry its colour, or Gemini's gradient");
+  const brands = read("brands.ts");
+  assert.match(brands, /claude: "#D97757"/);
+  assert.match(brands, /gemini: \[/, "Gemini isn't its gradient");
+  assert.doesNotMatch(brands, /\n  (openai|grok|cursor|opencode|ollama): "#/, "a maker drawn in black is given a colour");
+  // A row 4 in from a 14 card's edge takes 10, so the Star at the card's foot and the foot rows follow its corners.
+  assert.equal(value(blocks(css, ".lc-pk[data-side]")[0] ?? "", "--lc-pk-r"), "10px");
+  assert.equal(value(blocks(css, ".lc-pk-side")[0], "padding"), "4px");
+  assert.equal(value(blocks(css, ".lc-pk-star")[0], "border-radius"), "var(--lc-pk-r)", "the Star's corners don't follow the card's");
+  assert.equal(value(blocks(css, ".lc-pk .lc-who-row")[0], "border-radius"), "var(--lc-pk-r)");
+  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-rail")[0], "border-radius"), "14px", "the rail's corner isn't the cards'");
+  // One plate slides under the rows; the rows in the list don't light themselves.
+  const models = code("Models.tsx");
+  assert.match(body(models, "export function ModelPicker("), /<HoverPlate within=\{scroll\} reset=/, "the list has no sliding plate");
+  assert.match(value(blocks(css, ".lc-pk-plate")[0], "transition") ?? "", /transform 160ms/);
+  assert.equal(value(blocks(css, ".lc-pk-scroll .lc-who-row:not(:disabled):hover")[0] ?? "", "background"), "none", "a row lights itself under the plate");
+  // The side card eases to the height of what it holds, its words fading in afresh for each model, and Reduce motion stops both.
+  assert.match(body(models, "export function ModelPicker("), /useEasedHeight\(card_, cardIn\)/);
+  assert.match(value(blocks(css, ".lc-pk-side")[0], "transition") ?? "", /^height 220ms/);
+  assert.equal(value(blocks(css, ".lc-pk-side")[0], "overflow"), "hidden", "a scrollbar shows while the card eases");
+  assert.match(body(models, "export function ModelPicker("), /<div key=\{shown\?\.label \?\? ""\} className="lc-pk-side-in lc-pk-fade">/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-fade \{\s*animation: none;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-side \{\s*transition: none;/);
+});
+
+test("The side card drops to the list's foot beside a row pointed at in the list's lower half, and stands at its top otherwise, never in between", () => {
+  const picker = body(code("Models.tsx"), "export function ModelPicker(");
+  assert.match(picker, /setLow\(r\.top \+ r\.height \/ 2 > a\.top \+ a\.height \/ 2\)/, "the card's place isn't judged by which half of the list the row is in");
+  assert.match(picker, /if \(!m \|\| !row\) return setLow\(false\);/, "with nothing pointed at the card isn't at the top");
+  assert.match(picker, /className="lc-pk-card lc-pk-side" data-low=\{low \|\| undefined\}/);
+  const css = sheet("models.css");
+  assert.equal(value(blocks(css, ".lc-pk-side[data-low]")[0] ?? "", "transform"), "translateY(calc(var(--lc-pk-tall) - 100%))", "the dropped card's bottom isn't on the list's bottom");
+  assert.match(value(blocks(css, ".lc-pk-side")[0], "transition") ?? "", /transform 220ms/, "the card jumps between top and foot");
+});
+
+test("Your agents is a place on the picker's rail under the tools, not a row at the middle card's foot, so the models keep the card's height", () => {
+  const models = code("Models.tsx");
+  const rail = body(models, "function ToolRail(");
+  assert.match(rail, /\{places\.length > 0 && <span className="lc-pk-rail-rule" role="presentation" \/>\}/, "nothing parts the tools from the places");
+  assert.match(rail, /className="lc-pk-tool l-focus" data-view=\{p\.id\} data-on=\{p\.on \|\| undefined\} aria-pressed=\{open === p\.id\}/, "a place isn't a rail button pressed while its list is open");
+  const picker = body(models, "export function ModelPicker(");
+  assert.match(picker, /<ToolRail tools=\{tools\} extras=\{railExtras\} places=\{places\} on=\{placeOpen \? "" :/, "a tool stays pressed while a place's list shows");
+  assert.match(picker, /const hasFoot = older\.length > 0;/, "the foot still holds the places");
+  assert.doesNotMatch(picker, /\{places\.map\(\(p\) => \(\s*<button key=\{p\.id\} type="button" className="lc-who-row/, "a place is still a row at the foot");
+  // Escape out of a place's list goes back to its rail button.
+  assert.match(picker, /rail\.current\?\.querySelector<HTMLElement>\(`\[data-view="\$\{was\}"\]`\)/);
+  assert.equal(value(blocks(sheet("models.css"), ".lc-pk-tool[data-on]::after")[0] ?? "", "border-radius"), "50%", "a place that holds the pick has no dot");
+});
+
+test("Liner's mark in the app is the line comment, two slanted strokes with the second in the accent, and the two turns are gone", () => {
+  const icons = code("icons.tsx");
+  assert.match(icons, /mark: \(p: P\) => <S \{\.\.\.p\} w=\{2\}><path d="M3\.45 13\.05 7\.05 2\.95" \/><path d="M8\.95 13\.05 12\.55 2\.95" stroke="var\(--l-accent\)" \/><\/S>,/, "the mark isn't the line comment");
+  assert.match(icons, /markMono: \(p: P\) => <S \{\.\.\.p\} w=\{2\}>/);
+  assert.doesNotMatch(icons, /\bturn(Mono)?: \(p: P\)/, "the two turns are still drawn");
+  for (const f of ["AppModel.tsx", "Crew.tsx", "AddonsPage.tsx", "Home.tsx", "Addon.tsx", "Pr.tsx", "Page.tsx", "Models.tsx", "Composer.tsx"]) assert.doesNotMatch(code(f), /\bI\.turn(Mono)?\b/, `${f} still uses the two turns`);
+  // Run from source on macOS before 26, the Dock gets the line comment's PNGs, which are there.
+  const main = readFileSync(new URL("../../desktop/src/main.ts", import.meta.url), "utf8");
+  assert.match(main, /"docs\/brand\/line-comment", `liner-code-icon-\$\{look\}\.png`/, "the Dock is given the two turns when run from source");
+  for (const look of ["light", "dark"]) assert.ok(readFileSync(new URL(`../../docs/brand/line-comment/liner-code-icon-${look}.png`, import.meta.url)).length > 1000, `the ${look} icon is missing`);
 });

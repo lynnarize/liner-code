@@ -7,6 +7,7 @@
   the ask says lean: false. The design file names its model (pictures.model: an endpoint's id, or
   null for no one, which refuses at once and asks nobody); unset, or an id Settings no longer has,
   is Settings' first. pictures.add puts a picture file of the person's own into assets/ the same way.
+  drawOne asks the same endpoint for one picture for the dots behind Home (wallpaper.draw).
 
   Before an agent's picture the person is asked on a card on the timeline (the runtime's askLiner,
   as an add-on's install is): before the session's first one, before each, or never, as the design
@@ -15,11 +16,10 @@
   an error or a log, and never after a redirect. Tested only against a local fake.
 */
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import type { DesignFile, PictureEndpoint, PictureModel } from "../../contracts/src/index.ts";
 import { pictureKey } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
+import { LOOPBACK, addressesOf, normalIp, privateIp } from "./ip.ts";
 import { designDir, designFor, drawNow, linkFree, frameOf, readFile, readFrame, writeFrame, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
 import { atomic, readLean } from "./lean.ts";
 import { uid } from "./store.ts";
@@ -45,76 +45,8 @@ const endpointOf = (ctx: Pick<DesignCtx, "store">, id?: string): PictureEndpoint
 /** An answer, or a picture fetched by its link, is read up to this much and refused beyond it. */
 export const ANSWER_MAX = 40 * 1024 * 1024;
 
-/**
-  An address in one plain form: IPv4 dotted decimal (from decimal, octal, hex or short forms, and
-  from IPv6 that maps or embeds one: ::ffff:7f00:1, ::ffff:127.0.0.1, ::127.0.0.1), IPv6 as eight
-  full groups; a name as it is, lower case. Brackets come off.
-*/
-export function normalIp(host: string): string {
-  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/%.*$/, "");
-  const v4 = ipv4(h);
-  if (v4) return v4;
-  if (!h.includes(":")) return h;
-  const groups = ipv6(h);
-  if (!groups) return h;
-  // Mapped (::ffff:a.b.c.d) or compatible (::a.b.c.d, not :: or ::1): the IPv4 inside.
-  const zero5 = groups.slice(0, 5).every((g) => g === 0);
-  if (zero5 && (groups[5] === 0xffff || (groups[5] === 0 && (groups[6] !== 0 || groups[7] > 1)))) return [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join(".");
-  return groups.map((g) => g.toString(16)).join(":");
-}
-
-/** IPv4 as a browser reads it: 1 to 4 parts, each decimal, 0x hex or 0 octal, the last filling what's left. */
-function ipv4(h: string): string | null {
-  const parts = h.split(".");
-  if (parts.length < 1 || parts.length > 4 || parts.some((p) => !/^(?:0x[0-9a-f]*|0[0-7]*|[1-9]\d*)$/.test(p))) return null;
-  const nums = parts.map((p) => (/^0x/.test(p) ? parseInt(p.slice(2) || "0", 16) : /^0\d/.test(p) ? parseInt(p, 8) : Number(p)));
-  const last = nums.pop()!;
-  if (nums.some((n) => n > 255) || last >= 256 ** (4 - nums.length)) return null;
-  let v = last;
-  nums.forEach((n, i) => (v += n * 256 ** (3 - i)));
-  return [v >>> 24, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join(".");
-}
-
-/** IPv6 as eight numbers, :: and a dotted IPv4 tail allowed; null when it isn't one. */
-function ipv6(h: string): number[] | null {
-  let tail: number[] = [];
-  let s = h;
-  const dotted = /(?:^|:)(\d+\.\d+\.\d+\.\d+)$/.exec(s);
-  if (dotted) {
-    const v4 = ipv4(dotted[1]);
-    if (!v4) return null;
-    const b = v4.split(".").map(Number);
-    tail = [(b[0] << 8) | b[1], (b[2] << 8) | b[3]];
-    s = s.slice(0, s.length - dotted[1].length);
-    if (!s.endsWith("::")) s = s.replace(/:$/, "");
-  }
-  const halves = s.split("::");
-  if (halves.length > 2) return null;
-  const parse = (x: string) => (x ? x.split(":").map((g) => (/^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : NaN)) : []);
-  const head = parse(halves[0]);
-  const rest = halves.length === 2 ? parse(halves[1]) : [];
-  const fill = 8 - tail.length - head.length - rest.length;
-  if ([...head, ...rest].some(Number.isNaN) || (halves.length === 1 ? fill !== 0 : fill < 0)) return null;
-  return [...head, ...Array(halves.length === 2 ? fill : 0).fill(0), ...rest, ...tail];
-}
-
-/** This Mac: localhost, 127/8, ::1, in whatever form the address is written. */
-export const LOOPBACK = (host: string) => {
-  const ip = normalIp(host);
-  return ip === "localhost" || /^127\./.test(ip) || ip === "0:0:0:0:0:0:0:1";
-};
-/** An address of a private network (or this Mac's own link), in any form: a picture's link may not lead there unless the endpoint is on that host. */
-export function privateIp(addr: string) {
-  const ip = normalIp(addr);
-  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    return a === 10 || a === 0 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
-  }
-  if (!ip.includes(":")) return false;
-  const first = parseInt(ip.split(":")[0], 16);
-  return ip === "0:0:0:0:0:0:0:1" || ip === "0:0:0:0:0:0:0:0" || (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
-}
+// Kept here too for what imported them from pictures.ts before Tell an app needed them.
+export { LOOPBACK, normalIp, privateIp };
 
 /**
   A picture model's base address: https, or http only on this Mac (localhost, 127.0.0.1, [::1]), so
@@ -168,7 +100,7 @@ export async function fetchLinked(link: string, endpoint: URL, signal: AbortSign
   // A remote endpoint never gets a request sent to a service on this Mac on its behalf.
   if (LOOPBACK(u.hostname) && !LOOPBACK(endpoint.hostname)) throw new Error("The AI pictures model answered with a link to this Mac, which only an AI pictures model on this Mac may do, so it wasn't fetched.");
   if (!LOOPBACK(u.hostname) && u.hostname !== endpoint.hostname) {
-    const ips = isIP(host) || /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(":") ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
+    const ips = await addressesOf(host);
     if (!ips.length || ips.some(privateIp)) throw new Error("The AI pictures model answered with a link into a private network, so it wasn't fetched.");
   }
   const r = await fetch(u, { signal, redirect: "error" });
@@ -212,6 +144,74 @@ function withLean(cwd: string, file: DesignFile, prompt: string) {
 
 export type Made = { paths: string[]; cost?: number; ms: number; model: string };
 
+/** What a picture model is asked: the words as sent, how many, and an OpenAI size ("1536x1024"). */
+type Ask = { prompt: string; n: number; size: string; signal?: AbortSignal; progress?: (done: number, error?: string) => void };
+
+/**
+  One request to an AI pictures endpoint and its answer, shared by make and drawOne so both keep
+  the same safety: the address checked, no redirects, the answer capped, a linked picture fetched
+  on fetchLinked's terms, bytes kept only when they are a picture, the key only in the header and
+  scrubbed from every error. Each picture goes to `save` (`i` of `of`); it says how many were kept.
+*/
+async function ask(e: PictureEndpoint, key: string | undefined, o: Ask, save: (bytes: Buffer, kind: string, i: number, of: number) => void | Promise<void>): Promise<{ saved: number; cost?: number }> {
+  const progress = o.progress ?? (() => {});
+  const base = checkEndpointUrl(e.url);
+  const url = `${e.url.trim().replace(/\/+$/, "")}/images/generations`;
+  const body = { model: e.model, prompt: o.prompt, n: o.n, size: o.size, ...(/^gpt-image/i.test(e.model) ? {} : { response_format: "b64_json" }) };
+  let answer: { data?: { b64_json?: string; url?: string }[]; usage?: { cost?: number }; cost?: number; error?: { message?: string } };
+  try {
+    const signal = o.signal ? AbortSignal.any([o.signal, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT);
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(body), signal, redirect: "error" });
+    const raw = (await readCapped(r, ANSWER_MAX, `${e.label || "The AI pictures model"}'s answer`)).toString("utf8");
+    try {
+      answer = JSON.parse(raw);
+    } catch {
+      answer = {};
+    }
+    if (!r.ok) throw new Error(`${e.label || "The AI pictures model"} answered ${r.status}${answer.error?.message ? `: ${String(answer.error.message).slice(0, 300)}` : ""}.`);
+  } catch (err) {
+    const why = err instanceof Error ? (err.name === "TimeoutError" ? `${e.label || "The AI pictures model"} took too long to answer.` : /fetch failed|ECONNREFUSED|ENOTFOUND/i.test(err.message + String((err as { cause?: unknown }).cause ?? "")) ? `${e.label || "The AI pictures model"} didn't answer at ${new URL(url).host}.` : err.message) : String(err);
+    const said = scrub(why, key);
+    progress(0, said);
+    throw new Error(said);
+  }
+  const pictures = (answer.data ?? []).slice(0, o.n);
+  if (!pictures.length) {
+    progress(0, "No picture came back.");
+    throw new Error(`${e.label || "The AI pictures model"} sent no picture back.`);
+  }
+  let saved = 0;
+  let refused = "";
+  for (const [i, p] of pictures.entries()) {
+    let bytes: Buffer | null = p.b64_json ? Buffer.from(p.b64_json, "base64") : null;
+    // An endpoint that answers with a link to the picture: fetched once, without the key, on the terms above.
+    if (!bytes && p.url) {
+      try {
+        bytes = await fetchLinked(p.url, base, o.signal ? AbortSignal.any([o.signal, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT));
+      } catch (err) {
+        refused = err instanceof Error ? err.message : String(err);
+        continue;
+      }
+    }
+    if (!bytes?.length) continue;
+    // Saved as what its bytes are, and only if they're a picture.
+    const kind = kindOf(bytes);
+    if (!kind) {
+      refused = `${e.label || "The AI pictures model"} sent something that isn't a picture, so it wasn't saved.`;
+      continue;
+    }
+    await save(bytes, kind, i, pictures.length);
+    progress(++saved);
+  }
+  if (!saved) {
+    const why = refused || `${e.label || "The AI pictures model"} sent nothing that could be saved as a picture.`;
+    progress(0, why);
+    throw new Error(why);
+  }
+  const cost = typeof answer.cost === "number" ? answer.cost : typeof answer.usage?.cost === "number" ? answer.usage.cost : undefined;
+  return { saved, ...(cost !== undefined ? { cost } : {}) };
+}
+
 /**
   Asks the picture model for `count` pictures and saves them under the design's assets/: their
   paths from the design's folder ("assets/harbour-1.png"). Throws a plain sentence when there's no
@@ -232,64 +232,33 @@ export async function make(ctx: DesignCtx, o: { threadId?: string; cwd: string; 
   const started = Date.now();
   const progress = (done: number, error?: string) => o.threadId && ctx.emit({ type: "pictures.progress", threadId: o.threadId, call, done, count, at: Date.now(), ...(error ? { error } : {}) });
   progress(0);
-  const base = checkEndpointUrl(e.url);
-  const url = `${e.url.trim().replace(/\/+$/, "")}/images/generations`;
-  const body = { model: e.model, prompt: o.lean === false ? prompt : withLean(o.cwd, file, prompt), n: count, size: sizeFor(o.size.w, o.size.h), ...(/^gpt-image/i.test(e.model) ? {} : { response_format: "b64_json" }) };
-  let answer: { data?: { b64_json?: string; url?: string }[]; usage?: { cost?: number }; cost?: number; error?: { message?: string } };
-  try {
-    const signal = o.signal ? AbortSignal.any([o.signal, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT);
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(body), signal, redirect: "error" });
-    const raw = (await readCapped(r, ANSWER_MAX, `${e.label || "The AI pictures model"}'s answer`)).toString("utf8");
-    try {
-      answer = JSON.parse(raw);
-    } catch {
-      answer = {};
-    }
-    if (!r.ok) throw new Error(`${e.label || "The AI pictures model"} answered ${r.status}${answer.error?.message ? `: ${String(answer.error.message).slice(0, 300)}` : ""}.`);
-  } catch (err) {
-    const why = err instanceof Error ? (err.name === "TimeoutError" ? `${e.label || "The AI pictures model"} took too long to answer.` : /fetch failed|ECONNREFUSED|ENOTFOUND/i.test(err.message + String((err as { cause?: unknown }).cause ?? "")) ? `${e.label || "The AI pictures model"} didn't answer at ${new URL(url).host}.` : err.message) : String(err);
-    const said = scrub(why, key);
-    progress(0, said);
-    throw new Error(said);
-  }
-  const pictures = (answer.data ?? []).slice(0, count);
-  if (!pictures.length) {
-    progress(0, "No picture came back.");
-    throw new Error(`${e.label || "The AI pictures model"} sent no picture back.`);
-  }
   const paths: string[] = [];
-  const named = `${stem(prompt)}-${Date.now().toString(36)}`;
-  let refused = "";
-  for (const [i, p] of pictures.entries()) {
-    let bytes: Buffer | null = p.b64_json ? Buffer.from(p.b64_json, "base64") : null;
-    // An endpoint that answers with a link to the picture: fetched once, without the key, on the terms above.
-    if (!bytes && p.url) {
-      try {
-        bytes = await fetchLinked(p.url, base, o.signal ? AbortSignal.any([o.signal, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT));
-      } catch (err) {
-        refused = err instanceof Error ? err.message : String(err);
-        continue;
-      }
-    }
-    if (!bytes?.length) continue;
-    // Saved as what its bytes are, and only if they're a picture.
-    const kind = kindOf(bytes);
-    if (!kind) {
-      refused = `${e.label || "The AI pictures model"} sent something that isn't a picture, so it wasn't saved.`;
-      continue;
-    }
-    const rel = `assets/${named}${pictures.length > 1 ? `-${i + 1}` : ""}.${kind}`;
+  let named = "";
+  const r = await ask(e, key, { prompt: o.lean === false ? prompt : withLean(o.cwd, file, prompt), n: count, size: sizeFor(o.size.w, o.size.h), signal: o.signal, progress }, (bytes, kind, i, of) => {
+    named ||= `${stem(prompt)}-${Date.now().toString(36)}`;
+    const rel = `assets/${named}${of > 1 ? `-${i + 1}` : ""}.${kind}`;
     assetWrite(o.cwd, o.slug, rel, bytes);
     paths.push(rel);
-    progress(paths.length);
-  }
-  if (!paths.length) {
-    const why = refused || `${e.label || "The AI pictures model"} sent nothing that could be saved as a picture.`;
-    progress(0, why);
-    throw new Error(why);
-  }
-  const cost = typeof answer.cost === "number" ? answer.cost : typeof answer.usage?.cost === "number" ? answer.usage.cost : undefined;
-  return { paths, ms: Date.now() - started, model: e.label || e.model, ...(cost !== undefined ? { cost } : {}) };
+  });
+  return { paths, ms: Date.now() - started, model: e.label || e.model, ...(r.cost !== undefined ? { cost: r.cost } : {}) };
+}
+
+/** What drawOne says when Settings has no AI pictures model. */
+export const NO_DRAW = "There's no AI pictures model, so nothing was drawn and nothing was charged. Add one in Settings › Agent tools, or use a picture of your own.";
+
+/**
+  One picture from the words, for the dots behind Home (wallpaper.draw): not a design's, so no lean
+  and no assets/; the caller keeps the bytes. The person's press is their yes, as in the inspector.
+*/
+export async function drawOne(ctx: Pick<DesignCtx, "store" | "keys">, o: { prompt: string; model?: string; size?: string; signal?: AbortSignal }): Promise<{ bytes: Buffer; kind: string; model: string; ms: number; cost?: number }> {
+  const e = endpointOf(ctx, o.model);
+  if (!e) throw new Error(o.model && (ctx.store.settings.pictures ?? []).length ? "That AI pictures model isn't in Settings any more." : NO_DRAW);
+  const prompt = String(o.prompt ?? "").trim();
+  if (!prompt) throw new Error("Say what the picture shows.");
+  const started = Date.now();
+  const got: { bytes: Buffer; kind: string }[] = [];
+  const r = await ask(e, ctx.keys.get(pictureKey(e.id)), { prompt, n: 1, size: o.size ?? "1536x1024", signal: o.signal }, (bytes, kind) => void got.push({ bytes, kind }));
+  return { ...got[0], model: e.label || e.model, ms: Date.now() - started, ...(r.cost !== undefined ? { cost: r.cost } : {}) };
 }
 
 /** Puts a picture into an element of a frame by its data-l: an img's src, anything else's background. It keeps who made it, the words, and data-lean="0" when the lean's colours were left out, for "Make again". */

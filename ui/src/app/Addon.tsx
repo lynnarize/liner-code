@@ -610,7 +610,7 @@ export function OfferCard({ threadId, it, who }: { threadId: string; it: Offer; 
   return (
     <section className="lc-offer" aria-label="Make it an app" data-state={it.state}>
       <div className="lc-offer-head">
-        <I.turn size={14} />
+        <I.mark size={14} />
         <span>Make it an app</span>
         <span className="lc-quiet">{who} makes it. You can remove it at any time</span>
       </div>

@@ -1,13 +1,13 @@
 /*
-  Settings take the whole window. The column on the left swaps the sessions for the settings'
-  own places: you, a search that narrows them, the places in their groups, and under the open
-  one the sections of its page, with a bar that follows the one you're reading. The right holds
-  one place at a time: a title that says what it covers, then groups of rows on white cards with
-  a 1px ring, each row a name, a line on what it does, and its control. Looks live in this
-  window (localStorage) and apply at once; the rest lives in the engine. Escape, ⌘, or Back
-  returns to the sessions.
+  Settings open as a pop-up over the app, as T3 Code's do: a large rounded sheet over the dimmed window, with the
+  places down its left (a search that narrows them, then five groups, the first and the last with no heading) and one
+  place at a time on the right, under a header that says where you are and closes it. Every page has one shape: a
+  title over each group, the group a bordered card, and each row a name, one line on why, and one control at its right
+  end (settings/parts.tsx, which other pages use too). Looks live in this window (localStorage) and apply at once;
+  the rest lives in the engine. Escape, the ×, ⌘, or a click on the dim closes it, and the keys go back to where
+  they were.
 */
-import { cloneElement, isValidElement, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Thread, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
 import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
@@ -19,7 +19,7 @@ import { toast } from "@liner/components/toast/toast";
 import { feedback } from "@liner/lib/feedback";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { Agentic } from "./Agentic";
-import { Backdrop, ownChanged, useBackgroundUrl } from "./Backdrop";
+import { ownChanged, useBackgroundUrl } from "./Backdrop";
 import { bridge, isNative } from "./bridge";
 import { rpc, useEngine } from "./engine";
 import { I, ModelMark, StepMark } from "./icons";
@@ -40,10 +40,15 @@ import { current, fromVSCode, readThemes, saveThemes, type Theme } from "./theme
 import { appHasNews, sizeOf, updates } from "./Updates";
 import { groupOf, SERVICES } from "./services";
 import * as os from "./os";
-import { applyLook, DESK_MAX, deskSee, deskShow, entering, lessGlass, LOOK_DEFAULT, LOOK_KEY, onDesktop, readLook, seeThrough, type ActionColour, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { applyLook, DESK_MAX, deskShow, entering, homeInOf, homeOf, lessGlass, LOOK_DEFAULT, LOOK_KEY, readLook, seeThrough, type ActionColour, type BehindHome, type DesignsWhere, type Glass, type Look, type Motion } from "./look";
+import { openBehindHome } from "./Dots";
 import { keptWrite, wordRead, wordWrite } from "./kept.ts";
 import { jsonFault } from "./json-words";
 import { PaneCheck, PaneNote } from "./Pane";
+import { Section as Group, Row as Field, Tag } from "./settings/parts";
+import { findPlaces, MOVED, PAGE_IDS, PLACES, placeOf, type PlaceGroup, type SettingsPage } from "./settings/places";
+import { SourceControlPlace } from "./settings/SourceControl";
+import { LinerMcpPlace } from "./settings/LinerMcp";
 import "./settings.css";
 
 const isMac = /Mac/.test(navigator.platform);
@@ -62,32 +67,37 @@ const ACTIONS: { id: ActionColour; label: string; color: string }[] = [
   { id: "ink", label: "Ink", color: "var(--lc-ctl)" },
 ];
 
-type SettingsPage = "general" | "appearance" | "notifications" | "keyboard" | "models" | "agentic" | "modes" | "team" | "safety" | "addons" | "projects" | "git" | "archive" | "updates" | "data";
+/** Each place's icon in the column; its name, group and search words are in settings/places.ts. */
+const ICONS: Record<SettingsPage, ReactNode> = {
+  general: <I.sliders />,
+  appearance: <I.contrast />,
+  keyboard: <I.keyboard />,
+  tools: <I.chip />,
+  agents: <I.agents />,
+  fusion: <I.flow />,
+  permissions: <I.shield />,
+  projects: <I.folder />,
+  source: <I.branch />,
+  worktrees: <I.fork />,
+  mcp: <I.plug />,
+  addons: <I.blocks />,
+  archive: <I.box />,
+  about: <I.info />,
+};
+const HEADINGS: PlaceGroup[] = ["", "Agents", "Code", "Connections", "foot"];
 
-/** Each place: where it sits, what it covers, and the words a search finds it by. */
-const PLACES: { id: SettingsPage; label: string; icon: ReactNode; group: string; blurb: string; words: string }[] = [
-  { id: "general", label: "General", icon: <I.sliders />, group: "Liner Code", blurb: "Whether Liner opens in Code or Design, how new sessions start, what Enter does while an agent works, and what's checked and said when you send.", words: "opens open start starts launch design canvas front end work style lead coder team model worktree checkout enter queue steer setup first run done settle merge budget spend send check precheck prompt draft split tasks unrelated subject quick haiku edits changed files share between turns anonymous usage counts analytics telemetry tokens install id opencode go key sign-in limits hermes" },
-  { id: "appearance", label: "Appearance", icon: <I.contrast />, group: "Liner Code", blurb: "Light or dark, the accent, the main buttons' colour, the message box's glass, how much moves, the sea on Home, where designs open, and a picture behind the session.", words: "sea whale ascii ocean fish home theme dark light accent color colour glass tint clear solid composer message box background wallpaper picture image photo blur main button buttons action send primary red design designs page pages html panel inline chat motion animation animations animate move moves movement slide fade quick full reduce" },
-  { id: "notifications", label: "Notifications", icon: <I.bell />, group: "Liner Code", blurb: "When Liner Code tells you something, and how.", words: "notify alert dock badge sound sounds feedback taskbar tray" },
-  { id: "keyboard", label: "Keyboard", icon: <I.keyboard />, group: "Liner Code", blurb: "Every shortcut in one place.", words: "shortcut keys hotkey command" },
-  { id: "models", label: "Models", icon: <I.chip />, group: "Agents", blurb: `The agent tools on ${os.here}, how they sign in, and the keys they bill to.`, words: "provider claude codex opencode hermes cursor grok antigravity agy gemini install sign in key api billing anthropic openai voucher promo code redeem check checks doctor test health broken read only manual obey" },
-  { id: "agentic", label: "Agentic features", icon: <I.flow />, group: "Agents", blurb: "Fusion, its lead and sidekick, and what a new session starts with; the Reviewer; and parallel subagents.", words: "agentic fusion pair lead sidekick best fast start model frontier cheaper astra opus sonnet sol luna deepseek glm kimi qwen chinese opencode go hermes reviewer review check rounds small changes subagent subagents parallel concurrency workers" },
-  { id: "modes", label: "Modes", icon: <I.toggle />, group: "Agents", blurb: "Choose the agent's tools and how it works. Use Standard for everyday tasks, or Workshop to add to Liner Code.", words: "mode modes preset presets standard creator cordis custom default new task build make add-on addons plugin panel app" },
-  { id: "team", label: "Team", icon: <I.agents />, group: "Agents", blurb: "The agents you open sessions with: their model, effort and soul.", words: "agent helm forge lead coder soul effort new agent run mode helpers escalate opus" },
-  { id: "safety", label: "Safety", icon: <I.shield />, group: "Agents", blurb: "Permissions: what a new session may do without asking, and what always asks.", words: "permission access auto manual full reviewer decides destructive guard rm force push" },
-  { id: "addons", label: "Add-ons", icon: <I.blocks />, group: "Agents", blurb: "Connections, panels and apps your agents made for Liner Code. Each one asked first, keeps its versions, and turns off here.", words: "addon addons add-on add-ons connection connections panel panels app apps mcp server servers plugin extension linear sentry version restore remove safe mode start without" },
-  { id: "projects", label: "Projects", icon: <I.folder />, group: "Work", blurb: "The folders agents work in, who each one starts with, and how a new worktree is set up.", words: "project folder repository add remove finder explorer setup install worktree" },
-  { id: "git", label: "Git and worktrees", icon: <I.branch />, group: "Work", blurb: "Branches, worktrees, and the snapshot Liner Code keeps of every turn.", words: "git branch prefix worktree snapshot checkpoint undo refs" },
-  { id: "archive", label: "Archive", icon: <I.box />, group: "System", blurb: "Sessions you put away. Bring one back, or delete it for good.", words: "archived sessions restore delete" },
-  { id: "updates", label: "Updates", icon: <I.download />, group: "System", blurb: "New versions of Liner Code, and of the agent tools it drives.", words: "update upgrade version release new download install restart github cli claude codex opencode hermes grok auto automatic" },
-  { id: "data", label: "Data and about", icon: <I.drive />, group: "System", blurb: "Where Liner Code keeps its sessions and log, and which version this is.", words: "data storage folder log engine version about" },
-];
+type Props = { initial?: string; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void };
 
-type Props = { initial?: SettingsPage; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void };
+/** What can take the keyboard inside the sheet, for keeping Tab in it. */
+const TABBABLE = "a[href], button:not(:disabled), input:not(:disabled):not([type='hidden']), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1']), [contenteditable='true']";
 
 /** Memoised: App hands it callbacks of one identity, so a session's news elsewhere doesn't redraw the page you're reading. */
 export const Settings = memo(function Settings({ initial = "general", onClose, onAgent, onOpen }: Props) {
-  const [page, setPage] = useState<SettingsPage>(() => wordRead(sessionStorage, "lc:settings", ["general", "appearance", "notifications", "keyboard", "models", "agentic", "modes", "team", "safety", "addons", "projects", "git", "archive", "updates", "data"], initial) as SettingsPage);
+  // The place asked for last (App writes it for lc:open-settings), by its own id or an old one (settings/places.ts MOVED).
+  const [ask] = useState(() => placeOf(wordRead(sessionStorage, "lc:settings", [...PAGE_IDS, ...Object.keys(MOVED)], initial)));
+  const [page, setPage] = useState<SettingsPage>(ask.page);
+  // The group to bring up once the page is drawn, when an old place became one group of a page (Notifications in General).
+  const [at, setAt] = useState<string | undefined>(ask.at);
   const [query, setQuery] = useState("");
   const [look, setLook] = useState<Look>(readLook);
   const [sound, setSound] = useState(feedback.enabled);
@@ -96,33 +106,47 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
   const scroller = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   // At Quick motion each place shows as it is when you open it, its header's crumbs too (look.ts, entering).
   const paper = useRef<HTMLElement>(null);
   useLayoutEffect(() => entering(paper.current), [page]);
   const place = PLACES.find((p) => p.id === page) ?? PLACES[0];
   const archived = useEngine((s) => s.threads.filter((t) => t.archived).length);
-  const secs = useSections(scroller, page);
-  const me = window.__LINER__?.user?.trim() || "You";
 
   useEffect(() => wordWrite(sessionStorage, "lc:settings", page), [page]);
-  // Opened with focus nowhere (the link or button that opened it went away with what it was in), the
-  // page's heading takes it, so a screen reader is moved to the page rather than left on nothing.
+  // The sheet takes the keyboard as it opens (its page's heading, for a screen reader), and gives it back, when it
+  // closes, to what had it: the button or the field you opened Settings from.
   useEffect(() => {
-    const a = document.activeElement;
-    if (!a || a === document.body) heading.current?.focus({ preventScroll: true });
+    const was = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    heading.current?.focus({ preventScroll: true });
+    return () => {
+      if (was?.isConnected && !was.closest("[inert]")) was.focus({ preventScroll: true });
+    };
   }, []);
   // Asked for a place while already open (Check for Updates…, a notice's Details); the place's heading takes the focus.
   useEffect(() => {
-    const on = (e: Event) => (setPage(((e as CustomEvent).detail as SettingsPage) ?? "general"), requestAnimationFrame(() => heading.current?.focus({ preventScroll: true })));
+    const on = (e: Event) => {
+      const to = placeOf((e as CustomEvent).detail);
+      setPage(to.page);
+      setAt(to.at);
+      requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
+    };
     window.addEventListener("lc:open-settings", on);
     return () => window.removeEventListener("lc:open-settings", on);
   }, []);
+  // A place opens at its top, or at the group an old place became.
+  useLayoutEffect(() => {
+    const sc = scroller.current;
+    if (!sc) return;
+    const el = at ? sc.querySelector<HTMLElement>(`[data-anchor="${at}"]`) : null;
+    sc.scrollTop = el ? Math.max(0, el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 16) : 0;
+  }, [page, at]);
   useEffect(() => {
     const off = feedback.subscribe(setSound);
     return () => void off();
   }, []);
-  // Escape goes back, unless something inside (a menu, a field, a dialog) takes it first; ⌘F finds a setting. The listener stays; it calls the latest onClose.
+  // Escape closes, unless something inside (a menu, a field, a dialog) takes it first; ⌘F finds a setting. The listener stays; it calls the latest onClose.
   const closing = useRef(onClose);
   closing.current = onClose;
   useEffect(() => {
@@ -141,6 +165,30 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Tab and Shift-Tab go round the sheet, never out to the app under it.
+  const trap = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab" || e.defaultPrevented) return;
+    const box = sheet.current;
+    if (!box || !box.contains(e.target as Node)) return;
+    const all = [...box.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => el.checkVisibility() && !el.closest("[inert]"));
+    if (!all.length) return;
+    const first = all[0];
+    const last = all[all.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === heading.current)) (e.preventDefault(), last.focus());
+    else if (!e.shiftKey && document.activeElement === last) (e.preventDefault(), first.focus());
+  };
+  // In Find a setting: Escape clears what you typed and keeps the field, the next one closes Settings; Enter opens the first place found.
+  const onFindKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      return query ? setQuery("") : onClose();
+    }
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const first = findPlaces(query)[0];
+    if (first) (e.preventDefault(), go(first.id));
+  };
+  // A click that starts and ends on the dim closes; one that starts in the sheet (a text selection dragged out) doesn't.
+  const downOnDim = useRef(false);
 
   const setLookPart = (patch: Partial<Look>) => {
     const next = { ...look, ...patch };
@@ -151,31 +199,28 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
 
   // A search narrows the places to those whose name or settings match.
   const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const hits = PLACES.filter((p) => !q || `${p.label} ${p.blurb} ${p.words}`.toLowerCase().includes(q));
-    return [...new Set(hits.map((p) => p.group))].map((g) => ({ id: g, items: hits.filter((p) => p.group === g) }));
+    const hits = findPlaces(query);
+    return HEADINGS.map((g) => ({ id: g, items: hits.filter((p) => p.group === g) })).filter((g) => g.items.length);
   }, [query]);
   // The open place again goes back to the top of its page.
   const go = (id: SettingsPage) => {
+    setAt(undefined);
     if (id === page) return scroller.current?.scrollTo({ top: 0, behavior: calm() ? "auto" : "smooth" });
     setPage(id);
     feedback.play("tick", 3);
   };
-  // A page of two or more sections lists them under its place, unless a search is on.
-  const hasSecs = secs.titles.length > 1;
-  const showSecs = hasSecs && !query;
 
-  // The list keeps the open place, and the section you're reading, in sight when it runs past the column.
+  // The list keeps the open place in sight when it runs past the column.
   useEffect(() => {
     const box = nav.current;
-    const el = box?.querySelector<HTMLElement>('[aria-current="location"]') ?? box?.querySelector<HTMLElement>('[aria-current="page"]');
+    const el = box?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!box || !el) return;
     const b = box.getBoundingClientRect();
     const r = el.getBoundingClientRect();
     const room = 32;
     const by = r.top < b.top + room ? r.top - b.top - room : r.bottom > b.bottom - room ? r.bottom - b.bottom + room : 0;
     if (by) box.scrollBy({ top: by, behavior: calm() ? "auto" : "smooth" });
-  }, [page, secs.at, showSecs]);
+  }, [page]);
   // The list fades where it runs on past an edge.
   useEffect(() => {
     const box = nav.current;
@@ -191,7 +236,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
     if (box.firstElementChild) ro.observe(box.firstElementChild);
     return () => (box.removeEventListener("scroll", edges), ro.disconnect());
   }, []);
-  // Up and Down walk the places and sections, Home and End jump to the ends.
+  // Up and Down walk the places, Home and End jump to the ends.
   const walk = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
     const items = [...(nav.current?.querySelectorAll<HTMLElement>("[data-walk]") ?? [])];
@@ -202,298 +247,121 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
     items[next]?.focus();
   };
 
-  // What "Restore defaults" puts back on each place, if anything.
+  // What "Restore defaults" puts back on each place, if anything. General's takes Notifications' with it, as they share a page now.
   const restore: Partial<Record<SettingsPage, () => void>> = {
     general: () => {
-      save({ worktrees: false });
+      save({ worktrees: false, notify: true, badge: true, menuBar: true });
+      feedback.setEnabled(false);
       setEnter("queue");
       wordWrite(localStorage, "lc:enter", "queue");
     },
     // The parts LOOK_DEFAULT has no word for (your own theme, colours and picture) go too, or they'd stay on.
-    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined }),
-    notifications: () => {
-      save({ notify: true, badge: true, menuBar: true });
-      feedback.setEnabled(false);
-    },
-    agentic: () => save({ review: true, reviewRounds: 2, reviewSmall: false, maxActiveSubagents: 4 }),
-    safety: () => save({ defaultAccess: "auto", guardDestructive: true }),
-    git: () => save({ branchPrefix: "liner/" }),
+    appearance: () => setLookPart({ ...LOOK_DEFAULT, custom: undefined, accentColor: undefined, actionColor: undefined, background: undefined, bgBlur: undefined, bgShow: undefined, bgFrost: undefined, sea: undefined, home: "sea", homeIn: undefined, dots: undefined }),
+    fusion: () => save({ review: true, reviewRounds: 2, reviewSmall: false, maxActiveSubagents: 4 }),
+    permissions: () => save({ defaultAccess: "auto", guardDestructive: true }),
   };
   const reset = restore[page];
 
+  const row = (p: (typeof PLACES)[number]) => {
+    const on = p.id === page;
+    return (
+      <li key={p.id}>
+        <button type="button" className="lc-st-place l-focus" data-walk aria-current={on ? "page" : undefined} aria-label={p.id === "archive" && archived ? `${p.label}, ${archived}` : undefined} onClick={() => go(p.id)}>
+          <span className="lc-st-place-i" aria-hidden>
+            {ICONS[p.id]}
+          </span>
+          <span className="lc-st-place-t">{p.label}</span>
+          {p.id === "archive" && archived > 0 && (
+            <span className="lc-st-count" aria-hidden>
+              {archived}
+            </span>
+          )}
+          {p.fresh && <Tag tone="new">New</Tag>}
+        </button>
+      </li>
+    );
+  };
+
   return (
-    <>
-      <div ref={entering} className="lc-side lc-st-side">
-        <div className="lc-sb-head lc-st-head" data-drag>
-          <span className="lc-brand" data-drag>
-            <button type="button" className="lc-ib l-focus" aria-label="Back to sessions" title="Back to sessions (Esc)" onClick={onClose}>
-              <I.back size={16} />
-            </button>
-            Settings
-          </span>
-        </div>
-        <div className="lc-st-me">
-          <span className="lc-st-av" aria-hidden>
-            {me[0].toUpperCase()}
-          </span>
-          <span className="lc-st-me-t">
-            <b title={me}>{me}</b>
-            {/* Your name is your account's on this computer; nothing in Liner Code changes it, so this opens General. */}
-            <button type="button" className="lc-st-edit l-focus" onClick={() => go("general")}>
-              Edit profile
-              <I.edit size={12} />
-            </button>
-          </span>
-        </div>
-        <div className="lc-sb-find lc-st-find" role="search">
-          <I.search size={16} />
-          <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={(e) => e.key === "Escape" && (query ? (e.preventDefault(), setQuery("")) : e.currentTarget.blur())} />
-          {query ? (
-            <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
-              <I.close size={14} />
-            </button>
-          ) : (
-            <span className="lc-sb-key">{isMac ? "⌘F" : "Ctrl F"}</span>
-          )}
-        </div>
-        <nav ref={nav} className="lc-st-nav" aria-label="Settings" onKeyDown={walk}>
-          <div className="lc-st-nav-in">
-            {groups.map((g, gi) => (
-              <div key={g.id} className="lc-st-grp" role="group" aria-label={g.id}>
-                {gi > 0 && <span className="lc-st-rule" aria-hidden />}
-                {g.id !== PLACES[0].group && (
-                  <span className="lc-st-label" aria-hidden>
-                    {g.id}
-                  </span>
-                )}
-                <ul className="lc-st-places">
-                  {g.items.map((p) => {
-                    const on = p.id === page;
-                    return (
-                      <li key={p.id}>
-                        <button type="button" className="lc-st-place l-focus" data-walk aria-current={on ? "page" : undefined} aria-label={p.id === "archive" && archived ? `${p.label}, ${archived}` : undefined} onClick={() => go(p.id)}>
-                          <span className="lc-st-place-i" aria-hidden>
-                            {p.icon}
-                          </span>
-                          <span className="lc-st-place-t">{p.label}</span>
-                          {p.id === "archive" && archived > 0 && (
-                            <span className="lc-st-count" aria-hidden>
-                              {archived}
-                            </span>
-                          )}
-                        </button>
-                        {on && showSecs && (
-                          <div ref={entering} className="lc-st-secs" style={{ "--at": secs.at } as CSSProperties}>
-                            <span className="lc-st-bar" aria-hidden />
-                            <ul aria-label={`${p.label}, its sections`}>
-                              {secs.titles.map((t, i) => (
-                                <li key={`${i}${t}`}>
-                                  <button type="button" className="lc-st-sec l-focus" data-walk aria-current={i === secs.at ? "location" : undefined} title={t} onClick={() => secs.go(i)}>
-                                    {t}
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
-            {query && !groups.length && <p className="lc-sb-empty">No setting matches that.</p>}
+    <div
+      className="lc-st-pop"
+      onPointerDown={(e) => (downOnDim.current = e.target === e.currentTarget)}
+      onClick={(e) => e.target === e.currentTarget && downOnDim.current && onClose()}
+    >
+      <div ref={sheet} className="lc-st-sheet" role="dialog" aria-modal="true" aria-label="Settings" onKeyDown={trap}>
+        <div className="lc-st-side">
+          <div className="lc-sb-find lc-st-find" role="search">
+            <I.search size={16} />
+            <input ref={find} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a setting" aria-label="Find a setting" onKeyDown={onFindKey} />
+            {query ? (
+              <button type="button" className="lc-ib l-focus" aria-label="Clear" onClick={() => (setQuery(""), find.current?.focus())}>
+                <I.close size={14} />
+              </button>
+            ) : (
+              <span className="lc-sb-key">{isMac ? "⌘F" : "Ctrl F"}</span>
+            )}
           </div>
-        </nav>
-      </div>
-      <main ref={paper} className="lc-paper lc-st-paper">
-        <Backdrop />
-        <header className="lc-top" data-drag>
-          <Breadcrumb
-            separator="slash"
-            items={[
-              { label: "Settings", onSelect: () => go("general") },
-              hasSecs ? { label: place.label, onSelect: () => go(page) } : { label: place.label },
-              ...(hasSecs && secs.titles[secs.at] ? [{ label: secs.titles[secs.at] }] : []),
-            ]}
-            className="lc-st-crumbs"
-          />
-          <span className="lc-grow" data-drag />
-          {reset && (
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => (reset(), toast("Put back as it came"))}>
-              <I.undo size={14} />
-              Restore defaults
+          <nav ref={nav} className="lc-st-nav" aria-label="Settings" onKeyDown={walk}>
+            <div className="lc-st-nav-in">
+              {groups.map((g) => (
+                <div key={g.id || "first"} className="lc-st-grp" role="group" aria-label={g.id === "" ? "Liner Code" : g.id === "foot" ? "Archive and about" : g.id} data-foot={(g.id === "foot" && !query) || undefined}>
+                  {g.id !== "" && g.id !== "foot" && (
+                    <span className="lc-st-label" aria-hidden>
+                      {g.id}
+                    </span>
+                  )}
+                  <ul className="lc-st-places">{g.items.map(row)}</ul>
+                </div>
+              ))}
+              {query && !groups.length && <p className="lc-sb-empty">No setting matches that.</p>}
+            </div>
+          </nav>
+        </div>
+        <main ref={paper} className="lc-st-paper">
+          <header className="lc-st-top">
+            <Breadcrumb separator="slash" items={[{ label: "Settings", onSelect: () => go("general") }, { label: place.label }]} className="lc-st-crumbs" />
+            <span className="lc-grow" />
+            <button type="button" className="lc-ib l-focus" aria-label="Close Settings" title="Close (Esc)" onClick={onClose}>
+              <I.close size={16} />
             </button>
-          )}
-        </header>
-        <div ref={scroller} className="lc-st-scroll">
-          <div className="lc-st-col" key={page}>
-            <div className="lc-st-hero">
-              <span className="lc-st-hero-i" aria-hidden>
-                {isValidElement<{ size?: number }>(place.icon) ? cloneElement(place.icon, { size: 20 }) : place.icon}
-              </span>
-              <h1 ref={heading} tabIndex={-1}>
+          </header>
+          <div ref={scroller} className="lc-st-scroll">
+            <div className="lc-st-col" key={page}>
+              <h1 ref={heading} tabIndex={-1} className="l-sr-only">
                 {place.label}
               </h1>
-              <p>{place.blurb}</p>
+              {page === "general" && <General go={go} onSetup={onClose} enter={enter} setEnter={setEnter} sound={sound} />}
+              {page === "appearance" && <Appearance look={look} set={setLookPart} />}
+              {page === "keyboard" && <Keyboard />}
+              {page === "tools" && <Models />}
+              {page === "agents" && <AgentsAndModes onAgent={onAgent} onClose={onClose} />}
+              {page === "fusion" && <Agentic onOpen={onOpen} />}
+              {page === "permissions" && <Safety />}
+              {page === "projects" && <Projects />}
+              {page === "source" && <SourceControlPlace />}
+              {page === "worktrees" && <Git />}
+              {page === "mcp" && <LinerMcpPlace />}
+              {page === "addons" && <AddonsPlace />}
+              {page === "archive" && <Archive />}
+              {page === "about" && <About />}
+              {reset && (
+                <p className="lc-st-restore">
+                  <button type="button" className="lc-linkbtn l-focus" onClick={() => (reset(), toast("Put back as it came"))}>
+                    Restore defaults
+                  </button>
+                </p>
+              )}
             </div>
-            {page === "general" && <General go={setPage} onSetup={onClose} enter={enter} setEnter={setEnter} />}
-            {page === "appearance" && <Appearance look={look} set={setLookPart} />}
-            {page === "notifications" && <Notifications sound={sound} />}
-            {page === "keyboard" && <Keyboard />}
-            {page === "models" && <Models />}
-            {page === "agentic" && <Agentic onOpen={onOpen} />}
-            {page === "modes" && <ModesPlace onAgent={onAgent} onClose={onClose} />}
-            {page === "team" && <Team onAgent={onAgent} />}
-            {page === "safety" && <Safety />}
-            {page === "addons" && <AddonsPlace />}
-            {page === "projects" && <Projects />}
-            {page === "git" && <Git />}
-            {page === "archive" && <Archive />}
-            {page === "updates" && <UpdatesPlace />}
-            {page === "data" && <Data onSetup={onClose} />}
           </div>
-        </div>
-      </main>
-    </>
+        </main>
+      </div>
+    </div>
   );
 });
 
+
 /** Reduced motion: scrolls jump rather than glide. */
 const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-/** Whether this engine says when a scroll is done (scrollend); where it doesn't, the scroll events stopping does. */
-const SCROLLEND = "onscrollend" in window;
-
-/**
-  The sections of the page showing, in order: each group's title (a `.lc-st-group`'s h2), or a
-  part that names itself with `data-st-sec`. A group inside a named part, or inside another
-  group, belongs to it and isn't listed; one that isn't drawn (display: none) isn't either.
-*/
-function sectionsIn(box: HTMLElement) {
-  const found: { title: string; el: HTMLElement }[] = [];
-  for (const n of box.querySelectorAll<HTMLElement>(".lc-st-group > header h2, [data-st-sec]")) {
-    const named = n.dataset.stSec !== undefined;
-    const el = named ? n : n.closest<HTMLElement>(".lc-st-group");
-    if (!el || (named ? n.parentElement?.closest("[data-st-sec]") : el.closest("[data-st-sec]") || el.parentElement?.closest(".lc-st-group"))) continue;
-    const title = (named ? n.dataset.stSec : (n.dataset.title ?? n.textContent))?.trim();
-    if (title && el.getClientRects().length) found.push({ title, el });
-  }
-  return found;
-}
-
-/**
-  Opens each place at its top, and follows the sections of its page in `scroller`: their titles,
-  again whenever the page changes or its content does (debounced), and which one you're reading:
-  the last whose top has passed 140px below the scroller's top, or the last one at the end (the
-  line slides down over the final stretch when the page ends before the last ones reach it).
-  `go` scrolls to one; the one you picked stays current until you scroll yourself, even when the
-  page can't bring it up.
-*/
-function useSections(scroller: RefObject<HTMLDivElement | null>, page: SettingsPage) {
-  const [titles, setTitles] = useState<string[]>([]);
-  const [at, setAt] = useState(0);
-  const els = useRef<HTMLElement[]>([]);
-  // "moving": scrolling to a section you picked; "held": there, until you scroll.
-  const hold = useRef<"moving" | "held" | null>(null);
-  const fallback = useRef(0);
-
-  useLayoutEffect(() => {
-    const sc = scroller.current;
-    if (!sc) return;
-    // A place opens at its top.
-    sc.scrollTop = 0;
-    hold.current = null;
-    setAt(0);
-    let soon = 0;
-    let idle = 0;
-    // Scroll events come at most once a frame, and this reads a few boxes: no need to wait for one.
-    const pick = () => {
-      const list = els.current;
-      if (hold.current || !list.length) return;
-      const top = sc.getBoundingClientRect().top;
-      const tops = list.map((el) => el.getBoundingClientRect().top - top);
-      const max = sc.scrollHeight - sc.clientHeight;
-      const left = max - sc.scrollTop;
-      // The last sections may never come up to the line, the page ending first: over the final
-      // stretch the line slides down to where the last one stops, so each still gets its turn.
-      const short = max > 4 ? Math.max(0, tops[tops.length - 1] - left - 140) : 0;
-      const stretch = Math.min(max, Math.max(short, 240));
-      const line = 140 + (short && left < stretch ? short * (1 - left / stretch) : 0);
-      let now = 0;
-      tops.forEach((t, i) => {
-        if (t <= line + 1) now = i;
-      });
-      if (max > 4 && left <= 4) now = list.length - 1;
-      setAt(now);
-    };
-    const read = () => {
-      soon = 0;
-      const found = sectionsIn(sc);
-      els.current = found.map((f) => f.el);
-      const next = found.map((f) => f.title);
-      setTitles((was) => (was.length === next.length && was.every((t, i) => t === next[i]) ? was : next));
-      setAt((a) => Math.min(a, Math.max(0, next.length - 1)));
-      pick();
-    };
-    const later = () => {
-      window.clearTimeout(soon);
-      soon = window.setTimeout(read, 120);
-    };
-    // A glide ends at scrollend, or where there's none, when the scroll events stop.
-    const ended = () => {
-      if (hold.current === "moving") hold.current = "held";
-    };
-    const onScroll = () => {
-      if (hold.current === "moving") {
-        if (!SCROLLEND) {
-          window.clearTimeout(idle);
-          idle = window.setTimeout(ended, 160);
-        }
-        return;
-      }
-      if (hold.current === "held") hold.current = null;
-      pick();
-    };
-    // You took the wheel: the page decides again.
-    const yours = () => {
-      if (hold.current) hold.current = null;
-    };
-    const mo = new MutationObserver(later);
-    mo.observe(sc, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-st-sec", "hidden"] });
-    const ro = new ResizeObserver(later);
-    ro.observe(sc);
-    if (sc.firstElementChild) ro.observe(sc.firstElementChild);
-    sc.addEventListener("scroll", onScroll, { passive: true });
-    sc.addEventListener("scrollend", ended);
-    for (const t of ["wheel", "touchstart", "keydown", "pointerdown"] as const) sc.addEventListener(t, yours, { passive: true });
-    read();
-    return () => {
-      mo.disconnect();
-      ro.disconnect();
-      sc.removeEventListener("scroll", onScroll);
-      sc.removeEventListener("scrollend", ended);
-      for (const t of ["wheel", "touchstart", "keydown", "pointerdown"] as const) sc.removeEventListener(t, yours);
-      window.clearTimeout(soon);
-      window.clearTimeout(idle);
-      window.clearTimeout(fallback.current);
-    };
-  }, [page]);
-
-  const go = (i: number) => {
-    const sc = scroller.current;
-    const el = els.current[i];
-    if (!sc || !el) return;
-    const to = Math.max(0, Math.min(sc.scrollHeight - sc.clientHeight, sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 16));
-    setAt(i);
-    window.clearTimeout(fallback.current);
-    if (Math.abs(to - sc.scrollTop) < 2) return void (hold.current = "held");
-    hold.current = "moving";
-    sc.scrollTo({ top: to, behavior: calm() ? "auto" : "smooth" });
-    fallback.current = window.setTimeout(() => hold.current === "moving" && (hold.current = "held"), 2000);
-  };
-
-  return { titles, at, go };
-}
 
 const fail = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
 /** One empty list, so a store read of a missing one doesn't change every time. */
@@ -508,48 +376,11 @@ const save = (patch: Partial<EngineSettings>) => void rpc("settings.save", patch
 const tilde = os.tilde;
 
 /** A small accent tag beside something that just arrived. */
-const New = () => <span className="lc-st-new">New</span>;
-
-/** A titled group of rows on a white card. Its title is a section in the sidebar (data-title keeps a tag out of it). */
-function Group({ title, note, end, children, flush, tag }: { title: string; note?: ReactNode; end?: ReactNode; children: ReactNode; flush?: boolean; tag?: ReactNode }) {
-  return (
-    <section className="lc-st-group">
-      <header>
-        <span>
-          <h2 data-title={title}>
-            {title}
-            {tag}
-          </h2>
-          {note && <p>{note}</p>}
-        </span>
-        {end}
-      </header>
-      <div className="lc-frame">
-        <div className="lc-fcard lc-st-card" data-flush={flush || undefined}>
-          {children}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** One setting: its name, a line on what it does, and its control. `below` puts the control under the words; `off` quiets a row that doesn't apply now. */
-function Field({ title, note, children, below, lead, off }: { title: ReactNode; note?: ReactNode; children?: ReactNode; below?: boolean; lead?: ReactNode; off?: boolean }) {
-  return (
-    <div className="lc-st-row" data-below={below || undefined} data-off={off || undefined}>
-      {lead && <span className="lc-st-lead">{lead}</span>}
-      <span className="lc-st-t">
-        <b>{title}</b>
-        {note && <small>{note}</small>}
-      </span>
-      {children && <span className="lc-st-c">{children}</span>}
-    </div>
-  );
-}
+const New = () => <Tag tone="new">New</Tag>;
 
 /* ---------------------------------- General ---------------------------------- */
 
-function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => void; onSetup: () => void; enter: "queue" | "steer"; setEnter: (v: "queue" | "steer") => void }) {
+function General({ go, onSetup, enter, setEnter, sound }: { go: (p: SettingsPage) => void; onSetup: () => void; enter: "queue" | "steer"; setEnter: (v: "queue" | "steer") => void; sound: boolean }) {
   const s = useEngine((x) => x.settings);
   const providers = useEngine((x) => x.providers);
   // Who'd do what, from your picks (Agentic.tsx writes them).
@@ -558,8 +389,8 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
   const start = s.start ?? (cast && cast.lead !== cast.sidekick ? "pair" : "best");
   return (
     <>
-      <Group title="When Liner starts">
-        <Field title="Liner opens in" note="For someone who only builds front ends, the app can start in Design; for someone who looks after projects, in Security. The other faces stay one press away.">
+      <Group title="When Liner Code opens">
+        <Field title="Opens in" note="Code for sessions, Design for front ends, Security for looking after projects.">
           <Segmented
             size="sm"
             value={s.openIn ?? "code"}
@@ -573,17 +404,11 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
           />
         </Field>
       </Group>
-      <Group title="New sessions" note="What Home starts with. Each session can still change it.">
+      <Group title="New sessions">
         {/* The message box's own choice: Fusion, or a model picked through the same panel. */}
         {/* The note says what Home will really start with (startOf, as Home reads it), and when your pick's tool isn't ready, that it waits. */}
-        <Field title="What they start with" note={startSaid(s, providers, label, shortName)}>
+        <Field title="Start with" note={startSaid(s, providers, label, shortName)}>
           <StartPick value={start} onPick={(v) => save({ start: v })} />
-        </Field>
-        <Field title="Fusion and the Reviewer" note="Who leads, who is its sidekick, and who reads each change.">
-          <button type="button" className="lc-st-link l-focus" onClick={() => go("agentic")}>
-            Open
-            <I.chevR size={14} />
-          </button>
         </Field>
         <Field title="Where they run" note="A worktree is a branch and folder of its own, so sessions never edit the same files.">
           <Segmented
@@ -597,9 +422,16 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             aria-label="Where new sessions run"
           />
         </Field>
+        {/* The level itself is picked under Permissions, where each one says what it lets through. */}
         <Field title="Permissions" note={accessOf(s.defaultAccess).note}>
-          <button type="button" className="lc-st-link l-focus" onClick={() => go("safety")}>
+          <button type="button" className="lc-st-link l-focus" onClick={() => go("permissions")}>
             {accessOf(s.defaultAccess).label}
+            <I.chevR size={14} />
+          </button>
+        </Field>
+        <Field title="Fusion and the Reviewer" note="Who leads, who is its sidekick, and who reads each change.">
+          <button type="button" className="lc-st-link l-focus" onClick={() => go("fusion")}>
+            Open
             <I.chevR size={14} />
           </button>
         </Field>
@@ -620,24 +452,98 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
             aria-label="What Enter does"
           />
         </Field>
-        <Field title={`Keep the ${os.machine} awake`} note={`No idle sleep while a session${ROUTINES_ON ? " or a routine run" : ""} works, so a long run isn't cut off. The display still sleeps.`}>
+        <Field title={`Keep the ${os.machine} awake`} note={`No idle sleep while a session${ROUTINES_ON ? " or a routine run" : ""} works. The display still sleeps.`}>
           <NamedSwitch name={`Keep the ${os.machine} awake`} checked={s.keepAwake !== false} onCheckedChange={(keepAwake) => save({ keepAwake })} />
+        </Field>
+      </Group>
+      {/* Notifications had a place of their own; an old link to it lands here (settings/places.ts). */}
+      <Group title="Notifications" anchor="notifications">
+        <Field title="Tell me when a session needs me" note="When an agent waits for you, finishes, or runs into a problem.">
+          <NamedSwitch name="Tell me when a session needs me" checked={s.notify} onCheckedChange={(notify) => save({ notify })} />
+        </Field>
+        <Field title={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} note={os.windows ? "A red dot on the taskbar button while sessions need you." : "The Dock icon shows how many sessions need you."}>
+          <NamedSwitch name={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} checked={s.badge} onCheckedChange={(badge) => save({ badge })} />
+        </Field>
+        <Field title={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} note="A ring that counts what works and what waits; its menu opens a session or allows a request.">
+          <NamedSwitch name={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} />
+        </Field>
+        <Field title="Sounds" note="Soft ticks when you pick, toggle and send.">
+          <NamedSwitch name="Sounds" checked={sound} onCheckedChange={(on) => feedback.setEnabled(on)} />
         </Field>
       </Group>
       {/* The prompt check (Precheck.tsx, engine/src/precheck.ts) and the note of your own changes (engine/src/edits.ts): both change what reaches the agent. */}
       <Group title="When you send">
-        <Field title="Check a message before it goes" note="A row over the box when a draft looks like several separate tasks, or a small change for the top model. It reads only your words, and never holds the message.">
+        <Field title="Check a message before it goes" note="A row over the box when a draft looks like several tasks. It reads only your words and never holds the message.">
           <NamedSwitch name="Check a message before it goes" checked={s.precheck !== false} onCheckedChange={(precheck) => save({ precheck })} />
         </Field>
-        <Field title="Ask whether it belongs in this session" note="In a long session, a message on a new subject starts the session tool's quick model (Haiku for Claude Code) to ask it one short question, on your plan or key. It may spend a little even when the answer comes too late to use: Send waits 3 seconds at most. Off unless you turn it on." off={s.precheck === false}>
+        <Field title="Ask whether it belongs in this session" note="On a new subject, the tool's quick model asks one short question, on your plan or key. Off unless you turn it on." off={s.precheck === false}>
           <NamedSwitch name="Ask whether it belongs in this session" checked={s.precheckModel === true} disabled={s.precheck === false} onCheckedChange={(precheckModel) => save({ precheckModel })} />
         </Field>
-        <Field title="Tell the agent which files changed between turns" note="Names and line counts only, never what's in them, ahead of your message. Undo, Compare, other sessions and branch changes are named as what they were.">
+        <Field title="Tell the agent which files changed" note="Names and line counts only, never what's in them, ahead of your message.">
           <NamedSwitch name="Tell the agent which files changed between turns" checked={s.shareEdits !== false} onCheckedChange={(shareEdits) => save({ shareEdits })} />
         </Field>
       </Group>
-      <Group title="Settle sessions on their own" note="Settling is yours: a session stays in its project until you settle it from its row (D), and settled ones fold away under Settled, still searchable. These rules can do it for you; they're off unless you turn them on.">
-        <Field title="When its pull request merges">
+      <Group title="Usage and spending">
+        <Field title="When a tool runs out of usage" note="Carry on: another account or a ready model takes over, with the conversation so far.">
+          <Segmented
+            size="sm"
+            value={s.onLimit ?? "wait"}
+            onValueChange={(v) => save({ onLimit: v as "wait" | "carry" })}
+            options={[
+              { value: "wait", label: "Wait for it" },
+              { value: "carry", label: "Carry on" },
+            ]}
+            aria-label="When a tool runs out of usage"
+          />
+        </Field>
+        <Field title="Carry on when the limit resets" note="A session waiting on its tool's limit goes on a minute after it resets. Off unless you turn it on.">
+          <NamedSwitch name="Carry on when the limit resets" checked={s.resumeAtReset ?? false} onCheckedChange={(resumeAtReset) => save({ resumeAtReset })} />
+        </Field>
+        <Field title="Carry on after a restart" note="A turn cut off by a quit or a restart goes on when Liner Code opens again; one you stopped stays stopped.">
+          <NamedSwitch name="Carry on after a restart" checked={s.continueAfterRestart ?? true} onCheckedChange={(continueAfterRestart) => save({ continueAfterRestart })} />
+        </Field>
+        <Field title="Monthly budget" note="Usage shows how much is gone. Nothing stops at it.">
+          <span className="lc-st-budget">
+            <span className="lc-quiet">$</span>
+            <input
+              className="lc-input"
+              key={s.budgetUsd ?? 0}
+              defaultValue={s.budgetUsd || ""}
+              placeholder="None"
+              inputMode="decimal"
+              aria-label="Monthly budget in dollars"
+              onBlur={(e) => {
+                const n = Math.round(dollars(e.target.value));
+                // The field says what's kept, whatever was typed.
+                e.target.value = n ? String(n) : "";
+                if (n !== (s.budgetUsd ?? 0)) save({ budgetUsd: n });
+              }}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            />
+          </span>
+        </Field>
+        <Field title="Spend limit" note={`A session${ROUTINES_ON ? " or routine run" : ""} that spends this much stops and tells you; only Claude Code reports cost.`}>
+          <span className="lc-st-budget">
+            <span className="lc-quiet">$</span>
+            <input
+              className="lc-input"
+              key={s.capUsd ?? 0}
+              defaultValue={s.capUsd || ""}
+              placeholder="None"
+              inputMode="decimal"
+              aria-label="Spend limit per session in dollars"
+              onBlur={(e) => {
+                const n = Math.round(dollars(e.target.value) * 100) / 100;
+                e.target.value = n ? String(n) : "";
+                if (n !== (s.capUsd ?? 0)) save({ capUsd: n });
+              }}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            />
+          </span>
+        </Field>
+      </Group>
+      <Group title="Settle sessions on their own">
+        <Field title="When its pull request merges" note="Settled sessions fold away under Settled, still searchable. Off unless you turn it on.">
           <NamedSwitch name="When its pull request merges" checked={s.settleOnMerge ?? false} onCheckedChange={(settleOnMerge) => save({ settleOnMerge })} />
         </Field>
         {/* Only about routine runs, so it goes while routines are switched off (contracts, ROUTINES_ON). */}
@@ -661,81 +567,18 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
           />
         </Field>
       </Group>
-      <Group title="Usage limits">
-        <Field title="When a tool runs out of usage" note="Carry on: another account of the same tool takes over, else a ready model from another family, with the conversation so far. Either way the session's card offers both.">
-          <Segmented
-            size="sm"
-            value={s.onLimit ?? "wait"}
-            onValueChange={(v) => save({ onLimit: v as "wait" | "carry" })}
-            options={[
-              { value: "wait", label: "Wait for it" },
-              { value: "carry", label: "Carry on" },
-            ]}
-            aria-label="When a tool runs out of usage"
-          />
-        </Field>
-        <Field title="Carry on when the limit resets" note="A session that waits for its tool's usage to reset goes on by itself a minute after it does, when the tool said when. Off unless you turn it on.">
-          <NamedSwitch name="Carry on when the limit resets" checked={s.resumeAtReset ?? false} onCheckedChange={(resumeAtReset) => save({ resumeAtReset })} />
-        </Field>
-        <Field title="Carry on after a restart" note={`A turn cut off when Liner Code quit or the ${os.machine} restarted goes on by itself when it opens again, up to three times in five minutes. A turn you stopped stays stopped.`}>
-          <NamedSwitch name="Carry on after a restart" checked={s.continueAfterRestart ?? true} onCheckedChange={(continueAfterRestart) => save({ continueAfterRestart })} />
-        </Field>
-      </Group>
-      <Group title="Spending">
-        <Field title="A monthly budget" note="Usage shows how much of it is gone and where the month's pace ends. Nothing stops at the limit.">
-          <span className="lc-st-budget">
-            <span className="lc-quiet">$</span>
-            <input
-              className="lc-input"
-              key={s.budgetUsd ?? 0}
-              defaultValue={s.budgetUsd || ""}
-              placeholder="None"
-              inputMode="decimal"
-              aria-label="Monthly budget in dollars"
-              onBlur={(e) => {
-                const n = Math.round(dollars(e.target.value));
-                // The field says what's kept, whatever was typed.
-                e.target.value = n ? String(n) : "";
-                if (n !== (s.budgetUsd ?? 0)) save({ budgetUsd: n });
-              }}
-              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-            />
-          </span>
-        </Field>
-        <Field title="Spend limit" note={`A session${ROUTINES_ON ? ", or a routine run," : ""} that spends this much stops where it is and tells you; your next message lets it go on for as much again. Claude Code reports cost; other tools can't be held to it.`}>
-          <span className="lc-st-budget">
-            <span className="lc-quiet">$</span>
-            <input
-              className="lc-input"
-              key={s.capUsd ?? 0}
-              defaultValue={s.capUsd || ""}
-              placeholder="None"
-              inputMode="decimal"
-              aria-label="Spend limit per session in dollars"
-              onBlur={(e) => {
-                const n = Math.round(dollars(e.target.value) * 100) / 100;
-                e.target.value = n ? String(n) : "";
-                if (n !== (s.capUsd ?? 0)) save({ capUsd: n });
-              }}
-              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-            />
-          </span>
-        </Field>
-      </Group>
       {/* Anonymous usage counts (engine/src/usage-ping.ts): on unless turned off, and off drops what was counted. */}
       <Group title="Liner Code itself">
-        <Field title="Share anonymous usage counts" note="Once a day: a random install id, the app version, your OS and chip, and how many tokens your agents read and wrote. Never your code, words, projects or models.">
+        <Field title="Share anonymous usage counts" note="Once a day: an install id, the version, your OS and chip, and token counts. Never your code, words, projects or models.">
           <NamedSwitch name="Share anonymous usage counts" checked={s.usagePing !== false} onCheckedChange={(usagePing) => save({ usagePing })} />
         </Field>
         {/* Another tool's sign-in is read only with this on (engine/src/providers/opencode-go.ts). */}
-        <Field title="Read OpenCode Go's key for its limits" note="Reads the OpenCode Go key OpenCode or Hermes saved and sends it to opencode.ai only, to show what your Go plan has left. Off unless you turn it on.">
+        <Field title="Read OpenCode Go's key for its limits" note="Sends the Go key OpenCode or Hermes saved to opencode.ai only, to show what your plan has left. Off unless you turn it on.">
           <NamedSwitch name="Read OpenCode Go's key for its limits" checked={s.readGoKey === true} onCheckedChange={(readGoKey) => save({ readGoKey })} />
         </Field>
-        <Field title="Show the Demo" note="A scripted agent that needs no model or account, for trying Liner Code out: Demo run in Who works on this, and the sample project on Home. Off unless you turn it on.">
+        <Field title="Show the Demo" note="A scripted agent and sample project, for trying Liner Code without a model or account.">
           <NamedSwitch name="Show the Demo" checked={s.showDemo === true} onCheckedChange={(showDemo) => save({ showDemo })} />
         </Field>
-      </Group>
-      <Group title="First run">
         <Field title="Run the setup again" note={`Find the agent tools on ${os.here}, add projects, and choose how you work.`}>
           <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (save({ onboarded: false }), onSetup())}>
             Start setup
@@ -747,54 +590,6 @@ function General({ go, onSetup, enter, setEnter }: { go: (p: SettingsPage) => vo
 }
 
 /* --------------------------------- Appearance --------------------------------- */
-
-/** The window in miniature, in the look you're choosing: one ground, a card, the composer. */
-function Preview({ look }: { look: Look }) {
-  const bg = useBackgroundUrl(look.background);
-  // Desktop: the window drawn over a see-through check, in its tints.
-  const desk = onDesktop(look);
-  const vars = bg ? ({ "--lc-pv-bg": `url("${bg}")`, "--lc-pv-blur": `${Math.round((look.bgBlur ?? 28) * 0.3)}px`, "--lc-pv-show": String(look.bgShow ?? 0.45) } as CSSProperties) : desk ? ({ "--lc-pv-see": String(deskSee(look)) } as CSSProperties) : undefined;
-  const mode = look.theme === "system" ? "Matches the system" : look.theme === "dark" ? "Dark" : "Light";
-  const accent = look.accent === "own" ? "your own colour" : look.accent;
-  return (
-    <div className="lc-st-preview" aria-hidden>
-      <div className="lc-pv-win" style={vars} data-desk={desk || undefined}>
-        <div className="lc-pv-side">
-          <span className="lc-pv-lights">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="lc-pv-line" style={{ width: "62%" }} />
-          <span className="lc-pv-plate">
-            <span className="lc-pv-line" style={{ width: "70%" }} />
-          </span>
-          <span className="lc-pv-line" style={{ width: "54%" }} />
-          <span className="lc-pv-line" style={{ width: "66%" }} />
-        </div>
-        <div className="lc-pv-paper" data-bg={bg ? "" : undefined}>
-          <span className="lc-pv-you" />
-          <span className="lc-pv-line" style={{ width: "86%" }} />
-          <span className="lc-pv-line" style={{ width: "72%" }} />
-          <span className="lc-pv-card">
-            <span className="lc-pv-line" style={{ width: "40%" }} />
-            <span className="lc-pv-btn" />
-          </span>
-          <span className="lc-pv-comp" />
-        </div>
-      </div>
-      <span className="lc-pv-cap">
-        {mode} · {accent} · {bg ? "a picture behind the session" : `${look.composer} message box`}
-      </span>
-    </div>
-  );
-}
-
-const MODES: { value: Look["theme"]; title: string; note: string }[] = [
-  { value: "light", title: "Light", note: "One light ground" },
-  { value: "dark", title: "Dark", note: "One dark ground" },
-  { value: "system", title: "Match the system", note: `Follows ${os.windows ? "Windows" : "macOS"}, day and night` },
-];
 
 /** Choices as cards: a small picture, the name, a line; the picked one ringed and ticked. */
 function PictureCards<T extends string>({ label, value, options, onPick }: { label: string; value: T | ""; options: { value: T; title: string; note: string; picture: ReactNode }[]; onPick: (v: T) => void }) {
@@ -816,20 +611,6 @@ function PictureCards<T extends string>({ label, value, options, onPick }: { lab
       ))}
     </span>
   );
-}
-
-/** Light, dark or the system's, as cards: a swatch of the ground and its well, the name, a line. */
-function ModeCards({ value, onPick }: { value: Look["theme"] | ""; onPick: (v: Look["theme"]) => void }) {
-  const options = MODES.map((m) => ({
-    ...m,
-    picture: (
-      <span className="lc-st-themechip" data-kind={m.value} aria-hidden>
-        <i />
-        <i />
-      </span>
-    ),
-  }));
-  return <PictureCards label="Theme" value={value} options={options} onPick={onPick} />;
 }
 
 /** Where designs and pages open, each drawn small: the chat with a card and the design in the panel, or the design wide in the chat. */
@@ -868,10 +649,17 @@ const DESIGNS: { value: DesignsWhere; title: string; note: string; picture: Reac
   },
 ];
 
+/** What's behind Home, under its control. */
+const HOME_NOTES: Record<BehindHome, string> = {
+  none: "Plain paper behind the message box on Home.",
+  sea: "A whale in fine dots swims behind the message box on Home.",
+  dots: "A picture, words or a drawing of your own, in dots, behind the message box on Home.",
+};
+
 /** What each level of Motion does, under its control. */
 const MOTION_NOTES: Record<Motion, string> = {
-  full: "Every view slides in and comes into focus each time you open it.",
-  quick: "A view you open is there at once. What arrives while you watch still comes into focus.",
+  full: "Every view slides in and comes into focus each time you open it. Reduce motion turns it all off.",
+  quick: "A view you open is there at once; what arrives while you watch still comes into focus.",
 };
 
 function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) {
@@ -880,10 +668,19 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
   const held = own ? `${own.name} sets this while it's in use. Choosing one here goes back to Liner's own.` : undefined;
   return (
     <>
-      <Preview look={look} />
       <Group title="Theme">
-        <Field title="Mode" note={held} below>
-          <ModeCards value={own ? "" : look.theme} onPick={(theme) => set({ theme, custom: undefined })} />
+        <Field title="Mode" note={held ?? `Light, dark, or whatever ${os.windows ? "Windows" : "the Mac"} is set to.`}>
+          <Segmented
+            size="sm"
+            value={own ? "" : look.theme}
+            onValueChange={(theme) => set({ theme: theme as Look["theme"], custom: undefined })}
+            options={[
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+              { value: "system", label: "System" },
+            ]}
+            aria-label="Mode"
+          />
         </Field>
         <Field title="Accent" note={held ?? "One colour, spent on selection and focus."}>
           <span className="lc-swatches" role="radiogroup" aria-label="Accent">
@@ -903,7 +700,44 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Main buttons" note="Send, and Start in the first-run setup. Every other place's one action is in ink.">
+      <Group title="Home" tag={<New />}>
+        <Field title="Behind Home" note={HOME_NOTES[homeOf(look)]}>
+          <Segmented
+            size="sm"
+            value={homeOf(look)}
+            onValueChange={(home) => set({ home })}
+            options={[
+              { value: "none", label: "Nothing" },
+              { value: "sea", label: "The sea" },
+              { value: "dots", label: "Your dots" },
+            ]}
+            aria-label="Behind Home"
+          />
+        </Field>
+        {homeOf(look) !== "none" && (
+          <Field title="Shows in" note="For the sea or your dots. With one look only, the other shows plain paper.">
+            <Segmented
+              size="sm"
+              value={homeInOf(look)}
+              onValueChange={(homeIn) => set({ homeIn })}
+              options={[
+                { value: "both", label: "Both looks" },
+                { value: "dark", label: "Dark only" },
+                { value: "light", label: "Light only" },
+              ]}
+              aria-label="Shows in"
+            />
+          </Field>
+        )}
+        {homeOf(look) === "dots" && (
+          <Field lead={<span className="lc-st-tile lc-st-dots" aria-hidden />} title="Your dots" note="The picture, dots, colour, light and motion are set on Home itself.">
+            <button type="button" className="lc-btn" data-kind="secondary" data-size="sm" onClick={openBehindHome}>
+              Change on Home
+            </button>
+          </Field>
+        )}
+      </Group>
+      <Group title="Main buttons" note="Send, and Start in the first-run setup; every other action is in ink.">
         <Field title="Colour">
           <span className="lc-swatches" role="radiogroup" aria-label="Main buttons">
             {ACTIONS.map((a) => (
@@ -922,16 +756,8 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           </label>
         </Field>
       </Group>
-      <Group title="Glass" note="The message box lets the thread show through. Everything else sits on one solid ground.">
-        <Field
-          title={
-            <>
-              Message box
-              <New />
-            </>
-          }
-          note="How much of the thread shows through the message box, blurred."
-        >
+      <Group title="Glass">
+        <Field title="Message box" note="How much of the thread shows through the message box, blurred.">
           <Segmented
             size="sm"
             value={look.composer}
@@ -945,7 +771,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           />
         </Field>
       </Group>
-      <Group title="Motion" note="Your system's Reduce motion turns all of it off, at either setting.">
+      <Group title="Motion">
         <Field title="How much moves" note={MOTION_NOTES[look.motion]}>
           <Segmented
             size="sm"
@@ -959,12 +785,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           />
         </Field>
       </Group>
-      <Group title="Home" tag={<New />} note="Behind the message box on Home, a whale drawn in fine dots swims through the water. Your pointer stirs it, a click lets out bubbles, and a click on the whale makes it blow.">
-        <Field title="The sea and its whale">
-          <NamedSwitch name="The sea and its whale" checked={look.sea !== false} onCheckedChange={(sea) => set({ sea })} />
-        </Field>
-      </Group>
-      <Group title="Designs and pages" tag={<New />} note="Where a design or an HTML page an agent shows you opens. Any one of them can still open the other way from its own buttons.">
+      <Group title="Designs and pages" note="Where a design or page an agent shows you opens; each can still open the other way.">
         <Field title="Open them" below>
           <PictureCards label="Where designs and pages open" value={look.designs} options={DESIGNS} onPick={(designs) => set({ designs })} />
         </Field>
@@ -972,18 +793,18 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
           <NamedSwitch name="Bring the panel up when an agent shows one" checked={look.designsAuto} disabled={look.designs === "chat"} onCheckedChange={(designsAuto) => set({ designsAuto })} />
         </Field>
       </Group>
-      <Group title="Background" note="A picture behind the session, blurred and under a wash so the work stays easy to read, or the desktop itself behind the whole window.">
+      <Group title="Background" note="A picture behind the session, or the desktop behind the whole window.">
         <Field title="Behind the work" below>
           <Backgrounds value={look.background ?? "none"} onPick={(background) => set({ background })} />
         </Field>
         {look.background === "desktop" ? (
           seeThrough() && (
             <>
-              {lessGlass() && <Field title="The window stays solid" note="Reduce transparency is on in System Settings, Accessibility, Display. The desktop shows through once it's off." />}
-              <Field title="Shows through" note="How much of the desktop comes through the sidebar and the page. Never so much that the text stops being easy to read.">
+              {lessGlass() && <Field title="The window stays solid" note="Reduce transparency is on (System Settings › Accessibility › Display); turn it off to see the desktop." />}
+              <Field title="Shows through" note="How much of the desktop comes through, never so much that the text gets hard to read.">
                 <Slider label="Shows through" min={15} max={DESK_MAX * 100} step={5} unit="%" marks={false} value={Math.round(deskShow(look) * 100)} onValueChange={(v) => set({ bgShow: v / 100 })} />
               </Field>
-              <Field title="Blur the desktop" note="Softens what's behind into colour, so it doesn't compete with the text. It costs the graphics card more whenever something moves behind the window.">
+              <Field title="Blur the desktop" note="Softens what's behind into colour; it costs the graphics card more when something moves behind.">
                 <NamedSwitch name="Blur the desktop" checked={look.bgFrost === true} onCheckedChange={(bgFrost) => set({ bgFrost })} />
               </Field>
             </>
@@ -1113,7 +934,7 @@ function Themes({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) 
   return (
     <Group
       title="Your themes"
-      note="A VS Code colour theme, or one you make from a few colours. A theme sets the mode and the accent too."
+      note="A VS Code colour theme, or one you make from a few colours; it sets the mode and accent too."
       end={
         <span className="lc-st-c">
           <input ref={file} type="file" accept=".json,.jsonc,application/json" hidden onChange={(e) => {
@@ -1249,32 +1070,6 @@ function ThemeRow({ name, note, colors, liner, on, onUse, onEdit, onRemove }: { 
   );
 }
 
-/* -------------------------------- Notifications -------------------------------- */
-
-function Notifications({ sound }: { sound: boolean }) {
-  const s = useEngine((x) => x.settings);
-  return (
-    <>
-      <Group title="When you're in another app">
-        <Field title="Tell me when a session needs me" note="A notification when an agent waits for you, finishes, or runs into a problem.">
-          <NamedSwitch name="Tell me when a session needs me" checked={s.notify} onCheckedChange={(notify) => save({ notify })} />
-        </Field>
-        <Field title={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} note={os.windows ? "A red dot on the taskbar button while sessions need you; its tooltip counts them." : "The Dock icon shows how many sessions need you."}>
-          <NamedSwitch name={os.windows ? "Mark them on the taskbar" : "Count them on the Dock"} checked={s.badge} onCheckedChange={(badge) => save({ badge })} />
-        </Field>
-        <Field title={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} note={os.windows ? "A ring in the notification area, its tooltip counting what works and what needs you; its menu opens a session, or allows a request waiting in one." : "A ring in the menu bar counts what works and what needs you; its menu opens a session, or allows a request waiting in one."}>
-          <NamedSwitch name={os.windows ? "Show them in the notification area" : "Show them in the menu bar"} checked={s.menuBar !== false} onCheckedChange={(menuBar) => save({ menuBar })} />
-        </Field>
-      </Group>
-      <Group title="In Liner Code">
-        <Field title="Sounds" note="Soft ticks when you pick, toggle and send. Made on the fly, never loud.">
-          <NamedSwitch name="Sounds" checked={sound} onCheckedChange={(on) => feedback.setEnabled(on)} />
-        </Field>
-      </Group>
-    </>
-  );
-}
-
 /* ---------------------------------- Keyboard ---------------------------------- */
 
 function Keyboard() {
@@ -1353,7 +1148,7 @@ function Keyboard() {
           ))}
         </Group>
       ))}
-      <Group title="As JSON" note={<>The way VS Code writes keybindings.json. An entry gives a command its keys in place of its own; <span className="lc-mono">-command</span> takes its keys away; <span className="lc-mono">when</span> narrows it to session, composer, review, settings or textInput, with ! and &&.</>}>
+      <Group title="As JSON" note={<>As VS Code's keybindings.json: <span className="lc-mono">-command</span> takes a command's keys away, and <span className="lc-mono">when</span> narrows one to session, composer, review, settings or textInput.</>}>
         <Field title="Your shortcuts" below>
           <textarea className="lc-input lc-mono lc-kb-json" value={json} onChange={(e) => (setJson(e.target.value), setError(undefined))} spellCheck={false} aria-label="Your shortcuts as JSON" rows={Math.min(14, Math.max(5, json.split("\n").length + 1))} placeholder={'[\n  { "key": "mod+shift+n", "command": "new" }\n]'} />
           <span className="lc-kb-f">
@@ -1578,18 +1373,18 @@ function ToolChecks() {
   return (
     <Group
       title="Check my tools"
-      note="Is each tool there, does it work, and does it still do what Liner Code tells it. A new version of a tool can stop obeying an access level; this is how you find out."
+      note="Whether each tool is there, works, and still obeys the access levels after an update."
       end={
         <LookAgain looking={any(1)} title="Check every tool again" onLook={() => void run(1, ids)} />
       }
     >
-      <Field title="Found and working" note="Free and instant. Runs when you open this page: found on this Mac, its version, sign-in, its model list, and Liner Code's own tools." />
-      <Field title={`Does it obey Read only and ${accessOf("ask").label}?`} note="Free, a few seconds a tool. Each tool is pointed at a test model on this Mac, with a dummy key in a scratch folder, and asked to write a file and run a command. Your sign-ins, settings and sessions aren't touched. Claude Code, Codex and OpenCode, and the endpoints that run through them.">
+      <Field title="Found and working" note="Free and instant; runs when you open this page." />
+      <Field title={`Does it obey Read only and ${accessOf("ask").label}?`} note="Free: each tool is pointed at a test model on this Mac with a dummy key, and your sign-ins, settings and sessions aren't touched.">
         <button type="button" className="lc-btn" data-kind="plain" data-size="sm" disabled={any(2) || !providers.length} onClick={() => void run(2, ids)}>
           {any(2) ? "Checking" : "Check access"}
         </button>
       </Field>
-      <Field title="Send it a test message" note="Costs one short message on your plan or key, two for an API endpoint: a plain reply, and one tool call through its tool. Only from a tool's own button below." />
+      <Field title="Send it a test message" note="Costs one short message on your plan or key (two for an API endpoint), from a tool's own button below." />
       {providers.map((p) => (
         <ToolCheckRowView key={p.id} p={p} row={rows.find((r) => r.tool === p.id)} busy={busy[p.id]} onMessage={() => void run(3, [p.id])} />
       ))}
@@ -1768,7 +1563,7 @@ function Accounts() {
   return (
     <Group
       title="Other accounts"
-      note="The same tool with a sign-in of its own: work and personal, or a router. Each one is a tool of its own in the model picker."
+      note="The same tool with a sign-in of its own, work and personal or a router, as a tool of its own in the picker."
       end={
         !adding && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
@@ -1902,7 +1697,7 @@ function Endpoints() {
   return (
     <Group
       title="API endpoints"
-      note="Models from an API, run through the tool that speaks it: Claude Code, Codex or OpenCode. They get that tool's files, commands and approvals, and Liner Code's Browser and designs."
+      note="Models from an API, run through the tool that speaks it: Claude Code, Codex or OpenCode."
       end={
         !adding && (
           <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setAdding(true)}>
@@ -2237,7 +2032,7 @@ function CustomModels() {
     setLabel("");
   };
   return (
-    <Group title="Models you added" note="A model id a tool takes but doesn't list: a preview, a fine-tune, a router's name for one. It shows after the tool's own.">
+    <Group title="Models you added" note="A model id a tool takes but doesn't list, such as a preview or a fine-tune.">
       {mine.map((c) => (
         <Field key={`${c.provider}:${c.id}`} lead={<span className="lc-st-mark"><ModelMark kind={markOf(`${c.provider}:${c.id}`)} size={16} /></span>} title={c.label || c.id} note={`${providerLabel(`${c.provider}:`, providers)} · ${c.id}`}>
           <button type="button" className="lc-ib l-focus" aria-label={`Remove ${c.label || c.id}`} title="Remove" onClick={() => save({ customModels: mine.filter((x) => x !== c) })}>
@@ -2275,6 +2070,7 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
   return (
     <Group
       title="Agents"
+      anchor="agents"
       note="A name, a model, its effort, and a soul.md that says how it works."
       end={
         <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => onAgent()}>
@@ -2301,37 +2097,19 @@ function Team({ onAgent }: { onAgent: (agent?: AgentProfile) => void }) {
   );
 }
 
-/* ----------------------------------- Safety ----------------------------------- */
-
-/**
-  Agents outside Liner Code: Claude Code or Codex in a terminal may list, read, start and message
-  sessions through Liner Code's MCP server, while this is on. Sessions they start ask you as any
-  other does.
-*/
-function Outside() {
-  const on = useEngine((x) => x.settings.outside === true);
-  const [info, setInfo] = useState<{ claude: string; codex: string } | null>(null);
-  useEffect(() => {
-    if (on) void rpc("outside.info", {}).then(setInfo).catch(() => setInfo(null));
-  }, [on]);
-  const copy = (cmd: string) => void navigator.clipboard.writeText(cmd).then(() => toast("Copied", { description: "Run it once in a terminal." }));
+/** Agents and modes: your agents, then the modes a new session starts in (Modes.tsx), which were two places. */
+function AgentsAndModes({ onAgent, onClose }: { onAgent: (agent?: AgentProfile) => void; onClose: () => void }) {
   return (
-    <Group title="Agents outside Liner Code" note="Claude Code or Codex in a terminal can list and read your sessions, start one in a project, message it and wait for it. What those sessions ask still comes to you here.">
-      <Field title="Let them in" note={on ? "Through Liner Code's MCP server, with a key only you can read. Off, it turns them away." : "Off: nothing outside Liner Code can reach your sessions."}>
-        <NamedSwitch name="Let agents outside Liner Code in" checked={on} onCheckedChange={(outside) => save({ outside })} />
-      </Field>
-      {on &&
-        info &&
-        (["claude", "codex"] as const).map((k) => (
-          <Field key={k} title={k === "claude" ? "Add it to Claude Code" : "Add it to Codex"} note={<span className="lc-mono lc-st-cmd">{info[k]}</span>}>
-            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => copy(info[k])}>
-              Copy
-            </button>
-          </Field>
-        ))}
-    </Group>
+    <>
+      <Team onAgent={onAgent} />
+      <Group title="Modes" anchor="modes" bare note="Standard for everyday tasks, Workshop to add to Liner Code, or one of your own.">
+        <ModesPlace onAgent={onAgent} onClose={onClose} />
+      </Group>
+    </>
   );
 }
+
+/* ----------------------------------- Safety ----------------------------------- */
 
 /** Last-match-wins glob permission matrix (allow / ask / deny) evaluated before Auto allowlists. */
 function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"; pattern: string; action: "allow" | "ask" | "deny" }[]; onSave: (next: { kind: "command" | "path"; pattern: string; action: "allow" | "ask" | "deny" }[]) => void }) {
@@ -2352,7 +2130,7 @@ function PermissionMatrix({ rules, onSave }: { rules: { kind: "command" | "path"
     setPattern("");
   };
   return (
-    <Group title="Permission rules" note="Glob rules for the steps an agent asks Liner Code to approve, read top to bottom (the last match wins). Deny refuses a step even where Auto or a session grant would let it through. At Full access, and where a tool's own Auto lets a step through, nothing is asked, so no rule is read there.">
+    <Group title="Permission rules" note="The last match wins, and Deny beats Auto. At Full access, or where a tool's own Auto lets a step through, nothing is asked, so no rule is read.">
       <Field title="Command and path globs" below>
         <div className="lc-mem">
           {rules.map((r, i) => {
@@ -2414,7 +2192,7 @@ function Safety() {
   const s = useEngine((x) => x.settings);
   return (
     <>
-      <Group title="Permissions" note="What a new session may do without asking: four levels, from asking first to acting on its own. A session can change them any time from its message box.">
+      <Group title="Permissions" note="What a new session may do without asking; a session can change it from its message box.">
         <div className="lc-st-radios">
           <RadioGroup label="Permissions" showLabel={false} value={s.defaultAccess} onValueChange={(v) => save({ defaultAccess: v as Access })} options={ACCESS_LEVELS.map((l) => ({ value: l.id, label: l.label, description: l.note }))} />
         </div>
@@ -2426,7 +2204,6 @@ function Safety() {
         <Field title="Committing, pushing and merging" note="Agents never commit, push or merge on their own. Commit stays a press in the Changes panel." />
       </Group>
       <PermissionMatrix rules={s.permissionRules ?? []} onSave={(permissionRules) => save({ permissionRules })} />
-      <Outside />
     </>
   );
 }
@@ -2513,7 +2290,7 @@ function AddonsPlace() {
           </div>
         ))}
       </Group>
-      <Group title="Panels" note="In the panel beside your sessions, under ··· › Your apps, or pages of their own. Each runs in a sealed frame, with only what it asked for.">
+      <Group title="Panels" note="Beside your sessions or on pages of their own, each in a sealed frame with only what it asked for.">
         {panels.map((a) => {
           const Icon = appIcon(a.panel?.icon);
           return (
@@ -2784,7 +2561,7 @@ function Projects() {
             <MemoryEditor project={p} />
             {p.git && (
               <>
-                <Field title="Set up each new worktree" note="Runs in a session's own worktree before its first turn, since a new worktree has none of this checkout's installed packages.">
+                <Field title="Set up each new worktree" note="Runs in a new worktree before its first turn, since it has none of this checkout's packages.">
                   <input
                     className="lc-input lc-mono lc-st-setup"
                     key={p.setup ?? ""}
@@ -2796,7 +2573,7 @@ function Projects() {
                     onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
                   />
                 </Field>
-                <Field title="Trust .liner/worktree-setup.sh" note="Run this repo's worktree-setup.sh automatically on new worktrees with LINER_WORKTREE_PORT_OFFSET set.">
+                <Field title="Trust .liner/worktree-setup.sh" note="Runs this repo's worktree-setup.sh on new worktrees, with LINER_WORKTREE_PORT_OFFSET set.">
                   <NamedSwitch
                     name={`Trust worktree setup hook for ${p.name}`}
                     checked={hooksTrusted.includes(p.id)}
@@ -3078,26 +2855,12 @@ function Git() {
   const home = useEngine((x) => x.home);
   const threads = useEngine((x) => x.threads);
   const projects = useEngine((x) => x.projects);
-  const [prefix, setPrefix] = useState(s.branchPrefix);
-  useEffect(() => setPrefix(s.branchPrefix), [s.branchPrefix]);
   const trees = threads.filter((t) => t.worktree && !t.archived);
-  const commitPrefix = () => {
-    const v = prefix.trim().replace(/\s+/g, "-");
-    const next = !v ? s.branchPrefix : v.endsWith("/") || v.endsWith("-") ? v : `${v}/`;
-    setPrefix(next);
-    if (next !== s.branchPrefix) save({ branchPrefix: next });
-  };
   return (
     <>
       <Group title="Worktrees">
-        <Field title="Start new sessions in a worktree" note="Each gets a branch and a folder of its own. Off, they work in the project's checkout. The same choice as Where they run, under General › New sessions.">
+        <Field title="Start new sessions in a worktree" note="Each gets a branch and folder of its own; the same choice as General › Where they run.">
           <NamedSwitch name="Start new sessions in a worktree" checked={s.worktrees} onCheckedChange={(worktrees) => save({ worktrees })} />
-        </Field>
-        <Field title="Branch names start with" note={`A new worktree's branch is this, then the session's id: ${s.branchPrefix}mvpa5q8q`}>
-          <span className="lc-st-input">
-            <I.branch size={14} />
-            <input value={prefix} onChange={(e) => setPrefix(e.target.value)} onBlur={commitPrefix} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} spellCheck={false} aria-label="Branch prefix" />
-          </span>
         </Field>
         <Field title="Worktree layout" note="New worktrees go under Liner's worktrees folder, or inside the repo in .worktrees/ for direnv and monorepo tools.">
           <Segmented
@@ -3111,7 +2874,7 @@ function Git() {
             aria-label="Worktree layout"
           />
         </Field>
-        <Field title="Where worktrees live" note="Another drive or folder, for big projects. Worktrees already made stay where they are.">
+        <Field title="Where worktrees live" note="Another drive or folder, for big projects; ones already made stay where they are.">
           <span className="lc-st-input lc-st-wide">
             <I.folder size={14} />
             <input
@@ -3146,9 +2909,6 @@ function Git() {
             Clean up
           </button>
         </Field>
-        <Field title="Keep the default branch pulled" note="Every 15 minutes, a project whose checkout sits on its default branch with nothing changed fast-forwards to the remote, so new worktrees start from the latest.">
-          <NamedSwitch name="Keep the default branch pulled" checked={Boolean(s.autoPull)} onCheckedChange={(autoPull) => save({ autoPull })} />
-        </Field>
       </Group>
       {trees.length > 0 && (
         <Group title={`In use · ${trees.length}`} note="Deleting a session removes its worktree; the branch stays.">
@@ -3177,8 +2937,8 @@ function Git() {
         </Group>
       )}
       <Group title="Snapshots">
-        <Field title="Every turn is kept" note="Before and after each turn, Liner Code saves the project as a commit under refs/liner/, without touching your staging area. That's what Undo turn and Changes use." />
-        <Field title="Folders that aren't repositories" note="Get no snapshots, so no diff and no undo. Run git init in them to get both." />
+        <Field title="Every turn is kept" note="Saved as a commit under refs/liner/ before and after each turn, for Undo turn and Changes; your staging area isn't touched." />
+        <Field title="Folders that aren't repositories" note="Get no snapshots, so no diff and no undo; git init gives them both." />
       </Group>
     </>
   );
@@ -3278,7 +3038,8 @@ function UpdatesPlace() {
     <>
       <Group
         title="Liner Code"
-        note={u.checkedAt ? `Looked ${since(u.checkedAt)}, and again every six hours.` : "Looks a few seconds after it opens, then every six hours."}
+        anchor="updates"
+        note={appMode === "off" && toolMode === "off" ? `Updates are off for Liner Code and the agent tools; Look again still looks${u.checkedAt ? `, last ${since(u.checkedAt)}` : ""}.` : u.checkedAt ? `Looked ${since(u.checkedAt)}, and again every six hours.` : "Looks a few seconds after it opens, then every six hours."}
         end={
           <LookAgain looking={busy} onLook={() => void look()} />
         }
@@ -3317,7 +3078,7 @@ function UpdatesPlace() {
         <Field title="Updates" note={toolMode === "auto" ? "Runs a tool's updater as soon as a new version is out and nothing is working on it." : toolMode === "notify" ? "Tells you on Home when a tool has a new version, and you update it." : "Doesn't look for new versions. Look again still does."}>
           <Segmented size="sm" value={toolMode} onValueChange={(v) => save({ updateTools: v as UpdateMode })} options={UPDATE_MODES} aria-label="The agent tools' updates" />
         </Field>
-        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes, Grok Build or Antigravity CLI is on ${os.here}. Install one in Models.` : "They show here after the first look."} />}
+        {u.tools.length ? u.tools.map((t) => <ToolRow key={t.id} t={t} />) : <Field title="No agent tools yet" note={u.checkedAt ? `None of Claude Code, Codex, OpenCode, Hermes, Grok Build or Antigravity CLI is on ${os.here}. Install one in Agent tools.` : "They show here after the first look."} />}
       </Group>
     </>
   );
@@ -3434,9 +3195,18 @@ function ToolRow({ t }: { t: ToolUpdate }) {
 
 /* ------------------------------------ Data ------------------------------------ */
 
-function Data({ onSetup }: { onSetup: () => void }) {
+/** About and updates: Liner Code's version and updates, the agent tools' updates, then where its data lives. */
+function About() {
+  return (
+    <>
+      <UpdatesPlace />
+      <Data />
+    </>
+  );
+}
+
+function Data() {
   const home = useEngine((x) => x.home);
-  const version = useEngine((x) => x.version);
   const threads = useEngine((x) => x.threads.length);
   const [userHome, setUserHome] = useState<string | null>(null);
   useEffect(
@@ -3451,7 +3221,7 @@ function Data({ onSetup }: { onSetup: () => void }) {
   const log = !userHome ? null : isMac && home === `${userHome}/.liner-code` ? `${userHome}/Library/Logs/Liner Code/engine.log` : [home, "logs", "engine.log"].join(sep);
   return (
     <>
-      <Group title={`On ${os.here}`}>
+      <Group title={`On ${os.here}`} anchor="data">
         <Field
           title="Sessions, projects and settings"
           note={
@@ -3474,18 +3244,6 @@ function Data({ onSetup }: { onSetup: () => void }) {
           )}
         </Field>
         <Field title="API keys" note={os.windows ? "In Windows' encrypted storage, sealed to your Windows sign-in. Never written to the data folder." : "In the login keychain, under “Liner Code”. Never written to the data folder."} />
-      </Group>
-      <Group title="About">
-        <Field title={`Liner Code ${version}`} note="Your models, your code. Built from Liner UI.">
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => window.dispatchEvent(new CustomEvent("lc:open-settings", { detail: "updates" }))}>
-            Updates
-          </button>
-        </Field>
-        <Field title="First run" note="Connect models, add projects and choose how you work, again.">
-          <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => (save({ onboarded: false }), onSetup())}>
-            Start setup
-          </button>
-        </Field>
       </Group>
     </>
   );

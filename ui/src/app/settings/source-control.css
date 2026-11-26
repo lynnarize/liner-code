@@ -1,0 +1,70 @@
+/* Settings › Source control & issues (SourceControl.tsx): the few pieces the shared rows (settings/parts.tsx) don't draw. */
+
+/* The merge method's menu, narrower than the shared one: its words are short. */
+.lc-sc-sel {
+  width: 160px;
+}
+
+/* The branch prefix, as wide as the board's field. */
+.lc-sc-prefix input {
+  width: 128px;
+}
+
+/* gh's account, blurred until clicked: a capture or a shared screen shouldn't show it by accident. */
+.lc-sc-blur {
+  display: inline;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  filter: blur(4px);
+  cursor: pointer;
+  user-select: none;
+}
+.lc-sc-blur:hover {
+  filter: blur(3px);
+}
+
+/* A quiet choice in a sub-row: its words and a chevron, no button around them. */
+.lc-sc-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-sc-quiet:hover {
+  color: var(--l-ink-2);
+  background: var(--l-wash);
+}
+
+/* A key being added: its field, Cancel and Save, in the row's place under its words. */
+.lc-sc-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lc-sc-key .lc-st-input {
+  flex: 1;
+  min-width: 220px;
+}
+.lc-sc-key .lc-st-input input {
+  width: 100%;
+}
+
+/* Your words for commit messages. */
+.lc-sc-words {
+  width: 100%;
+  min-height: 68px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.45;
+}

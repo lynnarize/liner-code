@@ -198,8 +198,14 @@ The Design surface takes ideas from [Kun](https://github.com/KunAgent/Kun)'s Des
   tool's process in memory. For Claude, Anthropic asks apps built on its Agent SDK to use an API key (see its
   [terms](https://code.claude.com/docs/en/legal-and-compliance)), so Settings › Agent tools lets Claude
   Code bill to your Anthropic key.
+- **A voucher** (Settings › Agent tools › Voucher) is the one model that runs through Liner Code's
+  site: DeepSeek V4.1 Flash, on the site's OpenCode Go plan, under Promo in the model picker.
+  Redeeming it sends only the code to linercode.dev, which says whether it's good; the code is then
+  sealed in the keychain like a key and stays in Liner Code's engine. OpenCode sends the model's
+  calls to the engine on this Mac with a key made for that run, never the voucher, and the engine
+  sends them on to linercode.dev with the voucher; its limits are read from there with it too.
 - **Nothing in between.** Model traffic goes from each tool to its own provider and is billed to
-  your account. Liner Code has no server in between and never sends your work anywhere. Once a day
+  your account. Apart from a voucher's model, Liner Code has no server in between and never sends your work anywhere. Once a day
   it sends an anonymous count to linercode.dev: a random install id, the app's version, your OS and
   chip, the day, and how many tokens your agents read and wrote. Never prompts, files, folders,
   projects, models, tools, sessions or errors. Like any request it reaches the site's host

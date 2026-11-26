@@ -60,6 +60,9 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   (the Agents panel lists them). The live line's clock counts whole seconds. New answers, cards and the panel fade in
   quickly without a blur, and Send no longer hops when you type. Nothing flows under a pull request or a push. Look
   again's arrow turns only when you press it, and lane bars and the Queued tag are grey, not the accent.
+- In the sidebar, a session that is finished and read, or not started, shows no mark: its title has the room and the time
+  says when. A session that works, needs you, finished while you were away, ran into a problem or has a pull request
+  keeps its mark.
 - Teamwork and a Swarm are no longer pinned over the chat or kept as a card at its end: their chip, and turning a team
   on, open the team in the Agents panel on the right. Liner Design's chat and a Liner Security scan, which have no
   Agents panel, keep the team's card.
@@ -69,6 +72,11 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 
 ### Fixed
 
+- A voucher's code no longer reaches the agent. OpenCode used to hold it in its environment, where a command the
+  agent ran could print it; now OpenCode gets a key that works only on this Mac while Liner Code runs, and Liner
+  Code adds the voucher as it sends each call on to linercode.dev.
+- Promo in the model picker reads as Liner Code's own: DeepSeek's mark instead of OpenCode's, "Liner Code's promo,
+  with your voucher", and Free within the voucher's 5-hour and weekly limits.
 - A Teamwork or Swarm session whose team has finished no longer says "Working · 1 agent" in the sidebar and on The
   Wall for good: the count follows the team's agents as each starts and finishes, on every tool.
 - In the dark look a card's main button (a plan's Approve and start, a question's Next, Try again) is a light pill

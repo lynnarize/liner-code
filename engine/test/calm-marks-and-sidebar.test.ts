@@ -120,3 +120,11 @@ test("Bars and tags that aren't alerts are grey, not the accent", () => {
   assert.doesNotMatch(block(crew, ".lc-cr-bar[data-wait]"), /--l-accent/);
   assert.match(block(read("app.css"), ".lc-queued-tag"), /color: var\(--l-ink-2\);/);
 });
+
+test("A sidebar row that is finished and read, or not started, shows no mark, as Capy's; anything that wants you keeps it", () => {
+  const css = read("app.css");
+  const rule = block(css, '.lc-sl-row[data-compact] .lc-sl-mark:has(> .lc-mk:is([data-s="done"], [data-s="new"]))');
+  assert.match(rule, /display: none;/, "a finished row still draws its grey diamond");
+  // Only those two: Working, Needs you, finished and not opened, a problem and a pull request's states still show.
+  for (const kept of ["working", "needs", "fresh", "problem", "pr", "merged"]) assert.doesNotMatch(rule, new RegExp(`data-s="${kept}"`));
+});

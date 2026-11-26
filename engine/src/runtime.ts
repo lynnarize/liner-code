@@ -49,14 +49,16 @@ import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./prechec
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
 import { isSubagentTool, needsSubagentTool, SUBAGENT_MS, subagentLeadNote, subagentPrompt, subagentResult, subagentRules, subagentTask, subagentTitle, type SubagentOutcome } from "./subagent.ts";
 import { SwarmManager, pickSwarmWorkerModel, swarmCoordinatorDirective, swarmCoordinatorRules } from "./swarm.ts";
+import { PromoRelay } from "./promo.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
 
 /**
   Your other accounts, the agents you added and your API endpoints, as tools beside the known
   ones. Run whenever they change. `keys` is the engine's, read when an endpoint's session opens.
+  `promo` is the engine's relay: the voucher's model is run through it, so its tool never holds the voucher.
 */
-export function syncProviders(s: Settings, keys?: Map<string, string>) {
+export function syncProviders(s: Settings, keys?: Map<string, string>, promo?: PromoRelay) {
   for (const id of Object.keys(providers) as ProviderId[]) if (id.includes(".")) delete providers[id];
   for (const a of s.accounts ?? []) if (a.provider !== "demo" && providers[a.provider]) providers[`${a.provider}.${a.id}`] = accountProvider(providers[a.provider], a);
   for (const a of s.addedAgents ?? []) providers[`acp.${a.id}`] = addedProvider(a);
@@ -64,9 +66,9 @@ export function syncProviders(s: Settings, keys?: Map<string, string>) {
     const tool = ENDPOINT_TOOL[e.protocol];
     if (providers[tool]) providers[`${tool}.${e.id}`] = endpointProvider(providers[tool], e, () => keys?.get(endpointKey(e.id)));
   }
-  // A redeemed voucher's model: an endpoint of its own that Settings doesn't list.
+  // A redeemed voucher's model: an endpoint of its own that Settings doesn't list, its tool pointed at the relay.
   const tool = ENDPOINT_TOOL[VOUCHER.protocol];
-  if (s.voucher && providers[tool]) providers[`${tool}.${VOUCHER.id}`] = endpointProvider(providers[tool], VOUCHER, () => keys?.get(endpointKey(VOUCHER.id)));
+  if (s.voucher && providers[tool]) providers[`${tool}.${VOUCHER.id}`] = endpointProvider(providers[tool], VOUCHER, () => keys?.get(endpointKey(VOUCHER.id)), () => promo?.via());
 }
 
 /**
@@ -295,6 +297,8 @@ export class Runtime {
   private limitedUntil = new Map<string, number>();
   /** Keys you added, by provider; handed to the tools that use them, never written to disk. */
   keys = new Map<string, string>();
+  /** The promo's relay: the voucher stays here, and its model's tool is given a key of this run's (promo.ts). */
+  promo = new PromoRelay(() => this.keys.get(endpointKey(VOUCHER.id)));
   /** What's installed, kept up to date by the API, for choosing a Reviewer. */
   providerInfo: ProviderInfo[] = [];
   /** Your add-ons: the connections each session's tool gets beside Liner Code's own server. */

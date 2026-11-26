@@ -11,7 +11,7 @@
 */
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { EffortInfo, ProviderInfo, Settings as EngineSettings } from "@contracts";
-import { castOf, familyOf } from "@contracts";
+import { castOf, ENDPOINT_TOOL, familyOf, VOUCHER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
 import { tintPaint } from "./brands";
@@ -63,8 +63,10 @@ export function tabOfRef(ref: string, providers: ProviderInfo[]) {
   const m = allModels(tools, providers).find((x) => x.ref === ref);
   return m ? tabberOf(tools)(m) : undefined;
 }
-/** A tool's mark on the rail: an API endpoint's service's logo (as markOf has it), else the tool's own. */
-const railMarkOf = (id: string): MarkKind => (/\.api-/.test(id) ? sourceMarkOf(id.slice(id.indexOf(".api-") + 5)) : toolMarkOf(id));
+/** The promo's tool, from a redeemed voucher: its one model's maker on the rail, not the tool that runs it. */
+const PROMO_TOOL = `${ENDPOINT_TOOL[VOUCHER.protocol]}.${VOUCHER.id}`;
+/** A tool's mark on the rail: an API endpoint's service's logo (as markOf has it), the promo's model's, else the tool's own. */
+const railMarkOf = (id: string): MarkKind => (id === PROMO_TOOL ? "deepseek" : /\.api-/.test(id) ? sourceMarkOf(id.slice(id.indexOf(".api-") + 5)) : toolMarkOf(id));
 
 /**
   The models you starred (Settings' favoriteModels), first in every tool's list, and the toggle that stars one: every id of

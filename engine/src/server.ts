@@ -8,6 +8,8 @@
                    outside.json (x-liner-outside), only while that's on in Settings
   - ANY  /dsh/<token>/…  a ported DeepSeek Harness plugin's own program and pictures, for its
                    frame alone: the token, made for this run, stands in for the app's (dsh-hosts.ts)
+  - POST /promo/v1/chat/completions, GET /promo/v1/models  the promo's model, for OpenCode, with a
+                   key made for this run: sent on to Liner Code's site with the voucher (promo.ts)
   - GET  /*        the built app, when there is one
   Every other request carries the token the shell made (x-liner-token), so other apps and web
   pages on this machine can't drive your agents.
@@ -18,6 +20,7 @@ import { extname, join, normalize } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { PANEL_FRAME, checkConnections, panelFrame, rpcErrorCode, type EngineEvent, type Snapshot } from "../../contracts/src/index.ts";
 import type { Store } from "./store.ts";
+import { PROMO_PATH } from "./promo.ts";
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".woff": "font/woff", ".json": "application/json", ".ico": "image/x-icon" };
 
@@ -31,6 +34,8 @@ type Outside = Surface;
 type Check = { page(token: string): string | null; call(token: string, body: Record<string, unknown>): Promise<unknown>; report(token: string, body: unknown): void; settle(token: string): Promise<void> };
 /** A ported plugin's request: true when it was its to answer. */
 type Dsh = (token: string, rest: string, search: string, req: IncomingMessage, res: ServerResponse) => boolean;
+/** The promo's relay (promo.ts): `rest` is what follows /promo/v1. */
+type Promo = (rest: string, req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
 /** How long the stream gathers lines before one write to each app: a token streamed is an event, and twenty sessions streaming are a thousand a second. */
 export const BATCH_MS = 16;
@@ -38,7 +43,7 @@ export const BATCH_MS = 16;
 export const BEHIND_BYTES = 4 * 1024 * 1024;
 
 /** `alone`: the last app's event stream closed, so no window is open to let go of what it watched (a reload never says off). */
-export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; /** Whether a key is one of ours, asked before a call's body is read: a caller without one isn't worth 64 MB of reading. Unset: the call itself says. */ knows?: { surface(key: string): boolean; outside(key: string): boolean }; check?: Check; dsh?: Dsh; alone?: () => void }) {
+export function startServer(o: { store: Store; api: Api; snapshot: () => Promise<Snapshot>; token: string; port: number; ui?: string; hooks?: Hooks; surface?: Surface; outside?: Outside; /** Whether a key is one of ours, asked before a call's body is read: a caller without one isn't worth 64 MB of reading. Unset: the call itself says. */ knows?: { surface(key: string): boolean; outside(key: string): boolean }; check?: Check; dsh?: Dsh; promo?: Promo; alone?: () => void }) {
   const { store, api, token } = o;
   const clients = new Set<ServerResponse>();
   /** Clients whose snapshot is being taken: what's sent meanwhile waits, numbered, until it's written. */
@@ -232,6 +237,8 @@ export function startServer(o: { store: Store; api: Api; snapshot: () => Promise
       res.writeHead(ok ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify({ ok }));
       return;
     }
+    // The promo's model, for OpenCode: its key, this run's, is checked before anything is read (promo.ts).
+    if (o.promo && (url.pathname === PROMO_PATH || url.pathname.startsWith(`${PROMO_PATH}/`))) return o.promo(url.pathname.slice(PROMO_PATH.length), req, res);
     // A ported DeepSeek Harness plugin's frame reaching its own program or pictures, by its token.
     const dsh = /^\/dsh\/([a-f0-9]{32})\/(.*)$/.exec(url.pathname);
     if (dsh && o.dsh) {

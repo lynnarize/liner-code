@@ -8368,6 +8368,12 @@ span.lc-sb-name {
   align-self: center;
   height: 20px;
 }
+/* A row that is finished and read, or not started, shows no mark, as Capy's do: nothing waits on you there, and a grey
+   diamond on every such row was noise. The time on its second line says when; the title takes the room (2026-11-26).
+   Working, Needs you, finished and not opened (blue), a problem and a pull request's states keep theirs. */
+.lc-sl-row[data-compact] .lc-sl-mark:has(> .lc-mk:is([data-s="done"], [data-s="new"])) {
+  display: none;
+}
 .lc-sl-row[data-compact] .lc-sl-l2 {
   grid-column: 1 / -1;
   gap: 6px;

@@ -253,7 +253,7 @@ const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "t
 type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; mcp?: LinerMcp; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
-  syncProviders(store.settings, runtime.keys);
+  syncProviders(store.settings, runtime.keys, runtime.promo);
   let detected: ProviderInfo[] = [];
   // Model ids you added go after the tool's own. With no effort levels: the tool doesn't list them, so it hasn't said which
   // they take, and another model's would be a guess (levels differ by model). Unless the tool showed its levels are the same
@@ -925,13 +925,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         agent = { id: slugFor(p.label || command[0].split("/").pop() || "agent", taken), label: p.label.trim() || (command[0].split("/").pop() ?? "Agent"), command, from: "local" };
       }
       store.setSettings({ addedAgents: [...have.filter((a) => !(agent.registryId && a.registryId === agent.registryId)), agent] });
-      syncProviders(store.settings, runtime.keys);
+      syncProviders(store.settings, runtime.keys, runtime.promo);
       await detect(true);
       return agent;
     },
     "acp.remove": async ({ id }) => {
       const settings = store.setSettings({ addedAgents: (store.settings.addedAgents ?? []).filter((a) => a.id !== id), customModels: (store.settings.customModels ?? []).filter((c) => c.provider !== `acp.${id}`) });
-      syncProviders(settings, runtime.keys);
+      syncProviders(settings, runtime.keys, runtime.promo);
       await detect();
       return settings;
     },
@@ -1887,7 +1887,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       } else runtime.keys.delete(endpointKey(VOUCHER.id));
       store.emit({ type: "keys", keys: keyList() });
       const settings = store.setSettings({ voucher: Boolean(k) });
-      syncProviders(settings, runtime.keys);
+      syncProviders(settings, runtime.keys, runtime.promo);
       void detect();
       return settings;
     },
@@ -1943,7 +1943,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (patch.outside !== undefined || patch.mcpReach !== undefined || patch.mcpOwnUrl !== undefined || patch.mcpStdioLevel !== undefined) void x.mcp?.apply().catch((e) => console.error("[mcp]", e));
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
       if (patch.accounts || patch.endpoints) {
-        syncProviders(settings, runtime.keys);
+        syncProviders(settings, runtime.keys, runtime.promo);
         void detect();
       } else if (patch.customModels) publish();
       // Turned on: it looks now rather than in six hours.

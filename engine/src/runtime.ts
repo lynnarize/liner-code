@@ -2664,10 +2664,13 @@ export class Runtime {
     const line = before.then(() => mine);
     this.briefLine.set(threadId, line);
     // Waiting in line ends when the time this call has left gets too short for a brief (BRIEF_MIN_MS): then none starts.
+    // The timer ending the wait says so itself: Node's timers can fire a millisecond before Date.now has reached their
+    // time, and the clock alone would then read a little over BRIEF_MIN_MS left and start a brief beside the one ahead.
     let late: NodeJS.Timeout | undefined;
+    let timedOut = false;
     try {
       if (waits) row.paint({ state: "running", now: "Waiting for the brief before this one" }, true);
-      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true })), new Promise((r) => (late = setTimeout(r, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true })), new Promise((r) => (late = setTimeout(() => ((timedOut = true), r(undefined)), Math.max(0, by - this.briefMinMs - Date.now()))))]);
       // The sidekick may have been taken off the session while this brief waited (runBrief runs the one it has now).
       const now = this.store.threads.find((x) => x.id === threadId);
       if (!now?.sidekick || !this.pairOf(now)) {
@@ -2675,7 +2678,7 @@ export class Runtime {
         return { text: "This session has no sidekick now (it was taken off while this brief waited), so nothing was done. Do it yourself.", isError: true };
       }
       const left = by - Date.now();
-      if (left < this.briefMinMs && !stop.signal.aborted) {
+      if ((timedOut || left < this.briefMinMs) && !stop.signal.aborted) {
         row.paint({ name: "Sidekick", task: taskOf(brief), brief, model: now.sidekick, state: "stopped", now: undefined, report: "No time was left for it.", files: [] }, true, "failed");
         return { text: "Your tool gives up on a call to Liner Code's tools sooner than this brief could run (or the briefs before it used that time up), so the sidekick didn't start on it: nothing was done. Do it yourself, or call it again with a smaller brief.", isError: true };
       }
@@ -2988,7 +2991,9 @@ export class Runtime {
     let releaseRead: (() => void) | null = null;
     let releaseWrite = () => {};
     let writeLine: Promise<void> | undefined;
+    // As in delegate: the timer ending a writer's wait in line says so, since the clock can read a little behind it.
     let late: NodeJS.Timeout | undefined;
+    let timedOut = false;
     try {
       if (mode === "read") {
         releaseRead = await this.acquireSubagentSlot(threadId, stop.signal, by - this.briefMinMs, () => row.paint({ state: "running", now: "Waiting for a subagent slot" }, true));
@@ -3007,10 +3012,10 @@ export class Runtime {
         writeLine = before.then(() => mine);
         this.briefLine.set(threadId, writeLine);
         if (waits) row.paint({ state: "running", now: "Waiting for the current writer to finish" }, true);
-        if (!stop.signal.aborted) await Promise.race([before, new Promise((resolve) => stop.signal.addEventListener("abort", resolve, { once: true })), new Promise((resolve) => (late = setTimeout(resolve, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+        if (!stop.signal.aborted) await Promise.race([before, new Promise((resolve) => stop.signal.addEventListener("abort", resolve, { once: true })), new Promise((resolve) => (late = setTimeout(() => ((timedOut = true), resolve(undefined)), Math.max(0, by - this.briefMinMs - Date.now()))))]);
       }
       const left = by - Date.now();
-      if (left < this.briefMinMs && !stop.signal.aborted) {
+      if ((timedOut || left < this.briefMinMs) && !stop.signal.aborted) {
         row.paint({ name: "Subagent", task: subagentTask(title, prompt), brief: prompt, model: modelRef, state: "stopped", now: undefined, report: "No time was left for it.", ...(mode === "write" ? { files: [] } : {}) }, true, "failed");
         return { text: "Your tool gives up on a call to Liner Code's tools sooner than this subagent could run, so it didn't start: nothing was done.", isError: true };
       }
@@ -3859,9 +3864,12 @@ export class Runtime {
       const tool = this.providerInfo.find((p) => p.id === t.limit?.provider)?.label ?? t.limit?.provider ?? "The tool";
       this.store.patchThread(t.id, { status: "idle", limit: undefined });
       this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: t.turns, at: now, text: `${tool}'s usage window reopened, so this session carries on by itself.` });
-      // If queued messages are waiting, drain them; otherwise carry on where the turn paused.
+      // If queued messages are waiting, drain them; otherwise carry on where the turn paused. Either way a worktree
+      // session's folder comes back first, and the queue goes when that hold ends, so it doesn't start in a missing folder.
       if (t.queue?.length) {
-        this.drain(t.id);
+        void this.hold(t.id, async () => {
+          await this.worktreeBack?.(t.id).catch(() => {});
+        }).catch(() => {});
       } else {
         void this.hold(t.id, async () => {
           await this.worktreeBack?.(t.id).catch(() => {});

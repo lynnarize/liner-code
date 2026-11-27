@@ -98,7 +98,7 @@ export function defaultDeps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
         // Mac): killing the script leaves the real one holding the pipes, so "close" never comes. It runs in a group of
         // its own, the whole group is killed when the time is up, and an exit is an end even while a pipe stays open.
         const group = platform !== "win32";
-        const p = nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], detached: group });
+        const p = nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], detached: group, windowsHide: true });
         let stdout = "";
         let stderr = "";
         let done = false;
@@ -124,7 +124,7 @@ export function defaultDeps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
         // What's still in the pipes comes within a moment of the exit; anything left in the group after that is killed.
         p.on("exit", (code) => void setTimeout(() => done || (kill(), end(code ?? -1)), 200).unref?.());
       }),
-    spawn: (cmd, args) => nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] }),
+    spawn: (cmd, args) => nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }),
     probe: (origin) => probeAddress(origin),
   };
 }
@@ -304,7 +304,15 @@ export class Tunnel {
     this.mark(gen, "free", { state: "ok" });
     this.mark(gen, "started", { state: "run" });
     const r = await this.deps.run(bin, ["funnel", "--bg", String(port)], 30_000);
-    if (gen !== this.gen) return;
+    if (gen !== this.gen) {
+      // A stop that came while --bg ran found nothing of Liner's to take down, so the Funnel that came up is taken down here,
+      // or it would stay public on :443. A newer Tailscale start that is up, or still starting, serves the same port and takes
+      // it down itself when it stops.
+      if (r.code !== 0 || this.tailscale) return;
+      if (this.kind === "tailscale" && this.now.state === "starting") return void (this.tailscale = bin);
+      await this.deps.run(bin, ["funnel", "--https=443", "off"], 10_000).catch(() => null);
+      return;
+    }
     if (r.code !== 0) {
       // A page Tailscale asks you to visit (turning Funnel or HTTPS on) is given as the way out.
       const link = TAILSCALE_PAGE.exec(r.stdout + "\n" + r.stderr)?.[0];

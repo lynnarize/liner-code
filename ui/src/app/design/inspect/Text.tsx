@@ -6,6 +6,7 @@
 import { colourToken, typeToken, written } from "../lean";
 import { Num, OffLean, Row, Section, Select, Stops, Swatches } from "./controls";
 import { colour, familyOf, px, splitTop } from "./css";
+import { nearestSize } from "./values";
 import type { Style, Target } from "./target";
 
 const WEIGHTS = ["100", "200", "300", "400", "500", "600", "700", "800", "900"].map((w) => ({ value: w, label: w }));
@@ -38,9 +39,9 @@ export function TextInside({ t }: { t: Target }) {
     if (s.line) style["line-height"] = s.line;
     t.set(style, "type");
   };
-  const sizes = styles.map((s) => s.size).filter((n): n is number => n !== undefined);
-  const off = styles.length && size !== undefined && !token && !sizes.includes(size);
-  const near = off ? styles.filter((s) => s.size !== undefined).reduce((a, b) => (Math.abs(b.size! - size!) < Math.abs(a.size! - size!) ? b : a)) : undefined;
+  // Off the lean when no style has its size; a lean whose styles have families only has no size to be off.
+  const near = token ? undefined : nearestSize(styles, size);
+  const off = near !== undefined;
   const many = styles.length > 5;
 
   return (

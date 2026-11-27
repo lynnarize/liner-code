@@ -175,3 +175,24 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   crowd the project out of the tree.
 - The right panel opened with nothing in it shows a start page rather than opening Changes by itself: Changes, Files,
   the Browser, a side chat and a terminal with what each holds now, what this session has, and your apps.
+- Turning Liner MCP off while Tailscale Funnel is still starting takes Funnel down once it comes up, instead of leaving
+  your address public on port 443.
+- A Liner Security scan card left open no longer turns off ⌘N, ⌘B, ⌘1 to 9 and the app's other shortcuts.
+- With Settings open over Liner Design or the Wall, Esc closes Settings, and Delete, the tool letters and the number keys
+  no longer reach the layers or sessions under it.
+- Selecting a text layer in a project whose DESIGN.md names fonts without sizes no longer breaks the inspector.
+- In a project where one OpenCode session uses an add-on, another session there with that add-on switched off (or a Lean
+  or sealed one) can't call its tools, and the add-on leaves OpenCode when the last session using it closes.
+- Switching an OpenCode session back to Default puts it on OpenCode's default model rather than the one it was on.
+- Fix them on a scan that covers several findings moves every one of them along (working, ready, fixed once merged), not
+  only the first, and pressing it again after a rescan briefs a new session with only what nothing is fixing yet.
+- Liner Security's free checks in a folder that isn't a git repository no longer say a .env file is tracked in git.
+- A long Swarm board post still notifies the members named at its end, and says it was clipped; a model swap on a team
+  that has finished says it takes effect when the team runs again instead of "Waking".
+- A queued message on a worktree session that waited out a usage limit brings the worktree back before it runs.
+- A second Claude Code account's session offers Compact in Session details, as the first account's does.
+- A broken liner-code:// link is ignored instead of showing an error from the app, and on Windows no longer stops
+  Liner Code starting when it opens from one.
+- The Files tree keeps a row you can reach with Tab after a refresh takes away the one you were on, and Refresh in Session
+  details stops spinning once its check is done.
+- A project picture whose file name has a space in it shows as a background in Liner Design.

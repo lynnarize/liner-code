@@ -27,6 +27,7 @@ import { PaneButton, PaneRow } from "../Pane";
 import { SendBox } from "../Composer";
 import { frames } from "./bridge";
 import { Row as IRow, Section } from "./inspect/controls";
+import { cssUrl } from "./inspect/values";
 import { STYLE_TOP } from "./inspect/slots";
 import type { Target } from "./inspect/target";
 import { D, insert } from "./Rail";
@@ -171,7 +172,7 @@ async function placeIn(frame: string, node: { id: string; tag: string }, src: st
     frame,
     node.tag.toLowerCase() === "img"
       ? [{ id: node.id, attr: { src: url, ...marks } }]
-      : [{ id: node.id, style: { "background-image": `url(${url})`, "background-size": "cover", "background-position": "center" } }, { id: node.id, attr: marks }],
+      : [{ id: node.id, style: { "background-image": cssUrl(url), "background-size": "cover", "background-position": "center" } }, { id: node.id, attr: marks }],
   );
 }
 

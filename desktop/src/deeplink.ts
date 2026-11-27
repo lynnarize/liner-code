@@ -20,12 +20,21 @@ export function parseDeepLink(raw: string): LaunchTarget | null {
     return null;
   }
   const host = u.hostname.toLowerCase();
-  const segs = u.pathname.split("/").filter(Boolean).map((s) => decodeURIComponent(s));
+  // A broken percent code (%ZZ) makes decodeURIComponent throw, and a throw here reaches the open-url handler and, on a
+  // cold launch from a link, stops the rest of startup.
+  let segs: string[];
+  try {
+    segs = u.pathname.split("/").filter(Boolean).map((s) => decodeURIComponent(s));
+  } catch {
+    return null;
+  }
   if ((host === "thread" || host === "session") && segs.length === 1 && segs[0] && /^[\w-]{1,128}$/.test(segs[0])) {
     return { kind: "thread", id: segs[0] };
   }
   if (host === "open" || host === "project") {
     const p = u.searchParams.get("path")?.trim();
+    // The check on the raw link misses a .. spelled half in percent codes (%2e.), so look again once it is decoded.
+    if (p && p.split(/[\\/]/).includes("..")) return null;
     if (p) return { kind: "project", path: p, link: true };
   }
   return null;

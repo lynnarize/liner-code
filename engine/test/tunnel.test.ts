@@ -281,7 +281,7 @@ test("A new quick tunnel's name is tried a few times before it's said not to be 
 
 test("Stop while Funnel is still starting brings the tunnel down, says the step it stopped at, and a late answer changes nothing", async () => {
   let release!: () => void;
-  const { deps } = tailscale();
+  const { deps, ran } = tailscale();
   const run = deps.run;
   const t = new Tunnel({
     ...deps,
@@ -298,9 +298,46 @@ test("Stop while Funnel is still starting brings the tunnel down, says the step 
   const started = t.checks.find((c) => c.id === "started")!;
   assert.equal(started.state, "bad");
   assert.equal(started.why, "You stopped it.");
+  assert.equal(ran.includes("funnel --https=443 off"), false, "nothing was up yet to take down");
   release();
   await starting;
   assert.equal(t.now.state, "down", "the answer that came after Stop doesn't bring it up");
+  assert.equal(ran.filter((r) => r === "funnel --https=443 off").length, 1, "the Funnel that came up after Stop is taken down, not left public on :443");
+});
+
+test("A Funnel that comes up after a newer Tailscale start is up is left to that start", async () => {
+  let release!: () => void;
+  let held = false;
+  const { deps, ran } = tailscale();
+  const run = deps.run;
+  const t = new Tunnel({
+    ...deps,
+    run: async (c, args, ms) => {
+      if (args.join(" ") === "funnel --bg 7318" && !held) {
+        held = true;
+        await new Promise<void>((r) => (release = r));
+      }
+      return run(c, args, ms);
+    },
+  });
+  const first = t.start("tailscale", 7318);
+  while (t.checks.find((c) => c.id === "started")?.state !== "run") await new Promise((r) => setImmediate(r));
+  await t.start("tailscale", 7318);
+  assert.equal(t.now.state, "up");
+  release();
+  await first;
+  assert.equal(t.now.state, "up");
+  assert.equal(ran.includes("funnel --https=443 off"), false, "the newer start's Funnel stays up");
+  await t.stop();
+  assert.equal(ran.filter((r) => r === "funnel --https=443 off").length, 1);
+});
+
+test("Every tool the tunnel starts is started without a window of its own on Windows", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/tunnel.ts", import.meta.url), "utf8");
+  const calls = src.split("nodeSpawn(").slice(1).map((c) => c.split("\n")[0]!);
+  assert.equal(calls.length, 2);
+  for (const c of calls) assert.match(c, /windowsHide: true/);
 });
 
 test("Trying an address knows Liner's own answer from another's, a gateway's error, and a name that isn't found", async () => {

@@ -7,7 +7,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, CodedError, endpointKey, isPair, READS_GO_KEY, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import { castOf, CodedError, endpointKey, familyOf, isPair, READS_GO_KEY, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage, keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
@@ -1329,7 +1329,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         access: s.access,
         live: s.live,
         context: s.context ? { ...s.context, measured: true } : last,
-        compact: s.provider === "claude" || s.provider === "codex",
+        // Any Claude Code account compacts on request (a second one is "claude.work"); another tool where its look says it does, and Codex before that look.
+        compact: familyOf(s.provider) === "claude" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
       };
     },
     "outside.info": () => {

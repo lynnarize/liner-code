@@ -541,10 +541,12 @@ export async function fixTarget(sec: Security, p: { scanId: string; agent?: stri
   const rec = sec.scan(p.scanId);
   const found = foundBy(rec.id, sec.findings(rec.projectId));
   if (!found.length) throw new Error("This scan has nothing open to fix.");
-  // A fix of these already at work (a second press, another window) answers rather than a second worktree.
-  const had = found.map((f) => f.fix).find((x) => x && (x.state === "working" || x.state === "ready"));
-  const going = had ? sec.store.threads.find((t) => t.id === had.threadId && !t.archived && t.security?.kind === "fix") : undefined;
-  if (going && found.every((f) => f.fix?.threadId === going.id)) return going;
+  // A fix already at work on some of these (a second press, another window, a rescan that met them again) keeps them; a new
+  // worktree is briefed with only the rest, so two sessions never fix the same finding. All of them at work: that one answers.
+  const liveOf = (f: SecurityFinding) => (f.fix && (f.fix.state === "working" || f.fix.state === "ready") ? sec.store.threads.find((t) => t.id === f.fix!.threadId && !t.archived && t.security?.kind === "fix") : undefined);
+  const going = found.map(liveOf).find(Boolean);
+  const rest = found.filter((f) => !liveOf(f));
+  if (going && !rest.length) return going;
   const project = sec.project(rec.projectId);
   if (!project.git) throw new Error("A fix works in a worktree of its own, and this folder isn't a git repository.");
   const demo = demoProject(sec, project.id);
@@ -552,11 +554,11 @@ export async function fixTarget(sec: Security, p: { scanId: string; agent?: stri
   const agent = str(p.agent, 200) ?? (demo ? "@demo:demo" : ownDefault(sec, project.id) || undefined);
   const access = sec.store.settings.defaultAccess === "ask" ? "ask" : "edits";
   const name = rec.target ? targetName(rec.target) : "the scan";
-  const t = await sec.host.call("thread.create", { projectId: project.id, ...(agent ? { agent } : {}), access, worktree: true, ...(base ? { base } : {}), title: `Fix ${name}'s findings`, security: { kind: "fix", finding: found[0].id } });
+  const t = await sec.host.call("thread.create", { projectId: project.id, ...(agent ? { agent } : {}), access, worktree: true, ...(base ? { base } : {}), title: `Fix ${name}'s findings`, security: { kind: "fix", finding: rest[0].id } });
   const at = Date.now();
-  for (const f of found) if (!f.fix || f.fix.state === "stopped" || f.fix.state === "merged") sec.update(f.id, (x) => ({ ...x, fix: { threadId: t.id, state: "working", at }, activity: [...x.activity, { at, kind: "fix-started", text: "A fix started, in a worktree of its own", by: "you" }] }), true);
+  for (const f of rest) sec.update(f.id, (x) => ({ ...x, fix: { threadId: t.id, state: "working", at }, activity: [...x.activity, { at, kind: "fix-started", text: "A fix started, in a worktree of its own", by: "you" }] }), true);
   sec.changed(["findings"], project.id);
-  await sec.host.call("thread.send", { id: t.id, text: fixTargetPrompt(project.name, rec, found, base), shown: { text: `Fix what the scan of ${name} found` } });
+  await sec.host.call("thread.send", { id: t.id, text: fixTargetPrompt(project.name, rec, rest, base), shown: { text: `Fix what the scan of ${name} found` } });
   return sec.store.thread(t.id);
 }
 

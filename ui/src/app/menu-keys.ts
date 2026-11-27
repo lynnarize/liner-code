@@ -34,3 +34,12 @@ export const MODAL = "dialog[open], .l-pop.lc-layer, .lc-ao-sheet, [role='dialog
   the element alone missed a card in a surface the panel had hidden, and the app's keys stayed off until you went back.
 */
 export const anyModal = (found: Iterable<{ closest: (selector: string) => unknown; checkVisibility?: () => boolean }>) => [...found].some((el) => !el.closest(".lc-br-ask") && el.checkVisibility?.() !== false);
+/** The Settings sheet while it is up (Settings.tsx): one on its way out says data-closing. */
+const SHEET = ".lc-st-pop:not([data-closing]) .lc-st-sheet";
+/**
+  Whether a key belongs to the Settings sheet rather than the view under it (Liner Design's canvas, the Wall): pressed
+  inside it, or pressed anywhere while it is open, focus on the page under it included. Settings is left out of MODAL so
+  the app's own shortcuts work over it, but a view's keys (Esc, Delete, the tool letters, 1 to 9) would deselect or delete
+  layers, or leave the Wall, where you meant to close Settings. A sheet on its way out (data-closing) has let go already.
+*/
+export const settingsOver = (target: unknown, doc: { querySelector: (selector: string) => unknown }) => Boolean((target as { closest?: (selector: string) => unknown } | null)?.closest?.(SHEET) || doc.querySelector(SHEET));

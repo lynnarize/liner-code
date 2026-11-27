@@ -317,6 +317,8 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onPr, on
   }, []);
   // Only the latest ask is shown: one sent as a turn started can answer after the one sent as it ended.
   const asked = useRef(0);
+  // The ask Look again started: its spinner stops when that ask ends, though an ask from a turn may come after it.
+  const spin = useRef(0);
   /*
     What listens and how full the context is: asked when the card shows, and again as a turn starts or ends. Only what this
     session started is listed: a server another session, a terminal or another tool runs in the same folder isn't this
@@ -325,11 +327,11 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onPr, on
   */
   const look = (again = false) => {
     const n = ++asked.current;
-    if (again) setLooking(true);
+    if (again) (spin.current = n), setLooking(true);
     void rpc("ports.list", { threadId: thread.id }).then((l) => n === asked.current && setServers(l.filter((x) => x.owner === "session")), () => {});
     const reads: Promise<unknown>[] = [rpc("thread.info", { id: thread.id }).then((i) => n === asked.current && setInfo(i), () => {})];
     if (again && thread.pr) reads.push(rpc("pr.status", { threadId: thread.id }).catch(() => {}));
-    if (again) void Promise.all(reads).finally(() => n === asked.current && setLooking(false));
+    if (again) void Promise.all(reads).finally(() => n === spin.current && setLooking(false));
   };
   useEffect(() => look(), [thread.id, thread.turns, running]);
   const editor = editors?.find((e) => e.id === saved("lc:editor")) ?? editors?.find((e) => e.kind === "editor") ?? editors?.[0];

@@ -616,7 +616,7 @@ export function App() {
       if (document.querySelector("dialog[open], .lc-st-side")) return;
       const t = e.target instanceof Element ? e.target : null;
       if (t instanceof HTMLTextAreaElement && t.closest(".lc-compose")) return void (e.preventDefault(), t.blur());
-      if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog']")) return;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog'], .lst-card")) return;
       e.preventDefault();
       setView({ kind: "wall" });
     };

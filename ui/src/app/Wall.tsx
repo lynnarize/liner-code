@@ -29,6 +29,7 @@ import { PaneButton, PaneNote, PaneStatus } from "./Pane";
 import { CardLines } from "./CardLines";
 import * as os from "./os";
 import { wordRead, wordWrite } from "./kept";
+import { settingsOver } from "./menu-keys";
 import type { MarkState } from "./session-state";
 import "./wall.css";
 
@@ -398,7 +399,8 @@ export function Wall({ sidebar, onSidebar, onOpen, onBack, onNew }: Props) {
   live.current = { ids, pick, cols: shape.cols, open, onBack };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing || document.querySelector("dialog[open]")) return;
+      // Settings open over the Wall has its keys: Esc closes it rather than leaving the Wall, and 1 to 9 and the arrows pick nothing under it.
+      if (e.defaultPrevented || e.isComposing || document.querySelector("dialog[open]") || settingsOver(e.target, document)) return;
       const { ids, pick, cols, open, onBack } = live.current;
       const t = e.target instanceof HTMLElement ? e.target : null;
       if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm")) {

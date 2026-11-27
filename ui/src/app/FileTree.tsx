@@ -7,7 +7,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { feedback } from "@liner/lib/feedback";
 import "@liner/components/tree-view/tree-view.css";
-import { TREE_ROWS, treeRows, type TreeNode } from "./treeRows";
+import { focusOf, TREE_ROWS, treeRows, type TreeNode } from "./treeRows";
 
 const FOLDER = (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden>
@@ -31,6 +31,7 @@ export function FileTree({ nodes, label, defaultExpanded = [], selected, onSelec
   // The rows a person can see, in order: what is drawn, and what the keyboard moves through.
   const { rows, more } = useMemo(() => treeRows(nodes, open, limit), [nodes, open, limit]);
   const shown = useMemo(() => new Set(rows.map((r) => r.node.id)), [rows]);
+  const at = focusOf(rows, focus);
 
   const toggle = (id: string, to?: boolean) => {
     setOpen((s) => {
@@ -48,7 +49,7 @@ export function FileTree({ nodes, label, defaultExpanded = [], selected, onSelec
   };
 
   const onKey = (e: KeyboardEvent) => {
-    const i = rows.findIndex((v) => v.node.id === focus);
+    const i = rows.findIndex((v) => v.node.id === at);
     const cur = rows[i];
     if (!cur) return;
     const has = !!cur.node.children?.length;
@@ -56,7 +57,8 @@ export function FileTree({ nodes, label, defaultExpanded = [], selected, onSelec
     else if (e.key === "ArrowUp") rows[i - 1] && move(rows[i - 1].node.id);
     else if (e.key === "ArrowRight") {
       if (has && !open.has(cur.node.id)) toggle(cur.node.id, true);
-      else if (has) move(cur.node.children![0].id);
+      // Its first child is the next row, when that row is drawn: at the foot of the rows drawn it waits for Show more.
+      else if (has && rows[i + 1]?.parent === cur.node.id) move(rows[i + 1].node.id);
     } else if (e.key === "ArrowLeft") {
       if (has && open.has(cur.node.id)) toggle(cur.node.id, false);
       else if (cur.parent) move(cur.parent);
@@ -87,7 +89,7 @@ export function FileTree({ nodes, label, defaultExpanded = [], selected, onSelec
             className="l-tree__row"
             data-id={n.id}
             data-selected={selected === n.id || undefined}
-            tabIndex={focus === n.id ? 0 : -1}
+            tabIndex={at === n.id ? 0 : -1}
             style={{ ["--level" as string]: level - 1 }}
             onFocus={() => setFocus(n.id)}
             onClick={() => {

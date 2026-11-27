@@ -244,9 +244,10 @@ function apply(e: Numbered) {
       for (const id of dropped) if (!there.has(id)) dropped.delete(id);
       const kept = Object.fromEntries(Object.entries(state.items).filter(([id]) => there.has(id)));
       // A restarted engine numbers its events from 0 again; each timeline gets a fresh cursor when it's fetched again below.
-      // Until then one has none, so opening it fetches it (loadItems).
+      // Until then one has none, so opening it fetches it (loadItems). The teams held go too: useSwarm asks for one it holds
+      // nothing for, and a team kept from before the gap would show as it was then.
       cursor.clear();
-      set({ items: kept, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [], addons: s.addons ?? [], addonsOff: s.addonsOff ?? false });
+      set({ items: kept, swarms: {}, connected: true, ready: true, version: s.version, home: s.home, projects: s.projects, threads: s.threads.filter((t) => !t.sideOf), sides: s.threads.filter((t) => t.sideOf), agents: s.agents, providers: s.providers, settings: s.settings, keys: s.keys, groups: s.groups ?? [], routines: s.routines ?? [], runs: [...(s.runs ?? [])].sort((a, b) => b.at - a.at), ...(s.updates ? { updates: s.updates } : {}), limits: s.limits ?? [], addons: s.addons ?? [], addonsOff: s.addonsOff ?? false });
       // What's on screen at once; the rest after it, one at a time, newest first. One asked for that never came and that nobody shows waits until something shows it (`dropped`).
       for (const id of open) if (held.has(id)) void loadItems(id, true).catch(() => {});
       // A fetch still out from before the gap would land a read from then as current, with its old cursor, and the cursor

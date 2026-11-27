@@ -41,6 +41,7 @@ import "./design-face.css";
 import { LeanLayer } from "./LeanPage";
 import { isLeanOpen } from "./Skills";
 import { useReadWhileShown } from "../unread";
+import { settingsOver } from "../menu-keys";
 
 // The face's big parts each read the store for themselves: the face drawn again (a tab shown, its loading) doesn't draw them again with it.
 const RailPart = memo(Rail);
@@ -411,7 +412,8 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.isComposing || typing(e.target) || isLeanOpen() || document.querySelector("dialog[open], .lc-pop-panel")) return;
+      // Settings open over the canvas has its keys: Esc closes it, and Delete or a tool letter never reaches a layer under it.
+      if (e.isComposing || typing(e.target) || isLeanOpen() || document.querySelector("dialog[open], .lc-pop-panel") || settingsOver(e.target, document)) return;
       const s = getDesign();
       const done = () => (e.preventDefault(), e.stopPropagation());
       if (matches(e, "mod+z")) return done(), design.undo();

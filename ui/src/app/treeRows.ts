@@ -28,3 +28,10 @@ export function treeRows(nodes: TreeNode[], open: ReadonlySet<string>, limit = I
   walk(nodes, 1, null);
   return { rows, more };
 }
+
+/**
+  The row that takes the keyboard (tabIndex 0, and where the arrow keys start): the one last focused while it is still
+  drawn, else the first. A refresh that took the focused row away, or shut the folder over it, left no row to Tab to
+  and keys that did nothing until a click.
+*/
+export const focusOf = (rows: TreeRow[], focus: string | undefined) => (focus !== undefined && rows.some((r) => r.node.id === focus) ? focus : rows[0]?.node.id);

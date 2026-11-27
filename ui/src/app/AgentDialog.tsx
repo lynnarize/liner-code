@@ -16,6 +16,7 @@ import { EffortPick, ModelPicker, usePickerWide } from "./Models";
 import { PICKER_NARROW, PICKER_WIDE, pickerOut } from "./picker";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
+import { closeSheet, openSheet } from "./sheet";
 
 type Preset = { id: Specialty; label: string; note: string; glyph: AgentGlyph; name: string; role: string; effort: Effort; access: Access; prefer: string[]; soul: (n: string) => string };
 
@@ -74,10 +75,11 @@ export function AgentDialog({ open, agent, onClose }: { open: boolean; agent?: A
     setContextFiles(agent?.contextFiles ?? []);
     setTouched(Boolean(agent));
     setError("");
-    ref.current?.showModal();
+    openSheet(ref.current);
   }, [open, agent?.id]);
   useEffect(() => {
-    if (!open) ref.current?.close();
+    // Shut, it fades with its scrim first (sheet.ts), then closes, giving the focus back.
+    if (!open) closeSheet(ref.current);
   }, [open]);
 
   function pickModel(p: Preset) {

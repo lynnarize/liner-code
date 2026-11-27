@@ -103,13 +103,13 @@ const PAGE_LINES: Record<SettingsPage, string> = {
   about: "Liner Code's version and updates, the agent tools' updates, and where its data lives.",
 };
 
-type Props = { initial?: string; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void };
+type Props = { initial?: string; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void; /** Shut and on its way out (App keeps it for its fade, as a dialog's): it takes no presses and has given the keyboard back. */ closing?: boolean };
 
 /** What can take the keyboard inside the sheet, for keeping Tab in it. */
 const TABBABLE = "a[href], button:not(:disabled), input:not(:disabled):not([type='hidden']), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1']), [contenteditable='true']";
 
 /** Memoised: App hands it callbacks of one identity, so a session's news elsewhere doesn't redraw the page you're reading. */
-export const Settings = memo(function Settings({ initial = "general", onClose, onAgent, onOpen }: Props) {
+export const Settings = memo(function Settings({ initial = "general", onClose, onAgent, onOpen, closing: leaving = false }: Props) {
   // The place asked for last (App writes it for lc:open-settings), by its own id or an old one (settings/places.ts MOVED).
   const [ask] = useState(() => placeOf(wordRead(sessionStorage, "lc:settings", [...PAGE_IDS, ...Object.keys(MOVED)], initial)));
   const [page, setPage] = useState<SettingsPage>(ask.page);
@@ -134,13 +134,23 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
   useEffect(() => wordWrite(sessionStorage, "lc:settings", page), [page]);
   // The sheet takes the keyboard as it opens (its page's heading, for a screen reader), and gives it back, when it
   // closes, to what had it: the button or the field you opened Settings from.
+  // It gives it back as it starts to leave, not when its fade ends. What had it is read as the sheet is first drawn: by the
+  // time an effect runs, the app under it has gone inert and the browser has already moved the focus off it to the page.
+  const [was] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const giveBack = useRef(() => {});
   useEffect(() => {
-    const was = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     heading.current?.focus({ preventScroll: true });
-    return () => {
+    let given = false;
+    giveBack.current = () => {
+      if (given) return;
+      given = true;
       if (was?.isConnected && !was.closest("[inert]")) was.focus({ preventScroll: true });
     };
+    return () => giveBack.current();
   }, []);
+  useEffect(() => {
+    if (leaving) giveBack.current();
+  }, [leaving]);
   // Asked for a place while already open (Check for Updates…, a notice's Details); the place's heading takes the focus.
   useEffect(() => {
     const on = (e: Event) => {
@@ -304,6 +314,8 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
   return (
     <div
       className="lc-st-pop"
+      data-closing={leaving || undefined}
+      inert={leaving || undefined}
       onPointerDown={(e) => (downOnDim.current = e.target === e.currentTarget)}
       onClick={(e) => e.target === e.currentTarget && downOnDim.current && onClose()}
     >

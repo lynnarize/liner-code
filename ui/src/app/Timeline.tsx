@@ -23,7 +23,8 @@ import { commandOf as askCommand, headlineOf } from "./Ask";
 import { ApprovalCard } from "@liner/pro/approval-card/approval-card";
 import { Segmented } from "@liner/components/segmented/segmented";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { agentOf, clock, designPart, duration, effortsFor, isModelAgent, markOf, mergeFiles, modelLabel, threadModel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, useSteady } from "./ui";
+import { agentOf, clock, designPart, duration, effortsFor, isModelAgent, markOf, mergeFiles, modelLabel, threadModel, money, onClaude, planEnd, planStatus, plural, sumLines, turnsOf, type PlanEnd } from "./model";import { Badge, Disc, EnvLine, Lines, ModelTag, Num, Pop, Row as PickRow, usePresence, useSteady } from "./ui";
+import { MOTION } from "./motion";
 import { agentName, CrewCard, Fanout, isSidekick, useCardFold } from "./Crew";
 import { firstSentence, lineCount, planCard, planCount, planLine, reportHead, type Report } from "./chat-cards";
 import { toast } from "@liner/components/toast/toast";
@@ -1294,6 +1295,8 @@ function StepList({ rows, asks, cp, live, onReview }: { rows: Row[]; asks: Map<s
 */
 function Summary({ threadId, rows, sent, asks, cp, lead, cost, onReview }: TrailIn & { threadId: string; asks: Map<string, Ask>; /** "Worked for 11.4s", "Stopped after 4.2s". */ lead?: string; /** What the turn cost, at the line's end. */ cost?: number; onReview?: (checkpointId: string, path?: string) => void }) {
   const [open, setOpen] = useState(false);
+  // Its steps stay while the fold shuts over them (app.css .lc-fold), then go: kept mounted only while they show.
+  const steps = usePresence(open, MOTION.fold);
   const { n, failed, tools } = countOf(rows, sent);
   const has = rows.length > 0;
   // What was done, as small tags at the line's end (board Main): "Read 6 files", "Edited 2". With none to say, the count of steps stays in the words.
@@ -1321,7 +1324,9 @@ function Summary({ threadId, rows, sent, asks, cp, lead, cost, onReview }: Trail
           </span>
         )}
       </button>
-      {open && has && <StepList rows={rows} asks={asks} cp={cp} onReview={onReview} />}
+      <div className="lc-fold">
+        <div>{steps.mounted && has && <StepList rows={rows} asks={asks} cp={cp} onReview={onReview} />}</div>
+      </div>
       <Fanout threadId={threadId} tools={sent} />
     </div>
   );

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { shortcutOf } from "../keymap";
+import { closeSheet, openSheet } from "../sheet";
 import landing from "./intro/landing.jpg";
 import brand from "./intro/brand.jpg";
 import desktop from "./intro/desktop.jpg";
@@ -212,7 +213,7 @@ export function DesignIntro({ agent }: { agent?: string }) {
   useEffect(() => {
     const d = ref.current;
     if (!open || !d) return;
-    if (!d.open) d.showModal();
+    openSheet(d);
     start.current?.focus();
   }, [open]);
 
@@ -235,8 +236,8 @@ export function DesignIntro({ agent }: { agent?: string }) {
   if (!open) return null;
   const close = () => {
     markSeen();
-    ref.current?.close();
-    setOpen(false);
+    // The sheet and its scrim fade first (sheet.ts), then it closes.
+    closeSheet(ref.current, () => setOpen(false));
   };
   const pick = (n: number) => {
     setTab(n);

@@ -1345,15 +1345,16 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--lc-float-shadow);
-  animation: lc-cmd-in 200ms var(--l-ease-out) both;
+  /* A dialog's timing (app.css, .lc-sheet): in over 225ms, a fade and 4px; out over 160 on the same curve, which is as long as Liner keeps it for. */
+  animation: lc-cmd-in var(--lc-sheet-in) var(--lc-ease-even) both;
 }
 .l-root .l-cmd[data-closing] .l-cmd__panel {
-  animation: lc-cmd-out 160ms ease both;
+  animation: lc-cmd-out var(--lc-sheet-out) var(--lc-ease-even) both;
 }
 @keyframes lc-cmd-in {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(-4px);
   }
 }
 @keyframes lc-cmd-out {

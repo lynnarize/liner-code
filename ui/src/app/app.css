@@ -51,6 +51,31 @@
   --lc-text-chat: 14px;
   --lc-line-chat: 22px;
   --lc-features: "calt";
+  /* Motion for what opens and closes (the study after Kimi, approved 2026-11-27): one place for its curves and lengths, the
+     same numbers as motion.ts MOTION. Out of its button and settling (ease-out), into it and quick (ease-in), an even curve
+     for a dialog, and one that starts at once and settles for widths and folds. Exits are shorter than entrances. */
+  --lc-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --lc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --lc-ease-even: cubic-bezier(0.4, 0, 0.2, 1);
+  --lc-ease-settle: cubic-bezier(0.2, 0, 0, 1);
+  --lc-menu-in: 200ms;
+  --lc-menu-out: 140ms;
+  --lc-tip-in: 150ms;
+  --lc-tip-out: 150ms;
+  --lc-sheet-in: 225ms;
+  --lc-sheet-out: 160ms;
+  --lc-card-fade: 120ms;
+  --lc-fold: 240ms;
+  --lc-fold-show: 160ms;
+  --lc-fold-show-after: 60ms;
+  --lc-fold-hide: 120ms;
+  --lc-side-open: 300ms;
+  --lc-side-shut: 240ms;
+  --lc-side-fade: 180ms;
+  --lc-panel-show: 240ms;
+  --lc-panel-show-after: 60ms;
+  --lc-panel-hide: 180ms;
+  --lc-reduced: 100ms;
 }
 /* While a new theme or accent goes on (look.ts), for one style pass. */
 html[data-still] *,
@@ -326,10 +351,13 @@ pre {
   box-sizing: border-box;
   padding: var(--lc-gap) var(--lc-gap) var(--lc-gap) 0;
   background: var(--lc-ground);
-  transition: grid-template-columns 520ms var(--l-spring-smooth);
+  /* With Motion set to Full the sidebar's column opens over 300ms and shuts over 240, on a curve that starts at once and
+     settles (the study after Kimi); Quick keeps its 180 (the Motion section below). */
+  transition: grid-template-columns var(--lc-side-shut) var(--lc-ease-settle);
 }
 .lc-app[data-sidebar] {
   grid-template-columns: var(--lc-side) minmax(0, 1fr);
+  transition-duration: var(--lc-side-open);
 }
 /* The sidebar keeps its width while its column opens and shuts, held to the paper's edge: it
    slides under the window's edge rather than squeezing, so no name re-truncates on the way. */
@@ -339,15 +367,28 @@ pre {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  transition: opacity 320ms var(--l-ease-out);
 }
 .lc-side > .lc-sb {
   flex: none;
   width: var(--lc-side);
 }
-.lc-app:not([data-sidebar]) .lc-side {
+/* Quick: the sidebar fades as a whole as its column goes, as it always has. */
+html[data-motion="quick"] .lc-side {
+  transition: opacity 320ms var(--l-ease-out);
+}
+html[data-motion="quick"] .lc-app:not([data-sidebar]) .lc-side {
   opacity: 0;
   transition-duration: 260ms;
+}
+/* Full: as it shuts, what it holds slides 8px left and fades over 180ms, and comes back the same way (Kimi's nudge). */
+html:not([data-motion="quick"]) .lc-side > .lc-sb {
+  transition:
+    opacity var(--lc-side-fade) ease,
+    transform var(--lc-side-fade) ease;
+}
+html:not([data-motion="quick"]) .lc-app:not([data-sidebar]) .lc-side > .lc-sb {
+  opacity: 0;
+  transform: translateX(-8px);
 }
 .lc-paper {
   position: relative;
@@ -459,8 +500,12 @@ html[data-shell="electron"] body > :not(#root) {
   row stays put. With a session open beside another, only the left one's bar is under the lights.
   Over the whole paper the session header stays the paper's header, so it is the one under the lights.
 */
+/* The room for the traffic lights moves with the sidebar's column, on its curve and at its lengths. */
 html[data-native="mac"] .lc-top {
-  transition: padding 520ms var(--l-spring-smooth);
+  transition: padding var(--lc-side-shut) var(--lc-ease-settle);
+}
+html[data-native="mac"] .lc-app[data-sidebar] .lc-top {
+  transition-duration: var(--lc-side-open);
 }
 html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc-beside .lc-top) {
   --lc-up: clamp(0px, calc(var(--lc-gap) + var(--lc-head) / 2 - var(--lc-lights-y, 28px)), min(6px, var(--lc-lights-x, 70px)));
@@ -925,6 +970,65 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 .l-pop.lc-layer:not([data-ready]) {
   visibility: hidden;
   animation: none;
+}
+/*
+  Menus and pop-ups out of their button and back into it (the study after Kimi, 2026-11-27). In over 200ms, settling: a fade,
+  4px and 96% to rest, no blur, from the point Pop, ContextMenu and SubMenu set as transform-origin (the trigger's centre on
+  the edge the panel hangs from, motion.ts originOf). Out over 140ms, quicker: a fade and 96%, into the same point, through
+  the closing state they keep it mounted in (usePresence); closing, it takes no presses. Opened again while it closes
+  (data-again), it goes back from where it had got to, by the same transition, rather than starting its entrance from
+  nothing. Liner's own sheet loads after this one, so these carry three classes and data-ready to outweigh its l-pop-in.
+*/
+.l-pop.lc-pop-panel.lc-layer[data-ready] {
+  animation: lc-menu-in var(--lc-menu-in) var(--lc-ease-out) backwards;
+  transition:
+    opacity var(--lc-menu-in) var(--lc-ease-out),
+    transform var(--lc-menu-in) var(--lc-ease-out);
+}
+.l-pop.lc-pop-panel.lc-layer[data-ready][data-side="top"] {
+  animation-name: lc-menu-up;
+}
+.l-pop.lc-pop-panel.lc-layer[data-ready][data-side="left"] {
+  animation-name: lc-menu-left;
+}
+.l-pop.lc-pop-panel.lc-layer[data-ready][data-side="right"] {
+  animation-name: lc-menu-right;
+}
+.l-pop.lc-pop-panel.lc-layer[data-ready][data-again] {
+  animation: none;
+}
+.l-pop.lc-pop-panel.lc-layer[data-ready][data-closing] {
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
+  animation: none;
+  transition:
+    opacity var(--lc-menu-out) var(--lc-ease-in),
+    transform var(--lc-menu-out) var(--lc-ease-in);
+}
+@keyframes lc-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+}
+@keyframes lc-menu-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+}
+@keyframes lc-menu-left {
+  from {
+    opacity: 0;
+    transform: translateX(4px) scale(0.96);
+  }
+}
+@keyframes lc-menu-right {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.96);
+  }
 }
 /* A menu's grey label, Capy's: 12px, at least 22 high and 4 under what is over it, its words on the rows' words (8 in from the
    4px edge), one line cut with an ellipsis (a long session title never takes two); a live note at its right end in the same grey. */
@@ -1928,9 +2032,23 @@ html[data-native="mac"] .lc-sb-head {
   pointer-events: none;
   transform-origin: 0 24px;
   animation: lc-sbc-in 140ms var(--l-ease-out) backwards;
+  transition: opacity var(--lc-card-fade) var(--lc-ease-out);
 }
 .lc-sbc[data-glide] {
-  transition: top 180ms var(--l-ease-out);
+  transition:
+    top 180ms var(--l-ease-out),
+    opacity var(--lc-card-fade) var(--lc-ease-out);
+}
+/* The pointer gone, it waits 120ms (Sidebar.tsx), then fades over 120; the next row reached meanwhile takes it over, back from where the fade was. */
+.lc-sbc[data-closing] {
+  opacity: 0;
+  animation: none;
+  transition:
+    top 180ms var(--l-ease-out),
+    opacity var(--lc-card-fade) var(--lc-ease-in);
+}
+.lc-sbc[data-again] {
+  animation: none;
 }
 /* A fade and a touch of scale, no blur: it comes with every row you point at (2026-11-26, calmer). */
 @keyframes lc-sbc-in {
@@ -2312,14 +2430,14 @@ html[data-native="mac"] .lc-sb-head {
   grid-template-rows: minmax(0px, 1fr) 0px;
   min-height: 0;
   transition:
-    grid-template-columns 400ms var(--l-spring-smooth),
-    grid-template-rows 400ms var(--l-spring-smooth);
+    grid-template-columns var(--lc-side-shut) var(--lc-ease-settle),
+    grid-template-rows var(--lc-side-shut) var(--lc-ease-settle);
 }
 /* The panel: as wide as you dragged it, else 500 (line and dot, board Main); the thread keeps 420px
    (Surfaces.tsx, THREAD_MIN), so its composer keeps its controls. */
 .lc-session[data-panel] .lc-body {
   grid-template-columns: minmax(420px, 1fr) min(var(--lc-panel-w, 500px), calc(100% - 420px));
-  transition-duration: 520ms;
+  transition-duration: var(--lc-side-open);
 }
 /* Beside the thread the panel is laid out at the width it opens to, from its first frame: its
    column uncovers it from the paper's edge, so nothing in it re-wraps on the way in or out (the
@@ -3228,18 +3346,27 @@ html[data-theme="light"] .lc-md .l-md-code {
 }
 
 /* Folds: rows open on grid rows, so nothing resizes in one frame. */
+/* 240ms both ways on a curve that starts at once and settles; what it holds fades in over 160ms from 60ms in, as the room opens,
+   and out over 120 as it shuts (the study after Kimi). */
 .lc-fold {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 420ms var(--l-spring-smooth);
+  transition: grid-template-rows var(--lc-fold) var(--lc-ease-settle);
 }
 .lc-fold > div {
   min-height: 0;
   overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--lc-fold-hide) ease;
 }
 [data-open] > .lc-fold,
 [data-open] > .lc-fcard > .lc-fold {
   grid-template-rows: 1fr;
+}
+[data-open] > .lc-fold > div,
+[data-open] > .lc-fcard > .lc-fold > div {
+  opacity: 1;
+  transition: opacity var(--lc-fold-show) ease var(--lc-fold-show-after);
 }
 /* Open, it clips a ring's width out, so its rows' rings show whole; shut, it clips flush. */
 [data-open] > .lc-fold > div,
@@ -4475,7 +4602,8 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   max-width: calc(100% - 20px);
   padding: 4px;
   border-radius: 10px;
-  animation: l-pop-up 200ms var(--l-ease-enter) backwards;
+  /* Out of the message box as a menu comes out of its button, with no blur (lc-menu-up). */
+  animation: lc-menu-up var(--lc-menu-in) var(--lc-ease-out) backwards;
 }
 /* Its foot line alone (still asking, nothing matching) has no rows over it to rule off. */
 .lc-mention > .lc-pop-foot:first-child {
@@ -4487,7 +4615,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   top: calc(100% + 6px);
   bottom: auto;
   max-height: min(420px, 50vh);
-  animation-name: l-pop-in;
+  animation-name: lc-menu-in;
 }
 /* A row as a menu's (.lc-row): 28 high, a 6px corner, a 14px icon in the fourth ink, 10 to the words; the lit one on the wash. */
 .lc-mention-row {
@@ -4728,10 +4856,69 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   white-space: normal;
   pointer-events: none;
   animation: lc-hnote-in 160ms var(--l-ease-out) backwards;
+  transition: opacity var(--lc-card-fade) var(--lc-ease-out);
 }
-@media (prefers-reduced-motion: reduce) {
-  .lc-hnote {
-    animation: none;
+/* Left, it waits 120ms (HoverNote) and then fades over 120; reached again meanwhile it comes back from where the fade was. */
+.lc-hnote[data-closing] {
+  opacity: 0;
+  animation: none;
+  transition: opacity var(--lc-card-fade) var(--lc-ease-in);
+}
+.lc-hnote[data-again] {
+  animation: none;
+}
+/*
+  The app's tip on an icon button (Tips.tsx), in place of the system's: a small card in the menus' fill and edge, its words in
+  ink and its key after them in grey, as a menu shows keys. It grows out of the edge facing its button from 85% with a fade
+  over 150ms, settling, and goes back into it over 150ms, quickly; never a blur. It takes no pointer.
+*/
+.lc-tip {
+  position: fixed;
+  z-index: 1100;
+  top: -9999px;
+  left: -9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: min(320px, calc(100vw - 16px));
+  width: max-content;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--lc-float);
+  box-shadow: var(--lc-float-shadow);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--l-ink);
+  pointer-events: none;
+  transition:
+    opacity var(--lc-tip-in) var(--lc-ease-out),
+    transform var(--lc-tip-in) var(--lc-ease-out);
+}
+.lc-tip:not([data-ready]) {
+  visibility: hidden;
+}
+.lc-tip[data-ready]:not([data-again], [data-closing]) {
+  animation: lc-tip-in var(--lc-tip-in) var(--lc-ease-out) backwards;
+}
+.lc-tip[data-closing] {
+  opacity: 0;
+  transform: scale(0.85);
+  animation: none;
+  transition:
+    opacity var(--lc-tip-out) var(--lc-ease-in),
+    transform var(--lc-tip-out) var(--lc-ease-in);
+}
+.lc-tip kbd {
+  font: inherit;
+  font-weight: 400;
+  color: var(--l-ink-4);
+}
+@keyframes lc-tip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
   }
 }
 @keyframes lc-hnote-in {
@@ -5174,7 +5361,8 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 .lc-panel {
   min-width: 0;
   min-height: 0;
-  animation: lc-panel-in 200ms var(--l-ease-out) backwards;
+  /* With Full, it waits a moment for its column to open first (the study after Kimi); it never slides. */
+  animation: lc-panel-in var(--lc-panel-show) var(--lc-ease-out) var(--lc-panel-show-after) backwards;
 }
 @keyframes lc-panel-in {
   from {
@@ -5184,7 +5372,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 /* Shut: it fades as its column closes over it, quicker than it came (Session.tsx keeps it). */
 .lc-panel[data-leaving] {
   pointer-events: none;
-  animation: lc-panel-out 220ms var(--l-ease-out) forwards;
+  animation: lc-panel-out var(--lc-panel-hide) var(--l-ease-out) forwards;
 }
 @keyframes lc-panel-out {
   to {
@@ -5580,9 +5768,13 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   background: none;
   color: var(--l-ink);
 }
+/*
+  A dialog comes in over 225ms on an even curve, a fade and 4px and nothing more, its scrim fading with it; it goes over 160ms
+  on the same curve, sheet and scrim together, through data-closing (sheet.ts closeSheet), and only then is it closed.
+*/
 .lc-sheet::backdrop {
   background: var(--l-scrim);
-  animation: lc-fade 260ms var(--l-ease-out);
+  animation: lc-fade var(--lc-sheet-in) var(--lc-ease-even);
 }
 @keyframes lc-fade {
   from {
@@ -5590,12 +5782,31 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   }
 }
 .lc-sheet[open] .lc-sheet-frame {
-  animation: lc-sheet-in 460ms var(--l-ease-enter) backwards;
+  animation: lc-sheet-in var(--lc-sheet-in) var(--lc-ease-even) backwards;
 }
 @keyframes lc-sheet-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(4px);
+  }
+}
+.lc-sheet[data-closing] {
+  pointer-events: none;
+}
+.lc-sheet[data-closing]::backdrop {
+  animation: lc-fade-out var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+.lc-sheet[open][data-closing] .lc-sheet-frame {
+  animation: lc-sheet-out var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+@keyframes lc-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes lc-sheet-out {
+  to {
+    opacity: 0;
   }
 }
 .lc-sheet-frame {
@@ -6489,6 +6700,7 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
   .lc-top,
   .lc-panel-top,
   .lc-fold,
+  .lc-fold > div,
   .lc-sb-plate {
     transition: none !important;
   }
@@ -7621,19 +7833,26 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
    done from script, not from a rule here, because a rule on the view's root has to come off again,
    and both putting it on and taking it off restyle everything in the view (about twice what Full
    costs a switch, measured). What you open by pressing keeps its move, shorter: the panel (and its
-   column), a sheet and the sidebar's column (with the header's room for the traffic lights, which
-   moves with it) take 180ms. Each frame of the sidebar's move lays the paper out again, so the
-   shorter it is the fewer there are.
-   The system's Reduce motion turns all of it off at either level (foundation.css, at the end).
+   column) and the sidebar's column (with the header's room for the traffic lights, which moves with
+   it) take 180ms. Each frame of the sidebar's move lays the paper out again, so the shorter it is
+   the fewer there are. Menus, tips, dialogs, hover cards and folds are short already and move the
+   same at both levels (since 2026-11-27).
+   The system's Reduce motion turns all of it off at either level (foundation.css, at the end), but
+   for the 100ms fade what appears and goes keeps (Reduce motion, at the end of this sheet).
    Neither level stops the state mark (.lc-mk): its light and its change of state are how state is read. */
-html[data-motion="quick"] .lc-panel:not([data-leaving]),
-html[data-motion="quick"] .lc-sheet[open] .lc-sheet-frame {
+html[data-motion="quick"] .lc-panel:not([data-leaving]) {
   animation-duration: 180ms;
+  animation-delay: 0ms;
 }
+html[data-motion="quick"] .lc-panel[data-leaving] {
+  animation-duration: 220ms;
+}
+/* Quick's widths stay as they were: 180ms on Liner's smooth spring. (A dialog takes the same 225ms at both levels.) */
 html[data-motion="quick"] .lc-session .lc-body,
 html[data-motion="quick"] .lc-app,
 html[data-motion="quick"][data-native="mac"] .lc-top {
   transition-duration: 180ms;
+  transition-timing-function: var(--l-spring-smooth);
 }
 
 /* ---------- 0.2.7: the sidebar, after Claude Code's and Devin's ---------- */
@@ -9446,4 +9665,53 @@ button.lc-cardl-r {
 .lc-switched-ahead .lc-model {
   font-size: 13px;
   color: var(--l-ink-2);
+}
+
+/* ---------- Reduce motion: what still fades ----------
+   Under the system's Reduce motion foundation.css cuts every animation and transition to 1ms. What appears and goes over the
+   page keeps a plain 100ms fade both ways (the study after Kimi): menus and pop-ups, tips, hover cards, dialogs and their scrim.
+   Nothing scales, slides or blurs; widths and folds change at once (their rules above). These carry body's two classes to
+   outrank foundation's, which loads after this sheet. */
+@media (prefers-reduced-motion: reduce) {
+  .l-root.l-scope .l-pop.lc-pop-panel.lc-layer[data-ready]:not([data-closing], [data-again]),
+  .l-root.l-scope .lc-mention,
+  .l-root.l-scope .lc-tip[data-ready]:not([data-closing], [data-again]),
+  .l-root.l-scope .lc-sbc:not([data-closing], [data-again]),
+  .l-root.l-scope .lc-hnote:not([data-closing], [data-again]),
+  .l-root.l-scope .lc-sheet[open]:not([data-closing]) .lc-sheet-frame {
+    animation-name: lc-fade !important;
+    animation-duration: var(--lc-reduced) !important;
+    animation-timing-function: linear !important;
+    animation-delay: 0ms !important;
+  }
+  .l-root.l-scope .lc-st-pop:not([data-closing]) .lc-st-sheet {
+    animation-name: lc-fade !important;
+    animation-duration: var(--lc-reduced) !important;
+    animation-timing-function: linear !important;
+  }
+  .l-root.l-scope .lc-st-pop:not([data-closing]) {
+    animation-name: lc-st-dim !important;
+    animation-duration: var(--lc-reduced) !important;
+    animation-timing-function: linear !important;
+  }
+  .l-root.l-scope .lc-sheet[open][data-closing] .lc-sheet-frame,
+  .l-root.l-scope .lc-st-pop[data-closing],
+  .l-root.l-scope .lc-st-pop[data-closing] .lc-st-sheet {
+    animation-duration: var(--lc-reduced) !important;
+    animation-timing-function: linear !important;
+  }
+  .lc-sheet::backdrop,
+  .lc-sheet[data-closing]::backdrop {
+    animation-duration: var(--lc-reduced);
+    animation-timing-function: linear;
+  }
+  .l-root.l-scope .l-pop.lc-pop-panel.lc-layer,
+  .l-root.l-scope .lc-tip,
+  .l-root.l-scope .lc-sbc,
+  .l-root.l-scope .lc-hnote {
+    transform: none !important;
+    transition-property: opacity !important;
+    transition-duration: var(--lc-reduced) !important;
+    transition-timing-function: linear !important;
+  }
 }

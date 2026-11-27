@@ -100,7 +100,10 @@ test("What enters the chat and the panel fades in short with no blur: blocks, st
   }
   assert.match(block(css, ".lc-blk[data-fresh]"), /animation: lc-focus-in 200ms/);
   assert.match(block(css, ".l-scope .l-chunk"), /animation: lc-chunk-in 180ms/);
-  assert.match(css, /\.lc-panel \{\s*min-width: 0;\s*min-height: 0;\s*animation: lc-panel-in 200ms/);
+  // The panel's fade is the motion study's since 2026-11-27: 240ms from 60ms in, opacity only (its keyframe, above), never a slide.
+  assert.match(css, /\.lc-panel \{\s*min-width: 0;\s*min-height: 0;\s*(?:\/\*[^*]*\*\/\s*)?animation: lc-panel-in var\(--lc-panel-show\) var\(--lc-ease-out\) var\(--lc-panel-show-after\) backwards;/);
+  assert.match(css, /--lc-panel-show: 240ms;/);
+  assert.match(css, /--lc-panel-show-after: 60ms;/);
   assert.doesNotMatch(css, /lc-lift/, "Send still lifts each time the box gets words");
 });
 

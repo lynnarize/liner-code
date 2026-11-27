@@ -49,6 +49,7 @@ import { FACE_NAME, type Face } from "./face";
 import * as os from "./os";
 import { APP_LOGO } from "./app-logos";
 import { appAskWords } from "./worklists-logic";
+import { MOTION } from "./motion";
 import { usePrDot, usePrWatch } from "./worklists-store";
 import "./sidebar-foot.css";
 import { toast } from "@liner/components/toast/toast";
@@ -579,7 +580,8 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
 
   /* ---------- The card a row shows when the pointer rests on it ---------- */
 
-  const [card, setCard] = useState<{ id: string; el: HTMLElement } | null>(null);
+  // `fading`: on its way out (motion.ts cardAfter), still on screen and still the one the next row takes over from.
+  const [card, setCard] = useState<{ id: string; el: HTMLElement; fading?: boolean } | null>(null);
   const showing = useRef(false);
   showing.current = card !== null;
   const cardTimer = useRef(0);
@@ -587,26 +589,30 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
   // Nothing floats over a row while you rename, pick several, or have a menu open (a drag hides it as it starts).
   const busy = useRef(false);
   busy.current = renaming !== null || pickedThreads.length > 0 || menu !== null;
-  const blocked = () => busy.current || document.querySelector(".lc-pop-panel") !== null;
-  const hideCard = () => {
+  // A menu on its way out (data-closing) no longer counts: the card may come back as it goes.
+  const blocked = () => busy.current || document.querySelector(".lc-pop-panel:not([data-closing])") !== null;
+  /** It fades now (a press, Escape, the list scrolling), and is gone once the fade has played. */
+  const fadeCard = () => {
     window.clearTimeout(cardTimer.current);
     window.clearTimeout(leaveTimer.current);
-    setCard(null);
+    setCard((c) => (c && !c.fading ? { ...c, fading: true } : c));
+    leaveTimer.current = window.setTimeout(() => setCard(null), MOTION.cardFade);
   };
+  const hideCard = fadeCard;
   const pointAt = (id: string, el: HTMLElement) => {
     window.clearTimeout(cardTimer.current);
     window.clearTimeout(leaveTimer.current);
     if (blocked()) return;
     const show = () => !blocked() && el.isConnected && setCard({ id, el });
-    // Once one shows, the next row's comes at once, as the pointer runs down the list.
+    // Once one shows (or is lingering, or fading), the next row's takes it over at once, as the pointer runs down the list.
     if (showing.current) show();
-    else cardTimer.current = window.setTimeout(show, 450);
+    else cardTimer.current = window.setTimeout(show, MOTION.cardWait);
   };
-  // A moment's grace, so crossing the gap to the next row doesn't drop the card.
+  // A moment's grace, so crossing the gap to the next row doesn't drop the card: it waits, then fades.
   const leaveRow = () => {
     window.clearTimeout(cardTimer.current);
     window.clearTimeout(leaveTimer.current);
-    leaveTimer.current = window.setTimeout(() => setCard(null), 80);
+    if (showing.current) leaveTimer.current = window.setTimeout(fadeCard, MOTION.cardLinger);
   };
   useEffect(() => {
     if (renaming !== null || picked.size > 0 || menu) hideCard();
@@ -1193,7 +1199,7 @@ export function Sidebar({ current, onOpen, onNew, onWall, wallOn, onSettings, on
 
       {(() => {
         const t = card && card.el.isConnected ? threads.find((x) => x.id === card.id && !x.archived) : undefined;
-        return t && createPortal(<SessionCard el={card!.el} side={nav.current}>{cardBody(t)}</SessionCard>, document.body);
+        return t && createPortal(<SessionCard el={card!.el} side={nav.current} fading={Boolean(card!.fading)}>{cardBody(t)}</SessionCard>, document.body);
       })()}
 
       <ContextMenu at={projMenu} label={projMenu ? `Actions for ${projMenu.name}` : "A project"} onClose={() => setProjMenu(null)} width={PROJ_MENU_W}>
@@ -1822,9 +1828,12 @@ const EDGE = 10;
   The card beside the sidebar, level with the row it tells about, above everything and kept
   inside the window. It follows its row as the list moves, and glides from one row to the next.
 */
-function SessionCard({ el, side, children }: { el: HTMLElement; side: HTMLElement | null; children: ReactNode }) {
+function SessionCard({ el, side, fading, children }: { el: HTMLElement; side: HTMLElement | null; fading: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const placed = useRef(false);
+  // Taken over by another row while it faded: back from where the fade had got to, not from nothing.
+  const faded = useRef(false);
+  if (fading) faded.current = true;
   useLayoutEffect(() => {
     const card = ref.current;
     if (!card) return;
@@ -1843,7 +1852,7 @@ function SessionCard({ el, side, children }: { el: HTMLElement; side: HTMLElemen
     placed.current = true;
   });
   return (
-    <div ref={ref} id={CARD_ID} role="tooltip" className="lc-sbc">
+    <div ref={ref} id={CARD_ID} role="tooltip" className="lc-sbc" data-closing={fading || undefined} data-again={(!fading && faded.current) || undefined}>
       {children}
     </div>
   );

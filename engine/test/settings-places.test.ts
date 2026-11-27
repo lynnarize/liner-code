@@ -62,7 +62,9 @@ test("Settings opens over the app as a dialog that keeps the app's keys working,
   const app = ui("App.tsx");
   assert.match(app, /inert=\{!sidebar \|\| settings \|\| undefined\}/, "the sidebar under Settings takes no focus");
   assert.match(app, /className="lc-paper"[^>]*inert=\{settings \|\| undefined\}/, "the page under Settings takes no focus");
-  assert.match(app, /\{settings && \(\s*\/\/[^\n]*\n\s*<Boundary label="Settings"/, "Settings is drawn over the app, not in place of it");
+  // Drawn while it shows and while it fades out (usePresence, the motion study of 2026-11-27).
+  assert.match(app, /\{settingsLife\.mounted && \((?:\s*\/\/[^\n]*\n)+\s*<Boundary label="Settings"/, "Settings is drawn over the app, not in place of it");
+  assert.match(app, /const settingsLife = usePresence\(settings, MOTION\.sheetOut\);/);
   const keys = ui("menu-keys.ts");
   assert.match(keys, /\[role='dialog'\]:not\(\.lc-st-sheet\)/, "⌘, ⌘K and ⌘N still work over Settings");
   const st = ui("Settings.tsx");

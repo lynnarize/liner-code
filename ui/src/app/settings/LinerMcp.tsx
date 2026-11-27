@@ -17,6 +17,7 @@ import { I, StepMark } from "../icons";
 import { ago, plural } from "../model";
 import * as os from "../os";
 import { NamedSwitch, Pop, Row as MenuRow } from "../ui";
+import { closeSheet, openSheet } from "../sheet";
 import { wordRead, wordWrite } from "../kept";
 import { HostTile, Mono, Row, RowMore, Section, SubRow, Tag } from "./parts";
 import "./liner-mcp.css";
@@ -655,8 +656,10 @@ function Reaches() {
 const KINDS: McpAppKind[] = ["grokbot", "muse", "claude", "chatgpt", "other"];
 
 /** Add an app (boards Pair, PairMuse): which app, what it may do, and how to send it what it needs. The key shows once. */
-function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => void }) {
+function AddApp({ status, onClose: closed }: { status: McpStatus | null; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Every way out (Escape, the scrim, Close, Done) plays the sheet's exit first; then the settings page takes it away.
+  const onClose = (then?: () => void) => closeSheet(ref.current, () => (closed(), then?.()));
   const pressedOutside = useRef(false);
   const [kind, setKind] = useState<McpAppKind>("grokbot");
   const [level, setLevel] = useState<McpLevel>("ask");
@@ -664,7 +667,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
   const [named, setNamed] = useState("");
   const [turning, setTurning] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => void ref.current?.showModal(), []);
+  useEffect(() => openSheet(ref.current), []);
   const oauth = kind === "claude" || kind === "chatgpt";
   // An app that signs in itself: Liner takes a sign-in for the next 15 minutes, and none at any other time (mcp-oauth.ts).
   useEffect(() => {
@@ -697,12 +700,14 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
   const turnOn = async () => {
     const last = wordRead(localStorage, REACH_KEY, ["tailscale", "cloudflare", "own"], "");
     if (!last) {
-      onClose();
-      window.setTimeout(() => {
-        const b = document.querySelector<HTMLElement>('[aria-label="From the internet"]');
-        b?.scrollIntoView({ block: "center", behavior: "smooth" });
-        b?.click();
-      }, 80);
+      // Once the sheet has gone, so the menu opens on the page rather than under a dialog still leaving.
+      onClose(() =>
+        window.setTimeout(() => {
+          const b = document.querySelector<HTMLElement>('[aria-label="From the internet"]');
+          b?.scrollIntoView({ block: "center", behavior: "smooth" });
+          b?.click();
+        }, 80),
+      );
       return;
     }
     setTurning(true);
@@ -719,7 +724,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
           <span>
             <b id="lc-mcp-add-t">Add an app</b>
           </span>
-          <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={onClose}>
+          <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => onClose()}>
             <I.close size={14} />
           </button>
         </div>
@@ -837,7 +842,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
         </div>
         <div className="lc-sheet-foot lc-mcp-add-foot">
           <small>{oauth ? "A sign-in lasts 30 days. Revoke it in Liner MCP." : "The key shows once and lasts 30 days. Revoke it in Liner MCP."}</small>
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onClose}>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onClose()}>
             Done
           </button>
         </div>

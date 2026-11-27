@@ -7,6 +7,7 @@ import type { AgentProfile, PanelPlace, RoutineRun, SessionMode, Thread } from "
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
+import { Tips } from "./Tips";
 import { Boundary } from "./Boundary";
 import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
@@ -18,7 +19,8 @@ import { markLabelOf, markStateOf } from "./session-state";
 import { SideMark } from "./SideList";
 import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
-import { useSteady } from "./ui";
+import { usePresence, useSteady } from "./ui";
+import { MOTION } from "./motion";
 import { needsYou, Sidebar } from "./Sidebar";
 import { reviewHeld } from "./session-state";
 import { early, lazyAgain } from "./early";
@@ -687,6 +689,7 @@ export function App() {
   const showSidebar = useCallback(() => setSidebar(true), []);
   const newAgent = useCallback(() => setAgentDialog({ open: true }), []);
   const closeSettings = useCallback(() => setSettings(false), []);
+  const settingsLife = usePresence(settings, MOTION.sheetOut);
   const editAgent = useCallback((agent?: AgentProfile) => setAgentDialog({ open: true, agent }), []);
   const steadyOpen = useSteady(openSession);
   const openFromSettings = useSteady((id: string) => (setSettings(false), openSession(id)));
@@ -990,6 +993,7 @@ export function App() {
           </Suspense>
         </Boundary>
         <Toaster className="lc-toaster" />
+        <Tips />
       </>
     );
 
@@ -1129,11 +1133,12 @@ export function App() {
           )}
         </>
       )}
-      {settings && (
+      {settingsLife.mounted && (
         // Its own code loads apart (early.ts): one that didn't load says so over the window, with Try again and Close.
+        // Shut, it stays for its fade (a dialog's 160ms, usePresence) and then goes.
         <Boundary label="Settings" quiet place="float" onClose={closeSettings}>
           <Suspense fallback={null}>
-            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
+            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} closing={settingsLife.closing} />
           </Suspense>
         </Boundary>
       )}
@@ -1164,6 +1169,7 @@ export function App() {
         </Suspense>
       </Boundary>
       <Toaster className="lc-toaster" />
+      <Tips />
     </div>
   );
 }

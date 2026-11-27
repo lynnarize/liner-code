@@ -13,7 +13,8 @@
   display: grid;
   padding: clamp(10px, 4vh, 36px) clamp(10px, 6.67vw, 96px);
   background: oklch(0.2 0.01 265 / 0.28);
-  animation: lc-st-dim 220ms ease backwards;
+  /* A dialog's motion (app.css, .lc-sheet): in over 225ms and out over 160 on the even curve, dim and sheet together. */
+  animation: lc-st-dim var(--lc-sheet-in) var(--lc-ease-even) backwards;
 }
 [data-theme="dark"] .lc-st-pop {
   background: oklch(0 0 0 / 0.55);
@@ -38,12 +39,26 @@
     0 24px 64px oklch(0 0 0 / 0.32);
   /* The app's bars under it move the window in the Electron shell; nothing in the sheet does. */
   -webkit-app-region: no-drag;
-  animation: lc-st-rise 280ms var(--l-ease-out) backwards;
+  animation: lc-st-rise var(--lc-sheet-in) var(--lc-ease-even) backwards;
 }
+/* A fade and 4px, nothing more. */
 @keyframes lc-st-rise {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.99);
+    transform: translateY(4px);
+  }
+}
+/* Shut, it fades out with its dim before it goes (App keeps it, usePresence), and takes no presses meanwhile. */
+.lc-st-pop[data-closing] {
+  pointer-events: none;
+  animation: lc-st-undim var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+.lc-st-pop[data-closing] .lc-st-sheet {
+  animation: lc-sheet-out var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+@keyframes lc-st-undim {
+  to {
+    background: transparent;
   }
 }
 @media (max-width: 760px) {

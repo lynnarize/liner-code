@@ -162,3 +162,15 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   lighter grey icons.
 - The panel's + lists the surfaces that hold something for this session and the ones you have open; the rest are under
   More, with your apps. New side chat and New terminal have rows of their own, and Show the terminal is the top row's toggle.
+- Menus, side menus and right-click menus grow out of the button or point that opened them and close with a short fade
+  instead of vanishing; dialogs and Settings fade in and out with their dimmed backdrop, and give the keyboard back to
+  what had it.
+- Icon buttons show Liner Code's own tip, with the button's key in grey, after half a second and then at once as you move
+  along a row; hover cards come sooner and linger a moment before they fade, and folds such as "Worked for" open quicker
+  with their steps fading in.
+- With Motion set to Full the sidebar and panel open in 300ms and shut in 240ms, and with Reduce motion on, pop-ups,
+  menus, tips and dialogs still fade in and out briefly while nothing slides or grows.
+- Files stays light on a project with a folder of thousands of new files (video frames, an export): the tree puts a
+  folder's files on the page only once you open it, so the panel opens without a stutter and the window no longer runs
+  hot while Files is up. Files and @ mentions also list the project's own files before new ones, so such a folder can't
+  crowd the project out of the tree.

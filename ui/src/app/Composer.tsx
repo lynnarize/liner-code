@@ -1169,7 +1169,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     { key: "@", label: "A file in the project", icon: <I.file size={16} />, kbd: "@", onPick: () => typeKey("@") },
   ];
   const plus = (
-    <Pop label={`Add: files, commands, skills${choices.length ? `, ${choices.map((c) => c.label.toLowerCase()).join(", ")}` : ""}`} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} width={272} triggerClass="lc-plus-b" trigger={<I.plus size={16} />}>
+    <Pop label={`Add: files, commands, skills${choices.length ? `, ${choices.map((c) => c.label.toLowerCase()).join(", ")}` : ""}`} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} width={272} triggerClass="lc-plus-b" tip="Add files, commands and skills" trigger={<I.plus size={16} />}>
       {(close) => <PlusMenu rows={plusRows} choices={choices} close={close} />}
     </Pop>
   );

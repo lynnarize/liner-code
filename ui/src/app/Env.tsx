@@ -16,9 +16,11 @@ import { I, StateMark, StepMark } from "./icons";
 import { crewRows, isCrewItem, showAgent, useCrew } from "./Crew";
 import { asksYou } from "./session-state";
 import { countUnder, foldOf, hasAgents, setFold, shownRows, swarmRows, type RowState } from "./agent-rows";
-import { plural } from "./model";
+import { duration, plural } from "./model";
 import { agentsWorked } from "./session-pop";
 import { runScript } from "./Surfaces";
+import { prEnd } from "./surface-row";
+import { CardContext, CardSetup } from "./DetailsParts";
 import { BackRow, Lines, MenuFoot, PanelHead, Pop, Row, Sep } from "./ui";
 import * as os from "./os";
 
@@ -83,9 +85,10 @@ export function EnvMenu({ thread, project, files, lines, onChanges, onRename, ac
 
 /**
   `only`: one of the lists alone, as the session details card opens it from its row (Session.tsx DetailsCard): its way back
-  closes it, as there is no menu behind it.
+  closes it, as there is no menu behind it. `look`: the card's Look again, at the foot of the Mac's list (where it runs is
+  what it reads again, with the pull request).
 */
-function EnvPanel({ thread, project, files, lines, onChanges, close, actions, only }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; close: () => void; actions?: (close: () => void) => ReactNode; only?: Exclude<More, null> }) {
+function EnvPanel({ thread, project, files, lines, onChanges, close, actions, only, look }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; close: () => void; actions?: (close: () => void) => ReactNode; only?: Exclude<More, null>; look?: { looking: boolean; onLook: () => void } }) {
   const [more, setMore] = useState<More>(only ?? null);
   const [editors, setEditors] = useState<Editor[] | null>(null);
   const [git, setGit] = useState<RpcResult<"git.branches"> | null>(null);
@@ -191,6 +194,7 @@ function EnvPanel({ thread, project, files, lines, onChanges, close, actions, on
           <Row title={`Show in ${os.fileManager}`} icon={<I.folder size={14} />} onPick={() => (close(), bridge.openIn(cwd, "finder"))} />
           <Row title="Copy the path" icon={<I.copy size={14} />} onPick={() => (void navigator.clipboard?.writeText(cwd), toast("Copied the path"), close())} />
           <Row title="Open it in Terminal" icon={<I.terminal size={14} />} onPick={() => (close(), bridge.openIn(cwd, "terminal"))} />
+          {look && <Row title="Look again" note="Reads where it runs, its context and its pull request again" icon={<I.refresh size={14} />} disabled={look.looking} onPick={() => (close(), look.onLook())} />}
           <MenuFoot>
             <span className="lc-mono">{tilde(cwd)}</span>
             {thread.worktree && <span className="lc-envp-why">A worktree of its own, so other sessions never edit these files.</span>}
@@ -290,64 +294,44 @@ function EnvPanel({ thread, project, files, lines, onChanges, close, actions, on
 }
 
 /**
-  The branch chip in the chat's top row (boards Main and Light): a 12px branch icon, the branch's name and the lines not
-  yet committed, outlined. Only for a project under Git; it opens the same branch list as the details card's branch row.
-  Session.tsx leaves it out while the details card shows, which has the branch, and it is the first thing in the row
-  to give way when the row narrows (app.css .lc-bchip).
-*/
-export function BranchChip({ thread, project, files, lines, onChanges }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void }) {
-  if (!project.git) return null;
-  const branch = thread.worktree?.branch ?? project.branch ?? "No branch";
-  return (
-    <Pop
-      label={`Branch ${branch}: its list, to fetch or switch`}
-      menu
-      align="end"
-      width={300}
-      className="lc-bchip-pop"
-      triggerClass="lc-bchip"
-      triggerAttrs={{ title: branch }}
-      trigger={
-        <>
-          <I.branch size={12} />
-          <span className="lc-bchip-n lc-mono">{branch}</span>
-          {(lines.added > 0 || lines.removed > 0) && <Lines {...lines} />}
-        </>
-      }
-    >
-      {(close) => <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} only="branch" />}
-    </Pop>
-  );
-}
-
-/**
   The session details card (line and dot, board Details, 2026-11-27): it floats under the top row's right end from its first
-  toggle (Session.tsx). Rows 30 high, as lean as a menu's, each doing what its row in the title's menu does, or opening the surface that shows
-  more: where it runs, with the folder a press away and the Mac's own list to the side; your editor; the project's scripts
-  (each runs in a shell of its own) and what of the session's listens, with its port; Add a project script. Then the branch,
-  Commit and Changes; then Context, which opens the Session surface, and Fusion or the agents that worked, which open the
-  agents. It says no money: what the session costs is Usage's to say.
+  toggle (Session.tsx), whether or not the panel is open, and since the Session surface went from the panel (the owner,
+  2026-11-27: "session as 1 in pop up rather than 2") it is the one place for everything about a session. Rows 30 high, as
+  lean as a menu's, each doing what its row in the title's menu does, or opening the surface that shows more: where it runs,
+  with the folder a press away and the Mac's own list to the side (Look again at its foot); your editor; the project's
+  scripts (each runs in a shell of its own) and what of the session's listens, with its port; Add a project script. Then the
+  branch, Commit, Changes and the pull request; then Context with its Compact and its bar of dots, unfolding in place
+  (DetailsParts.tsx); then Setup, a menu of six to the side; then the agents, while it has any. It says no money: what the
+  session costs is Usage's to say.
 */
-export function DetailsCard({ thread, project, files, lines, onChanges, onContext, onAgents, onTerminal }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; onContext: () => void; onAgents: () => void; onTerminal: () => void }) {
+export function DetailsCard({ thread, project, files, lines, onChanges, onPr, onAgents, onTerminal }: { thread: Thread; project: Project; files: number; lines: { added: number; removed: number }; onChanges: () => void; onPr: () => void; onAgents: () => void; onTerminal: () => void }) {
   const [editors, setEditors] = useState<Editor[] | null>(null);
   const [servers, setServers] = useState<LocalServer[]>([]);
   const [info, setInfo] = useState<SessionInfo | null>(null);
+  const [looking, setLooking] = useState(false);
   const cwd = thread.worktree?.path ?? project.path;
   const branch = thread.worktree?.branch ?? project.branch;
   const running = thread.status === "running";
   useEffect(() => {
     void rpc("apps.editors", {}).then(setEditors, () => setEditors([]));
   }, []);
-  // What listens and how full the context is: asked when the card shows, and again as a turn starts or ends. Only what this
-  // session started is listed: a server another session, a terminal or another tool runs in the same folder isn't this session's.
-  useEffect(() => {
-    let live = true;
-    void rpc("ports.list", { threadId: thread.id }).then((l) => live && setServers(l.filter((x) => x.owner === "session")), () => {});
-    void rpc("thread.info", { id: thread.id }).then((i) => live && setInfo(i), () => {});
-    return () => {
-      live = false;
-    };
-  }, [thread.id, thread.turns, running]);
+  // Only the latest ask is shown: one sent as a turn started can answer after the one sent as it ended.
+  const asked = useRef(0);
+  /*
+    What listens and how full the context is: asked when the card shows, and again as a turn starts or ends. Only what this
+    session started is listed: a server another session, a terminal or another tool runs in the same folder isn't this
+    session's. Look again (the Mac's list) asks once more, and asks GitHub how the pull request stands too, as the Session
+    surface's did; between, the engine's own watch keeps the pull request's row current.
+  */
+  const look = (again = false) => {
+    const n = ++asked.current;
+    if (again) setLooking(true);
+    void rpc("ports.list", { threadId: thread.id }).then((l) => n === asked.current && setServers(l.filter((x) => x.owner === "session")), () => {});
+    const reads: Promise<unknown>[] = [rpc("thread.info", { id: thread.id }).then((i) => n === asked.current && setInfo(i), () => {})];
+    if (again && thread.pr) reads.push(rpc("pr.status", { threadId: thread.id }).catch(() => {}));
+    if (again) void Promise.all(reads).finally(() => n === asked.current && setLooking(false));
+  };
+  useEffect(() => look(), [thread.id, thread.turns, running]);
   const editor = editors?.find((e) => e.id === saved("lc:editor")) ?? editors?.find((e) => e.kind === "editor") ?? editors?.[0];
   const openIn = (app?: Editor) => {
     if (!app) return bridge.openIn(cwd, "editor");
@@ -364,13 +348,12 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
         .then((p) => toast.success(`Pushed ${p.branch} to ${p.remote}`))
         .catch(fail);
   };
-  const ctx = info?.context;
-  const share = ctx ? Math.min(100, Math.round((ctx.used / ctx.max) * 100)) : null;
   const panel = (more: Exclude<More, null>, label: string) => (
     <Pop label={label} menu align="end" width={300} triggerClass="lc-dr-end l-focus" triggerAttrs={{ title: label }} trigger={<I.chevD size={14} />}>
-      {(close) => <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} only={more} />}
+      {(close) => <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} only={more} look={more === "mac" ? { looking, onLook: () => look(true) } : undefined} />}
     </Pop>
   );
+  const pr = thread.pr && prEnd(thread.pr);
   return (
     <div className="lc-dcard" role="group" aria-label="Session details">
       <div className="lc-dr">
@@ -448,17 +431,23 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
           )}
         </button>
       </div>
+      {/* The pull request, as the panel's start page says it (surface-row.ts prEnd): its number in grey, its state in its colour. */}
+      {thread.pr && pr && (
+        <div className="lc-dr">
+          <button type="button" className="lc-dr-main l-focus" title={thread.pr.checks?.failed ? `${plural(thread.pr.checks.failed, "check")} failed` : undefined} onClick={onPr}>
+            <I.pr size={14} />
+            <span className="lc-dr-t">Pull request</span>
+            <em className="l-num">#{thread.pr.number}</em>
+            <span className="lc-dr-v" data-tone={pr.tone}>
+              {pr.word}
+            </span>
+          </button>
+        </div>
+      )}
       <span className="lc-dr-sep" role="separator" />
-      <div className="lc-dr">
-        <button type="button" className="lc-dr-main l-focus" onClick={onContext}>
-          <i className="lc-dr-ring" style={{ "--v": `${share ?? 0}%` } as CSSProperties} aria-hidden />
-          <span className="lc-dr-t">Context</span>
-          <em>{share === null ? "Empty" : `${share}% used`}</em>
-          <span className="lc-dr-v">
-            <I.chevR size={14} />
-          </span>
-        </button>
-      </div>
+      <CardContext thread={thread} info={info} />
+      <span className="lc-dr-sep" role="separator" />
+      <CardSetup thread={thread} />
       <CardAgents thread={thread} onAgents={onAgents} />
     </div>
   );
@@ -486,7 +475,7 @@ function CardAgents({ thread, onAgents }: { thread: Thread; onAgents: () => void
   const swarmOn = isSwarm(thread);
   const swarm = useSwarm(thread.id, swarmOn);
   const [, refold] = useState(0);
-  const worked = agentsWorked(items).count;
+  const { count: worked, seconds } = agentsWorked(items);
   if (!hasAgents({ sidekick: thread.sidekick, swarm: swarmOn, atWork: thread.agentsAtWork, worked })) return null;
   const asking = thread.status === "waiting" && asksYou(thread);
   const roots = swarmOn && swarm ? swarmRows(swarm.members, swarm.mode === "swarm", Boolean(swarm.paused)) : crew ? crewRows(crew, providers, asking) : [];
@@ -499,7 +488,8 @@ function CardAgents({ thread, onAgents }: { thread: Thread; onAgents: () => void
     <>
       <span className="lc-dr-sep" role="separator" />
       <div className="lc-dr" data-head>
-        <button type="button" className="lc-dr-main lc-da-head l-focus" title="Open the Agents surface" onClick={onAgents}>
+        {/* How long they worked, which the Session surface's "N agents worked" row said, is in its tip. */}
+        <button type="button" className="lc-dr-main lc-da-head l-focus" title={worked > 0 && duration(seconds) ? `${plural(worked, "agent")} worked for ${duration(seconds)}. Open the Agents surface` : "Open the Agents surface"} onClick={onAgents}>
           {thread.sidekick && !swarmOn ? <I.mark size={14} /> : <I.agents size={14} />}
           <span className="lc-dr-t">{mode}</span>
           {count > 0 && <span className="lc-da-n l-num">{count}</span>}

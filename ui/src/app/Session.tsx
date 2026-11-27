@@ -8,7 +8,8 @@
   gives the panel the paper under this row, and so does a window too narrow for both.
   The details card (Env.tsx DetailsCard) floats under the row's right end; while it shows, the chat and the message box
   keep a gutter clear of it and centre in the room that is left. Shown or hidden is one choice for every session, kept
-  across launches (pinned.ts). With the panel open there is no room for it, so its toggle shows the Session surface there.
+  across launches (pinned.ts). It shows whether or not the panel is open, in the chat's column: since the Session surface
+  went from the panel (2026-11-27) the card is the one place for the session's details.
 */
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
 import { isPair, isSwarm, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
@@ -20,7 +21,7 @@ import { EngineAway, getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { AskDock, useDockAsk } from "./Ask";
-import { BranchChip, DetailsCard, EnvMenu } from "./Env";
+import { DetailsCard, EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
 import { heldMessage } from "./commit-held";
 import { I, ModelMark } from "./icons";
@@ -40,14 +41,14 @@ import { entering, readLook } from "./look";
 import { keepDock, keptDock, PANE_MIN, PanelGrip, runScript, SURFACES, TerminalGrip, useBelowHeight, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
 import { useReadWhileShown } from "./unread";
-import { closeTab, closeWhere, onScreen, openTab, paneOf, replaceTab, showDock, toggleFull, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, openTab, paneOf, replaceTab, showDock, toggleFull, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { toComposer as putInComposer } from "./Find";
 import { onFullCanvas, onOpenSurface, SideKeys } from "./TopBar";
 import { askPicker } from "./pr-pick";
 import { ModeChip } from "./Modes";
 import { CrewChip, LoneStop, openAgents, pairOf, showTeam } from "./Crew";
-import { setSessionPinned, useSessionPinned } from "./pinned";
+import { setSessionPinned, showDetails, useSessionPinned } from "./pinned";
 import { LiveLine, Timeline } from "./Timeline";
 import { Disc, Kbd, Lines, NamedSwitch, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 
@@ -129,7 +130,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
   // A kept layout that names Linked pull requests, gone into Pull request's picker on 2026-11-25, has Pull request in its place.
-  // Session is a surface of the panel again (line and dot), so it stays in a layout kept while the app runs.
+  // One that names Session, gone into the details card on 2026-11-27, loses it as it is read (dock.ts readDock).
   const [dock, setDockState] = useState<DockState>(() => replaceTab(keptDock(thread.id), "linked", "pr"));
   // The dock as it is now, for keys and toggles that read it outside a render.
   const dockNow = useRef(dock);
@@ -170,13 +171,10 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
     the bottom panel and leaves the right panel be. T3 Code keeps its terminal drawer apart from the
     right panel the same way (chat/useChatTerminalActions.ts).
   */
-  // Linked pull requests is Pull request with its picker open (pr-pick.ts). Session is the details card, or with the panel open its surface there.
-  const bring = (tab: Tab) => (tab === "terminal" ? setBelow(true) : tab === "session" ? (dockNow.current.open ? setDock((d) => openTab(d, "session")) : setSessionOpen(true)) : tab === "linked" ? (askPicker(thread.id), setDock((d) => openTab(d, "pr"))) : setDock((d) => openTab(d, tab)));
-  /*
-    The details toggle: the card while the panel is hidden; with the panel open there is no room for it, so the toggle
-    shows the Session surface there, and hides it again when it is the one showing.
-  */
-  const toggleDetails = () => (dockNow.current.open ? setDock((d) => (onScreen(d, "session") ? closeTab(d, "session") : openTab(d, "session"))) : setSessionOpen((o) => !o));
+  // Linked pull requests is Pull request with its picker open (pr-pick.ts). Session, asked for as a surface still, is the details card, wherever the panel stands.
+  const bring = (tab: Tab) => (tab === "terminal" ? setBelow(true) : tab === "session" ? showDetails() : tab === "linked" ? (askPicker(thread.id), setDock((d) => openTab(d, "pr"))) : setDock((d) => openTab(d, tab)));
+  // The details toggle: the card, open or shut, whether or not the panel is open.
+  const toggleDetails = () => setSessionOpen((o) => !o);
   // The right panel's + (its guide) opens the Terminal below too, with the right panel as it was.
   const fromPanel = (d: DockState) => (paneOf(d, "terminal") >= 0 && paneOf(dock, "terminal") < 0 ? setBelow(true) : setDock(d));
   const [focus, setFocus] = useState<{ id: string; path?: string } | null>(null);
@@ -529,13 +527,13 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!keysOn.current) return;
+      // The Session key (its id kept, so a binding of yours still works) is the details toggle: the card, wherever the panel stands.
+      if (is(e, "surface.session")) return void (e.preventDefault(), !e.repeat && toggleDetails());
       const s = SURFACES.find((x) => is(e, `surface.${x.id}`));
       if (!s) return;
       e.preventDefault();
       // The Terminal's key shows the bottom panel, and hides it when it's up, as its button's tip says.
       if (s.id === "terminal") setBelow((b) => !b);
-      // Session's key is the details toggle: the card, or with the panel open the Session surface there.
-      else if (s.id === "session") !e.repeat && toggleDetails();
       // The Linked key opens Pull request with its picker open (pr-pick.ts), the project's pull requests in it.
       else if (s.id === "linked") !e.repeat && (askPicker(thread.id), setDock((d) => openTab(d, "pr")));
       // The Agents key opens the agents popup from the header's chip, or the Agents surface where no chip shows (Crew.tsx openAgents).
@@ -585,9 +583,9 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
 
   // The dock beside the thread, rather than over the whole paper.
   const beside = dock.open && !dock.full;
-  // The details toggle is lit for the card, or with the panel open for the Session surface showing there.
-  const detailsOn = dock.open ? onScreen(dock, "session") : sessionOpen;
-  const cardShown = sessionOpen && !dock.open && !leaving;
+  // The details toggle is lit while the card shows, and the card shows beside the panel too, in the chat's column.
+  const detailsOn = sessionOpen;
+  const cardShown = sessionOpen;
   /*
     Beside the thread, Changes shows at its own width: the one you dragged it to, else the panel's 500 (line and dot:
     no wider default for Changes), never leaving the chat under CHANGES_CHAT_MIN. A window too narrow for that has the usual width.
@@ -732,8 +730,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   onChanges={() => setDock((d) => openTab(d, "changes"))}
                   actions={(close) => (
                     <>
-                      {/* The details card, as the first toggle at the row's right end shows it (or the Session surface, with the panel open). */}
-                      <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), bring("session"))} />
+                      {/* The details card, as the first toggle at the row's right end shows it, wherever the panel stands. */}
+                      <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), showDetails())} />
                       {/* Agents opens what the Agents key opens (the popup, or the panel's surface). Teamwork and Swarm have no
                           row in a menu: they start only from the message box, with /teamwork and /swarm. */}
                       {!thread.sideOf && !thread.security && <Row title="Agents" icon={<I.agents size={16} />} onPick={() => (close(), openAgents(thread.id))} />}
@@ -765,7 +763,6 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             <span className="lc-grow" data-drag />
             <ReviewerSwitch thread={thread} />
             {/* The branch, before the toggles; the details card has its own branch row, so the chip steps aside while it shows. */}
-            {project && !cardShown && <BranchChip thread={thread} project={project} files={openFiles || wtChanges} lines={lines} onChanges={() => setDock((d) => openTab(d, "changes"))} />}
             <TopToggles details={{ on: detailsOn, onToggle: toggleDetails }} below={below} onBelow={() => setBelow(!below)} panel={{ open: dock.open, onShow: () => setDock((d) => showDock(d)) }} />
             {onCloseSide && (
               <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
@@ -775,9 +772,10 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
           </header>
           <div className="lc-stage" hidden={view !== "chat"}>
             {/*
-              The session details card, floating under the top row's right end while its toggle is on and the panel is
-              hidden. It stays until its toggle shuts it; a row that opens something else leaves it up. The chat and the
-              message box keep a gutter clear of it (app.css). A Teamwork or a Swarm is not here: the Agents panel holds it.
+              The session details card, floating under the top row's right end while its toggle is on, the panel open or
+              not: it is in the chat's column, so it stands at the chat's right beside the panel. It stays until its toggle
+              shuts it; a row that opens something else leaves it up. The chat and the message box keep a gutter clear of it
+              (app.css). A Teamwork or a Swarm is not here: the Agents panel holds it.
             */}
             <aside className="lc-pin" aria-label="Session details">
               {cardShown && project && (
@@ -787,7 +785,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   files={openFiles || wtChanges}
                   lines={lines}
                   onChanges={() => setDock((d) => openTab(d, "changes"))}
-                  onContext={() => setDock((d) => openTab(d, "session"))}
+                  onPr={() => setDock((d) => openTab(d, "pr"))}
                   onAgents={() => openAgents(thread.id)}
                   onTerminal={() => setBelow(true)}
                 />
@@ -916,6 +914,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             dock={dock.open ? dock : leaving!}
             onDock={fromPanel}
             counts={{ changes: openFiles || wtChanges || undefined }}
+            // The same numbers as the commit tab: the lines only when they are the checkpoints' own.
+            changes={{ files: openFiles || wtChanges, added: openFiles > 0 ? lines.added : 0, removed: openFiles > 0 ? lines.removed : 0 }}
             onBelow={setBelow}
             onMake={() => putInComposer(thread.id, "Make me a panel that ")}
             focus={focus}

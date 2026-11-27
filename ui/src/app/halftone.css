@@ -8,7 +8,7 @@
     .lc-ht-faint make it quieter, .lc-ht-big puts it on a 6px grid. Its colour is the action colour (Liner red) unless
     one of .lc-ht-blue, -ok, -prog, -warn, -bad or -ink says the card's state, or --lc-ht-c is set.
   - .lc-ht-fill: the same, solid where it starts and then dots, as the fill of a track.
-  - .lc-dotbar: a measured bar as rows of dots (the Session surface's Context, a file's share): one colour, or a row
+  - .lc-dotbar: a measured bar as rows of dots (the session details card's Context, a file's share): one colour, or a row
     of coloured spans, runs under the grid and the grid lets it through. 12px high by default.
   - .lc-dither: the fill of a track that ends at a knob (the Effort track): solid action colour, with light round dots
     that come in one cell at a time (an ordered 4×4 pattern on a 3px grid) until they are a checkerboard just before the

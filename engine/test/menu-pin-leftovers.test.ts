@@ -93,7 +93,7 @@ test("The model picker's star and All sources mark are the picker's 14px, and it
 test("The Session key and ⌘K say they show the session's details, and nothing in the app calls it a popup", () => {
   assert.match(app("keymap.ts"), /session: "Show or hide session details"/, "the keyboard settings don't name the details card the key shows");
   const palette = app("App.tsx");
-  assert.match(palette, /s\.id === "session" \? "Show session details"/, "⌘K doesn't name the details card it shows");
+  assert.match(palette, /\{ id: "surface-session", label: "Show session details",[^\n]*onSelect: \(\) => openSession\(here\.id, "session"\) \}/, "⌘K doesn't name the details card it shows");
   const files: string[] = [];
   const walk = (dir: URL, at: string) => {
     for (const name of readdirSync(dir)) {

@@ -22,16 +22,27 @@ test("The session details card floats from the top row's first toggle, one choic
   const session = read("Session.tsx");
   assert.match(session, /const sessionOpen = useSessionPinned\(\);/, "the card's state isn't the shared choice (pinned.ts)");
   assert.match(session, /<aside className="lc-pin"[\s\S]*?\{cardShown && project && \([\s\S]*?<DetailsCard[\s\S]*?<\/aside>/, "the card isn't in the column under the top row");
-  assert.match(session, /const cardShown = sessionOpen && !dock\.open && !leaving;/, "the card shows with the panel open, where there is no room for it");
-  // With the panel open the toggle shows the Session surface there instead.
-  assert.match(session, /const toggleDetails = \(\) => \(dockNow\.current\.open \? setDock\(\(d\) => \(onScreen\(d, "session"\) \? closeTab\(d, "session"\) : openTab\(d, "session"\)\)\) : setSessionOpen\(\(o\) => !o\)\);/);
-  assert.match(session, /else if \(s\.id === "session"\) !e\.repeat && toggleDetails\(\);/, "the Session key isn't the details toggle");
+  // Since the Session surface went (2026-11-27) the card shows with the panel open too, and its toggle is the card's alone.
+  assert.match(session, /const cardShown = sessionOpen;/, "the card hides while the panel is open");
+  assert.match(session, /const toggleDetails = \(\) => setSessionOpen\(\(o\) => !o\);/, "the toggle opens something other than the card");
+  assert.match(session, /if \(is\(e, "surface\.session"\)\) return void \(e\.preventDefault\(\), !e\.repeat && toggleDetails\(\)\);/, "the Session key isn't the details toggle");
   assert.match(read("pinned.ts"), /localStorage\.setItem\(KEY, v \? "1" : "0"\)/, "the toggle's state isn't kept across launches");
 });
 
-test("While the details card shows, the chat and the message box keep a gutter clear of it and centre in the room that is left", () => {
+test("While the details card shows, the chat stays centred in the sheet and moves aside only as far as the card needs, as T3 Code's does", () => {
   const css = read("app.css");
-  assert.match(css, /@container lc-thread \(min-width: 640px\) \{\s*(?:\/\*[\s\S]*?\*\/\s*)?\.lc-thread:has\(\.lc-pin > \*\) \.lc-scroll \{\s*margin-right: calc\(var\(--lc-pin-w\) \+ 34px\);\s*\}\s*\.lc-thread:has\(\.lc-pin > \*\) \.lc-thread-foot \{\s*right: calc\(var\(--lc-pin-w\) \+ 34px\);/);
+  const shift = "clamp(0px, calc(var(--lc-measure) + 60px + 2 * var(--lc-pin-gutter) - 100cqi), var(--lc-pin-gutter))";
+  const at = css.indexOf("@container lc-thread (min-width: 640px)");
+  const block = css.slice(at, css.indexOf("\n}\n", at));
+  assert.match(block, /\.lc-thread:has\(\.lc-pin > \*\) > \* \{\s*--lc-pin-gutter: calc\(var\(--lc-pin-w\) \+ 34px\);/, "the gutter is not the card's width and 34");
+  assert.ok(block.includes(`.lc-thread:has(.lc-pin > *) .lc-scroll {\n    margin-right: ${shift};`), "the chat always gives the card its whole gutter, so it sits too far left in a wide window");
+  assert.ok(block.includes(`.lc-thread:has(.lc-pin > *) .lc-thread-foot {\n    right: ${shift};`), "the message box doesn't move with the chat");
+  // The same sum in numbers: the box is the measure + 60, the gutter 318. Wide, nothing moves; narrower, the box's right edge keeps 318 clear; narrow, it is centred in the room left.
+  const moved = (thread: number, measure: number) => Math.min(318, Math.max(0, measure + 60 + 636 - thread));
+  const right = (thread: number, measure: number) => thread - moved(thread, measure) - (thread - moved(thread, measure) - (measure + 60)) / 2;
+  assert.equal(moved(1700, 840), 0, "a wide sheet still pushes the chat aside");
+  assert.equal(right(1300, 754), 1300 - 318, "the box's edge is not one gutter from the card");
+  assert.equal(moved(1000, 720), 318, "a narrow sheet gives the card less than its gutter");
   // The chat's own box narrows, so what is in it (margin: 0 auto) centres in what is left; a padding would leave its scrollbar under the card.
   assert.doesNotMatch(css, /\.lc-thread:has\(\.lc-pin > \*\) \.lc-scroll \{\s*padding-right/, "the chat is padded, so its scrollbar runs under the card");
   assert.match(css, /\n\.lc-thread \{\s*--lc-pin-w: 284px;/, "the card is not the board's 284 wide");
@@ -95,7 +106,7 @@ test("Turning Teamwork or a Swarm on opens the team in the Agents panel, from /t
   const session = read("Session.tsx");
   const send = session.slice(session.indexOf("const send = async"), session.indexOf("const send = async") + 1200);
   assert.match(send, /showTeam\(thread\.id\);/, "/teamwork doesn't show the team");
-  assert.doesNotMatch(read("SessionInfo.tsx"), /MultiAgentRow|swarm\.enable/, "the Session surface starts a team again");
+  assert.doesNotMatch(read("DetailsParts.tsx"), /MultiAgentRow|swarm\.enable/, "the details card's Setup starts a team again");
   assert.match(read("Crew.tsx"), /export function showTeam\(threadId: string\) \{\s*showTeamView\(threadId, "all"\);/, "showing the team doesn't open the Agents panel");
 });
 
@@ -124,8 +135,8 @@ test("The card's agents show only for a session with agents: Fusion, a tool's su
   assert.doesNotMatch(card, /worked\.count > 0 \? `\$\{worked\.count\} worked`|thread\.sidekick \|\| worked\.count > 0/, "today's last row (Fusion · N worked / Agents) is drawn again");
   const section = env.slice(env.indexOf("function CardAgents("));
   assert.match(section, /if \(!hasAgents\(\{ sidekick: thread\.sidekick, swarm: swarmOn, atWork: thread\.agentsAtWork, worked \}\)\) return null;/, "the section shows for a session with no agents");
-  // The Session surface's "N agents worked" asks the same.
-  assert.match(read("SessionInfo.tsx"), /hasAgents\(\{ sidekick: thread\.sidekick, swarm: isSwarm\(thread\), atWork: thread\.agentsAtWork, worked: worked\.count \}\) && worked\.count > 0/);
+  // The Session surface's "N agents worked" row, gone with it, said how long they worked: the section's label says it in its tip.
+  assert.match(section, /title=\{worked > 0 && duration\(seconds\) \? `\$\{plural\(worked, "agent"\)\} worked for \$\{duration\(seconds\)\}\. Open the Agents surface` : "Open the Agents surface"\}/, "how long the agents worked is lost with the Session surface");
 });
 
 test("The card's agent tree is the app's own: crewOf through crewRows for a message's crew, teamTree for a Swarm or a Teamwork, and it asks for nothing", () => {

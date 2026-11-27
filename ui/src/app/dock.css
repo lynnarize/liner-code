@@ -230,6 +230,144 @@
   background: var(--l-ok);
 }
 
+/* Open with nothing in it the head is +, Fill and Hide alone, with no rule under it: the start page reads as one sheet. */
+.lc-ptabs[data-empty] {
+  border-bottom-color: transparent;
+}
+.lc-ptabs-list[hidden] {
+  display: none;
+}
+
+/*
+  The panel's start page (PanelStart.tsx, board Start.dc.html): a centred column at most 388 wide, 64 under the head,
+  scrolling inside the panel when it is taller. Groups of lean rows under a grey 12.5px label 26 high, 26 apart; each row
+  34 high, 10 in, an 8px corner, 14px words in the ink, a 16px icon in the menus' grey drawn at their lighter stroke, and a
+  grey 12.5px right end. Only a row's fill under the pointer or the keyboard changes: no card, shadow, blur or motion.
+*/
+.lc-start {
+  --lc-stroke: var(--lc-menu-stroke);
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 64px 28px 32px;
+}
+.lc-start-in {
+  width: 100%;
+  max-width: 388px;
+  height: max-content;
+}
+.lc-start-g + .lc-start-g {
+  margin-top: 26px;
+}
+.lc-start-l {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.lc-start-r {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--lc-r-menu);
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--l-ink);
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-start-r:focus-visible {
+  background: var(--lc-menu-hl);
+}
+@media (hover: hover) {
+  .lc-start-r:hover {
+    background: var(--lc-menu-hl);
+  }
+}
+.lc-start-r > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--lc-icon);
+}
+/* An app's name at 500, then its line in grey, cut with an ellipsis rather than pushing the row wider. */
+.lc-start-r b {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.lc-start-r em {
+  min-width: 0;
+  margin-left: -4px;
+  overflow: hidden;
+  font-size: 13px;
+  font-style: normal;
+  color: var(--l-ink-3);
+  text-overflow: ellipsis;
+}
+.lc-start-r[data-quiet] {
+  color: var(--l-ink-3);
+}
+.lc-start-k {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--l-ink-3);
+}
+.lc-start-k [data-add],
+.lc-start-k [data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-start-k [data-del],
+.lc-start-k [data-tone="bad"] {
+  color: var(--l-danger-text);
+}
+.lc-start-k [data-tone="merged"] {
+  color: var(--lc-merged);
+}
+/* A server this session started listens: the done green's dot before its address. */
+.lc-start-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--l-ok);
+}
+/* An app with no icon of its own: an 18px tile with its two letters, in a hue of its own. */
+.lc-start-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 -1px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: oklch(0.6 0.13 var(--h, 215));
+}
+
 /* Two panes side by side: the dock half as wide again, the thread still keeping its 420px. */
 .lc-session[data-panel][data-panes="2"]:not([data-wide]) .lc-body {
   grid-template-columns: minmax(420px, 1fr) min(round(down, calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), 1px), calc(100% - 420px));

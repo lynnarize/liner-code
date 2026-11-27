@@ -41,6 +41,7 @@ import { usePrecheck, type SendHow } from "./Precheck";
 import { draftRead, draftSaves, wordRead } from "./kept";
 import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
 import { UsageRing } from "./UsageRing";
+import { showDetails } from "./pinned";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -1102,11 +1103,12 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
         </span>
       )}
       <span className="lc-grow" />
+      {/* Pressed, the session details card shows with its Context unfolded: what fills it, and Compact. */}
       {ctxPct !== undefined && (
-        <span className="lc-under-u" title={`${compact(usage!.contextTokens!)} of ${compact(usage!.contextWindow!)} tokens in the context`}>
+        <button type="button" className="lc-under-u lc-under-b l-focus" title={`${compact(usage!.contextTokens!)} of ${compact(usage!.contextWindow!)} tokens in the context. Show what fills it`} onClick={() => showDetails({ context: true })}>
           <i className="lc-under-ring" style={{ "--lc-v": `${ctxPct}%` } as CSSProperties} aria-hidden />
           {ctxPct}% of context
-        </span>
+        </button>
       )}
       <UsageRing model={model} />
     </div>

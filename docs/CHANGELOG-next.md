@@ -142,18 +142,17 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   shells and New terminal; it opens 500 wide.
 - Session details is a card under the top row's right end: where it runs, your editor, scripts, branch, Commit,
   Changes, Context and Fusion; the chat keeps clear of it, and it stays shown or hidden across sessions and restarts.
-- The Session surface names who leads on a small card, shows its context as a bar of dots with a colour per source,
-  and has no Cost section.
+- Session details is the one place for a session: the card shows with the panel open too, and adds the pull request, a
+  Compact button and a bar of dots on its Context row (pressed, it unfolds what fills the context), and a Setup menu with
+  the tool preset, connections, spend limit, memory and keep awake. The panel no longer has a Session tab.
 - Changes shows one column or side by side as a switch on its bar, with Wrap beside it, and its lines at 12px with a
   thin bar at the edge of each added or removed line.
 - While a session works with agents (Fusion, its tool's subagents, a Swarm or Teamwork), Session details shows them as a
   small tree with each one's state, folding, and a way into the Agents panel; a session that works alone shows none.
 - What is ready to commit is a tab on the message box's top edge, with the commit's first line beside it when one is
   already written.
-- A session's top row has a chip for its branch.
 - New design and Start a scan sit in the sidebar's search field, as New session does.
 - The Agents surface no longer shows cost or cache rows.
-- A Session tab left open in the panel is still there after a restart.
 - An ask's card has no state mark in its head.
 - Words are set in the Mac's own face (SF Pro, with Inter where there is none) and code in its own mono, in three weights
   only; in the light look the sidebar and the sheet are nearly one tone, cards and menus are white, and the inks are softer.
@@ -174,7 +173,5 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   folder's files on the page only once you open it, so the panel opens without a stutter and the window no longer runs
   hot while Files is up. Files and @ mentions also list the project's own files before new ones, so such a folder can't
   crowd the project out of the tree.
-- Files stays light on a project with a folder of thousands of new files (video frames, an export): the tree puts a
-  folder's files on the page only once you open it, so the panel opens without a stutter and the window no longer runs
-  hot while Files is up. Files and @ mentions also list the project's own files before new ones, so such a folder can't
-  crowd the project out of the tree.
+- The right panel opened with nothing in it shows a start page rather than opening Changes by itself: Changes, Files,
+  the Browser, a side chat and a terminal with what each holds now, what this session has, and your apps.

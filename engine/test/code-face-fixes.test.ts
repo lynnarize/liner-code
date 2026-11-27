@@ -76,7 +76,7 @@ test("Add $5 never sets a spend limit below what the session has spent", () => {
   assert.equal(addFive(10, 3), 15);
   assert.equal(addFive(10, 12.5), 17.5, "a limit already passed stays passed");
   assert.equal(addFive(0.1, 0.2), 5.2, "the sum is not rounded to cents");
-  assert.match(src("SessionInfo.tsx"), /update\(\{ spendLimit: addFive\(thread\.spendLimit, usage\?\.costUsd \?\? 0\) \}\)/);
+  assert.match(src("DetailsParts.tsx"), /update\(\{ spendLimit: addFive\(thread\.spendLimit, usage\?\.costUsd \?\? 0\) \}\)/);
 });
 
 test("The Agents key opens the agents popup, and its name in Settings says so", () => {
@@ -169,12 +169,12 @@ test("The title menu has no Multi-agent row, only an Agents row that opens what 
   assert.doesNotMatch(session, /title="Start Teamwork"|title="Start Swarm"|"Swarm panel"|"Teamwork panel"|<MultiAgentRow/);
   assert.match(session, /<Row title="Agents" icon=\{<I\.agents size=\{16\} \/>\} onPick=\{\(\) => \(close\(\), openAgents\(thread\.id\)\)\} \/>/);
   assert.match(session, /\/\^\\\/\(teamwork\|swarm\)/, "/teamwork and /swarm no longer start a team");
-  assert.doesNotMatch(src("SessionInfo.tsx"), /MultiAgentRow/, "the Session surface has a Multi-agent row again");
+  assert.doesNotMatch(src("DetailsParts.tsx"), /MultiAgentRow/, "the details card's Setup has a Multi-agent row again");
 });
 
-test("The Session popup's Connections list says it is this session's", () => {
-  const info = src("SessionInfo.tsx");
-  const conn = info.slice(info.indexOf("function Connections("), info.indexOf("function spanOf("));
+test("The details card's Connections list (in its Setup menu) says it is this session's", () => {
+  const info = src("DetailsParts.tsx");
+  const conn = info.slice(info.indexOf("function Connections("));
   assert.match(conn, /<PanelHead>In this session<\/PanelHead>/);
 });
 

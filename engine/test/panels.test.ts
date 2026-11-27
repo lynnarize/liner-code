@@ -457,22 +457,34 @@ test("addon_install, a panel: one that reaches the internet holds, and Never in 
 /** A shown dock of one pane holding these tabs, this one up: a layout to start from, past the starters. */
 const one = (tabs: string[], tab = tabs[tabs.length - 1]): dock.DockState => ({ open: true, full: false, panes: [{ tabs, tab }], at: 0 });
 
-test("dock: an empty dock opens with Changes, Files and the Browser, the one asked for in front", () => {
-  assert.deepEqual(dock.showDock(dock.emptyDock()).panes, [{ tabs: ["changes", "files", "browser"], tab: "changes" }], "shown, Changes is up");
-  assert.deepEqual(dock.openTab(dock.emptyDock(), "files").panes, [{ tabs: ["changes", "files", "browser"], tab: "files" }], "a starter asked for comes up where it stands");
-  assert.deepEqual(dock.toggleTab(dock.emptyDock(), "browser").panes, [{ tabs: ["changes", "files", "browser"], tab: "browser" }], "its key does the same");
+test("dock: an empty dock shows empty, for its start page, and a surface asked for comes up as its one tab", () => {
+  const shown = dock.showDock(dock.emptyDock());
+  assert.deepEqual(shown, { open: true, full: false, panes: [], at: 0 }, "the panel's toggle on nothing opens Changes by itself rather than the start page");
+  assert.equal(dock.isEmptyOpen(shown), true);
+  assert.deepEqual(dock.openTab(dock.emptyDock(), "files").panes, [{ tabs: ["files"], tab: "files" }], "a surface asked for brings starters it wasn't asked for");
+  assert.deepEqual(dock.openTab(shown, "files"), { open: true, full: false, panes: [{ tabs: ["files"], tab: "files" }], at: 0 }, "a row of the start page opens more than its surface");
+  assert.deepEqual(dock.toggleTab(dock.emptyDock(), "browser").panes, [{ tabs: ["browser"], tab: "browser" }], "its key does the same");
   const design = dock.openTab(dock.emptyDock(), "design");
-  assert.deepEqual([design.open, design.panes], [true, [{ tabs: ["changes", "files", "browser", "design"], tab: "design" }]], "anything else goes after them, in front");
-  assert.deepEqual(dock.toggleFull(dock.emptyDock()), { ...dock.openTab(dock.emptyDock(), "changes"), full: true }, "the full canvas from nothing opens the same, filling the paper");
+  assert.deepEqual([design.open, design.panes], [true, [{ tabs: ["design"], tab: "design" }]]);
+  const full = dock.toggleFull(dock.emptyDock());
+  assert.deepEqual(full, { open: true, full: true, panes: [], at: 0 }, "the full canvas from nothing is the start page, filling the paper");
+  assert.equal(dock.openTab(full, "files").full, true, "a surface opened from the start page in the full canvas leaves it");
   const closed = dock.hideDock(design);
-  assert.deepEqual(dock.showDock(closed).panes, design.panes, "a hidden dock comes back as it was, not with the starters again");
-  const emptied = ["changes", "files", "browser", "design"].reduce(dock.closeTab, design);
-  assert.deepEqual(dock.showDock(emptied).panes[0].tabs, ["changes", "files", "browser"], "every tab closed, it starts over");
+  assert.deepEqual(dock.showDock(closed).panes, design.panes, "a hidden dock comes back as it was");
+  assert.deepEqual(dock.closeTab(design, "design"), dock.emptyDock(), "closing the last tab no longer hides the panel");
+  assert.deepEqual(dock.showDock(dock.closeTab(design, "design")).panes, [], "every tab closed, it shows the start page again");
+  assert.equal(dock.isEmptyOpen(dock.hideDock(shown)), false, "hidden, it is not the start page");
+});
+
+test("dock: a panel left open with nothing in it comes back open on its start page after a restart, and a hidden one stays hidden", () => {
+  const kept = JSON.parse(JSON.stringify(dock.showDock(dock.emptyDock())));
+  assert.deepEqual(dock.readDock(kept), { open: true, full: false, panes: [], at: 0 }, "an empty remembered layout comes back hidden instead of on the start page");
+  assert.deepEqual(dock.readDock({ open: false, panes: [], at: 0 }), dock.emptyDock());
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: [], tab: "x" }], at: 0 }), { open: true, full: false, panes: [], at: 0 }, "a layout whose tabs were all previews comes back on the start page");
 });
 
 test("dock: opening, toggling and closing tabs", () => {
-  let d = dock.openTab(dock.emptyDock(), "changes");
-  d = dock.openTab(d, "guide");
+  let d = dock.openTab(one(["changes", "files", "browser"], "changes"), "guide");
   assert.deepEqual(d.panes, [{ tabs: ["changes", "files", "browser", "guide"], tab: "guide" }], "the guide comes after the open tabs");
   d = dock.openTab(d, "terminal");
   assert.deepEqual(d.panes, [{ tabs: ["changes", "files", "browser", "terminal"], tab: "terminal" }], "the guide gives way to what you open");
@@ -538,24 +550,29 @@ test("switcher: the panel's + lists your apps pinned first, the one showing tick
 });
 
 test("dock: a kept layout that names the guide or a second pane opens cleanly, with no tab nobody can reach", () => {
-  // The guide is gone with the strip; Session is a tab of the panel again (line and dot), so it stays.
-  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["changes", "guide", "session"], tab: "changes" }], at: 0 }), { open: true, full: false, panes: [{ tabs: ["changes", "session"], tab: "changes" }], at: 0 }, "the guide goes, Session stays behind a surface that was up");
+  // The guide is gone with the strip, and Session with the details card (2026-11-27).
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["changes", "guide", "session"], tab: "changes" }], at: 0 }), { open: true, full: false, panes: [{ tabs: ["changes"], tab: "changes" }], at: 0 }, "the guide or Session stays in a kept layout");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["files", "guide"], tab: "guide" }], at: 0 }), { open: false, full: false, panes: [{ tabs: ["files"], tab: "files" }], at: 0 }, "with the guide up, the panel comes back hidden rather than on a surface nobody asked for");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["guide"], tab: "guide" }], at: 0 }), dock.emptyDock(), "a panel that held only the guide is an empty one");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["browser"], tab: "browser" }, { tabs: ["guide", "linked"], tab: "linked" }], at: 1 }), { open: true, full: false, panes: [{ tabs: ["browser", "linked"], tab: "linked" }], at: 0 }, "two panes fold into one, Linked kept up, the guide gone");
-  // A session opened with Session asked for (⌘K from Settings) opens the panel on the Session surface.
-  const asked = dock.openTab(dock.emptyDock(), "session");
-  assert.deepEqual(dock.dropPopups(asked), { dock: asked }, "Session is dropped from the panel as a popup again");
   const kept = dock.openTab(dock.emptyDock(), "files");
   assert.deepEqual(dock.dropPopups(kept), { dock: kept }, "a layout with no guide is the same layout");
 });
 
-test("dock: the Session surface open in the panel comes back after a restart, showing where it showed", () => {
-  const before = dock.openTab(dock.openTab(dock.emptyDock(), "changes"), "session");
-  const after = dock.readDock(JSON.parse(JSON.stringify(before)));
-  assert.ok(after?.panes[0].tabs.includes("session"), "a kept Session tab is lost on a restart");
-  assert.equal(after?.panes[0].tab, "session", "the panel comes back on another surface");
+test("dock: a kept layout with a Session tab comes back without it, open on the tab before it, or on its start page when it held nothing else", () => {
+  // Session was a surface of the panel until 2026-11-27; the details card holds all it showed now.
+  const before = dock.openTab(dock.openTab(dock.openTab(dock.emptyDock(), "changes"), "session"), "files");
+  const showing = { ...before, panes: [{ ...before.panes[0], tab: "session" }] };
+  const after = dock.readDock(JSON.parse(JSON.stringify(showing)));
+  assert.deepEqual(after?.panes[0].tabs, ["changes", "files"], "a kept Session tab comes back on a restart");
+  assert.equal(after?.panes[0].tab, "changes", "the panel doesn't come back on the tab before Session");
   assert.equal(after?.open, true, "the panel comes back hidden");
+  // A panel that held Session alone comes back open on its start page, as a panel left with nothing does.
+  const alone = dock.readDock(JSON.parse(JSON.stringify(dock.openTab(dock.emptyDock(), "session"))));
+  assert.deepEqual(alone, dock.showDock(dock.emptyDock()), "a panel that held only Session doesn't come back on its start page");
+  assert.equal(dock.isEmptyOpen(alone!), true);
+  // Hidden, it stays hidden and empty.
+  assert.deepEqual(dock.readDock({ open: false, full: false, panes: [{ tabs: ["session"], tab: "session" }], at: 0 }), dock.emptyDock());
 });
 
 /* ---------- "Make it an app" ---------- */

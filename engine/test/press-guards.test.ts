@@ -20,15 +20,15 @@ const span = (src: string, from: string, to?: string) => {
 };
 
 test("Compact is disabled from its own press, not only the turn's status", () => {
-  const sinfo = app("SessionInfo.tsx");
-  const surface = span(sinfo, "export function SessionSurface(", "/** The pull request's checks");
-  assert.ok(/const \[compacting, setCompacting\] = useState\(false\)/.test(surface), "Compact keeps no state of its own press");
-  const press = span(surface, "const compactNow", "\n  };");
+  const parts = app("DetailsParts.tsx");
+  const hook = span(parts, "export function useCompact(", "\n}\n");
+  assert.ok(/const \[compacting, setCompacting\] = useState\(false\)/.test(hook), "Compact keeps no state of its own press");
+  const press = span(hook, "const compactNow", "\n  };");
   assert.ok(/if \(compacting\) return;/.test(press), "a second press is not held back while the first is on its way");
   assert.ok(/setCompacting\(true\)/.test(press), "the press does not mark itself in flight");
   assert.ok(/setCompacting\(false\)/.test(press), "the settle does not clear the mark");
-  assert.ok(/compacting=\{compacting\}/.test(surface), "the compacting state does not reach the card whose button reads it");
-  const card = span(sinfo, "function ContextCard(");
+  const card = span(parts, "export function CardContext(", "export function CardSetup(");
+  assert.ok(/const \{ compacting, compactNow \} = useCompact\(thread\);/.test(card), "the compacting state does not reach the card whose button reads it");
   assert.ok(/disabled=\{running \|\| !ctx \|\| compacting\}/.test(card), "the Compact button does not read the compacting state");
 });
 
@@ -47,7 +47,7 @@ test("a held Send-now shortcut sends one message", () => {
   assert.ok(/sendingNow\.current\.delete\(id\)/.test(steered), "the queue effect does not clear the mark once the message is gone");
 });
 test("Compact stays held from its press until its turn is seen running, not only until the send is accepted", () => {
-  const surface = span(app("SessionInfo.tsx"), "export function SessionSurface(", "/** The pull request's checks");
+  const surface = span(app("DetailsParts.tsx"), "export function useCompact(", "\n}\n");
   const press = span(surface, "const compactNow", "\n  };");
   // thread.send answers before the turn's status arrives, so clearing the mark on that answer leaves a gap a second press gets through.
   assert.ok(!/\.finally\(\(\) => setCompacting\(false\)\)/.test(press), "the mark clears as soon as the send is accepted, before the turn is seen running");

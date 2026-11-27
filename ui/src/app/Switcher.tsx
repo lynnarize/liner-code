@@ -22,17 +22,29 @@ import { shortcutOf } from "./keymap";
 import { runScript, SURFACES, surfaceOf, type Tab } from "./Surfaces";
 import { closeTab, hideDock, onScreen, openTab, type DockState } from "./dock";
 import { hasAgents } from "./agent-rows";
-import { canPr, fadeOf, hasCanvas, isCanvasItem, moreRows, scrollToShow, shortTabs, surfaceRows } from "./surface-row";
+import { canPr, fadeOf, hasCanvas, isCanvasItem, moreRows, pickOf, scrollToShow, shortTabs, surfaceRows, type RowPick } from "./surface-row";
 import { MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
 import * as os from "./os";
 
-const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
+export const keys = (id: string) => os.keys(shortcutOf(id) ?? []) || undefined;
+
+/**
+  What a row's press does (surface-row.ts RowPick), for + and the panel's start page (PanelStart.tsx) alike, so the two
+  never open a surface two ways: a surface showing now is put away, one behind another comes up, a new one opens as a tab.
+*/
+export function runPick({ thread, dock, onDock, onBelow, onMake }: { thread: Thread; dock: DockState; onDock: (d: DockState) => void; onBelow: (on: boolean) => void; onMake: () => void }, pick: RowPick) {
+  if (pick.kind === "terminal") return (runScript(thread.id, { name: "Shell", command: "" }), onBelow(true));
+  if (pick.kind === "make") return onMake();
+  if (pick.kind === "side") return onDock(openTab(dock, "side"));
+  const tab = pick.tab;
+  onDock(onScreen(dock, tab) ? closeTab(dock, tab) : openTab(dock, tab));
+}
 /** "Show the panel (⇧⌘D)": a button's tooltip with its key, when it has one. */
 const tip = (words: string, id?: string) => (id && keys(id) ? `${words} (${keys(id)})` : words);
 
 /**
-  The three toggles at the top row's right end. `details` is the session details card, or, with the panel open, the Session
-  surface in it (there is no room for the card then); `panel` is shown only while the panel is hidden.
+  The three toggles at the top row's right end. `details` is the session details card, which shows whether or not the panel
+  is open; `panel` is shown only while the panel is hidden.
 */
 export function TopToggles({ details, below, onBelow, panel }: {
   details: { on: boolean; onToggle: () => void };
@@ -123,8 +135,9 @@ export function PanelTabs({ thread, dock, onDock, nameOf, counts, onBelow, onMak
     setFade(fadeOf(el.scrollLeft, el.scrollWidth, el.clientWidth));
   }, [shown, key, short]);
   return (
-    <div className="lc-ptabs">
-      <div ref={list} className="lc-ptabs-list" role="tablist" aria-label="Open surfaces" data-fade={fade} onScroll={(e) => setFade(fadeOf(e.currentTarget.scrollLeft, e.currentTarget.scrollWidth, e.currentTarget.clientWidth))}>
+    // With nothing open the head is +, Fill and Hide alone, with no rule under it: the start page shows below (PanelStart.tsx).
+    <div className="lc-ptabs" data-empty={tabs.length === 0 || undefined}>
+      <div ref={list} className="lc-ptabs-list" role="tablist" hidden={tabs.length === 0} aria-label="Open surfaces" data-fade={fade} onScroll={(e) => setFade(fadeOf(e.currentTarget.scrollLeft, e.currentTarget.scrollWidth, e.currentTarget.clientWidth))}>
         {tabs.map((t) => {
           const Icon = iconOf(t, addons);
           const name = nameOf(t);
@@ -174,7 +187,7 @@ function SurfaceMenu({ thread, dock, onDock, onBelow, onMake }: { thread: Thread
 
 /** Whether a simulator is running, as the Device surface would show it: kept between opens, so + doesn't redraw as it opens. */
 let booted = false;
-function useBooted() {
+export function useBooted() {
   const [on, setOn] = useState(booted);
   useEffect(() => {
     let live = true;
@@ -205,8 +218,9 @@ function SurfaceList({ thread, dock, onDock, onBelow, onMake, close }: { thread:
     SURFACES.map((s) => s.id),
     { agents: hasAgents({ sidekick: thread.sidekick, swarm: isSwarm(thread), atWork: thread.agentsAtWork, worked: sent }), pr: canPr(thread, project), canvas: hasCanvas(thread, drew), device, open },
   );
-  // A ticked surface that shows now is put away from here; one behind another tab comes up.
-  const pick = (tab: Tab) => (close(), onDock(onScreen(dock, tab) ? closeTab(dock, tab) : openTab(dock, tab)));
+  // A ticked surface that shows now is put away from here; one behind another tab comes up (runPick).
+  const run = (p: RowPick) => (close(), runPick({ thread, dock, onDock, onBelow, onMake }, p));
+  const pick = (tab: Tab) => run(pickOf(tab));
   const surface = (id: string) => {
     const s = surfaceOf(id);
     return s && <Row key={id} title={s.label} icon={<s.icon size={14} />} on={open.includes(id) || undefined} end={keys(`surface.${id}`)} onPick={() => pick(id)} />;
@@ -229,7 +243,7 @@ function SurfaceList({ thread, dock, onDock, onBelow, onMake, close }: { thread:
                 <>
                   {rows.apps.map(app)}
                   {rows.apps.length > 0 && <Sep />}
-                  <Row title="New add-on" icon={<I.plus size={14} />} onPick={() => (close(), onMake())} />
+                  <Row title="New add-on" icon={<I.plus size={14} />} onPick={() => run(pickOf("make"))} />
                 </>
               )}
             </SubMenu>
@@ -237,15 +251,15 @@ function SurfaceList({ thread, dock, onDock, onBelow, onMake, close }: { thread:
         )}
       </SubMenu>
       <Sep />
-      <Row title="New side chat" icon={<I.plus size={14} />} end={keys("surface.side")} onPick={() => (close(), onDock(openTab(dock, "side")))} />
+      <Row title="New side chat" icon={<I.plus size={14} />} end={keys("surface.side")} onPick={() => run(pickOf("side"))} />
       <Sep />
-      <Shells thread={thread} onBelow={onBelow} close={close} />
+      <Shells thread={thread} onTerminal={() => run(pickOf("terminal"))} />
     </>
   );
 }
 
 /** The menu's shells part: how many the session has, live, with a green dot; New terminal; what listens, at the foot. */
-function Shells({ thread, onBelow, close }: { thread: Thread; onBelow: (on: boolean) => void; close: () => void }) {
+function Shells({ thread, onTerminal }: { thread: Thread; onTerminal: () => void }) {
   const [shells, setShells] = useState<number | null>(null);
   const [servers, setServers] = useState<LocalServer[] | null>(null);
   useEffect(() => {
@@ -261,7 +275,7 @@ function Shells({ thread, onBelow, close }: { thread: Thread; onBelow: (on: bool
     <>
       <PanelHead end={shells ? <span className="lc-ptab-live">{plural(shells, "shell")}</span> : undefined}>Terminals</PanelHead>
       {/* The Terminal's key opens a shell only while there is none (it shows the terminal, which starts one); with shells it shows or hides them, so it is no New terminal's key then. */}
-      <Row title="New terminal" icon={<I.terminal size={14} />} end={shells === 0 ? keys("surface.terminal") : undefined} onPick={() => (close(), runScript(thread.id, { name: "Shell", command: "" }), onBelow(true))} />
+      <Row title="New terminal" icon={<I.terminal size={14} />} end={shells === 0 ? keys("surface.terminal") : undefined} onPick={onTerminal} />
       {servers !== null && (
         <>
           <Sep />

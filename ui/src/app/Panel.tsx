@@ -5,6 +5,7 @@
   surfaces it holds as tabs, then + for every surface, Fill the window and Hide the panel (Switcher.tsx
   PanelTabs), with a hairline under it; under that each surface draws its own 40px bar where it needs one
   (Pane.tsx PaneHead). In the full canvas the panel takes the paper under the chat's top row.
+  Open with nothing in it, the panel shows its start page (PanelStart.tsx), with no tabs and no hairline.
   Every surface you open is mounted once and kept while the panel holds it, so going to another
   never reloads a page or restarts a shell.
   Changes is the diff, kept by turn (Review.tsx, the same in the panel and the full canvas).
@@ -24,12 +25,12 @@ import { SideChat } from "./SideChat";
 import { surfaceOf, type Tab } from "./Surfaces";
 import { PaneFrame } from "./Pane";
 import { PanelTabs } from "./Switcher";
+import { PanelStart } from "./PanelStart";
 import { entering } from "./look";
 import { early, lazyAgain } from "./early";
 import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
-const SessionSurface = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionSurface));
 /*
   Surfaces opened now and then, kept out of the start: they load once the dock is up and the app is
   idle, so the first open has nothing to wait for (early.ts, as App's screens do). Changes (Review,
@@ -61,9 +62,9 @@ const waitFor = (what: string) => (
 );
 
 /*
-  The two surfaces that read the whole timeline, a reply's words too (the session's context, a
-  design's live frames), each subscribe on their own, so the dock itself doesn't redraw with every
-  frame of a reply. Out of sight, one keeps the timeline as it was when it went: a hidden tab costs
+  The surface that reads the whole timeline, a reply's words too (a design's live frames),
+  subscribes on its own, so the dock itself doesn't redraw with every frame of a reply. Out of
+  sight, it keeps the timeline as it was when it went: a hidden tab costs
   nothing while a reply streams, and catches up as it comes back.
 */
 function useItemsShown(threadId: string, visible: boolean) {
@@ -73,15 +74,7 @@ function useItemsShown(threadId: string, visible: boolean) {
   return items;
 }
 const NO_ITEMS: Item[] = [];
-/** The Session surface's inside: what it reads of the timeline, as the surfaces here read theirs. */
-export const SessionTab = memo(function SessionTab({ thread, visible, onShowChange }: { thread: Thread; visible: boolean; onShowChange: (path: string) => void }) {
-  const items = useItemsShown(thread.id, visible);
-  return (
-    <Suspense fallback={null}>
-      <SessionSurface thread={thread} items={items} visible={visible} onShowChange={onShowChange} />
-    </Suspense>
-  );
-});
+const NO_CHANGES = { files: 0, added: 0, removed: 0 };
 const DesignTab = memo(function DesignTab({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
   const items = useItemsShown(thread.id, visible);
   return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
@@ -98,6 +91,7 @@ export function Panel({
   onRoutine,
   leaving,
   counts = {},
+  changes = NO_CHANGES,
   onBelow = () => {},
   onMake = () => {},
 }: {
@@ -113,6 +107,8 @@ export function Panel({
   leaving?: boolean;
   /** The numbers the head row's tabs carry ("Changes 3"). */
   counts?: Partial<Record<string, number>>;
+  /** What is changed and not committed, as the commit tab says it: the start page's Changes row ends in it. */
+  changes?: { files: number; added: number; removed: number };
   /** Shows the bottom panel with the shells, as the head row's + does once it has started a new one. */
   onBelow?: (on: boolean) => void;
   /** New add-on, from +'s Your apps: asks the agent for one in the composer. */
@@ -157,10 +153,6 @@ export function Panel({
   }, [shown, mounted]);
   const open = (t: Tab) => onDock(openTab(dock, t));
   const wideReview = dock.full && shown === "changes";
-  // The same function each render, so a memoised surface doesn't redraw for a new one.
-  const showChangeNow = useRef((_path: string) => {});
-  showChangeNow.current = (path) => (onFocus({ id: "all", path }), open("changes"));
-  const [showChange] = useState(() => (path: string) => showChangeNow.current(path));
 
   const body = (t: Tab, visible: boolean) => {
     if (t === "changes")
@@ -170,8 +162,6 @@ export function Panel({
         </Suspense>
       );
     if (t === "agents") return <AgentsSurface thread={thread} />;
-    // Session is a surface again (line and dot): the details card's toggle opens it here while the panel is open.
-    if (t === "session") return <SessionTab thread={thread} visible={visible} onShowChange={showChange} />;
     if (t === "terminal")
       return (
         <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening a terminal</span></div>}>
@@ -218,6 +208,8 @@ export function Panel({
   return (
     <aside ref={box} className="lc-panel" aria-label="Panel" data-tab={shown} data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} inert={leaving || undefined}>
       <PanelTabs thread={thread} dock={dock} onDock={onDock} nameOf={nameOf} counts={counts} onBelow={onBelow} onMake={onMake} />
+      {/* Open with nothing in it, the panel is its start page rather than an empty frame; what it opens takes its place as a tab. */}
+      {all.length === 0 && <PanelStart thread={thread} dock={dock} onDock={onDock} changes={changes} onBelow={onBelow} onMake={onMake} />}
       {all.map((t) => {
         if (!mounted.has(t)) return null;
         const visible = t === shown;

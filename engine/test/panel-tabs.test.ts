@@ -1,8 +1,8 @@
 /*
-  The panel's head row and the Session surface as line and dot draws them (board Main and board Panel, 2026-11-27), read as
-  text: the surfaces moved from icons in the chat's top row to named tabs in the panel's head, so every one of them must
-  still be reachable by pointer and by its key; and the Session surface carries two rulings of the app's owner, no Cost
-  section and a Context bar of dots. Run with `node --test engine/test/panel-tabs.test.ts`.
+  The panel's head row as line and dot draws it (board Main and board Panel, 2026-11-27), read as text: the surfaces moved
+  from icons in the chat's top row to named tabs in the panel's head, so every one of them must still be reachable by
+  pointer and by its key; and the session details card, which took the Session surface's Context and Setup, carries two
+  rulings of the app's owner, no Cost section and a Context bar of dots. Run with `node --test engine/test/panel-tabs.test.ts`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,23 +18,23 @@ const rule = (css: string, sel: string) => {
   return css.slice(at, css.indexOf("\n}", at));
 };
 
-test("The Session surface has no Cost section and says no money: no From cache row, no amounts, no cost", () => {
-  const info = read("SessionInfo.tsx");
+test("The details card's Context and Setup (the Session surface's, before it went) have no Cost section and say no money: no From cache row, no amounts, no cost", () => {
+  const info = read("DetailsParts.tsx");
   assert.doesNotMatch(info, /From cache/, "the Cost section's From cache row is back");
-  assert.doesNotMatch(info, /\bmoney\(/, "the Session surface shows an amount of money");
-  assert.doesNotMatch(info, /costUsd \?\? 0\)\}|cost=\{|\bCost\b/, "the Session surface reads out what the session cost");
+  assert.doesNotMatch(info, /\bmoney\(/, "the card shows an amount of money");
+  assert.doesNotMatch(info, /costUsd \?\? 0\)\}|cost=\{|\bCost\b/, "the card reads out what the session cost");
   // The spend limit stays a setting (nothing is lost), but its row says whether one is set, not how many dollars.
   assert.match(info, /value=\{thread\.spendLimit \? "Set" : "None"\}/, "the Spend limit row's value is an amount again");
 });
 
-test("The Session surface's Context bar is rows of round dots, one colour per source, with a round dot in its key", () => {
-  const info = read("SessionInfo.tsx");
-  const card = info.slice(info.indexOf("function ContextCard("), info.indexOf("/** The files still to commit"));
+test("The details card's Context bar is rows of round dots, one colour per source, with a round dot in its key", () => {
+  const info = read("DetailsParts.tsx");
+  const card = info.slice(info.indexOf("export function CardContext("), info.indexOf("export function CardSetup("));
   assert.match(card, /<div className="lc-dotbar"/, "the Context bar is not the bar of dots");
   assert.match(card, /"--lc-dotbar-c": GROUP_COLOUR\[s\.group\]/, "a source's part of the bar has no colour of its own");
-  assert.match(card, /<i className="lc-ss-dot" style=\{\{ background: GROUP_COLOUR\[s\.group\] \}\}/, "a source's row has no dot in its colour");
+  assert.match(card, /className="lc-dc-k" title=[^\n]*\n\s*<i style=\{\{ background: GROUP_COLOUR\[s\.group\] \}\} aria-hidden \/>/, "a source's row has no dot in its colour");
   assert.equal(new Set(Object.values(eval(`(${/const GROUP_COLOUR[^=]*= (\{[^}]*\})/.exec(info)?.[1] ?? "{}"})`) as Record<string, string>)).size, 7, "two sources share a colour");
-  assert.match(rule(read("surfaces.css"), ".lc-ss-dot"), /border-radius: 999px;/, "the key's dots are not round");
+  assert.match(rule(read("app.css"), ".lc-dc-k > i"), /border-radius: 999px;/, "the key's dots are not round");
   const dots = rule(read("halftone.css"), ".lc-dotbar");
   assert.match(dots, /mask: radial-gradient\(circle,/, "the bar is not cut into round dots");
 });
@@ -67,8 +67,12 @@ test("Every surface stays reachable: + lists each one with its key (at most unde
   const sw = read("Switcher.tsx");
   assert.match(sw, /\{more\.map\(surface\)\}/, "More doesn't list what + leaves out");
   assert.match(sw, /end=\{keys\(`surface\.\$\{id\}`\)\}/, "+ doesn't show each surface's key");
-  assert.match(sw, /title="New side chat"[^\n]*end=\{keys\("surface\.side"\)\}[^\n]*openTab\(dock, "side"\)/, "+ has no New side chat with Side chat's key");
-  assert.match(sw, /title="New terminal"[\s\S]*?runScript\(thread\.id, \{ name: "Shell", command: "" \}\)/, "+ has no New terminal");
+  // + and the start page press through one runPick (surface-row.ts RowPick), so the opening itself is written once.
+  assert.match(sw, /title="New side chat"[^\n]*end=\{keys\("surface\.side"\)\}[^\n]*run\(pickOf\("side"\)\)/, "+ has no New side chat with Side chat's key");
+  assert.match(sw, /if \(pick\.kind === "side"\) return onDock\(openTab\(dock, "side"\)\);/, "New side chat doesn't open the side chat");
+  assert.match(sw, /title="New terminal"[^\n]*onPick=\{onTerminal\}/, "+ has no New terminal");
+  assert.match(sw, /<Shells thread=\{thread\} onTerminal=\{\(\) => run\(pickOf\("terminal"\)\)\} \/>/, "+'s New terminal doesn't press through runPick");
+  assert.match(sw, /if \(pick\.kind === "terminal"\) return \(runScript\(thread\.id, \{ name: "Shell", command: "" \}\), onBelow\(true\)\);/, "New terminal doesn't open a shell below");
   assert.doesNotMatch(sw, /"Show the terminal" \/>|title=\{below \? "Hide the terminal"/, "+ still has a Show the terminal row: the top row's toggle does that");
   assert.match(sw, /aria-label=\{below \? "Hide the terminal" : "Show the terminal"\}/, "the top row has no terminal toggle");
   const session = read("Session.tsx");
@@ -78,21 +82,13 @@ test("Every surface stays reachable: + lists each one with its key (at most unde
   assert.match(read("Terminal.tsx"), /command: x\.command \|\| undefined/);
 });
 
-test("The branch chip in the top row: Git projects only, hidden while the details card shows, the first thing to give way, and it opens the branch list", () => {
-  const env = read("Env.tsx");
-  const chip = env.slice(env.indexOf("export function BranchChip("), env.indexOf("export function DetailsCard("));
-  assert.match(chip, /if \(!project\.git\) return null;/, "the chip shows for a project with no Git");
-  assert.match(chip, /only="branch"/, "the chip doesn't open the same branch list as the card's branch row");
-  assert.match(chip, /<I\.branch size=\{12\} \/>[\s\S]*?<Lines \{\.\.\.lines\} \/>/, "the chip is not the branch icon, the name and the lines not yet committed");
+test("The session's top row has no branch chip: the branch and its lines are in the details card and the commit tab", () => {
   const session = read("Session.tsx");
-  assert.match(session, /\{project && !cardShown && <BranchChip /, "the chip stays while the details card shows");
-  assert.ok(session.indexOf("<BranchChip ") < session.indexOf("<TopToggles "), "the chip is not before the toggles");
-  const css = read("app.css");
-  // It shrinks far ahead of the title (flex-shrink 999) and goes in a narrow row; the title never gives way for it.
-  assert.match(rule(css, ".lc-pop.lc-bchip-pop"), /flex: 0 99999 auto;/, "the chip doesn't give way before the title");
-  assert.match(rule(css, ".lc-tt-pop"), /flex: 0 999 auto;/);
-  // As specific as the rule that shows it, or the narrow row would keep it.
-  assert.match(css, /@container lc-bar \(max-width: 720px\) \{\s*\.lc-pop\.lc-bchip-pop \{\s*display: none;/, "a narrow row keeps the chip");
+  assert.doesNotMatch(session, /BranchChip/, "the top row draws a branch chip");
+  assert.doesNotMatch(read("Env.tsx"), /export function BranchChip\(/);
+  assert.doesNotMatch(read("app.css"), /\.lc-bchip/);
+  // The branch is still a press away: the details card's branch row opens its list.
+  assert.match(read("Env.tsx"), /panel\("branch", "Branch"\)/);
 });
 
 test("The Agents surface says no money: no Cost or From cache rows, no cost share, and its note speaks of tokens alone", () => {

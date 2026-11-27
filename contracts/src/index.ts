@@ -1319,7 +1319,7 @@ export type ContextUse = {
   deferred?: number;
 };
 
-/** What the Session surface shows from the engine: where a session runs, and what fills its context. */
+/** What the session details card shows from the engine: where a session runs, and what fills its context. */
 export type SessionInfo = {
   machine: string;
   project: string;

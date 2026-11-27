@@ -163,9 +163,11 @@ test("Icons in menus, pop-ups and the details card are 14px in a muted grey draw
 const ids = ["session", "side", "browser", "design", "terminal", "files", "changes", "pr", "linked", "device", "agents"];
 const none: SurfaceNow = { agents: false, pr: false, canvas: false, device: false, open: [] };
 
-test("+ for a session with nothing on lists Session, Changes, Files and Browser, then More with the rest, New side chat, Terminals and its foot", () => {
+test("+ for a session with nothing on lists Changes, Files and Browser, then More with the rest, New side chat, Terminals and its foot; never Session, whose rows the details card holds", () => {
+  // `ids` still names Session, as a list kept from before would: + leaves it out all the same.
   const { top, more } = surfaceRows(ids, none);
-  assert.deepEqual(top, ["session", "changes", "files", "browser"]);
+  assert.deepEqual(top, ["changes", "files", "browser"]);
+  assert.ok(!more.includes("session"), "Session is under More");
   assert.deepEqual(ALWAYS, top);
   assert.deepEqual(more, ["agents", "pr", "design", "device"], "More doesn't hold the rest in the board's order, or holds Side chat, the Terminal or Linked");
   // The menu's parts, in order: the title as a grey label, the list, More, a rule, New side chat, a rule, Terminals with New terminal, a rule and the foot.
@@ -195,12 +197,12 @@ test("+ for a session with nothing on lists Session, Changes, Files and Browser,
 });
 
 test("+ lists Agents, Pull request, Design and Device once the session has them, and any surface open as a tab, ticked, Side chat too", () => {
-  assert.deepEqual(surfaceRows(ids, { ...none, agents: true }).top, ["session", "changes", "files", "browser", "agents"]);
-  assert.deepEqual(surfaceRows(ids, { ...none, pr: true }).top, ["session", "changes", "files", "browser", "pr"]);
-  assert.deepEqual(surfaceRows(ids, { ...none, canvas: true }).top, ["session", "changes", "files", "browser", "design"]);
-  assert.deepEqual(surfaceRows(ids, { ...none, device: true }).top, ["session", "changes", "files", "browser", "device"]);
+  assert.deepEqual(surfaceRows(ids, { ...none, agents: true }).top, ["changes", "files", "browser", "agents"]);
+  assert.deepEqual(surfaceRows(ids, { ...none, pr: true }).top, ["changes", "files", "browser", "pr"]);
+  assert.deepEqual(surfaceRows(ids, { ...none, canvas: true }).top, ["changes", "files", "browser", "design"]);
+  assert.deepEqual(surfaceRows(ids, { ...none, device: true }).top, ["changes", "files", "browser", "device"]);
   const all = surfaceRows(ids, { agents: true, pr: true, canvas: true, device: true, open: ["side"] });
-  assert.deepEqual(all.top, ["session", "changes", "files", "browser", "agents", "pr", "design", "side", "device"]);
+  assert.deepEqual(all.top, ["changes", "files", "browser", "agents", "pr", "design", "side", "device"]);
   assert.deepEqual(all.more, []);
   // An open tab shows whatever the session holds, and leaves More.
   const tab = surfaceRows(ids, { ...none, open: ["device", "changes"] });

@@ -2222,57 +2222,6 @@ html[data-native="mac"] .lc-sb-head {
     display: none;
   }
 }
-/* The branch chip (boards Main and Light): outlined, 26 high, the branch in mono and the lines not yet committed. It is
-   the first thing in the row to give way: it shrinks far ahead of the title (whose flex-shrink is 999), and goes. */
-.lc-pop.lc-bchip-pop {
-  display: flex;
-  flex: 0 99999 auto;
-  min-width: 0;
-}
-.lc-bchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 26px;
-  padding: 0 9px;
-  overflow: hidden;
-  border-radius: var(--lc-r-row);
-  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink-2);
-  white-space: nowrap;
-}
-.lc-bchip > svg {
-  flex: none;
-  color: var(--l-ink-3);
-}
-.lc-bchip-n {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-.lc-bchip .lc-lines {
-  flex: none;
-  margin-left: 2px;
-}
-.lc-bchip[data-open] {
-  background: var(--l-wash-2);
-  color: var(--l-ink);
-}
-@media (hover: hover) {
-  .lc-bchip:hover {
-    background: var(--l-wash);
-    color: var(--l-ink);
-  }
-}
-@container lc-bar (max-width: 720px) {
-  .lc-pop.lc-bchip-pop {
-    display: none;
-  }
-}
 /* What the bar has room for: its own width less its padding, which grows under the traffic lights.
    The session's heads the thread's column only; the panel beside it has a row of its own. */
 .lc-thread > .lc-top {
@@ -2830,6 +2779,153 @@ button.lc-dr-main {
   -webkit-mask-image: radial-gradient(circle, #0000 4.5px, #000 5px);
   mask-image: radial-gradient(circle, #0000 4.5px, #000 5px);
 }
+/*
+  The card's Context (DetailsParts.tsx CardContext, the owner's drawing of 2026-11-27): one row whose fill covers its own
+  button, Compact and the chevron alike, so it reads as one row with two presses in it; the row's fill stays while it is
+  unfolded. Compact is a small soft button, 22 high at 12/500. The chevron turns down as the row unfolds.
+*/
+.lc-dc-ctx {
+  border-radius: 6px;
+}
+.lc-dc-ctxw[data-open] > .lc-dc-ctx {
+  background: var(--lc-menu-hl);
+}
+@media (hover: hover) {
+  .lc-dc-ctx:has(> .lc-dr-main:hover, > .lc-dc-chev:hover) {
+    background: var(--lc-menu-hl);
+  }
+  .lc-dc-ctx > button.lc-dr-main:not(:disabled):hover,
+  .lc-dc-ctx > .lc-dc-chev:hover {
+    background: none;
+  }
+}
+.lc-dc-compact {
+  flex: none;
+  height: 22px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--lc-menu-hl);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-dc-compact:disabled {
+  color: var(--l-ink-3);
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-dc-compact:not(:disabled):hover {
+    background: var(--l-wash-2);
+  }
+}
+.lc-dc-ctx > .lc-dc-chev {
+  color: var(--lc-icon-faint);
+}
+.lc-dc-chev > svg {
+  transition: rotate var(--lc-fold) var(--lc-ease-settle);
+}
+.lc-dc-ctxw[data-open] .lc-dc-chev > svg {
+  rotate: 90deg;
+}
+/* The bar of dots under the row, inset to its words (the row's 8 in, the ring's 14 and the gap's 8); a source you point at
+   lights and the rest dim; the mark is where the tool compacts by itself. */
+.lc-dc-bar {
+  position: relative;
+  margin: 1px 8px 7px 30px;
+}
+/* What is free in the grey of the Free row's dot, as the drawing has it: the shared wash is too faint to read beside a menu's rows. */
+.lc-dc-bar > .lc-dotbar {
+  background: color-mix(in oklab, var(--l-ink-4) 55%, transparent);
+}
+.lc-dc-bar > .lc-dotbar > * {
+  transition: opacity 200ms ease;
+}
+.lc-dc-bar > .lc-dotbar[data-hl] > :not([data-on]) {
+  opacity: 0.3;
+}
+.lc-dc-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1.5px;
+  margin-left: -0.75px;
+  border-radius: 1px;
+  background: var(--l-ink-3);
+}
+/* Unfolded: a 26px row per source, a round 6px dot in its colour, the name in the second ink and its count in grey; then the note. */
+.lc-dc-src {
+  display: flex;
+  flex-direction: column;
+}
+.lc-dc-k {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 26px;
+  padding: 0 8px 0 30px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+}
+.lc-dc-k > i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+.lc-dc-k[data-free] > i {
+  background: var(--l-ink-4);
+}
+.lc-dc-kt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-dc-kn {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--l-ink-3);
+}
+.lc-dc-note {
+  margin: 0;
+  padding: 4px 8px 8px 30px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-3);
+}
+/* Setup: the whole row is its menu's button. */
+.lc-dr > .lc-dc-setup {
+  flex: 1;
+  min-width: 0;
+}
+.lc-dc-setup > .lc-dr-main {
+  width: 100%;
+}
+/* Keep this Mac awake in Setup's menu: a menu row's look whose one control is its switch, so the row itself takes no press. */
+.lc-row.lc-dc-sw {
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-row.lc-dc-sw:hover:not([data-danger]):not(:disabled) {
+    background: none;
+  }
+}
+/* The pull request's state at its row's end, in its colour (surface-row.ts prEnd), as the panel's start page says it. */
+.lc-dr-v[data-tone="ok"] {
+  color: var(--l-ok-text);
+}
+.lc-dr-v[data-tone="bad"] {
+  color: var(--l-danger-text);
+}
+.lc-dr-v[data-tone="merged"] {
+  color: var(--lc-merged);
+}
 @container lc-thread (max-width: 639.98px) {
   /* The message box stands over the column's foot here, so the card's end scrolls up clear of it, as the chat's does. */
   .lc-pin {
@@ -2837,12 +2933,19 @@ button.lc-dr-main {
   }
 }
 @container lc-thread (min-width: 640px) {
-  /* The chat's own box narrows, not its inside: padded, its scrollbar ran down under the card. */
+  /* The chat's own box narrows, not its inside: padded, its scrollbar ran down under the card. As in T3 Code, the chat
+     stays centred in the whole sheet and moves aside only as far as the card needs (--lc-pin-shift): a wide window keeps
+     it in the middle, a narrower one slides it left until it is centred in the room beside the card, and no further.
+     The shift is what puts the message box's right edge (the measure + 60) one gutter clear of the card. */
+  /* The gutter is set on the thread's children: a container's own rule can't sit inside its own container query. */
+  .lc-thread:has(.lc-pin > *) > * {
+    --lc-pin-gutter: calc(var(--lc-pin-w) + 34px);
+  }
   .lc-thread:has(.lc-pin > *) .lc-scroll {
-    margin-right: calc(var(--lc-pin-w) + 34px);
+    margin-right: clamp(0px, calc(var(--lc-measure) + 60px + 2 * var(--lc-pin-gutter) - 100cqi), var(--lc-pin-gutter));
   }
   .lc-thread:has(.lc-pin > *) .lc-thread-foot {
-    right: calc(var(--lc-pin-w) + 34px);
+    right: clamp(0px, calc(var(--lc-measure) + 60px + 2 * var(--lc-pin-gutter) - 100cqi), var(--lc-pin-gutter));
   }
 }
 .lc-scroll {
@@ -3492,8 +3595,8 @@ html[data-theme="light"] .lc-md .l-md-code {
   background: color-mix(in oklab, var(--l-ink) 3%, var(--lc-paper));
   box-shadow: none;
 }
-/* Session info, the open file and a Review file aren't cards at all any more: rows and lists on the
-   paper (SessionInfo.tsx, Files.tsx, Review.tsx), so their sticky bits take the paper. */
+/* The open file and a Review file aren't cards at all any more: rows and lists on the
+   paper (Files.tsx, Review.tsx), so their sticky bits take the paper. */
 /* The turn's plan is a labelled list on the paper, not a card: "Plan" and its count on a 28px
    line, then a line a task, its mark where a bullet would be and a hairline rail joining the marks
    so the list reads as a sequence. The step at work is the brightest line; done and skipped steps
@@ -4467,6 +4570,19 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
 }
 .lc-under-u:first-child {
   flex: 0 1 auto;
+}
+/* The context's share is a button: it shows the details card with Context unfolded. Quiet as the line, a wash on hover. */
+.lc-under-b {
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .lc-under-b:hover {
+    background: var(--l-wash);
+  }
 }
 .lc-under-t {
   min-width: 0;

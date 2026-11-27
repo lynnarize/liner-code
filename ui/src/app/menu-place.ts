@@ -83,9 +83,11 @@ export function panelLeft(align: "start" | "end" | "center", r: { left: number; 
   Where a side menu `w` wide starts, beside the menu `m` it opened from in a window `vw` wide: to the menu's right
   while it fits there, as menus open in the direction a person reads; to its left when the right has no room (the
   switcher's ··· and the pinned Session card sit at the window's right edge); with room on neither side, inside the window's
-  right edge.
+  right edge. `leftward`: the menu it opens from is itself a side menu that went left (+'s More, at the panel's right), so
+  this one keeps going left while it fits, away from the menus before it rather than back over them.
 */
-export function sideMenuLeft(m: { left: number; right: number }, w: number, vw: number): number {
+export function sideMenuLeft(m: { left: number; right: number }, w: number, vw: number, leftward = false): number {
+  if (leftward && m.left - GAP - w >= EDGE) return m.left - GAP - w;
   if (m.right + GAP + w <= vw - EDGE) return m.right + GAP;
   if (m.left - GAP - w >= EDGE) return m.left - GAP - w;
   return Math.max(EDGE, vw - EDGE - w);

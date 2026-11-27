@@ -1,9 +1,58 @@
 /*
-  The panel's + menu's apps, as plain data so it is tested on its own (engine/test/panels.test.ts); Switcher.tsx
-  draws it. The session header's row of surface icons, which this file once described, went with line and dot
-  (2026-11-27): the panel's head row names its surfaces as tabs, and + lists them all.
+  The panel's + menu's rows and apps, as plain data so it is tested on its own (engine/test/panels.test.ts,
+  engine/test/lean-menus.test.ts); Switcher.tsx draws it. The session header's row of surface icons, which this file once
+  described, went with line and dot (2026-11-27): the panel's head row names its surfaces as tabs, and + lists them.
 */
+import type { Item, Project, Thread } from "../../../contracts/src/index.ts";
 import type { DockState } from "./dock.ts";
+
+/** The surfaces + knows, in the board's order (Menus, "Open a surface"); the Terminal is in its shells' part, Linked pull requests inside Pull request. */
+export const MENU_ORDER = ["session", "changes", "files", "browser", "agents", "pr", "design", "side", "device", "routines"];
+/** The four surfaces + always lists first: every session has something in each. */
+export const ALWAYS = ["session", "changes", "files", "browser"];
+
+/** What the session has now, for which surfaces + lists before More (SurfaceMenu reads each from what the app holds). */
+export type SurfaceNow = {
+  /** It works with agents now or did (agent-rows.ts hasAgents). */
+  agents: boolean;
+  /** It has a pull request, or its project has the GitHub remote one needs (canPr). */
+  pr: boolean;
+  /** It has a Liner Design canvas, or drew or showed a design (hasCanvas). */
+  canvas: boolean;
+  /** A simulator is running for the Device surface to show. */
+  device: boolean;
+  /** The surfaces open as tabs in the panel now. */
+  open: readonly string[];
+};
+
+/**
+  Capy's lean "open a tab" menu (the owner, 2026-11-27): + lists the four surfaces every session has, then only those that
+  hold something now (Agents with agents, Pull request with one or a remote to open one on, Design with a canvas, Device with
+  a simulator up), and any surface open as a tab, ticked, so it can be put away from here. The rest go under More (`more`),
+  each with its key, so nothing + reached before is more than two presses away. Side chat has a row of its own under the
+  list (New side chat), so it is listed only while it is open. `ids` are the surfaces there are (Routines only while on).
+*/
+export function surfaceRows(ids: readonly string[], now: SurfaceNow): { top: string[]; more: string[] } {
+  const want: Record<string, boolean> = { agents: now.agents, pr: now.pr, design: now.canvas, device: now.device };
+  const known = MENU_ORDER.filter((id) => ids.includes(id));
+  const top = known.filter((id) => ALWAYS.includes(id) || now.open.includes(id) || want[id] === true);
+  const more = known.filter((id) => !top.includes(id) && id !== "side");
+  return { top, more };
+}
+
+/**
+  Whether the Pull request surface has something to show without asking GitHub: the session's pull request, or a project with
+  a GitHub remote, where its branch can have one (the surface says "This project has no GitHub remote" otherwise, Pr.tsx GhNote).
+*/
+export const canPr = (thread: Pick<Thread, "pr">, project: Pick<Project, "git" | "remote"> | undefined) => Boolean(thread.pr) || Boolean(project?.git && project.remote);
+
+/** A design tool's call, by any of the names the tools give Liner's MCP tools (DesignMini.tsx reads which design it named). */
+export const DESIGN_TOOL = /^(?:mcp__liner__|liner\.|liner_)?design_(frame|node|picture|built)\b/;
+/** What says a session has a canvas for the Design surface: a design it showed, a design tool it called, a design file it wrote. */
+export const isCanvasItem = (it: Item) =>
+  it.kind === "design" || (it.kind === "tool" && (DESIGN_TOOL.test(it.tool) || ((it.toolKind === "edit" || it.toolKind === "write") && /(^|\/)\.liner\/designs\/[^/]+\//.test(it.path ?? ""))));
+/** The Design surface shows something: the session was begun from a design, or one of its items is a canvas's (isCanvasItem). */
+export const hasCanvas = (thread: Pick<Thread, "design">, canvasItems: readonly Item[]) => Boolean(thread.design?.file) || canvasItems.length > 0;
 
 /** The surface the panel is showing, or none while it is hidden. */
 export const shownOf = (d: DockState): string | undefined => (d.open ? d.panes[d.at]?.tab : undefined);

@@ -420,12 +420,13 @@
 .lc-pk[data-side="card"] {
   grid-template-columns: 37px 320px 288px;
 }
-/* A row's corner in the cards: the menu row's 6, 4 in from the card's 10. */
+/* A row's corner in the cards: the menu row's 6, 4 in from the card's 8 (a lean menu's, Capy's). The cards draw lighter icons, as a menu does. */
 .lc-pk[data-side] {
   --lc-pk-r: 6px;
+  --lc-stroke: var(--lc-menu-stroke);
 }
 .lc-pk[data-side] .lc-pk-card {
-  border-radius: var(--lc-r-field);
+  border-radius: var(--lc-r-menu);
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
 }
@@ -446,7 +447,7 @@
 }
 /* The rail takes the cards' corner: 4 in, a tool's 6 follows it. */
 .lc-pk[data-side] .lc-pk-rail {
-  border-radius: var(--lc-r-field);
+  border-radius: var(--lc-r-menu);
 }
 .lc-pk:not([data-side]) .lc-pk-rail {
   padding: 0;
@@ -726,7 +727,7 @@
   top: 0;
   left: 0;
   border-radius: var(--lc-pk-r);
-  background: var(--l-wash-2);
+  background: var(--lc-menu-hl);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -743,7 +744,7 @@
     background: none;
   }
   .lc-pk-scroll .lc-who-row[data-on]:not(:disabled):hover {
-    background: var(--lc-plate);
+    background: var(--lc-menu-hl);
   }
 }
 /* What fades in afresh: a tool's models when the rail turns to it, and the side card's words when it turns to another model. */
@@ -775,7 +776,7 @@
   padding: 0 8px;
 }
 .lc-pk-row[data-on] {
-  background: var(--l-wash-2);
+  background: var(--lc-menu-hl);
 }
 /* How hard a row's model works, in grey right after its name (board Menus). */
 .lc-pk-eff {
@@ -1102,7 +1103,7 @@
   gap: 6px;
   min-width: 0;
   overflow: hidden;
-  font-weight: 450;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--l-ink);
@@ -1243,7 +1244,7 @@
 }
 .lc-pk-xr-t > b {
   font-size: 12.5px;
-  font-weight: 450;
+  font-weight: 400;
   color: var(--l-ink);
 }
 .lc-pk-xr-t > span {
@@ -1327,15 +1328,17 @@
 /*
   ---------- Search and commands, ⌘K (Liner's CommandMenu, App.tsx; board Menus) ----------
   Liner's own sheet is vendored and stays as it is: these say the board's look over it, a step more specific (`.l-root`,
-  the body's class) since Liner's sheet loads after this one. The card's 12 corner in the menu's fill and float shadow,
-  no blur behind it or on its way in; a 44px field with the search icon; grey group labels; rows 38 high at the field
-  corner with their mark or icon bare, grey second words and a key at the end; a grey foot line of keys over a rule.
+  the body's class) since Liner's sheet loads after this one. The card's 12 corner (Capy's palette's) in the menu's fill,
+  edge and soft shadow, no blur behind it or on its way in; a 44px field with the search icon; grey group labels; rows 38
+  high at a menu's 8 corner, in ink at 13 regular, their mark or icon bare in the muted grey and drawn lighter, grey second
+  words and a key at the end; a grey foot line of keys over a rule.
 */
 .l-root .l-cmd::backdrop {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 .l-root .l-cmd__panel {
+  --lc-stroke: var(--lc-menu-stroke);
   width: min(600px, 100%);
   border-radius: var(--lc-r-card);
   background: var(--lc-float);
@@ -1384,8 +1387,9 @@
   border-radius: 0;
   background: none;
   box-shadow: none;
-  font-size: 11px;
-  color: var(--l-ink-3);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
 }
 .l-root .l-cmd__inner {
   padding: 4px;
@@ -1401,7 +1405,8 @@
 .l-root .l-cmd__hl {
   left: 4px;
   right: 4px;
-  border-radius: var(--lc-r-field);
+  border-radius: var(--lc-r-menu);
+  background: var(--lc-menu-hl);
 }
 .l-root .l-cmd__group + .l-cmd__group {
   margin-top: 0;
@@ -1419,11 +1424,13 @@
   gap: 10px;
   min-height: 38px;
   padding: 0 10px;
-  border-radius: var(--lc-r-field);
-  font-size: 13.5px;
+  border-radius: var(--lc-r-menu);
+  color: var(--l-ink);
+  font-size: 13px;
+  font-weight: 400;
 }
 .l-root .l-cmd__item .l-cmd__label {
-  font-size: 13.5px;
+  font-size: 13px;
 }
 .l-root .l-cmd__icon {
   width: 16px;
@@ -1431,14 +1438,24 @@
   border-radius: 0;
   background: none;
   box-shadow: none;
+  color: var(--lc-icon);
+}
+.l-root .l-cmd__item[data-active] .l-cmd__icon {
+  color: var(--l-ink);
 }
 .l-root .l-cmd__icon svg {
   width: 14px;
   height: 14px;
 }
+.l-root .l-cmd__chev {
+  width: 14px;
+  height: 14px;
+  color: var(--lc-icon-faint);
+}
 .l-root .l-cmd__hint {
-  font-size: 12.5px;
-  color: var(--l-ink-3);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--l-ink-4);
 }
 .l-root .l-cmd__foot {
   height: 36px;

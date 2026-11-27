@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Item } from "../../contracts/src/index.ts";
 import { changeKey, heldMessage, HELD_KEY } from "../../ui/src/app/commit-held.ts";
-import { fadeOf, ICON_TAB, scrollToShow, shortTabs } from "../../ui/src/app/surface-row.ts";
+import { fadeOf, ICON_TAB, scrollToShow, shortTabs, surfaceRows } from "../../ui/src/app/surface-row.ts";
 
 const read = (path: string) => readFileSync(new URL(`../../ui/src/app/${path}`, import.meta.url), "utf8");
 const rule = (css: string, sel: string) => {
@@ -55,16 +55,21 @@ test("The panel's head row names the open surfaces as tabs, then +, Fill the win
   assert.doesNotMatch(read("Session.tsx"), /<Switcher\b/, "the top row still has the row of surface icons");
 });
 
-test("Every surface stays reachable: + lists each one with its key, the Terminal has its toggle and its rows, and each key still works", () => {
+test("Every surface stays reachable: + lists each one with its key (at most under More), the Terminal has its toggle and New terminal, and each key still works", () => {
   const surfaces = read("Surfaces.tsx");
   const ids = [...surfaces.matchAll(/\{ id: "(\w+)", label: "[^"]+", key: "\w"/g)].map((m) => m[1]);
   assert.ok(ids.length >= 11, "the surfaces could not be read");
+  // The Terminal lives in the bottom panel (its toggle, + 's New terminal); Linked pull requests is Pull request's picker;
+  // Side chat is + 's New side chat row. Every other surface is in + 's list or its More, in a session with nothing at all.
+  const none = { agents: false, pr: false, canvas: false, device: false, open: [] };
+  const { top, more } = surfaceRows(ids, none);
+  for (const id of ids.filter((x) => x !== "terminal" && x !== "linked" && x !== "side")) assert.ok(top.includes(id) || more.includes(id), `+ doesn't reach ${id}`);
   const sw = read("Switcher.tsx");
-  const order = JSON.parse(/const MENU_ORDER = (\[[^\]]*\]);/.exec(sw)?.[1] ?? "[]") as string[];
-  // The Terminal lives in the bottom panel (its toggle, + 's Terminals rows); Linked pull requests is Pull request's picker.
-  for (const id of ids.filter((x) => x !== "terminal" && x !== "linked")) assert.ok(order.includes(id), `+ doesn't list ${id}`);
-  assert.match(sw, /end=\{keys\(`surface\.\$\{s\.id\}`\)\}/, "+ doesn't show each surface's key");
+  assert.match(sw, /\{more\.map\(surface\)\}/, "More doesn't list what + leaves out");
+  assert.match(sw, /end=\{keys\(`surface\.\$\{id\}`\)\}/, "+ doesn't show each surface's key");
+  assert.match(sw, /title="New side chat"[^\n]*end=\{keys\("surface\.side"\)\}[^\n]*openTab\(dock, "side"\)/, "+ has no New side chat with Side chat's key");
   assert.match(sw, /title="New terminal"[\s\S]*?runScript\(thread\.id, \{ name: "Shell", command: "" \}\)/, "+ has no New terminal");
+  assert.doesNotMatch(sw, /"Show the terminal" \/>|title=\{below \? "Hide the terminal"/, "+ still has a Show the terminal row: the top row's toggle does that");
   assert.match(sw, /aria-label=\{below \? "Hide the terminal" : "Show the terminal"\}/, "the top row has no terminal toggle");
   const session = read("Session.tsx");
   assert.match(session, /const s = SURFACES\.find\(\(x\) => is\(e, `surface\.\$\{x\.id\}`\)\);/, "the surfaces' keys are no longer read");

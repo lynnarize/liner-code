@@ -305,8 +305,8 @@ test("In the picker the marks are in their makers' colours, a row's corner follo
   assert.equal(value(blocks(css, ".lc-pk-side")[0], "padding"), "4px");
   assert.equal(value(blocks(css, ".lc-pk-star")[0], "border-radius"), "var(--lc-pk-r)", "the Star's corners don't follow the card's");
   assert.equal(value(blocks(css, ".lc-pk .lc-who-row")[0], "border-radius"), "var(--lc-pk-r)");
-  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-rail")[0], "border-radius"), "var(--lc-r-field)", "the rail's corner isn't the cards'");
-  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-card")[0], "border-radius"), "var(--lc-r-field)", "the cards aren't in the menu shape");
+  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-rail")[0], "border-radius"), "var(--lc-r-menu)", "the rail's corner isn't the cards'");
+  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-card")[0], "border-radius"), "var(--lc-r-menu)", "the cards aren't in the menu shape");
   // One plate slides under the rows; the rows in the list don't light themselves.
   const models = code("Models.tsx");
   assert.match(body(models, "export function ModelPicker("), /<HoverPlate within=\{scroll\} reset=/, "the list has no sliding plate");

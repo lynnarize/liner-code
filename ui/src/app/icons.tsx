@@ -20,6 +20,10 @@
   1.25px below (thinner, because a 1.5 line closes up the counters of a 12px glyph). An icon that
   draws heavier on purpose (send's 1.7, the dots' 2, the level's bars) keeps that proportion to
   1.5, so its dots and bars don't thin out. Sizes in use are 12, 14, 16 and 20.
+  Menus, pop-ups and the session details card draw lighter, as Capy's do (2026-11-27): there the stroke is multiplied by
+  --lc-stroke (app.css sets 0.8 on the menu surface and the card), so a 14px icon's line is 1.2px. It rides on the
+  stroke a wrapper computes, so the rule above still sets it from the size; an icon drawn heavier on purpose (a mark,
+  Fusion's two strokes, send, the dots) is a mark, not a line glyph, and keeps its own weight everywhere.
 */
 import { useId, type CSSProperties, type ReactNode } from "react";
 import type { AgentGlyph } from "@contracts";
@@ -30,9 +34,12 @@ export type { MarkState } from "./session-state";
 /** The stroke, in grid units, that lands at the real weight for `size`; `w` is the icon's own weight at 1.5, kept in proportion. */
 export const wt = (size: number, grid: number, w = 1.5) => +((((size >= 14 ? 1.5 : 1.25) * grid) / size) * (w / 1.5)).toFixed(3);
 
+/** The stroke as a style: `sw` scaled by the place's --lc-stroke (1 unless a menu, a pop-up or the details card says less). In px, which inside an SVG are its own units. */
+export const lean = (sw: number, style?: CSSProperties): CSSProperties => ({ strokeWidth: `calc(${sw}px * var(--lc-stroke, 1))`, ...style });
+
 type P = { size?: number; className?: string; style?: CSSProperties };
 const S = ({ size = 16, children, className, style, w = 1.5 }: P & { children: ReactNode; w?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16, w)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={wt(size, 16, w)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={w === 1.5 ? lean(wt(size, 16), style) : style}>
     {children}
   </svg>
 );
@@ -265,7 +272,7 @@ export function Glyph({ glyph, size = 14 }: { glyph: AgentGlyph; size?: number }
   pixels; asked for another size they follow the same weight rule as `I`.
 */
 const L = ({ size = 20, children, className, style }: P & { children: ReactNode }) => (
-  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={wt(size, 20)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={style}>
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={wt(size, 20)} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className} style={lean(wt(size, 20), style)}>
     {children}
   </svg>
 );

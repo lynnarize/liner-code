@@ -9,13 +9,16 @@
 */
 
 :root {
-  /* The interface is set in Inter (0.2.7): open letters at whole-pixel sizes, so strokes fill their
-     pixels (docs/research/home-like-home.md). Only the app's name keeps Instrument Sans. */
-  --l-font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --l-font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* The interface is set in the system's own face, as T3 Code Nightly is (2026-11-27, the owner: "t3 nightly text and
+     background are cleaner"): SF Pro on a Mac, and the Inter the app ships where there is no system face so named. Code
+     is the system's mono, with the shipped Geist Mono after it. Nothing is fetched. Only the app's name keeps
+     Instrument Sans. SF carries its own tracking for each size, so body text adds none; headings keep a little. */
+  --l-font-display: -apple-system, BlinkMacSystemFont, "Inter Variable", "Inter", "Segoe UI", system-ui, sans-serif;
+  --l-font-body: -apple-system, BlinkMacSystemFont, "Inter Variable", "Inter", "Segoe UI", system-ui, sans-serif;
+  --l-font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Geist Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --lc-font-name: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-  --l-track-body: -0.005em;
-  --l-track-display: -0.02em;
+  --l-track-body: 0em;
+  --l-track-display: -0.012em;
   /* The sidebar's width: 240, Capy's own default, since 2026-11-26 when 224 (the width in a post of Capy's) cut every title
      short and left the face menu no room; 264 before Capy's layout. */
   --lc-side: 240px;
@@ -27,9 +30,11 @@
      halo. A list that clips its rows (it scrolls, or folds) keeps this much room inside its edge
      and gives it back with a negative margin, so the rows stay put and no ring is cut. */
   --lc-ring: 4px;
-  /* Corners, four sizes (line and dot, 2026-11-27): a row, chip, icon button or session row 8; a field or a menu 10;
-     a card or the sheet 12; the message box and a large pop-up 16. Where the board says 7, 9 or 11 the next token up is used. */
+  /* Corners, four sizes (line and dot, 2026-11-27): a row, chip, icon button or session row 8; a field 10; a card or the
+     sheet 12; the message box and a large pop-up 16. Where the board says 7, 9 or 11 the next token up is used. A menu or
+     pop-up is 8, Capy's, since the owner asked for its lean menus (2026-11-27); its own token, so the fields keep their 10. */
   --lc-r-row: 8px;
+  --lc-r-menu: 8px;
   --lc-r-field: 10px;
   --lc-r-card: 12px;
   --lc-r-sheet: 16px;
@@ -40,11 +45,12 @@
      your own is set on the page. The dark look has a lighter red of its own, below. */
   --lc-act: oklch(0.6 0.215 29);
   --lc-act-ink: #fff;
-  /* Type, line and dot: 13px chrome on a 1.45 line, Inter's open forms (cv11, ss03), the chat at 14 on 22. */
+  /* Type, line and dot: 13px chrome on a 1.45 line, the chat at 14 on 22. No stylistic sets: Inter's cv11 and ss03
+     were for Inter alone, and the system face has sets of its own under the same names. */
   --lc-text: 13px;
   --lc-text-chat: 14px;
   --lc-line-chat: 22px;
-  --lc-features: "cv11", "ss03", "calt";
+  --lc-features: "calt";
 }
 /* While a new theme or accent goes on (look.ts), for one style pass. */
 html[data-still] *,
@@ -65,23 +71,26 @@ html[data-action="ink"] {
   Line and dot (2026-11-27, the approved from-zero board). Liner's own colours take the board's values, so every
   part that reads them shifts at once and one of your own themes (which sets them inline on the page) still wins:
   the ground the sidebar sits on (--l-bg), the sheet (--l-surface), four inks, two strengths of line, two of wash,
-  and the state colours. The fourth ink is for words that must still read (4.6:1 on the sheet); the fifth is for
-  marks and rules only, never words.
+  and the state colours. The fourth ink is for words that must still read (4.5:1 on the sidebar's ground); the fifth
+  is for marks and rules only, never words.
+  The light look is T3 Code Nightly's (the owner, 2026-11-27: "t3 nightly text and background are cleaner"): grounds
+  nearly one tone (the sidebar #fafafa, the sheet #fcfcfc, cards, menus and the message box #fff), so the sheet's 0.5px
+  ring alone parts it from the sidebar; zinc inks, softer than the near-black they were.
 */
 :root,
 [data-theme="light"] {
-  --l-bg: #f0f0f1;
-  --l-surface: #ffffff;
-  --l-ink: #151518;
-  --l-ink-2: #44444b;
-  --l-ink-3: #696971;
-  --l-ink-5: #a3a3ab;
-  --l-line: rgba(12, 12, 24, 0.08);
-  --l-line-2: rgba(12, 12, 24, 0.13);
-  --l-line-strong: rgba(12, 12, 24, 0.2);
-  --l-wash: rgba(12, 12, 24, 0.045);
-  --l-wash-2: rgba(12, 12, 24, 0.075);
-  --l-wash-3: rgba(12, 12, 24, 0.11);
+  --l-bg: #fafafa;
+  --l-surface: #fcfcfc;
+  --l-ink: #18181b;
+  --l-ink-2: #3f3f46;
+  --l-ink-3: #71717b;
+  --l-ink-5: #9f9fa9;
+  --l-line: rgba(24, 24, 27, 0.09);
+  --l-line-2: rgba(24, 24, 27, 0.14);
+  --l-line-strong: rgba(24, 24, 27, 0.2);
+  --l-wash: rgba(24, 24, 27, 0.034);
+  --l-wash-2: rgba(24, 24, 27, 0.07);
+  --l-wash-3: rgba(24, 24, 27, 0.1);
   --l-raised: #ffffff;
   --l-ok: oklch(0.52 0.15 152);
   --l-warn: oklch(0.58 0.14 66);
@@ -97,13 +106,18 @@ html[data-action="ink"] {
 [data-theme] {
   --lc-ground: var(--l-bg);
   --lc-paper: var(--l-surface);
-  --lc-well: color-mix(in oklab, var(--l-ink) 3.5%, var(--lc-paper));
-  --lc-plate: color-mix(in oklab, var(--l-ink) 7.5%, var(--lc-paper));
+  /* In the light look the message box, a card, a menu and the open session's row are white, a step above the sheet. */
+  --lc-well: var(--l-raised);
+  --lc-plate: color-mix(in oklab, var(--l-ink) 3.5%, var(--lc-paper));
   --lc-field: var(--lc-well);
-  --lc-float: var(--l-surface);
+  --lc-float: var(--l-raised);
   --lc-g4: color-mix(in oklab, var(--l-ink) 10%, var(--lc-paper));
-  /* A card on the sheet: a faint fill and a 0.5px edge, no shadow. */
-  --lc-card: color-mix(in oklab, var(--l-ink) 2%, var(--lc-paper));
+  /* Your message's bubble: a grey of its own (T3's #ebebed), apart from the white cards. */
+  --lc-bubble: color-mix(in oklab, var(--l-ink) 7.5%, var(--lc-paper));
+  /* The agent's answers, at 90% of the ink, so a long answer reads lighter than the chrome round it. */
+  --lc-ink-chat: color-mix(in oklab, var(--l-ink) 90%, transparent);
+  /* A card on the sheet: its own fill and a 0.5px edge, no shadow. */
+  --lc-card: var(--l-raised);
   --lc-card-ring: 0 0 0 0.5px var(--lc-line2);
   --lc-ctl: oklch(0.215 0.007 265);
   --lc-ctl-hover: oklch(0.285 0.007 265);
@@ -120,9 +134,19 @@ html[data-action="ink"] {
   /* What moves while something runs (the state mark's Working): Capy's progress yellow, a gold on the light
      sheet so three small pixels still show. Yellow, not the amber of Needs you. */
   --lc-progress: oklch(0.7 0.16 82);
-  /* No text lighter than this: the fourth grey is 4.6:1 on the sheet. */
-  --l-ink-4: #74747c;
-  --lc-float-shadow: 0 0 0 0.5px rgba(12, 12, 24, 0.14), 0 1px 2px rgba(12, 12, 24, 0.06), 0 22px 48px -16px rgba(12, 12, 24, 0.28);
+  /* No text lighter than this: the fourth grey is the third's zinc-500, 4.6:1 on the sidebar's ground and 4.7:1 on the
+     sheet; any lighter (T3's #9f9fa9 is 2.5:1) and the small words that use it stop reading. */
+  --l-ink-4: #71717b;
+  /* What floats (a menu, a pop-up, ⌘K, a dialog): a 0.5px edge and Capy's very soft overlay shadow, three short layers that
+     lift it without a dark pool under it (the owner, 2026-11-27: "make it more lean to capy"). */
+  --lc-float-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.11), 0 6px 18px rgba(0, 0, 0, 0.03), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.05);
+  /* Inside a menu: the row under the pointer (Capy's black 4%), an icon in a muted grey (3.5:1 on the menu, Capy's
+     #919193 is 3.2), a › fainter still (3.1:1), and icons drawn at 0.8 of the family's stroke (icons.tsx), so a 14px icon's
+     line is 1.2px as Capy's are. */
+  --lc-menu-hl: color-mix(in oklab, var(--l-ink) 4%, transparent);
+  --lc-icon: color-mix(in oklab, var(--l-ink) 47%, var(--lc-float));
+  --lc-icon-faint: color-mix(in oklab, var(--l-ink) 43%, var(--lc-float));
+  --lc-menu-stroke: 0.8;
   /* What sits a step above the sheet without floating (the message box): an edge and a short soft shadow. */
   --lc-raise: 0 0 0 0.5px var(--lc-line2), 0 10px 28px -16px rgba(12, 12, 24, 0.2);
 }
@@ -136,9 +160,10 @@ html[data-action="ink"] {
   --l-bg: #070708;
   --l-surface: #101012;
   --l-ink: #f4f4f5;
-  --l-ink-2: #bcbcc2;
-  --l-ink-3: #8d8d95;
-  --l-ink-5: #5e5e66;
+  /* Neutral greys, T3's dark muted #a1a1a1 for the third: the cool #8d8d95 it was read murky on the near-black. */
+  --l-ink-2: #c4c4c6;
+  --l-ink-3: #a1a1a3;
+  --l-ink-5: #616166;
   --l-line: rgba(255, 255, 255, 0.07);
   --l-line-2: rgba(255, 255, 255, 0.115);
   --l-line-strong: rgba(255, 255, 255, 0.2);
@@ -157,6 +182,7 @@ html[data-action="ink"] {
   --lc-field: var(--lc-well);
   --lc-float: color-mix(in oklab, var(--l-ink) 6.5%, var(--lc-paper));
   --lc-g4: color-mix(in oklab, var(--l-ink) 12%, var(--lc-paper));
+  --lc-bubble: var(--lc-well);
   --lc-card: color-mix(in oklab, var(--l-ink) 2%, var(--lc-paper));
   --lc-card-ring: 0 0 0 0.5px var(--lc-line2);
   --lc-ctl: oklch(0.13 0.003 265);
@@ -166,8 +192,11 @@ html[data-action="ink"] {
   --lc-blue: oklch(0.77 0.11 264);
   --lc-merged: oklch(0.74 0.14 300);
   --lc-progress: oklch(0.85 0.14 95);
-  --l-ink-4: #808088;
-  --lc-float-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.13), 0 1px 2px rgba(0, 0, 0, 0.5), 0 22px 48px -14px rgba(0, 0, 0, 0.8);
+  --l-ink-4: #8f8f92;
+  --lc-float-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 3px 8px rgba(0, 0, 0, 0.13), 0 2px 5px rgba(0, 0, 0, 0.13), 0 1px 1px rgba(0, 0, 0, 0.13);
+  --lc-menu-hl: color-mix(in oklab, var(--l-ink) 6.5%, transparent);
+  --lc-icon: color-mix(in oklab, var(--l-ink) 46%, var(--lc-float));
+  --lc-icon-faint: color-mix(in oklab, var(--l-ink) 41%, var(--lc-float));
   --lc-raise: 0 0 0 0.5px var(--lc-line2), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
 }
 /*
@@ -527,7 +556,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   color: var(--l-ink-3);
   white-space: nowrap;
 }
-/* Code in words: Geist Mono at 12 on a washed plate with a small corner. */
+/* Code in words: the mono face at 12 on a washed plate with a small corner. */
 .lc-code {
   padding: 1.5px 5px;
   border-radius: 5px;
@@ -816,6 +845,13 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   background: var(--l-wash);
   box-shadow: none;
 }
+/* Interface text holds to three weights (400, 500, 600): Liner's in-between 450 and 560 drew the system face heavier. */
+.l-scope .l-seg .l-seg__text {
+  font-weight: 400;
+}
+.l-scope .l-seg .l-seg__text-on {
+  font-weight: 500;
+}
 .l-scope .l-seg[data-variant="underline"] {
   background: none;
   box-shadow: inset 0 -0.5px 0 var(--lc-line2);
@@ -853,17 +889,20 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   box-sizing: border-box;
   overflow: auto;
   overscroll-behavior: contain;
-  /* One menu shape in the app (board Menus, 2026-11-25): a 10px corner, 4px above and below and at the sides, its rows touching,
-     each 28 high with a 6px corner 4px in, so they sit concentric. Liner's own sheet loads after this one, so the selector carries
+  /* One lean menu shape in the app, Capy's (2026-11-27): an 8px corner, 4px above and below and at the sides, its rows
+     touching, each 28 high with a 6px corner 4px in; the menu's own fill, a 0.5px edge and a very soft shadow, no blur; its
+     icons muted and drawn lighter (--lc-stroke, icons.tsx). Liner's own sheet loads after this one, so the selector carries
      Liner's class to outweigh it. */
+  --lc-stroke: var(--lc-menu-stroke);
   gap: 0;
   padding: 4px;
-  border-radius: 10px;
+  border-radius: var(--lc-r-menu);
   background: var(--lc-float);
   box-shadow: var(--lc-float-shadow);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   font-size: 13px;
+  font-weight: 400;
   text-align: left;
 }
 /* A panel whose parts draw their own cards (the model picker's rail, list and side card): no glass, edge or inset of its own. */
@@ -887,23 +926,35 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   visibility: hidden;
   animation: none;
 }
-/* A menu's grey label, 28 high, its words on the rows' words (8 in from the 4px edge); a live note at its right end in the same grey. */
+/* A menu's grey label, Capy's: 12px, at least 22 high and 4 under what is over it, its words on the rows' words (8 in from the
+   4px edge), one line cut with an ellipsis (a long session title never takes two); a live note at its right end in the same grey. */
 .lc-pop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 28px;
+  min-height: 22px;
+  margin-top: 4px;
   box-sizing: border-box;
   padding: 0 8px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--l-ink-4);
 }
+.lc-pop-head:first-child {
+  margin-top: 0;
+}
 .lc-pop-head > span:first-child {
+  min-width: 0;
+  overflow: hidden;
   color: var(--l-ink-4);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pop-head > span + span {
+  flex: none;
 }
 /* A menu's grey foot line: under a rule that runs edge to edge, how things stand. */
 .lc-pop-foot {
@@ -930,16 +981,16 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   border-top: 0;
 }
 /*
-  The app's one menu row (ui.tsx Row), in every menu and picker: one line 28 high, a 6px corner, a 14px icon in
-  the fourth ink and 10 to the title in ink at 13px, its key, value, tick or › at the far right in 12.5px fourth ink.
-  A row with no icon starts its words where the icons start. A row that keeps a note under its title (a confirm
-  about to act) grows to two lines; nothing else does.
+  The app's one menu row (ui.tsx Row), in every menu and picker, as lean as Capy's: one line 28 high, a 6px corner, a
+  14px icon in the muted icon grey and 8 to the title in ink at 13px regular, its value or key at the far right in 13px
+  or 12px grey, a tick in ink or a › in the faint grey. A row with no icon starts its words where the icons start. A row
+  that keeps a note under its title (a confirm about to act) grows to two lines; nothing else does.
 */
 .lc-row {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 10px;
+  column-gap: 8px;
   width: 100%;
   min-height: 28px;
   box-sizing: border-box;
@@ -971,11 +1022,11 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
 }
 .lc-row[data-open],
 .lc-row:focus-visible {
-  background: var(--l-wash-2);
+  background: var(--lc-menu-hl);
 }
 @media (hover: hover) {
   .lc-row:hover:not([data-danger]):not(:disabled) {
-    background: var(--l-wash-2);
+    background: var(--lc-menu-hl);
   }
 }
 /* A confirm about to act (ConfirmRow): the danger look a confirm button has (.lc-btn[data-kind="danger"]). */
@@ -1003,12 +1054,17 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   place-items: center;
   width: 14px;
   height: 18px;
-  color: var(--l-ink-4);
+  color: var(--lc-icon);
 }
 /* Every icon in the column at 14, whatever size it was handed. */
 .lc-row-tick > svg {
   width: 14px;
   height: 14px;
+}
+/* A state mark or a tool's mark keeps its own drawing in a menu: only line glyphs draw lighter there. */
+.lc-mk,
+svg.lc-mark {
+  --lc-stroke: 1;
 }
 .lc-row-t {
   min-width: 0;
@@ -1017,7 +1073,7 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   display: block;
   overflow: hidden;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1062,28 +1118,30 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   gap: 6px;
   min-height: 18px;
   padding-left: 12px;
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 400;
   line-height: 18px;
   color: var(--l-ink-4);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* A › at a row's end in the faint grey; the tick of the one picked in ink. */
 .lc-row-end > svg {
   flex: none;
-  color: var(--l-ink-4);
+  color: var(--lc-icon-faint);
 }
-/* The tick of the one picked is in ink, the rest of the row's end grey. */
 .lc-row-end > .lc-row-on {
   color: var(--l-ink);
 }
-/* A key at a row's end is words in the row's grey, not a key cap. */
+/* A key at a row's end is plain grey glyphs at 12px, not a key cap. */
 .lc-row-end .lc-kbd {
   min-width: 0;
   height: auto;
   padding: 0;
   box-shadow: none;
   background: none;
-  font-size: 12.5px;
+  font-size: 12px;
+  font-weight: 400;
   color: inherit;
 }
 
@@ -1279,7 +1337,7 @@ html[data-native="mac"] .lc-sb-head {
   background: none;
   font: inherit;
   font-weight: 500;
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
   color: var(--l-ink-2);
   text-align: left;
   cursor: pointer;
@@ -1570,7 +1628,7 @@ html[data-native="mac"] .lc-sb-head {
 .lc-sb-ndot[data-k="danger"] {
   background: var(--l-danger);
 }
-/* The sidebar's menus: their icons in the second ink as every menu's (.lc-row-tick), the picked one's tick in full ink. */
+/* The sidebar's menus: their icons in the muted grey as every menu's (.lc-row-tick), the picked one's icon in full ink. */
 .lc-sb-menu {
   display: contents;
 }
@@ -2029,7 +2087,7 @@ html[data-native="mac"] .lc-sb-head {
   border-radius: 4.5px;
   background: var(--lc-act);
   color: var(--lc-act-ink);
-  font: 700 8.5px/1 var(--l-font-body);
+  font: 600 8.5px/1 var(--l-font-body);
   letter-spacing: 0;
 }
 .lc-crumb-pj {
@@ -2357,8 +2415,10 @@ html[data-native="mac"] .lc-sb-head {
 }
 /*
   The session details card (line and dot, board Details): it floats under the top row's right end, 6px under the row and
-  10px in from the sheet's edge, in the column .lc-pin holds (Session.tsx). A card a step up from the paper, a 16px corner,
-  the menus' soft shadow, 6px in; rows 34 high at 13.5/500, their notes in grey. While it shows, the chat and the message
+  10px in from the sheet's edge, in the column .lc-pin holds (Session.tsx). Flat, as T3 Code's is (the owner, 2026-11-27:
+  "side session remove shadow"): the card's own fill on the sheet and a 0.5px edge, no drop shadow. Inside it is as lean as a
+  menu (the owner, 2026-11-27: "make it more lean to capy"): a 12px corner, 4px in, rows 30 high on a 6px corner, words at
+  13 regular in ink with their notes in grey, icons 14 in the muted grey drawn lighter. While it shows, the chat and the message
   box keep a gutter clear of it (its width, its 10px and 24 more) and centre in the room that is left; hidden, they
   centre across the sheet. Under 640px of thread there is no room for both, and it stands over the chat's right edge.
 */
@@ -2374,7 +2434,7 @@ html[data-native="mac"] .lc-sb-head {
   max-width: 100%;
   max-height: 100%;
   padding: 6px 10px 12px;
-  /* Not a scroller itself: one would cut the card's soft shadow at the column's edge. The card inside scrolls (below). */
+  /* Not a scroller itself: one would cut the card's corner and edge at the column's edge. The card inside scrolls (below). */
   overflow: visible;
   pointer-events: none;
 }
@@ -2383,8 +2443,9 @@ html[data-native="mac"] .lc-sb-head {
 }
 /* The card is as tall as its rows up to the room the column leaves it (the stage less the column's padding, which in a
    narrow thread keeps it clear of the message box), and scrolls inside past that: its own overflow clips its rows at its
-   16px corner, never its shadow, which is drawn outside it. */
+   12px corner, and its 0.5px edge is a ring drawn outside it, which nothing clips. */
 .lc-dcard {
+  --lc-stroke: var(--lc-menu-stroke);
   display: grid;
   flex: 0 1 auto;
   align-content: start;
@@ -2393,10 +2454,10 @@ html[data-native="mac"] .lc-sb-head {
   overscroll-behavior: contain;
   scrollbar-width: none;
   grid-template-columns: minmax(0, 1fr);
-  padding: 6px;
-  border-radius: var(--lc-r-sheet);
-  background: color-mix(in oklab, var(--l-ink) 3.5%, var(--lc-paper));
-  box-shadow: 0 0 0 0.5px var(--lc-line2), var(--lc-float-shadow);
+  padding: 4px;
+  border-radius: var(--lc-r-card);
+  background: var(--lc-card);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
   text-align: left;
   pointer-events: auto;
   animation: lc-dcard-in 200ms var(--l-ease-out) backwards;
@@ -2410,22 +2471,22 @@ html[data-native="mac"] .lc-sb-head {
   position: relative;
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 30px;
 }
 .lc-dr-main {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  height: 34px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--lc-r-field);
+  border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--l-ink);
   white-space: nowrap;
   text-align: left;
@@ -2433,9 +2494,12 @@ html[data-native="mac"] .lc-sb-head {
 button.lc-dr-main {
   cursor: pointer;
 }
+/* Every icon a row leads with at 14, in the muted grey, as a menu's (whatever size it was handed). */
 .lc-dr-main > svg {
   flex: none;
-  color: var(--l-ink-2);
+  width: 14px;
+  height: 14px;
+  color: var(--lc-icon);
 }
 .lc-dr-main:disabled {
   cursor: default;
@@ -2449,7 +2513,7 @@ button.lc-dr-main {
   text-overflow: ellipsis;
 }
 .lc-dr-t.lc-mono {
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .lc-dr em {
   flex: 0 0 auto;
@@ -2465,6 +2529,10 @@ button.lc-dr-main {
   margin-left: auto;
   font-weight: 400;
   color: var(--l-ink-3);
+}
+/* A › at a row's end in the faint grey, as a menu's. */
+.lc-dr-v > svg {
+  color: var(--lc-icon-faint);
 }
 .lc-dr-dot {
   width: 6px;
@@ -2482,13 +2550,17 @@ button.lc-dr-main {
   flex: none;
   place-items: center;
   width: 24px;
-  height: 26px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 6px;
   background: none;
-  color: var(--l-ink-3);
+  color: var(--lc-icon);
   cursor: pointer;
+}
+/* The chevron that opens a row's own list is the faint grey of a menu's ›; the folder button keeps the icon grey. */
+.lc-dr > .lc-pop > .lc-dr-end {
+  color: var(--lc-icon-faint);
 }
 .lc-dr-end:last-child {
   margin-right: 4px;
@@ -2507,14 +2579,14 @@ button.lc-dr-main {
   .lc-dr-end:hover,
   .lc-dr-main[data-open],
   .lc-dr-end[data-open] {
-    background: var(--l-wash);
+    background: var(--lc-menu-hl);
     color: var(--l-ink);
   }
 }
 .lc-dr-sep {
   display: block;
   height: 0.5px;
-  margin: 6px -6px;
+  margin: 4px -4px;
   background: var(--lc-line2);
 }
 /*
@@ -2529,12 +2601,12 @@ button.lc-dr-main {
 .lc-da-head {
   height: 28px;
   gap: 8px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink-3);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-4);
 }
 .lc-da-head > svg {
-  color: var(--l-ink-3);
+  color: var(--lc-icon);
 }
 .lc-da-n {
   font-weight: 400;
@@ -2555,12 +2627,12 @@ button.lc-dr-main {
   gap: 8px;
   min-width: 0;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink);
   white-space: nowrap;
   text-align: left;
@@ -2606,7 +2678,7 @@ button.lc-dr-main {
   margin-right: 4px;
   padding: 0 6px;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 6px;
   background: none;
   font: inherit;
   font-size: 12px;
@@ -2617,6 +2689,7 @@ button.lc-dr-main {
   cursor: default;
 }
 .lc-da-fold > svg {
+  color: var(--lc-icon-faint);
   transition: rotate 180ms var(--l-ease-out);
 }
 .lc-da-fold[aria-expanded="false"] > svg {
@@ -2625,18 +2698,19 @@ button.lc-dr-main {
 @media (hover: hover) {
   .lc-da-main:hover,
   button.lc-da-fold:hover {
-    background: var(--l-wash);
+    background: var(--lc-menu-hl);
   }
 }
 /* Context's ring: what is used of the window, as the message box's foot draws it. */
+/* In the icons' 14px column and their grey, its used part on a washed track. */
 .lc-dr-ring {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: conic-gradient(var(--l-ink-2) var(--v, 0%), var(--l-wash-2) 0);
-  -webkit-mask-image: radial-gradient(circle, #0000 4.75px, #000 5.25px);
-  mask-image: radial-gradient(circle, #0000 4.75px, #000 5.25px);
+  background: conic-gradient(var(--lc-icon) var(--v, 0%), var(--l-wash-2) 0);
+  -webkit-mask-image: radial-gradient(circle, #0000 4.5px, #000 5px);
+  mask-image: radial-gradient(circle, #0000 4.5px, #000 5px);
 }
 @container lc-thread (max-width: 639.98px) {
   /* The message box stands over the column's foot here, so the card's end scrolls up clear of it, as the chat's does. */
@@ -2861,13 +2935,13 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   gap: 4px;
   margin-bottom: 6px;
 }
-/* Your message: a bubble on the right in the card's fill with a 0.5px edge, its corner small where it points at you (board Main). */
+/* Your message: a bubble on the right in a grey of its own (T3's in the light look) with a 0.5px edge, its corner small where it points at you (board Main). */
 .lc-you p {
   max-width: 84%;
   margin: 0;
   padding: 9px 13px;
   border-radius: var(--lc-r-card) var(--lc-r-card) 4px var(--lc-r-card);
-  background: var(--lc-well);
+  background: var(--lc-bubble);
   box-shadow: inset 0 0 0 0.5px var(--lc-hair);
   font-size: 14px;
   line-height: 21px;
@@ -2945,7 +3019,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 /* Permissions (board Menus, Access): the menu's grey label, then each level a row (its icon on a small tile, its name at
    13px, what it does under it, an ink tick when it's on), Full access last, a plain row you enable, and a grey foot line.
-   In the menu shape: rows 8 round, 8 in, the chosen one on the selected fill. */
+   In the lean menu shape: rows 6 round, 8 in, words regular (the chosen one's at 500), the chosen one on the menu's highlight. */
 .lc-perm {
   display: grid;
   gap: 0;
@@ -2953,11 +3027,11 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 .lc-perm-r {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-height: 28px;
   padding: 6px 8px;
   border: 0;
-  border-radius: var(--lc-r-row);
+  border-radius: 6px;
   background: none;
   color: var(--l-ink);
   text-align: left;
@@ -2965,11 +3039,11 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   transition: background-color 140ms ease;
 }
 .lc-perm-r[data-on] {
-  background: var(--l-wash-2);
+  background: var(--lc-menu-hl);
 }
 @media (hover: hover) and (pointer: fine) {
   .lc-perm-r:hover {
-    background: var(--l-wash-2);
+    background: var(--lc-menu-hl);
   }
 }
 .lc-perm-r > svg {
@@ -2982,9 +3056,9 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: var(--lc-r-row);
+  border-radius: 6px;
   background: var(--l-wash-2);
-  color: var(--l-ink-3);
+  color: var(--lc-icon);
 }
 .lc-perm-r[data-on] .lc-perm-tile {
   color: var(--l-ink);
@@ -2997,8 +3071,11 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 .lc-perm-t b {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 18px;
+}
+.lc-perm-r[data-on] .lc-perm-t b {
+  font-weight: 500;
 }
 .lc-perm-t small {
   font-size: 12px;
@@ -3010,7 +3087,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 }
 .lc-perm-on {
   flex: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--l-ink-4);
 }
 .lc-head-meta {
@@ -3032,7 +3109,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
 .lc-thread .l-md.lc-md {
   font-size: 14px;
   line-height: 22px;
-  color: var(--l-ink);
+  color: var(--lc-ink-chat);
 }
 .lc-md p {
   margin: 0 0 10px;
@@ -3048,7 +3125,7 @@ html:not([data-bg]) .lc-thread .lc-stage::after {
   font-size: 13px;
   line-height: 19px;
 }
-/* Inline code is a small chip in Geist Mono (board Main): 12/500 on the stronger wash. */
+/* Inline code is a small chip in the mono face (board Main): 12/500 on the stronger wash. */
 .lc-md code,
 .lc-thread .l-md.lc-md code {
   padding: 1.5px 5px;
@@ -7816,7 +7893,7 @@ body,
 .lc-chip-name {
   font-weight: 400;
 }
-/* Tooltips and menus' rows: 13 regular, the picked row at 500, a menu's head at 500. */
+/* Tooltips and ⌘K's rows: 13 regular. A menu's rows and head are regular too, the picked one's tick saying it (.lc-row). */
 /* (Liner's own sheets load after this one: these two are a step more specific.) */
 .l-tip-anchor .l-tip {
   font-size: 13px;
@@ -7832,18 +7909,6 @@ body,
 /* ⌘K's foot says what it searches, in its grey, where Liner's default name was. */
 .lc-cmd-foot {
   font-size: 12.5px;
-}
-.lc-row-t b {
-  font-weight: 400;
-}
-.lc-row[data-on] .lc-row-t b {
-  font-weight: 500;
-}
-.lc-pop-head {
-  font-weight: 400;
-}
-.lc-pop-head > span:first-child {
-  font-weight: 500;
 }
 
 /*
@@ -7974,7 +8039,7 @@ body,
   height: 16px;
   border-radius: 4.5px;
   background: var(--lc-act);
-  font: 700 8.5px/1 var(--l-font-body);
+  font: 600 8.5px/1 var(--l-font-body);
   letter-spacing: 0;
   color: var(--lc-act-ink);
 }
@@ -8373,7 +8438,7 @@ html:not([data-native="mac"]) .lc-sb-head {
   min-width: 0;
   overflow: hidden;
   font-size: 13.5px;
-  font-weight: 450;
+  font-weight: 500;
   line-height: 19px;
   color: var(--l-ink-2);
   text-overflow: ellipsis;
@@ -8756,7 +8821,7 @@ span.lc-sb-name {
   min-width: 0;
   overflow: hidden;
   font-size: 13.5px;
-  font-weight: 450;
+  font-weight: 500;
   line-height: 19px;
   color: var(--l-ink);
   text-overflow: ellipsis;
@@ -8908,7 +8973,7 @@ span.lc-sb-name {
   height: 19px;
   box-sizing: border-box;
   font-size: 13.5px;
-  font-weight: 450;
+  font-weight: 500;
 }
 /* Pointing at a row or a folder, or the keyboard in it: the actions show. A folder's take its end's place, vertically centred, and its name makes room. */
 .lc-sl-acts {

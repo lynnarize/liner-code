@@ -140,7 +140,7 @@ test("The access menu shows each level as an icon tile, its name and one grey li
   assert.equal(blocks(css, ".lc-perm-k").length, 0, "the old per-row number is left with nothing using it");
 });
 
-test("Search and commands is the menu's fill at the card corner with no blur, a 44px field, rows 38 high at the field corner, and a grey foot line", () => {
+test("Search and commands is the menu's fill at the card corner with no blur, a 44px field, rows 38 high at a menu's corner, and a grey foot line", () => {
   const css = sheet("models.css");
   const panel = one(css, ".l-root .l-cmd__panel");
   assert.equal(value(panel, "border-radius"), "var(--lc-r-card)");
@@ -151,7 +151,7 @@ test("Search and commands is the menu's fill at the card corner with no blur, a 
   assert.equal(value(one(css, ".l-root .l-cmd__field"), "height"), "44px");
   const item = one(css, ".l-root .l-cmd__item");
   assert.equal(value(item, "min-height"), "38px");
-  assert.equal(value(item, "border-radius"), "var(--lc-r-field)");
+  assert.equal(value(item, "border-radius"), "var(--lc-r-menu)");
   assert.equal(value(one(css, ".l-root .l-cmd__heading"), "color"), "var(--l-ink-3)");
   assert.equal(value(one(css, ".l-root .l-cmd__foot"), "box-shadow"), "inset 0 0.5px 0 var(--lc-line2)");
 });

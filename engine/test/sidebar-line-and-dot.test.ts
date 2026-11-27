@@ -203,7 +203,8 @@ test("The face menu at the sidebar's foot shows each face's line whole at the si
   const tile = px(block(css, ".lc-face-tile").match(/width: ([^;]+);/)![1])[0];
   const tick = Number(foot.match(/face === "code" && <I\.check size=\{(\d+)\} \/>/)![1]);
   const room = 222 - 4 * 2 - left - right - tile - gap * 2 - tick;
-  // "Sessions in your projects" at 12px Inter measures 142 in the build (the longest of the three that sits beside the tick).
+  // "Sessions in your projects" at 12px Inter, the wider face the interface falls back to where there is no SF (120 in SF),
+  // measures 142 in the build (the longest of the three that sits beside the tick).
   assert.ok(room >= 142, `the first row's line has ${room}px, and needs 142`);
 });
 

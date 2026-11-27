@@ -98,7 +98,6 @@ export function Panel({
   onRoutine,
   leaving,
   counts = {},
-  below = false,
   onBelow = () => {},
   onMake = () => {},
 }: {
@@ -114,8 +113,7 @@ export function Panel({
   leaving?: boolean;
   /** The numbers the head row's tabs carry ("Changes 3"). */
   counts?: Partial<Record<string, number>>;
-  /** The bottom panel with the shells, which the head row's + shows and hides. */
-  below?: boolean;
+  /** Shows the bottom panel with the shells, as the head row's + does once it has started a new one. */
   onBelow?: (on: boolean) => void;
   /** New add-on, from +'s Your apps: asks the agent for one in the composer. */
   onMake?: () => void;
@@ -219,7 +217,7 @@ export function Panel({
 
   return (
     <aside ref={box} className="lc-panel" aria-label="Panel" data-tab={shown} data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} inert={leaving || undefined}>
-      <PanelTabs thread={thread} dock={dock} onDock={onDock} nameOf={nameOf} counts={counts} below={below} onBelow={onBelow} onMake={onMake} />
+      <PanelTabs thread={thread} dock={dock} onDock={onDock} nameOf={nameOf} counts={counts} onBelow={onBelow} onMake={onMake} />
       {all.map((t) => {
         if (!mounted.has(t)) return null;
         const visible = t === shown;

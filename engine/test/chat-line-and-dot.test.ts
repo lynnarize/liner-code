@@ -45,10 +45,11 @@ test("The Plan card is a bordered card: the card fill, a 0.5px edge at the card 
   assert.match(blocks(crew, '.lc-ccard-r[data-s="working"] .lc-ccard-t').join(""), /color: var\(--l-ink\)/);
 });
 
-test("Your message is a bubble on the right in the card's fill with a 0.5px edge and its corner small where it points at you, at most 84% wide", () => {
+test("Your message is a bubble on the right in a grey of its own (T3's #ebebed in the light look) with a 0.5px edge and its corner small where it points at you, at most 84% wide", () => {
   const css = sheet("app.css");
   assert.equal(one(css, ".lc-you p", "max-width"), "84%");
-  assert.equal(one(css, ".lc-you p", "background"), "var(--lc-well)");
+  assert.equal(one(css, ".lc-you p", "background"), "var(--lc-bubble)");
+  assert.ok(blocks(css, ":root").some((b) => value(b, "--lc-bubble") === "color-mix(in oklab, var(--l-ink) 7.5%, var(--lc-paper))"), "the light bubble is not a grey a step under the sheet");
   assert.equal(one(css, ".lc-you p", "box-shadow"), "inset 0 0 0 0.5px var(--lc-hair)");
   assert.equal(one(css, ".lc-you p", "border-radius"), "var(--lc-r-card) var(--lc-r-card) 4px var(--lc-r-card)");
   assert.equal(one(css, ".lc-you p", "line-height"), "21px");
@@ -69,7 +70,7 @@ test("The chat keeps the board's measure and type at every width: a 720 column, 
   assert.equal(one(css, ".lc-you p", "font-size"), "14px");
 });
 
-test("The agent's inline code is a small Geist Mono chip, a file's name a blue chip, and a code block has a 0.5px edge and a 32px head", () => {
+test("The agent's inline code is a small chip in the mono face, a file's name a blue chip, and a code block has a 0.5px edge and a 32px head", () => {
   const css = sheet("app.css");
   assert.equal(one(css, ".lc-md code", "font"), "500 12px/1.4 var(--l-font-mono)");
   assert.equal(one(css, ".lc-md .l-md-link[data-file] > code", "color"), "var(--lc-blue)");

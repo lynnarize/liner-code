@@ -25,6 +25,7 @@ import { I, StateMark } from "./icons";
 import { plural } from "./model";
 import { reviewHeld } from "./session-state";
 import { SurfaceNote } from "./Surfaces";
+import { DESIGN_TOOL } from "./surface-row";
 import { PANE_PICK, PaneButton, PaneFoot, PaneHead, PaneWords } from "./Pane";
 import { PanelHead, Pop, Row, Sep } from "./ui";
 
@@ -39,8 +40,7 @@ const TALL_WIDE = 300;
 
 /* ---------- Which design file the session draws ---------- */
 
-/** A call of Liner's design tools that draws, by any tool's name for them (face.ts CANVAS_TOOL); the ones that only read (tree, shot, files) don't count. */
-const DESIGN_TOOL = /^(?:mcp__liner__|liner\.|liner_)?design_(frame|node|picture|built)\b/;
+/* A call of Liner's design tools that draws (DESIGN_TOOL, kept in surface-row.ts, which the panel's + reads too), by any tool's name for them (face.ts CANVAS_TOOL); the ones that only read (tree, shot, files) don't count. */
 const SLUG_IN = /^\.liner\/designs\/([^/]+)\/(?:frames\/[^/]+\.html|design\.json)$/;
 /**
   A path a tool wrote, from the session's folder: one outside it is no design of this folder. A

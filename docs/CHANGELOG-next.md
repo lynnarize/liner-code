@@ -155,3 +155,10 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - The Agents surface no longer shows cost or cache rows.
 - A Session tab left open in the panel is still there after a restart.
 - An ask's card has no state mark in its head.
+- Words are set in the Mac's own face (SF Pro, with Inter where there is none) and code in its own mono, in three weights
+  only; in the light look the sidebar and the sheet are nearly one tone, cards and menus are white, and the inks are softer.
+- The session details card is flat: its own fill and a thin edge, with no shadow under it.
+- Menus, pop-ups, ⌘K and the session details card are leaner: smaller corners, a lighter shadow, regular words and
+  lighter grey icons.
+- The panel's + lists the surfaces that hold something for this session and the ones you have open; the rest are under
+  More, with your apps. New side chat and New terminal have rows of their own, and Show the terminal is the top row's toggle.

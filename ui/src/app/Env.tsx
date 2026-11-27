@@ -322,7 +322,7 @@ export function BranchChip({ thread, project, files, lines, onChanges }: { threa
 
 /**
   The session details card (line and dot, board Details, 2026-11-27): it floats under the top row's right end from its first
-  toggle (Session.tsx). Rows 34 high, each doing what its row in the title's menu does, or opening the surface that shows
+  toggle (Session.tsx). Rows 30 high, as lean as a menu's, each doing what its row in the title's menu does, or opening the surface that shows
   more: where it runs, with the folder a press away and the Mac's own list to the side; your editor; the project's scripts
   (each runs in a shell of its own) and what of the session's listens, with its port; Add a project script. Then the branch,
   Commit and Changes; then Context, which opens the Session surface, and Fusion or the agents that worked, which open the
@@ -338,10 +338,11 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
   useEffect(() => {
     void rpc("apps.editors", {}).then(setEditors, () => setEditors([]));
   }, []);
-  // What listens and how full the context is: asked when the card shows, and again as a turn starts or ends.
+  // What listens and how full the context is: asked when the card shows, and again as a turn starts or ends. Only what this
+  // session started is listed: a server another session, a terminal or another tool runs in the same folder isn't this session's.
   useEffect(() => {
     let live = true;
-    void rpc("ports.list", { threadId: thread.id }).then((l) => live && setServers(l.filter((x) => x.owner !== null)), () => {});
+    void rpc("ports.list", { threadId: thread.id }).then((l) => live && setServers(l.filter((x) => x.owner === "session")), () => {});
     void rpc("thread.info", { id: thread.id }).then((i) => live && setInfo(i), () => {});
     return () => {
       live = false;
@@ -374,7 +375,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
     <div className="lc-dcard" role="group" aria-label="Session details">
       <div className="lc-dr">
         <button type="button" className="lc-dr-main l-focus" title={tilde(cwd)} onClick={() => bridge.openIn(cwd, "finder")}>
-          <I.laptop size={16} />
+          <I.laptop size={14} />
           <span className="lc-dr-t">{os.here[0].toUpperCase() + os.here.slice(1)}</span>
           <em>{thread.worktree ? "in a worktree" : "in the checkout"}</em>
         </button>
@@ -385,7 +386,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
       </div>
       <div className="lc-dr">
         <button type="button" className="lc-dr-main l-focus" onClick={() => openIn(editor)}>
-          <I.edit size={16} />
+          <I.edit size={14} />
           <span className="lc-dr-t">{editor ? `Open in ${editor.name}` : "Open in your editor"}</span>
         </button>
         {editors && editors.length > 1 && panel("editor", "Pick your editor")}
@@ -393,7 +394,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
       {(project.scripts ?? []).map((x) => (
         <div key={x.id} className="lc-dr">
           <button type="button" className="lc-dr-main l-focus" title={x.command} onClick={() => (runScript(thread.id, x), onTerminal())}>
-            <I.play size={16} />
+            <I.play size={14} />
             <span className="lc-dr-t lc-mono">{x.name}</span>
           </button>
         </div>
@@ -401,7 +402,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
       {servers.map((x) => (
         <div key={x.port} className="lc-dr">
           <span className="lc-dr-main" title={x.url}>
-            <I.server size={16} />
+            <I.server size={14} />
             <span className="lc-dr-t lc-mono">{x.process}</span>
             <span className="lc-dr-v">
               <i className="lc-dr-dot" aria-hidden />
@@ -411,7 +412,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
         </div>
       ))}
       <div className="lc-dr" data-quiet>
-        <Pop label="Add a project script" menu align="end" width={300} triggerClass="lc-dr-main lc-dr-add l-focus" trigger={<><I.plus size={16} /><span className="lc-dr-t">Add a project script</span></>}>
+        <Pop label="Add a project script" menu align="end" width={300} triggerClass="lc-dr-main lc-dr-add l-focus" trigger={<><I.plus size={14} /><span className="lc-dr-t">Add a project script</span></>}>
           {(close) => <EnvPanel thread={thread} project={project} files={files} lines={lines} onChanges={onChanges} close={close} only="script" />}
         </Pop>
       </div>
@@ -420,14 +421,14 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
           <span className="lc-dr-sep" role="separator" />
           <div className="lc-dr">
             <span className="lc-dr-main">
-              <I.branch size={16} />
+              <I.branch size={14} />
               <span className="lc-dr-t lc-mono">{branch ?? "No branch"}</span>
             </span>
             {panel("branch", "Branch")}
           </div>
           <div className="lc-dr">
             <button type="button" className="lc-dr-main l-focus" disabled={running || (files === 0 && then === "commit")} title={running ? "Once the turn ends" : undefined} onClick={commit}>
-              <I.commit size={16} />
+              <I.commit size={14} />
               <span className="lc-dr-t">{files > 0 ? "Commit" : then === "pr" ? "Open a pull request" : then === "push" ? "Push" : "Commit"}</span>
               {files > 0 && <em>{plural(files, "file")}</em>}
             </button>
@@ -437,7 +438,7 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onContex
       )}
       <div className="lc-dr">
         <button type="button" className="lc-dr-main l-focus" disabled={!files && !lines.added && !lines.removed} onClick={onChanges}>
-          <I.changes size={16} />
+          <I.changes size={14} />
           <span className="lc-dr-t">Changes</span>
           <em>{files > 0 || lines.added || lines.removed ? "Not committed" : "None yet"}</em>
           {(lines.added > 0 || lines.removed > 0) && (

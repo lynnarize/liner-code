@@ -38,21 +38,36 @@ test("While the details card shows, the chat and the message box keep a gutter c
   assert.match(rule(css, ".lc-pin"), /z-index: 4;/, "the column isn't under the message box's 5");
 });
 
-test("The details card lifts off the chat it stands over, and its shadow is never cut by its scrolling", () => {
-  // What the narrow pinned card's shadow test protected, at today's truth: the card stands over the chat (and over it
-  // entirely under 640px of thread), so it is lifted by the menus' shadow; the scroller is the card itself, whose
-  // shadow is drawn outside it, and the column round it doesn't clip.
+test("The details card is flat as T3 Code's is: its own fill and a 0.5px edge, no drop shadow, and scrolling never cuts its corner", () => {
+  // The owner, 2026-11-27: "side session remove shadow. make it same background as t3 code". The card is parted from the
+  // chat by the card fill (white on the light sheet, a step off the dark one) and its 0.5px edge alone. What the old
+  // shadow test protected still holds: the scroller is the card itself, whose ring is drawn outside it, and the column
+  // round it doesn't clip.
   const css = read("app.css");
   const card = rule(css, ".lc-dcard");
-  assert.match(card, /box-shadow: 0 0 0 0\.5px var\(--lc-line2\), var\(--lc-float-shadow\);/, "the card has nothing to lift it off the chat");
+  assert.match(card, /background: var\(--lc-card\);/, "the card is not in the card fill");
+  assert.match(card, /box-shadow: 0 0 0 0\.5px var\(--lc-line2\);/, "the card's edge is not one 0.5px ring");
+  const shadows = [...css.matchAll(/\n([^{}\n]*\.lc-dcard[^{}\n]*) \{([^{}]*)\}/g)].map((m) => /box-shadow:\s*([^;]+);/.exec(m[2])?.[1]).filter(Boolean) as string[];
+  for (const sh of shadows) assert.ok(sh.split(/,(?![^(]*\))/).every((part) => /^\s*0 0 0 0\.5px /.test(part)), `the card casts a shadow again: ${sh}`);
+  assert.doesNotMatch(card, /--lc-float-shadow|--lc-raise/, "the card floats like a menu again");
   assert.match(card, /overflow: hidden auto;/, "the card doesn't scroll itself");
-  assert.match(rule(css, ".lc-pin"), /overflow: visible;/, "the column clips the card's shadow");
+  assert.match(rule(css, ".lc-pin"), /overflow: visible;/, "the column clips the card's corner and edge");
 });
 
-test("The details card is the board's: 34px rows on a card with a 16px corner, and no money anywhere in it", () => {
+test("The details card is as lean as a menu: 30px rows at 13 regular on a 6px corner, a card with a 12px corner 4 in, and no money anywhere in it", () => {
+  // The owner, 2026-11-27: "make it more lean to capy". It was 34px rows at 13.5/500 on a 16px corner, 6 in.
   const css = read("app.css");
-  assert.match(rule(css, ".lc-dcard"), /border-radius: var\(--lc-r-sheet\);/);
-  assert.match(rule(css, ".lc-dr"), /height: 34px;/);
+  const box = rule(css, ".lc-dcard");
+  assert.match(box, /border-radius: var\(--lc-r-card\);/);
+  assert.match(box, /padding: 4px;/);
+  assert.match(box, /--lc-stroke: var\(--lc-menu-stroke\);/, "the card's icons are not drawn lighter, as a menu's");
+  assert.match(rule(css, ".lc-dr"), /height: 30px;/);
+  const main = rule(css, ".lc-dr-main");
+  assert.match(main, /height: 30px;/);
+  assert.match(main, /border-radius: 6px;/);
+  assert.match(main, /font-size: 13px;\s*font-weight: 400;/, "a row's words are heavier than a menu row's");
+  assert.match(rule(css, ".lc-dr-main > svg"), /width: 14px;\s*height: 14px;\s*color: var\(--lc-icon\);/, "a row's icon isn't 14 in the muted grey");
+  assert.match(rule(css, ".lc-dr-sep"), /height: 0\.5px;\s*margin: 4px -4px;/, "a rule doesn't run edge to edge of the card's 4px");
   const env = read("Env.tsx");
   const card = env.slice(env.indexOf("export function DetailsCard("));
   assert.doesNotMatch(card, /money\(|costUsd|\$\{?\s*[\d.]|"\$/, "the details card says what the session costs");
@@ -82,6 +97,13 @@ test("Turning Teamwork or a Swarm on opens the team in the Agents panel, from /t
   assert.match(send, /showTeam\(thread\.id\);/, "/teamwork doesn't show the team");
   assert.doesNotMatch(read("SessionInfo.tsx"), /MultiAgentRow|swarm\.enable/, "the Session surface starts a team again");
   assert.match(read("Crew.tsx"), /export function showTeam\(threadId: string\) \{\s*showTeamView\(threadId, "all"\);/, "showing the team doesn't open the Agents panel");
+});
+
+test("The details card lists only the servers this session started, not every server that runs in the project's folder", () => {
+  const env = read("Env.tsx");
+  const card = env.slice(env.indexOf("export function DetailsCard("));
+  assert.match(card, /rpc\("ports\.list", \{ threadId: thread\.id \}\)[^\n]*x\.owner === "session"/, "the card's servers aren't held to the session's own");
+  assert.doesNotMatch(card, /x\.owner !== null/, "the card lists the project's servers too");
 });
 
 /* ---------- The details card's agents (the owner's ask, after Antigravity's overview card) ---------- */
@@ -131,7 +153,8 @@ test("The card's agent rows: 28 high on a 0.5px guide line 16 in a level, three 
   assert.match(row, /height: 28px;/);
   assert.match(row, /padding-left: calc\(var\(--lc-da-d\) \* 16px\);/, "a level isn't 16 in");
   assert.match(row, /repeating-linear-gradient\(90deg, var\(--lc-hair\) 0 0\.5px, transparent 0\.5px 16px\)/, "children sit on no guide line");
-  assert.match(rule(css, ".lc-da-main"), /font-size: 12\.5px;/);
+  // At a menu row's 13 regular since the lean pass (2026-11-27), still 28 high.
+  assert.match(rule(css, ".lc-da-main"), /height: 28px;[\s\S]*font-size: 13px;/);
   // Three levels: a fourth folds into its parent's count, and its parent can't unfold.
   const deep: AgentRow = { key: "a", name: "a", state: "working", kids: [{ key: "b", name: "b", state: "working", kids: [{ key: "c", name: "c", state: "working", kids: [leaf("d", "working")] }] }] };
   const shown = shownRows([deep], () => true).rows;

@@ -440,7 +440,7 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
   const row = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; max?: number; side: "left" | "right" } | null>(null);
   const done = () => {
     setOpen(false);
     row.current?.focus({ preventScroll: true });
@@ -464,23 +464,26 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
     const vw = document.documentElement.clientWidth;
     const vh = window.innerHeight;
     const w = Math.min(width, vw - EDGE * 2);
-    const left = sideMenuLeft(m, w, vw);
+    const left = sideMenuLeft(m, w, vw, menu?.dataset.side === "left");
     p.style.maxHeight = "none";
     const h = p.scrollHeight;
     const fit = Math.min(h, vh - EDGE - TOP_ROW);
     const top = Math.max(TOP_ROW, Math.min(rr.top - 4, vh - EDGE - fit));
-    setPos({ top: Math.round(top), left: Math.round(left), max: h > fit ? fit : undefined });
+    setPos({ top: Math.round(top), left: Math.round(left), max: h > fit ? fit : undefined, side: left < m.left ? "left" : "right" });
   }, [open, width]);
   // The keyboard goes in once it is placed: to its text field when it has one (a chooser's find field), else its first row.
   useEffect(() => {
     if (pos) (panel.current?.querySelector<HTMLElement>(FIRST_FOCUS) ?? panel.current?.querySelector<HTMLElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
   }, [Boolean(pos)]);
-  // A press anywhere but here or on its row closes it (another row of the menu, or outside, where the menu goes too).
+  // A press anywhere but here or on its row closes it (another row of the menu, or outside, where the menu goes too). A press in
+  // a side menu opened from this one (Your apps inside +'s More) is one of its own: that menu is among the outer menu's `subs`.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (panel.current?.contains(t) || row.current?.contains(t)) return;
+      // (Two side menus of one menu are never open at once, a press on another row closing this one, so any other is this one's.)
+      if ([...(subs ?? [])].some((s) => s !== panel.current && s.contains(t))) return;
       setOpen(false);
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -516,7 +519,7 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
           <div
             ref={panel}
             className="l-pop lc-pop-panel lc-layer"
-            data-side="right"
+            data-side={pos?.side ?? "right"}
             data-ready={pos ? true : undefined}
             role="menu"
             aria-label={label}

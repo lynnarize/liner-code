@@ -42,16 +42,17 @@ test("The Add-ons page's column and title match Settings' page pattern", () => {
   assert.deepEqual({ maxWidth: value(cols[0], "max-width"), h1Size: value(heads[0], "font-size") }, { maxWidth: "760px", h1Size: "24px" }, "the column and title keep the Add-ons page's own measures instead of Settings'");
 });
 
-test("Every menu has the one menu shape's 10px corner and 4px inset, outweighing Liner's own sheet", () => {
+test("Every menu has the one lean menu shape's 8px corner and 4px inset, outweighing Liner's own sheet", () => {
   const css = sheet("app.css");
   const panels = blocks(css, ".l-pop.lc-pop-panel");
-  assert.ok(panels.some((b) => value(b, "border-radius") === "10px" && value(b, "padding") === "4px" && value(b, "gap") === "0"), "no .l-pop.lc-pop-panel block draws the 10px corner with 4px round its touching rows");
+  assert.ok(css.includes("--lc-r-menu: 8px"), "the menu's corner has no token of its own");
+  assert.ok(panels.some((b) => value(b, "border-radius") === "var(--lc-r-menu)" && value(b, "padding") === "4px" && value(b, "gap") === "0"), "no .l-pop.lc-pop-panel block draws the 8px corner with 4px round its touching rows");
   // blocks() only matches whole selectors, so scan every selector that mentions the panel for the old corners too.
   const stale = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => m[1].includes("lc-pop-panel") && ["13px", "14px"].includes(value(m[2], "border-radius") ?? ""));
   assert.equal(stale.length, 0, "a block whose selector contains lc-pop-panel still draws 13 or 14px");
   // A rule runs edge to edge, a label is grey, and a foot line sits under a rule.
   assert.ok(blocks(css, ".lc-pop-panel > .lc-sep").some((b) => value(b, "margin") === "4px -4px"), "a menu's rule doesn't run edge to edge");
-  assert.ok(blocks(css, ".lc-pop-head").some((b) => value(b, "font-size") === "12.5px" && value(b, "color") === "var(--l-ink-4)"), "a menu's label isn't 12.5px in the fourth ink");
+  assert.ok(blocks(css, ".lc-pop-head").some((b) => value(b, "font-size") === "12px" && value(b, "min-height") === "22px" && value(b, "color") === "var(--l-ink-4)"), "a menu's label isn't 12px and 22 high in the fourth ink");
   assert.ok(blocks(css, ".lc-pop-foot").some((b) => value(b, "border-top") === "0.5px solid var(--lc-line2)" && value(b, "color") === "var(--l-ink-3)"), "a menu's foot line isn't grey under a 0.5px rule edge to edge (line and dot)");
 });
 
@@ -619,7 +620,7 @@ test("No level word is saved or sent as a default from the app: a new session, a
   assert.match(model, /return keptLevel\(list, pairEffort, fallback, pairEffort !== undefined\);/, "a pair's lead's level isn't keptLevel");
 });
 
-test("A menu row is one line 28px high, 6px round, with a 14px icon in the fourth ink, and no menu draws its icons in the accent", () => {
+test("A menu row is one line 28px high, 6px round, with a 14px icon in the muted icon grey, and no menu draws its icons in the accent", () => {
   const css = sheet("app.css");
   const row = blocks(css, ".lc-row");
   assert.equal(row.length, 1, "the menu row has more than one base rule");
@@ -630,9 +631,9 @@ test("A menu row is one line 28px high, 6px round, with a 14px icon in the fourt
   assert.equal(value(row[0], "color"), "var(--l-ink)", "a menu row's words are not in ink");
   const tick = blocks(css, ".lc-row-tick");
   assert.equal(tick.length, 1);
-  assert.equal(value(tick[0], "color"), "var(--l-ink-4)", "a menu row's icon is not in the fourth ink");
+  assert.equal(value(tick[0], "color"), "var(--lc-icon)", "a menu row's icon is not in the muted icon grey");
   assert.ok(blocks(css, ".lc-row-tick > svg").some((b) => value(b, "width") === "14px" && value(b, "height") === "14px"), "a menu row's icon is not 14px");
-  assert.ok(blocks(css, ".lc-row-end").some((b) => value(b, "font-size") === "12.5px" && value(b, "color") === "var(--l-ink-4)"), "a row's end is not 12.5px in the fourth ink");
+  assert.ok(blocks(css, ".lc-row-end").some((b) => value(b, "font-size") === "13px" && value(b, "color") === "var(--l-ink-4)"), "a row's end is not 13px in the fourth ink");
   assert.ok(blocks(css, ".lc-row[data-bare]").some((b) => value(b, "grid-template-columns") === "minmax(0, 1fr) auto"), "a row with no icon keeps an empty icon column");
   const title = blocks(css, ".lc-row-t b");
   assert.ok(title.some((b) => value(b, "white-space") === "nowrap"), "a menu row's title wraps onto a second line");

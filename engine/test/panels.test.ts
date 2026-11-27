@@ -530,7 +530,7 @@ test("switcher: the panel's + lists your apps pinned first, the one showing tick
   const apps = [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }];
   const pr = dock.openTab(dock.emptyDock(), "pr");
   const rows = switcher.moreRows(pr, apps, ["b"]);
-  assert.equal("surfaces" in rows, false, "+ lists every surface itself (Switcher.tsx MENU_ORDER); ···'s four came back");
+  assert.equal("surfaces" in rows, false, "+ lists every surface itself (surface-row.ts surfaceRows); ···'s four came back");
   assert.deepEqual(rows.apps.map((a) => a.id), ["b", "a"], "the pinned app first");
   assert.equal(rows.appOn, false);
   const app = switcher.moreRows(dock.openTab(pr, "app:a"), apps, []);

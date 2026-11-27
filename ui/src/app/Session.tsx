@@ -916,7 +916,6 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             dock={dock.open ? dock : leaving!}
             onDock={fromPanel}
             counts={{ changes: openFiles || wtChanges || undefined }}
-            below={below}
             onBelow={setBelow}
             onMake={() => putInComposer(thread.id, "Make me a panel that ")}
             focus={focus}

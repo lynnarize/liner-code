@@ -30,10 +30,11 @@ test("The ground, the sheet, the inks and the lines take the board's values in t
   assert.equal(value(dark, "--l-surface"), "#101012", "the dark sheet is not one step up from the ground");
   assert.equal(value(dark, "--l-line"), "rgba(255, 255, 255, 0.07)");
   assert.equal(value(dark, "--l-line-2"), "rgba(255, 255, 255, 0.115)");
-  assert.equal(value(light, "--l-bg"), "#f0f0f1");
-  assert.equal(value(light, "--l-surface"), "#ffffff");
-  assert.equal(value(light, "--l-line"), "rgba(12, 12, 24, 0.08)");
-  assert.equal(value(light, "--l-ink"), "#151518");
+  // The light look is T3 Code Nightly's since 2026-11-27 (the owner: "t3 nightly text and background are cleaner").
+  assert.equal(value(light, "--l-bg"), "#fafafa");
+  assert.equal(value(light, "--l-surface"), "#fcfcfc");
+  assert.equal(value(light, "--l-line"), "rgba(24, 24, 27, 0.09)");
+  assert.equal(value(light, "--l-ink"), "#18181b");
   // The default action colour is Liner red, a lighter one in the dark; Appearance's choice still wins (html[data-action]).
   assert.ok(blocks(css, ":root").some((b) => value(b, "--lc-act") === "oklch(0.6 0.215 29)"), "the light action colour is not Liner red");
   assert.ok(blocks(css, '[data-theme="dark"]').some((b) => value(b, "--lc-act") === "oklch(0.66 0.205 31)"), "the dark action colour is not Liner red");
@@ -167,4 +168,64 @@ test("The dots are in one sheet of their own: the halftone, its corner and state
   assert.ok(cells.every((c) => c && c.split(",").every((v) => (Number(v) - 1.5) % 3 === 0)), "a dither cell is off the 3px grid");
   // Round dots, in light ink, before the knob only.
   assert.ok(blocks(css, ".lc-dither > i:nth-child(1)").some((b) => /radial-gradient\(circle at/.test(b) && /--lc-dither-ink/.test(b)));
+});
+
+/* ---------- The owner, 2026-11-27: "t3 nightly text and background are cleaner. can you adapt to our liner code?" ---------- */
+
+const lightness = (hex: string) => {
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  // OKLab's L, in points of 100.
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return (0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s) * 100;
+};
+const contrast = (a: string, b: string) => {
+  const lum = (hex: string) => { const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); const [r, g, bl] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255)); return 0.2126 * r + 0.7152 * g + 0.0722 * bl; };
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+
+test("The interface is set in the system's face as T3's is, with the shipped Inter after it, smoothed alike in both looks; code is the system's mono with the shipped Geist Mono after it", () => {
+  const css = sheet("app.css");
+  const root = blocks(css, ":root").find((b) => value(b, "--l-font-body")) ?? "";
+  for (const t of ["--l-font-body", "--l-font-display"]) {
+    const stack = value(root, t) ?? "";
+    assert.match(stack, /^-apple-system, BlinkMacSystemFont, "Inter Variable"/, `${t} does not start with the system face and fall back to Inter`);
+    assert.ok(stack.indexOf('"Inter Variable"') < stack.indexOf("system-ui"), `${t} would take the system-ui face where there is no SF before the Inter the app ships`);
+  }
+  assert.match(value(root, "--l-font-mono") ?? "", /^ui-monospace, "SF Mono", "SFMono-Regular", "Geist Mono", /, "code is not the system mono with Geist Mono after it");
+  // Inter's own stylistic sets are off, and body text carries no tracking tuned for Inter.
+  assert.doesNotMatch(value(root, "--lc-features") ?? "", /cv11|ss03/);
+  assert.equal(value(root, "--l-track-body"), "0em");
+  assert.ok(blocks(css, "body").some((b) => value(b, "-webkit-font-smoothing") === "antialiased"), "the page is not smoothed alike in both looks");
+  // Only fonts the app ships, from its own files: nothing is fetched (the fonts test above checks every sheet for URLs).
+  assert.doesNotMatch(css, /@font-face/, "app.css brings a face of its own");
+});
+
+test("Interface text holds to three weights, 400, 500 and 600, in the app's own sheets; Liner's in-between weights are brought to them", () => {
+  for (const f of appSheets()) {
+    const css = readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const odd = [...css.matchAll(/font-weight:\s*(\d+)|font:\s*(\d{3}) /g)].map((m) => Number(m[1] ?? m[2])).filter((w) => ![400, 500, 600].includes(w));
+    assert.deepEqual(odd, [], `${f.pathname} sets a weight off the three`);
+  }
+  const css = sheet("app.css");
+  assert.ok(has(css, ".l-scope .l-seg .l-seg__text", "font-weight", "400") && has(css, ".l-scope .l-seg .l-seg__text-on", "font-weight", "500"), "the segmented control keeps Liner's 450 and 560");
+});
+
+test("The light grounds are nearly one tone: the sidebar and the sheet within two points of lightness, cards and menus white, and the words that must read still at 4.5:1", () => {
+  const css = sheet("app.css");
+  const light = blocks(css, '[data-theme="light"]').find((b) => value(b, "--l-bg")) ?? "";
+  const ground = value(light, "--l-bg")!, sheetHex = value(light, "--l-surface")!;
+  const gap = Math.abs(lightness(sheetHex) - lightness(ground));
+  assert.ok(gap > 0 && gap <= 2, `the sidebar and the sheet are ${gap.toFixed(2)} points apart, not a near tone (they were #f0f0f1 and #fff, two blocks)`);
+  assert.equal(value(light, "--l-raised"), "#ffffff");
+  const surfaces = blocks(css, ":root").find((b) => value(b, "--lc-well")) ?? "";
+  for (const t of ["--lc-well", "--lc-card", "--lc-float"]) assert.equal(value(surfaces, t), "var(--l-raised)", `${t} is not white on the light sheet`);
+  // The fourth ink is for small words: it keeps 4.5:1 on the sidebar's ground and on the sheet.
+  const ink4 = value(blocks(css, ":root").find((b) => value(b, "--l-ink-4")) ?? "", "--l-ink-4")!;
+  for (const g of [ground, sheetHex, "#ffffff"]) assert.ok(contrast(ink4, g) >= 4.5, `the fourth ink is ${contrast(ink4, g).toFixed(2)}:1 on ${g}`);
+  assert.ok(contrast(value(light, "--l-ink-3")!, ground) >= 4.5, "the third ink does not read on the sidebar");
+  // The answers are at 90% of the ink.
+  assert.equal(value(surfaces, "--lc-ink-chat"), "color-mix(in oklab, var(--l-ink) 90%, transparent)");
+  assert.ok(blocks(css, ".lc-thread .l-md.lc-md").some((b) => value(b, "color") === "var(--lc-ink-chat)"), "the answers are in the full ink");
 });

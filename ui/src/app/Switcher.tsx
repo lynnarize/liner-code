@@ -6,21 +6,23 @@
   the panel is open, so the top row shows it only while the panel is hidden.
 
   The panel's head row (Panel.tsx draws it) names the surfaces that are open as tabs, each with its icon, its name and a count
-  where there is one, the one showing filled; then +, the menu of every surface with its key, a tick on the open ones, the
-  session's shells and what listens. At its right end: fill the window, and hide the panel. Pressing a tab shows it; a tab
-  closes from its own ×, which puts that surface away. Every surface is reachable from + and by its key (Session.tsx).
+  where there is one, the one showing filled; then +, a lean menu of the surfaces that hold something now with their keys, a
+  tick on the open ones, More for the rest, the session's shells and what listens. At its right end: fill the window, and hide
+  the panel. Pressing a tab shows it; a tab closes from its own ×, which puts that surface away. Every surface is reachable
+  from + (at most through More) and by its key (Session.tsx).
 */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { LocalServer, Thread } from "@contracts";
-import { rpc, useEngine } from "./engine";
+import { isSwarm, type LocalServer, type Thread } from "@contracts";
+import { isSubagent, rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
 import { plural } from "./model";
 import { appIcon, appsFor } from "./Addon";
 import { usePins } from "./TopBar";
 import { shortcutOf } from "./keymap";
 import { runScript, SURFACES, surfaceOf, type Tab } from "./Surfaces";
-import { closeTab, hideDock, openTab, type DockState } from "./dock";
-import { fadeOf, moreRows, scrollToShow, shortTabs } from "./surface-row";
+import { closeTab, hideDock, onScreen, openTab, type DockState } from "./dock";
+import { hasAgents } from "./agent-rows";
+import { canPr, fadeOf, hasCanvas, isCanvasItem, moreRows, scrollToShow, shortTabs, surfaceRows } from "./surface-row";
 import { MenuFoot, PanelHead, Pop, Row, Sep, SubMenu } from "./ui";
 import * as os from "./os";
 
@@ -67,13 +69,12 @@ function iconOf(t: Tab, addons: { id: string; panel?: { icon?: Parameters<typeof
   The panel's head row: a tab for each surface the panel holds (`tabs`, in the order they were opened), +, then fill the window
   and hide the panel. `counts` are the numbers a tab carries ("Changes 3").
 */
-export function PanelTabs({ thread, dock, onDock, nameOf, counts, below, onBelow, onMake }: {
+export function PanelTabs({ thread, dock, onDock, nameOf, counts, onBelow, onMake }: {
   thread: Thread;
   dock: DockState;
   onDock: (d: DockState) => void;
   nameOf: (t: Tab) => string;
   counts: Partial<Record<string, number>>;
-  below: boolean;
   onBelow: (on: boolean) => void;
   /** New add-on: asks the agent for one in the composer. */
   onMake: () => void;
@@ -145,7 +146,7 @@ export function PanelTabs({ thread, dock, onDock, nameOf, counts, below, onBelow
         })}
       </div>
       {/* +, Fill the window and Hide the panel stay where they are, outside the tabs' scrolling row. */}
-      <SurfaceMenu thread={thread} dock={dock} onDock={onDock} below={below} onBelow={onBelow} onMake={onMake} />
+      <SurfaceMenu thread={thread} dock={dock} onDock={onDock} onBelow={onBelow} onMake={onMake} />
       <span className="lc-grow" />
       <button type="button" className="lc-sw-b l-focus" aria-pressed={dock.full} aria-label={dock.full ? "Back beside the chat" : "Fill the window"} title={dock.full ? "Back beside the chat" : "Fill the window"} onClick={() => onDock({ ...dock, full: !dock.full })}>
         {dock.full ? <I.shrink size={16} /> : <I.expand size={16} />}
@@ -157,51 +158,94 @@ export function PanelTabs({ thread, dock, onDock, nameOf, counts, below, onBelow
   );
 }
 
-/** The surfaces + lists, in the board's order (Menus, "Open a surface"); the Terminal is in the shells' part, Linked pull requests inside Pull request. */
-const MENU_ORDER = ["session", "changes", "files", "browser", "agents", "pr", "design", "side", "device", "routines"];
-
 /**
-  +: every surface of the panel, with its key, a tick on the open ones; Your apps to the side; the session's shells, live,
-  and New terminal; then a grey line saying what listens.
+  +, as lean as Capy's "open a tab" menu (the owner, 2026-11-27): the session's title as its grey label; the surfaces that
+  hold something now and every one open as a tab (surface-row.ts surfaceRows), each with its key, the open ones ticked; More,
+  to the side, with every other surface and Your apps; New side chat; the session's shells, live, and New terminal; then a
+  grey line saying what listens. Showing or hiding the terminal is the top row's toggle and its key, not a row here.
 */
-function SurfaceMenu({ thread, dock, onDock, below, onBelow, onMake }: { thread: Thread; dock: DockState; onDock: (d: DockState) => void; below: boolean; onBelow: (on: boolean) => void; onMake: () => void }) {
-  const addons = useEngine((s) => s.addons);
-  const pins = usePins();
-  const apps = appsFor(addons, thread.projectId);
-  const rows = moreRows(dock, apps, pins);
-  const open = new Set(dock.panes.flatMap((p) => p.tabs));
-  const list = MENU_ORDER.map((id) => SURFACES.find((s) => s.id === id)).filter((s) => s !== undefined);
+function SurfaceMenu({ thread, dock, onDock, onBelow, onMake }: { thread: Thread; dock: DockState; onDock: (d: DockState) => void; onBelow: (on: boolean) => void; onMake: () => void }) {
   return (
     <Pop label="Open a surface" menu align="start" width={280} triggerClass="lc-ptab-plus" triggerAttrs={{ title: "Open a surface" }} trigger={<I.plus size={16} />}>
-      {(close) => (
-        <>
-          <PanelHead>{thread.title}</PanelHead>
-          <Sep />
-          {list.map((s) => (
-            <Row key={s.id} title={s.label} icon={<s.icon size={14} />} on={open.has(s.id) || undefined} end={keys(`surface.${s.id}`)} onPick={() => (close(), onDock(openTab(dock, s.id)))} />
-          ))}
-          <SubMenu title="Your apps" icon={<I.app size={14} />} value={rows.appOn ? <I.check size={14} className="lc-row-on" /> : apps.length || undefined} label="Your apps" width={250}>
-            {() => (
-              <>
-                {rows.apps.map((a) => {
-                  const Icon = appIcon(addons.find((x) => x.id === a.id)?.panel?.icon);
-                  return <Row key={a.id} title={a.name} icon={<Icon size={14} />} on={open.has(a.tab) || undefined} onPick={() => (close(), onDock(openTab(dock, a.tab)))} />;
-                })}
-                {rows.apps.length > 0 && <Sep />}
-                <Row title="New add-on" icon={<I.plus size={14} />} onPick={() => (close(), onMake())} />
-              </>
-            )}
-          </SubMenu>
-          <Sep />
-          <Shells thread={thread} below={below} onBelow={onBelow} close={close} />
-        </>
-      )}
+      {(close) => <SurfaceList thread={thread} dock={dock} onDock={onDock} onBelow={onBelow} onMake={onMake} close={close} />}
     </Pop>
   );
 }
 
-/** The menu's shells part: how many the session has, live; Show or hide the terminal; New terminal; what listens, at the foot. */
-function Shells({ thread, below, onBelow, close }: { thread: Thread; below: boolean; onBelow: (on: boolean) => void; close: () => void }) {
+/** Whether a simulator is running, as the Device surface would show it: kept between opens, so + doesn't redraw as it opens. */
+let booted = false;
+function useBooted() {
+  const [on, setOn] = useState(booted);
+  useEffect(() => {
+    let live = true;
+    // A local look (xcrun), no network; where there is no Xcode it fails and Device stays under More.
+    void rpc("device.list", {}).then((d) => {
+      booted = d.devices.some((x) => x.state === "Booted");
+      if (live) setOn(booted);
+    }, () => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return on;
+}
+
+/** What + holds while it is open (its own part, so what it reads is read only then). */
+function SurfaceList({ thread, dock, onDock, onBelow, onMake, close }: { thread: Thread; dock: DockState; onDock: (d: DockState) => void; onBelow: (on: boolean) => void; onMake: () => void; close: () => void }) {
+  const addons = useEngine((s) => s.addons);
+  const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
+  const pins = usePins();
+  const sent = useItemsWhere(thread.id, isSubagent).length;
+  const drew = useItemsWhere(thread.id, isCanvasItem);
+  const device = useBooted();
+  const apps = appsFor(addons, thread.projectId);
+  const rows = moreRows(dock, apps, pins);
+  const open = dock.panes.flatMap((p) => p.tabs);
+  const { top, more } = surfaceRows(
+    SURFACES.map((s) => s.id),
+    { agents: hasAgents({ sidekick: thread.sidekick, swarm: isSwarm(thread), atWork: thread.agentsAtWork, worked: sent }), pr: canPr(thread, project), canvas: hasCanvas(thread, drew), device, open },
+  );
+  // A ticked surface that shows now is put away from here; one behind another tab comes up.
+  const pick = (tab: Tab) => (close(), onDock(onScreen(dock, tab) ? closeTab(dock, tab) : openTab(dock, tab)));
+  const surface = (id: string) => {
+    const s = surfaceOf(id);
+    return s && <Row key={id} title={s.label} icon={<s.icon size={14} />} on={open.includes(id) || undefined} end={keys(`surface.${id}`)} onPick={() => pick(id)} />;
+  };
+  const app = (a: (typeof rows.apps)[number]) => {
+    const Icon = appIcon(addons.find((x) => x.id === a.id)?.panel?.icon);
+    return <Row key={a.id} title={a.name} icon={<Icon size={14} />} on={open.includes(a.tab) || undefined} onPick={() => pick(a.tab)} />;
+  };
+  return (
+    <>
+      <PanelHead>{thread.title}</PanelHead>
+      {top.map(surface)}
+      {rows.apps.filter((a) => open.includes(a.tab)).map(app)}
+      <SubMenu title="More" icon={<I.more size={14} />} label="More surfaces" width={250}>
+        {() => (
+          <>
+            {more.map(surface)}
+            <SubMenu title="Your apps" icon={<I.app size={14} />} value={rows.appOn ? <I.check size={14} className="lc-row-on" /> : apps.length || undefined} label="Your apps" width={250}>
+              {() => (
+                <>
+                  {rows.apps.map(app)}
+                  {rows.apps.length > 0 && <Sep />}
+                  <Row title="New add-on" icon={<I.plus size={14} />} onPick={() => (close(), onMake())} />
+                </>
+              )}
+            </SubMenu>
+          </>
+        )}
+      </SubMenu>
+      <Sep />
+      <Row title="New side chat" icon={<I.plus size={14} />} end={keys("surface.side")} onPick={() => (close(), onDock(openTab(dock, "side")))} />
+      <Sep />
+      <Shells thread={thread} onBelow={onBelow} close={close} />
+    </>
+  );
+}
+
+/** The menu's shells part: how many the session has, live, with a green dot; New terminal; what listens, at the foot. */
+function Shells({ thread, onBelow, close }: { thread: Thread; onBelow: (on: boolean) => void; close: () => void }) {
   const [shells, setShells] = useState<number | null>(null);
   const [servers, setServers] = useState<LocalServer[] | null>(null);
   useEffect(() => {
@@ -216,8 +260,8 @@ function Shells({ thread, below, onBelow, close }: { thread: Thread; below: bool
   return (
     <>
       <PanelHead end={shells ? <span className="lc-ptab-live">{plural(shells, "shell")}</span> : undefined}>Terminals</PanelHead>
-      <Row title={below ? "Hide the terminal" : "Show the terminal"} icon={<I.terminal size={14} />} end={keys("surface.terminal")} onPick={() => (close(), onBelow(!below))} />
-      <Row title="New terminal" icon={<I.plus size={14} />} onPick={() => (close(), runScript(thread.id, { name: "Shell", command: "" }), onBelow(true))} />
+      {/* The Terminal's key opens a shell only while there is none (it shows the terminal, which starts one); with shells it shows or hides them, so it is no New terminal's key then. */}
+      <Row title="New terminal" icon={<I.terminal size={14} />} end={shells === 0 ? keys("surface.terminal") : undefined} onPick={() => (close(), runScript(thread.id, { name: "Shell", command: "" }), onBelow(true))} />
       {servers !== null && (
         <>
           <Sep />

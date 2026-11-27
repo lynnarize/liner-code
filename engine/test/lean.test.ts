@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DesignFile, ProviderInfo } from "../../contracts/src/index.ts";
 import { emptyUsage, FRAME_CHANGED } from "../../contracts/src/index.ts";
-import { builtinLean, designNote, isDesignSkill, listSkills, parseLean, readLean, writeLean } from "../src/lean.ts";
+import { builtinLean, designNote, isDesignSkill, listSkills, parseLean, readLean, safePath, writeLean } from "../src/lean.ts";
 import { linerName, providers, Runtime, toolsNote } from "../src/runtime.ts";
 import type { Provider } from "../src/providers/types.ts";
 import { Store } from "../src/store.ts";
@@ -401,4 +401,22 @@ test("M1: lean.write writes, and hashes, exactly the file lean.read read for the
   symlinkSync(join(away, "x.md"), join(root, "docs/linked.md"));
   assert.throws(() => writeLean(root, "# nope\n", undefined, { lean: { path: "docs/linked.md", skills: [] } }), /leads out of this folder/);
   assert.equal(readFileSync(join(away, "x.md"), "utf8"), "# away\n");
+});
+
+test("safePath refuses missing folders through an outside link, dangling links, and lexical escapes while allowing nested real folders", () => {
+  const cwd = tmp("lc-lean-safe-");
+  const away = tmp("lc-lean-safe-away-");
+  symlinkSync(away, join(cwd, "out"));
+  assert.throws(() => safePath(cwd, join(cwd, "out/newdir/DESIGN.md")), /leads out of this folder/);
+  assert.equal(existsSync(join(away, "newdir")), false);
+
+  symlinkSync(join(away, "missing.md"), join(cwd, "DESIGN.md"));
+  assert.throws(() => safePath(cwd, join(cwd, "DESIGN.md")), /leads out of this folder/);
+  assert.throws(() => writeLean(cwd, "# x\n"), /leads out of this folder/);
+  assert.equal(existsSync(join(away, "missing.md")), false);
+
+  mkdirSync(join(cwd, "sub"));
+  assert.equal(safePath(cwd, join(cwd, "sub/newdir/DESIGN.md")), join(cwd, "sub/newdir/DESIGN.md"));
+  assert.throws(() => safePath(cwd, join(cwd, "../outside.md")), /leads out of this folder/);
+  assert.throws(() => safePath(cwd, cwd), /leads out of this folder/);
 });

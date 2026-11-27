@@ -13,7 +13,7 @@
   writes none.
 */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CodedError, FRAME_CHANGED } from "../../contracts/src/index.ts";
@@ -465,20 +465,33 @@ export function noLinks(cwd: string, abs: string) {
 export function safePath(cwd: string, abs: string) {
   const rel = relative(cwd, abs);
   if (/^\.liner(?:[\\/]|$)/.test(rel)) return noLinks(cwd, abs);
-  let real = abs;
-  try {
-    real = realpathSync(abs);
-  } catch {
-    // not there yet: its folder must be inside
-    try {
-      real = join(realpathSync(dirname(abs)), basename(abs));
-    } catch {
-      return abs;
-    }
-  }
+  if (!rel || outside(rel)) throw new Error(`${rel || abs} leads out of this folder (it's a link), so Liner Design doesn't read or write it.`);
+  const real = realOrParent(abs);
   const inner = relative(realpathSync(cwd), real);
   if (!inner || outside(inner)) throw new Error(`${rel} leads out of this folder (it's a link), so Liner Design doesn't read or write it.`);
   return abs;
+}
+
+function realOrParent(p: string): string {
+  let cur = resolve(p);
+  const trail: string[] = [];
+  for (let depth = 0; depth < 64; depth++) {
+    try {
+      return join(realpathSync(cur), ...trail);
+    } catch {
+      const st = lstatSync(cur, { throwIfNoEntry: false });
+      if (st?.isSymbolicLink()) {
+        // A dangling link is followed from its real parent so relative targets resolve accurately.
+        cur = resolve(realpathSync(dirname(cur)), readlinkSync(cur));
+        continue;
+      }
+      const parent = dirname(cur);
+      if (parent === cur) throw new Error(`Cannot resolve ${p}.`);
+      trail.unshift(basename(cur));
+      cur = parent;
+    }
+  }
+  throw new Error(`Too many links for ${p}.`);
 }
 
 /** A path from the folder, or absolute inside it; null when it climbs out. */

@@ -98,7 +98,7 @@ const liveKeyOf =(threadId: string, agentId: string) => `${threadId}:${agentId}`
   winding: those briefs' own ends, which the turn waits for once it has stopped them (BRIEF_WIND_MS at most).
   briefs: the briefs that began in it, in order, with their snapshots, for the turn's end to tell which it took back (tookBackOf).
 */
-type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>>; marker?: string; briefs?: BriefMark[] };
+type Turn = { abort: AbortController; started: number; session?: ProviderSession; turn: number; heard?: number; quiet?: boolean; agentId?: string; liveKey?: string; liner?: Set<string>; ends?: Set<() => void>; winding?: Set<Promise<void>>; marker?: string; briefs?: BriefMark[] };
 /**
   A "don't ask again this session": `rule` a command's rules (ruleParts) or a tool's name (`tool`), `skill` a skill's
   folder in full. `label` is what the card offered and what forgetting it names.
@@ -106,7 +106,7 @@ type Turn = { abort: AbortController; started: number; session?: ProviderSession
 type Grant = { kind: GrantKind; label: string; parts: string[]; tool?: boolean };
 /** A sidekick's brief at work in a thread: how to stop it, its session (for a steer), and the row it shows on. */
 /** by: who stopped it, when it was stopped: you from its row, the cap, or Liner Code when it tried to send an agent of its own. */
-type Brief = { abort: AbortController; row: string; taskId: string; session?: ProviderSession; by?: "row" | "cap" | "agent" | "replaced" };
+type Brief = { abort: AbortController; row: string; taskId: string; liveKey: string; provider: ProviderId; session?: ProviderSession; by?: "row" | "cap" | "agent" | "replaced" };
 /** One ephemeral subagent at work in a thread (subagent.ts): how to stop or steer it, and its mode. */
 type SubagentRun = { abort: AbortController; row: string; taskId: string; mode: "read" | "write"; session?: ProviderSession; by?: "row" | "cap" | "agent" };
 /** An answer to a request; `scope` is where an add-on goes, from its install card. */
@@ -1721,7 +1721,7 @@ export class Runtime {
     const cwd = t.worktree?.path ?? project.path;
     const turn = t.turns + 1;
     const abort = new AbortController();
-    const live: Turn = { abort, started: Date.now(), turn, agentId };
+    const live: Turn = { abort, started: Date.now(), turn, agentId, liveKey: liveKeyOf(threadId, agentId) };
     this.turns.set(threadId, live);
     // A session named by its first message is named by what the person read of it, not by the words Liner wrote for the agent.
     const title = t.title === "New session" || t.title === "New thread" ? titleFrom(o.shown?.text || text) : t.title;
@@ -2760,7 +2760,7 @@ export class Runtime {
       return { how: "stopped", who, seconds: 0, report: "", files: [], unstarted: true };
     }
     const abort = new AbortController();
-    const brief: Brief = { abort, row: row.id, taskId: row.taskId };
+    const brief: Brief = { abort, row: row.id, taskId: row.taskId, liveKey, provider };
     const onStop = () => abort.abort();
     if (stop.aborted) abort.abort();
     else stop.addEventListener("abort", onStop, { once: true });
@@ -3703,7 +3703,12 @@ export class Runtime {
     which provider sessions a new selection releases; there they go as the next message starts, here as the setting changes.)
   */
   async retool(threadId: string) {
-    const t = this.store.threads.find((x) => x.id === threadId);
+    let t = this.store.threads.find((x) => x.id === threadId);
+    if (!t) return;
+    // Wait for any session still opening for this thread so `this.live` reflects it before stale sessions are collected.
+    const pending = () => [...this.opening].find(([key]) => key.startsWith(`${threadId}:`))?.[1];
+    for (let p = pending(); p; p = pending()) await p.catch(() => {});
+    t = this.store.threads.find((x) => x.id === threadId);
     if (!t) return;
     const lead = this.resolve(t);
     const leadKey = liveKeyOf(threadId, t.agent);
@@ -3722,7 +3727,9 @@ export class Runtime {
       }
       stale.push({ key, l, side });
     }
-    if (!stale.length) return;
+    const brief = this.briefs.get(threadId);
+    const sideMoved = Boolean(brief && brief.liveKey !== sideKey);
+    if (!stale.length && !sideMoved) return;
     for (const { key, l } of stale) {
       this.live.delete(key);
       unwarmed(l);
@@ -3736,16 +3743,16 @@ export class Runtime {
     const turn = this.turns.get(threadId);
     // A turn of the lead's on a tool it no longer runs on (or one still opening it), or a sidekick's brief on one it no longer is.
     const leadStale = stale.find((x) => !x.side);
-    const leadBusy = turn && leadStale && (turn.session === leadStale.l.session || (!turn.session && turn.agentId !== t.agent));
-    const brief = this.briefs.get(threadId);
-    const sideBusy = brief && stale.some((x) => x.side && x.l.session === brief.session);
+    const leadBusy = turn && leadStale && (turn.session === leadStale.l.session || (!turn.session && (turn.liveKey === leadStale.key || (turn.agentId !== undefined && turn.agentId !== t.agent))));
+    const sideStale = stale.find((x) => x.side);
+    const sideBusy = brief && ((sideStale && (sideStale.l.session === brief.session || (!brief.session && sideStale.key === brief.liveKey))) || sideMoved);
     if (leadBusy) {
       this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: turn.turn, at: Date.now(), text: `This session moved to ${picked(lead.provider, lead.model)} while ${label(leadStale.l.provider)} worked, so Liner Code stopped its turn and ended ${label(leadStale.l.provider)} and what it started.` });
       // Liner Code stopped it, not you: the turn doesn't say you did.
       this.levelStops.add(threadId);
       this.stop(threadId);
     } else if (sideBusy) {
-      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `The sidekick changed while ${label(stale.find((x) => x.side)!.l.provider)} worked on a brief, so Liner Code stopped the brief and ended it.` });
+      this.store.putItem(threadId, { kind: "notice", id: uid("it"), turn: t.turns, at: Date.now(), text: `The sidekick changed while ${label(sideStale?.l.provider ?? brief.provider)} worked on a brief, so Liner Code stopped the brief and ended it.` });
       brief.by ??= "replaced";
       brief.abort.abort();
     }
@@ -4620,18 +4627,53 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "swi
   const firstAsk = items.find((x) => x.kind === "user");
   const plan = items.findLast((x) => x.kind === "plan");
   const open = plan?.kind === "plan" && plan.entries.some((e) => e.status !== "completed") ? plan.entries : [];
-  const planNote = open.length ? `The plan as it stands:\n${open.map((e) => `- [${e.status === "completed" ? "x" : e.status === "in_progress" ? "~" : " "}] ${e.title}`).join("\n").slice(0, 1600)}` : "";
+  let planNote = open.length ? `The plan as it stands:\n${open.map((e) => `- [${e.status === "completed" ? "x" : e.status === "in_progress" ? "~" : " "}] ${e.title}`).join("\n").slice(0, 1600)}` : "";
   const files = [...new Set(items.flatMap((x) => (x.kind === "checkpoint" && !x.reverted ? x.files.map((f) => f.path) : [])))];
-  const filesNote = files.length ? `Files changed so far and not undone: ${files.slice(0, 40).join(", ")}${files.length > 40 ? ` and ${files.length - 40} more` : ""}` : "";
-  const firstNote = firstAsk?.kind === "user" ? `The first ask, which started it: ${firstAsk.text.length > 1600 ? `${firstAsk.text.slice(0, 1600)}…` : firstAsk.text}` : "";
+  let filesNote = "";
+  if (files.length) {
+    const prefix = "Files changed so far and not undone: ";
+    const shown: string[] = [];
+    for (const f of files.slice(0, 40)) {
+      const next = shown.length ? `${shown.join(", ")}, ${f}` : f;
+      const rest = files.length - (shown.length + 1);
+      const tail = rest > 0 ? ` and ${rest} more` : "";
+      if (shown.length && prefix.length + next.length + tail.length > 1600) break;
+      shown.push(f);
+    }
+    const rest = files.length - shown.length;
+    const raw = `${prefix}${shown.join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`;
+    filesNote = raw.length > 1600 ? `${raw.slice(0, 1599)}…` : raw;
+  }
+  let firstNote = firstAsk?.kind === "user" ? `The first ask, which started it: ${firstAsk.text.length > 1600 ? `${firstAsk.text.slice(0, 1600)}…` : firstAsk.text}` : "";
   const blocks = [...turns.entries()].sort((a, b) => a[0] - b[0]).map(([turn, lines]) => ({ turn, whole: lines.join("\n"), asks: (asked.get(turn) ?? []).join("\n") }));
+  const cutLine = "\n(cut here: it was too long to carry over)";
+  // Reserve room for at least a truncated newest turn when turns exist, so stand-apart notes cannot push room below usable space.
+  if (blocks.length && budget > 0) {
+    const minTurn = Math.min(budget, Math.max(Math.min(budget, cutLine.length + 32), Math.floor(budget * 0.2)));
+    const apartCap = Math.max(0, budget - minTurn);
+    const notes = [firstNote, planNote, filesNote];
+    const need = notes.reduce((n, s) => n + (s ? s.length + 2 : 0), 0);
+    if (need > apartCap) {
+      const active = notes.filter(Boolean);
+      const avail = Math.max(0, apartCap - active.length * 2);
+      const total = active.reduce((n, s) => n + s.length, 0);
+      const trimNote = (s: string) => {
+        if (!s || !avail || !total) return "";
+        const cap = Math.floor((s.length / total) * avail);
+        if (cap < 12) return "";
+        return s.length > cap ? `${s.slice(0, cap - 1)}…` : s;
+      };
+      firstNote = trimNote(firstNote);
+      planNote = trimNote(planNote);
+      filesNote = trimNote(filesNote);
+    }
+  }
   // Room kept for what stands apart from the turns, so the note stays in the budget.
   const room = budget - [firstNote, planNote, filesNote].reduce((n, s) => n + (s ? s.length + 2 : 0), 0);
   // Newest first into the budget; an older turn that doesn't fit keeps only what you asked.
   const kept: { turn: number; text: string }[] = [];
   let used = 0;
   let dropped = 0;
-  const cutLine = "\n(cut here: it was too long to carry over)";
   for (let i = blocks.length - 1; i >= 0; i--) {
     const { whole, asks } = blocks[i];
     // The blank line between turns counts too, or hundreds of short turns run past the budget.
@@ -4639,9 +4681,12 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "swi
     let b = whole;
     if (used + gap + b.length > room) b = asks;
     // The newest turn always goes, cut to half the budget if it must be, so one huge paste leaves room for the work before it,
-    // and cut to the room left when the notes apart take more than half, so it isn't dropped for being cut too long.
-    if (!kept.length && (!b || b.length > room)) b = `${(b || whole).slice(0, Math.min(budget >> 1, Math.max(0, room - cutLine.length)))}${cutLine}`;
-    if (!b || used + gap + b.length > room) {
+    // and cut to the room left when the notes apart take more than half (or even less than `cutLine`), so it isn't dropped.
+    if (!kept.length && (!b || b.length > room)) {
+      const src = b || whole;
+      b = room >= cutLine.length ? `${src.slice(0, Math.min(budget >> 1, room - cutLine.length))}${cutLine}` : room > 1 ? `${src.slice(0, room - 1)}…` : src.slice(0, Math.max(0, room));
+    }
+    if (!b || (kept.length > 0 && used + gap + b.length > room) || (kept.length === 0 && b.length > room)) {
       dropped = i + 1;
       break;
     }

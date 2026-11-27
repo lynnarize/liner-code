@@ -367,6 +367,10 @@ type SwarmRun = {
   adding: Promise<unknown>;
   /** Checks for unlanded work run one after another, so two ends at once can't both tell the person. */
   unlandedCheck: Promise<void>;
+  /** Incremented on kill/land/forgetUnlanded so in-flight checkUnlanded results from before are discarded. */
+  unlandedGen: number;
+  /** Count of active landWorker/killWorker operations so atRest() stays false until worktree cleanup finishes. */
+  landing: number;
 };
 
 export type SwarmHost = {
@@ -518,6 +522,8 @@ export class SwarmManager {
         coordWakeQueued: false,
         adding: Promise.resolve(),
         unlandedCheck: Promise.resolve(),
+        unlandedGen: 0,
+        landing: 0,
       };
       this.runs.set(threadId, runState);
       if (interrupted) this.tellPaused(runState);
@@ -573,6 +579,8 @@ export class SwarmManager {
       coordWakeQueued: false,
       adding: Promise.resolve(),
       unlandedCheck: Promise.resolve(),
+      unlandedGen: 0,
+      landing: 0,
     };
     this.runs.set(threadId, r);
     this.save(r);
@@ -1058,6 +1066,7 @@ export class SwarmManager {
     try {
       const threadId = r.data.threadId;
       if (this.disposed || this.runs.get(threadId) !== r || !this.host.thread(threadId).swarm?.enabled) return false;
+      if (r.landing > 0) return false;
       if (r.data.paused && r.data.paused.reason !== "stopped") return false;
       const coord = r.data.members.find((m) => m.name === "coordinator");
       if (coord?.state === "working" || r.coordWakeQueued || this.host.isCoordinatorBusy(threadId)) return false;
@@ -1086,10 +1095,12 @@ export class SwarmManager {
   }
 
   private async checkUnlanded(r: SwarmRun) {
+    const gen = r.unlandedGen;
     const threadId = r.data.threadId;
     const repo = this.cwdOf(threadId);
     const left: PersistedMember[] = [];
     for (const m of this.unlandedWorktrees(r)) {
+      if (r.unlandedGen !== gen) return;
       const wt = m.worktreePath!;
       const st = await git(wt, ["status", "--porcelain"]);
       let changed = st.code === 0 && Boolean(st.stdout.trim());
@@ -1100,8 +1111,8 @@ export class SwarmManager {
       }
       if (changed) left.push(m);
     }
-    // The team may have started again (or been switched off) while git ran: the next rest checks afresh.
-    if (!this.atRest(r)) return;
+    // The team may have started again (or been switched off, or landed/killed a worker) while git ran: the next rest checks afresh.
+    if (r.unlandedGen !== gen || !this.atRest(r)) return;
     const told = left.map((m) => `@${m.name} (${m.branch})`).join(", ");
     if (told === (r.data.unlandedTold ?? "")) return;
     r.data.unlandedTold = told || undefined;
@@ -1119,6 +1130,7 @@ export class SwarmManager {
     whole mark goes, so the next check at rest names whatever is still left, as it does after a land.
   */
   private forgetUnlanded(r: SwarmRun, name: string) {
+    r.unlandedGen++;
     if (!r.data.unlandedTold?.split(", ").some((x) => x.startsWith(`@${name} (`))) return;
     r.data.unlandedTold = undefined;
     this.save(r);
@@ -1616,16 +1628,23 @@ export class SwarmManager {
     r.queue = r.queue.filter((q) => q !== name);
     this.closeLiveWorker(threadId, name, true);
     this.host.forgetWorkerKey?.(threadId, name);
+    r.landing++;
+    r.unlandedGen++;
     let keptNote = "";
-    if (m.workspace === "share" && m.worktreePath) {
-      const why = await removeWorktree(this.cwdOf(threadId), m.worktreePath).catch((e) => (e instanceof Error ? e.message : String(e)));
-      if (why) keptNote = ` (kept worktree at ${m.worktreePath}: ${why})`;
-      else m.worktreePath = undefined;
+    try {
+      await r.unlandedCheck.catch(() => {});
+      if (m.workspace === "share" && m.worktreePath) {
+        const why = await removeWorktree(this.cwdOf(threadId), m.worktreePath).catch((e) => (e instanceof Error ? e.message : String(e)));
+        if (why) keptNote = ` (kept worktree at ${m.worktreePath}: ${why})`;
+        else m.worktreePath = undefined;
+      }
+      m.state = "killed";
+      m.rssMb = 0;
+      m.now = undefined;
+      this.forgetUnlanded(r, name);
+    } finally {
+      r.landing--;
     }
-    m.state = "killed";
-    m.rssMb = 0;
-    m.now = undefined;
-    this.forgetUnlanded(r, name);
     this.post(threadId, { from: "system", to: [], channel: "main", kind: "system", text: `Ended @${name}${keptNote}.` });
     this.pumpQueue(threadId);
     return this.publish(r);
@@ -1647,26 +1666,35 @@ export class SwarmManager {
     const wt = m.worktreePath;
     if (!existsSync(wt)) throw new Error(`Worktree for @${name} is no longer on disk (${wt}).`);
 
-    // Stage and commit any remaining uncommitted edits inside the worker's own branch so nothing is lost on merge.
-    // With no hooks: a repository's hooks folder can be one in its tree (husky's core.hooksPath), which the worker could edit in
-    // its worktree, and landing would then run what it wrote, outside its tool's sandbox and level, as the person pressed Land.
-    const st = await git(wt, [...NO_HOOKS, "status", "--porcelain"]);
-    if (st.code === 0 && st.stdout.trim()) {
-      await git(wt, [...NO_HOOKS, "add", "-A"]);
-      const commit = await git(wt, [...NO_HOOKS, "commit", "--no-verify", "-m", `Swarm @${name}: ${m.role}`]);
-      if (commit.code !== 0) throw new Error(`Could not commit @${name}'s worktree changes: ${(commit.stderr || commit.stdout).trim()}`);
-    }
+    r.landing++;
+    r.unlandedGen++;
+    let pruned: string | null = null;
+    try {
+      await r.unlandedCheck.catch(() => {});
 
-    const merged = await git(repo, [...NO_HOOKS, "merge", "--no-edit", "--no-verify", m.branch]);
-    if (merged.code !== 0) {
-      await git(repo, ["merge", "--abort"]).catch(() => {});
-      throw new Error(`Merge conflict landing ${m.branch} into the session checkout. Resolve or inspect ${wt} directly: ${(merged.stderr || merged.stdout).trim()}`);
-    }
+      // Stage and commit any remaining uncommitted edits inside the worker's own branch so nothing is lost on merge.
+      // With no hooks: a repository's hooks folder can be one in its tree (husky's core.hooksPath), which the worker could edit in
+      // its worktree, and landing would then run what it wrote, outside its tool's sandbox and level, as the person pressed Land.
+      const st = await git(wt, [...NO_HOOKS, "status", "--porcelain"]);
+      if (st.code === 0 && st.stdout.trim()) {
+        await git(wt, [...NO_HOOKS, "add", "-A"]);
+        const commit = await git(wt, [...NO_HOOKS, "commit", "--no-verify", "-m", `Swarm @${name}: ${m.role}`]);
+        if (commit.code !== 0) throw new Error(`Could not commit @${name}'s worktree changes: ${(commit.stderr || commit.stdout).trim()}`);
+      }
 
-    m.landed = true;
-    this.forgetUnlanded(r, name);
-    const pruned = await removeWorktree(repo, wt).catch(() => null);
-    if (!pruned) m.worktreePath = undefined;
+      const merged = await git(repo, [...NO_HOOKS, "merge", "--no-edit", "--no-verify", m.branch]);
+      if (merged.code !== 0) {
+        await git(repo, ["merge", "--abort"]).catch(() => {});
+        throw new Error(`Merge conflict landing ${m.branch} into the session checkout. Resolve or inspect ${wt} directly: ${(merged.stderr || merged.stdout).trim()}`);
+      }
+
+      m.landed = true;
+      this.forgetUnlanded(r, name);
+      pruned = await removeWorktree(repo, wt).catch(() => null);
+      if (!pruned) m.worktreePath = undefined;
+    } finally {
+      r.landing--;
+    }
     const summary = `Landed ${m.branch} into the session checkout${pruned ? ` (worktree kept: ${pruned})` : " and pruned its worktree"}.`;
     this.post(threadId, { from: "system", to: ["coordinator"], channel: "main", kind: "system", text: `@coordinator ${summary}` });
     return { snapshot: this.publish(r), summary };
@@ -2233,7 +2261,7 @@ export class SwarmManager {
         ? `@${parentTarget} Hit a problem while working: ${problem}`
         : said.trim()
           ? `@${parentTarget} ${clip(said.trim(), 1600)}`
-          : "";
+          : `@${parentTarget} Ended the turn without posting a report${measured?.length ? ` (${measured.length} ${measured.length === 1 ? "file" : "files"} changed)` : ""}.`;
       if (autoText) {
         m.report = autoText;
         this.post(threadId, { from: m.name, to: [parentTarget], channel: "main", kind: "post", text: autoText, autoPosted: true, files: measured });

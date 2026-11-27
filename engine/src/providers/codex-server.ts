@@ -18,7 +18,7 @@ import { closesOnExit, jsonLines, killTree, marking, spawn, THREAD_ENV, threadMa
 import { VERSION } from "../version.ts";
 import { commandRisk, ruleFor } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
-import { inFolder } from "./acp.ts";
+import { gitInside, inFolder } from "./acp.ts";
 import { dataUrl } from "./attachments.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink, type WakeTurn } from "./types.ts";
 import type { Connection } from "../addons.ts";
@@ -1173,13 +1173,14 @@ export class CodexServerSession implements ProviderSession {
     }
     if (method === "item/fileChange/requestApproval" || method === "applyPatchApproval") {
       const paths = this.changes.get(String(p.itemId)) ?? Object.keys((p.fileChanges as Json | undefined) ?? {});
-      // An edit outside the project, a folder granted outside it, or an edit that names no file is yours each
-      // time: high, so Auto and the Reviewer leave it to you, and no rule (as acp.ts does; T3 Code: provider-acp clientPolicy.ts).
+      // An edit outside the project, a folder granted outside it, an edit into git's own folder (or onto a HEAD), or an edit
+      // that names no file is yours each time: high, so Auto and the Reviewer leave it to you, and no rule (as acp.ts does; T3 Code: provider-acp clientPolicy.ts).
       const stray = [...paths, ...(p.grantRoot ? [String(p.grantRoot)] : [])].find((x) => !inFolder(this.o.cwd, x));
-      const loose = Boolean(stray) || !paths.length;
-      const why = stray ? `${stray} is outside the project.` : !paths.length ? "Codex didn't say which files this changes." : undefined;
+      const gitDir = paths.find((x) => gitInside(this.o.cwd, x));
+      const loose = Boolean(stray || gitDir) || !paths.length;
+      const why = stray ? `${stray} is outside the project.` : gitDir ? "This writes into git's own folder, whose hooks and settings run code." : !paths.length ? "Codex didn't say which files this changes." : undefined;
       const description = [why, p.reason as string | undefined].filter(Boolean).join("\n\n") || undefined;
-      const because = stray ? [{ kind: "outside" as const, text: `it changes ${stray}, outside the project` }] : !paths.length ? [{ kind: "changes" as const, text: "Codex didn't say which files it changes" }] : [];
+      const because = stray ? [{ kind: "outside" as const, text: `it changes ${stray}, outside the project` }] : gitDir ? [{ kind: "changes" as const, text: "it writes into git's own folder, whose hooks and settings run code" }] : !paths.length ? [{ kind: "changes" as const, text: "Codex didn't say which files it changes" }] : [];
       const a = await sink.approve({ key: p.itemId ? String(p.itemId) : undefined, tool: "apply_patch", title: `Edit ${paths.slice(0, 3).join(", ") || "files"}`, description, risk: loose ? "high" : "medium", fields: paths.map((x) => ({ label: "File", value: x })).concat(p.grantRoot ? [{ label: "Write access to", value: String(p.grantRoot) }] : []), rule: loose ? undefined : "Edit", ...(because.length ? { why: because } : {}) }, signal);
       return method === "applyPatchApproval" ? { decision: a.allow ? "approved" : "denied" } : { decision: a.allow ? "accept" : "decline" };
     }

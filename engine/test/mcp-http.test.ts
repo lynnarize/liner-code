@@ -6,7 +6,9 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { Server as HttpServer, request } from "node:http";
+import { Readable } from "node:stream";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -166,6 +168,130 @@ test("Revoking an app ends the call it holds open, and its key stops working", a
     assert.doesNotMatch(r.text, /"Sent/);
     assert.equal(gate.list().length, 0);
     assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 6, method: "tools/list" } })).status, 401);
+  } finally {
+    await l.close();
+  }
+});
+
+test("DELETE /mcp and session eviction abort in-flight work on the dropped session", async () => {
+  const { l, gate, ask, init } = await rig();
+  try {
+    const { sid } = await init(ask.key);
+    const h = { authorization: `Bearer ${ask.key}`, "mcp-session-id": sid, accept: "application/json, text/event-stream" };
+    const held = hit(l.port, { method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "liner_send", arguments: { session: "th_1", message: "hi" } } } }).catch((e: Error) => ({ status: -1, text: e.message, headers: {} }));
+    for (let i = 0; i < 100 && !gate.list().length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gate.list().length, 1);
+    const del = await hit(l.port, { method: "DELETE", path: "/mcp", headers: h });
+    assert.equal(del.status, 204);
+    const r = await held;
+    assert.doesNotMatch(r.text, /"Sent/);
+    assert.equal(gate.list().length, 0);
+
+    const first = await init(ask.key);
+    const h2 = { authorization: `Bearer ${ask.key}`, "mcp-session-id": first.sid, accept: "application/json, text/event-stream" };
+    const held2 = hit(l.port, { method: "POST", path: "/mcp", headers: h2, body: { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "liner_send", arguments: { session: "th_1", message: "hi again" } } } }).catch((e: Error) => ({ status: -1, text: e.message, headers: {} }));
+    for (let i = 0; i < 100 && !gate.list().length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gate.list().length, 1);
+    for (let i = 0; i < 20; i++) assert.equal((await init(ask.key)).r.status, 200);
+    const r2 = await held2;
+    assert.doesNotMatch(r2.text, /"Sent/);
+    assert.equal(gate.list().length, 0);
+    assert.equal((await hit(l.port, { method: "POST", path: "/mcp", headers: h2, body: { jsonrpc: "2.0", id: 8, method: "tools/list" } })).status, 404);
+  } finally {
+    await l.close();
+  }
+});
+
+test("in-process: DELETE /mcp and session eviction abort in-flight work on the dropped session", async (t) => {
+  let srv: HttpServer | undefined;
+  const origListen = HttpServer.prototype.listen;
+  t.mock.method(HttpServer.prototype, "listen", function (this: HttpServer, ...args: unknown[]) {
+    srv = this;
+    return origListen.apply(this, args as never);
+  });
+  const { l, gate, ask } = await rig();
+  try {
+    assert.ok(srv);
+    const dispatch = (o: { method?: string; path: string; headers?: Record<string, string>; body?: unknown }) =>
+      new Promise<{ status: number; headers: Record<string, string>; text: string; closed: boolean }>((resolve) => {
+        const raw = o.body === undefined ? [] : [Buffer.from(typeof o.body === "string" ? o.body : JSON.stringify(o.body))];
+        const req = Object.assign(Readable.from(raw), {
+          method: o.method ?? "GET",
+          url: o.path,
+          headers: { host: `127.0.0.1:${l.port}`, ...(o.body !== undefined ? { "content-type": "application/json" } : {}), ...o.headers },
+        });
+        const res = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: Record<string, string>;
+          chunks: string[];
+          headersSent: boolean;
+          writableEnded: boolean;
+          destroyed: boolean;
+          writeHead: (s: number, h?: Record<string, string>) => typeof res;
+          flushHeaders: () => void;
+          write: (c: string | Buffer) => boolean;
+          end: (c?: string | Buffer) => typeof res;
+          destroy: () => typeof res;
+        };
+        res.statusCode = 200;
+        res.headers = {};
+        res.chunks = [];
+        res.headersSent = false;
+        res.writableEnded = false;
+        res.destroyed = false;
+        const done = (closed: boolean) => resolve({ status: res.statusCode, headers: res.headers, text: res.chunks.join(""), closed });
+        res.writeHead = (s, h = {}) => {
+          res.statusCode = s;
+          for (const [k, v] of Object.entries(h)) res.headers[k.toLowerCase()] = v;
+          res.headersSent = true;
+          return res;
+        };
+        res.flushHeaders = () => { res.headersSent = true; };
+        res.write = (c) => { res.chunks.push(String(c)); return true; };
+        res.end = (c) => {
+          if (c !== undefined) res.chunks.push(String(c));
+          res.writableEnded = true;
+          res.emit("close");
+          done(false);
+          return res;
+        };
+        res.destroy = () => {
+          if (!res.destroyed) {
+            res.destroyed = true;
+            res.emit("close");
+            done(true);
+          }
+          return res;
+        };
+        srv!.emit("request", req as never, res as never);
+      });
+    const initLocal = async () => {
+      const r = await dispatch({ method: "POST", path: "/mcp", headers: { authorization: `Bearer ${ask.key}`, accept: "application/json, text/event-stream" }, body: { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } } });
+      return { r, sid: r.headers["mcp-session-id"] ?? "" };
+    };
+    const { sid } = await initLocal();
+    const h = { authorization: `Bearer ${ask.key}`, "mcp-session-id": sid, accept: "application/json, text/event-stream" };
+    const held = dispatch({ method: "POST", path: "/mcp", headers: h, body: { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "liner_send", arguments: { session: "th_1", message: "hi" } } } });
+    for (let i = 0; i < 100 && !gate.list().length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gate.list().length, 1);
+    const del = await dispatch({ method: "DELETE", path: "/mcp", headers: h });
+    assert.equal(del.status, 204);
+    const r = await held;
+    assert.equal(r.closed, true);
+    assert.doesNotMatch(r.text, /"Sent/);
+    assert.equal(gate.list().length, 0);
+
+    const first = await initLocal();
+    const h2 = { authorization: `Bearer ${ask.key}`, "mcp-session-id": first.sid, accept: "application/json, text/event-stream" };
+    const held2 = dispatch({ method: "POST", path: "/mcp", headers: h2, body: { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "liner_send", arguments: { session: "th_1", message: "hi again" } } } });
+    for (let i = 0; i < 100 && !gate.list().length; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(gate.list().length, 1);
+    for (let i = 0; i < 20; i++) assert.equal((await initLocal()).r.status, 200);
+    const r2 = await held2;
+    assert.equal(r2.closed, true);
+    assert.doesNotMatch(r2.text, /"Sent/);
+    assert.equal(gate.list().length, 0);
+    assert.equal((await dispatch({ method: "POST", path: "/mcp", headers: h2, body: { jsonrpc: "2.0", id: 8, method: "tools/list" } })).status, 404);
   } finally {
     await l.close();
   }

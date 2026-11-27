@@ -144,7 +144,7 @@ export class Outside {
     try {
       switch (tool) {
         case "liner_projects":
-          return text(this.store.projects.map((p) => `${p.id} · ${p.name} · ${p.path}`).join("\n") || "No projects yet.");
+          return text(this.store.projects.map((p) => `${p.id} · ${p.name}${p.kind === "design" ? " (design)" : ""} · ${p.path}`).join("\n") || "No projects yet.");
         case "liner_sessions": {
           const p = args.project ? this.project(args.project) : null;
           const list = this.store.threads.filter((t) => !t.archived && !t.sideOf && (!p || t.projectId === p.id)).sort((a, b) => b.updatedAt - a.updatedAt);

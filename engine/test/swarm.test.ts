@@ -2698,6 +2698,32 @@ describe("Swarm work not in the checkout yet", () => {
       }
     });
   }
+
+  for (const action of ["land", "kill"] as const) {
+    it(`A ${action} started right after a worker finishes does not emit a stale unlanded notice or keep stale unlandedTold.`, async () => {
+      const h = makeHarness({
+        gitRepo: true,
+        onWorkerTurn: async ({ name, cwd, swarm }) => {
+          writeFileSync(join(cwd, `${name}.txt`), `work of ${name}\n`);
+          swarm.post(TID, { from: name, text: `@coordinator Finished ${name}.` });
+        },
+      });
+      h.settings.swarmAutoPost = false;
+      try {
+        await writer(h, "edit");
+        await waitFor(() => memberOf(h.swarm, "edit")?.state === "hibernated");
+        // Immediately land or kill while checkUnlanded's background git calls are still in flight.
+        if (action === "land") await h.swarm.landWorker(TID, "edit");
+        else await h.swarm.killWorker(TID, "edit");
+        await settled(h);
+        assert.deepEqual(unlandedNotices(h), []);
+        const saved = JSON.parse(readFileSync(join(h.home, "swarms", TID, "state.json"), "utf8"));
+        assert.equal(saved.unlandedTold, undefined);
+      } finally {
+        h.swarm.dispose();
+      }
+    });
+  }
 });
 
 describe("Swarm switched while it is at work", () => {
@@ -2898,6 +2924,34 @@ describe("Swarm board posts and swaps that say what happened", () => {
       await waitFor(() => woke.length === 2);
       const short = await h.swarm.handleTool(TID, undefined, "swarm_post", { text: "@reviewer one more look" });
       assert.doesNotMatch(short.text, /clipped/);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A worker that finishes silently without posting or printing text still wakes its parent with an auto-post.", async () => {
+    const h = makeHarness({
+      gitRepo: true,
+      onCoordinatorWake: (swarm) => coordinatorTurn(swarm),
+      onWorkerTurn: async ({ name, cwd }) => {
+        if (name === "writer") writeFileSync(join(cwd, "changed.txt"), "data\n");
+      },
+    });
+    try {
+      await h.swarm.addWorker(TID, { name: "reader", workspace: "inherit", mode: "read", brief: "Check quietly" });
+      await waitFor(() => memberOf(h.swarm, "reader")?.state === "hibernated");
+      await waitFor(() => h.coordWakes.length === 1);
+      const readerPost = h.swarm.snapshot(TID)!.posts.find((p) => p.from === "reader" && p.autoPosted);
+      assert.ok(readerPost, "silent reader emitted auto-post");
+      assert.deepEqual(readerPost.to, ["coordinator"]);
+      assert.match(readerPost.text, /Ended the turn without posting a report\./);
+
+      await h.swarm.addWorker(TID, { name: "writer", workspace: "share", mode: "write", brief: "Edit quietly" });
+      await waitFor(() => memberOf(h.swarm, "writer")?.state === "hibernated");
+      await waitFor(() => h.coordWakes.length === 2);
+      const writerPost = h.swarm.snapshot(TID)!.posts.find((p) => p.from === "writer" && p.autoPosted);
+      assert.ok(writerPost, "silent writer emitted auto-post");
+      assert.match(writerPost.text, /Ended the turn without posting a report \(1 file changed\)\./);
     } finally {
       h.swarm.dispose();
     }

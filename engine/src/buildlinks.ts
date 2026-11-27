@@ -8,7 +8,7 @@
 */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import type { DesignFile, FrameBuild } from "../../contracts/src/index.ts";
 import type { McpResult } from "./agent-tools.ts";
 import { canvasHooks, designFor, frameOf, readFile, readFrame, setBuilt, type DesignCall, type DesignCtx, type DesignRpc } from "./canvas.ts";
@@ -23,7 +23,7 @@ const LINES = 10;
 
 const sha = (s: string | Buffer) => createHash("sha256").update(s).digest("hex").slice(0, 32);
 /** A frame's hash: its HTML without the ids the engine stamps, so stamping alone never reads as a change. */
-export const frameHash = (html: string) => sha(html.replace(/\sdata-l="[^"]*"/g, "").replace(/\s+/g, " ").trim());
+export const frameHash = (html: string) => sha(html.replace(/\sdata-l=(?:"[^"]*"|'[^']*')/g, "").replace(/\s+/g, " ").trim());
 const fileHash = (abs: string) => {
   try {
     return sha(readFileSync(abs));
@@ -34,7 +34,7 @@ const fileHash = (abs: string) => {
 
 /** Where the frame's HTML at build time is kept: beside the versions, by folder, design file and frame. */
 export function builtCopy(home: string, cwd: string, slug: string, frame: string) {
-  return join(home, "designs", "built", sha(cwd).slice(0, 16), safeSlug(slug), `${safeSlug(frame) || "frame"}.html`);
+  return join(home, "designs", "built", sha(resolve(cwd)).slice(0, 16), safeSlug(slug), `${safeSlug(frame) || "frame"}.html`);
 }
 
 /** A drawn frame's HTML through the canvas (stamped), or "" when its file is gone. */

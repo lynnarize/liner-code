@@ -22,7 +22,7 @@ import { defaultSettings, fourLevels, fromWorkStyle, Store } from "../src/store.
 import { run, secretsFrom, takeSecrets } from "../src/exec.ts";
 import { sessionMarkdown } from "../src/export.ts";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -624,6 +624,15 @@ test("pr tests: the project's own test command, by its package manager or toolch
   assert.equal(testCommand(dir({ Makefile: "build:\n\ttrue\ntest:\n\ttrue\n" })), "make test");
   assert.equal(testCommand(dir({ "package.json": '{"scripts":{"test":"jest"}}' }), [{ name: "Test", command: "npm run test:ci" }]), "npm run test:ci");
   assert.equal(testCommand(dir({ "README.md": "" })), undefined);
+
+  const dirWithSubdir = dir({ Makefile: "test:\n\ttrue\n" });
+  mkdirSync(join(dirWithSubdir, "pyproject.toml"));
+  assert.equal(testCommand(dirWithSubdir), "make test");
+
+  const bothDirs = mkdtempSync(join(tmpdir(), "lc-test-dirs-"));
+  mkdirSync(join(bothDirs, "pyproject.toml"));
+  mkdirSync(join(bothDirs, "Makefile"));
+  assert.equal(testCommand(bothDirs), undefined);
 });
 
 test("pr tests: what a run's output says, in each runner's words", () => {

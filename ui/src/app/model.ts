@@ -391,7 +391,8 @@ export function checkpointsOf(items: Item[]) {
 }
 
 export const sumLines = (files: { added: number; removed: number }[]) => files.reduce((s, f) => ({ added: s.added + f.added, removed: s.removed + f.removed }), { added: 0, removed: 0 });
-
+/** The lines a session's turns left not committed and not undone, from its timeline (the details card's Changes reads the same checkpoints). */
+export const openLines = (items: Item[]) => sumLines(checkpointsOf(items).filter((c) => !c.reverted && !c.committed).flatMap((c) => c.files));
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** The Code face's projects: every one but a design on its own (Project.kind "design"), which lives in Liner Design only. */
 export const codeProjects = (ps: Project[]) => ps.filter((p) => p.kind !== "design");

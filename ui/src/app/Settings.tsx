@@ -9,7 +9,7 @@
 */
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { Access, AddonInfo, AgentProfile, AppUpdate, BuiltinProvider, CustomModel, Endpoint, EndpointProtocol, KeyBinding, Project, ProjectRules, ProjectScript, ProviderInfo, RegistryAgent, Thread, Settings as EngineSettings, CheckTier, ToolAccount, ToolCheck, ToolCheckRow, ToolUpdate, UpdateMode } from "@contracts";
-import { ACCOUNT_HOME, addonKey, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
+import { ACCOUNT_HOME, addonKey, carryOnOn, castOf, ENDPOINT_TOOL, endpointKey, picturesGuess, ROUTINES_ON, toolPicturesKey, updateModes, VOUCHER } from "@contracts";
 import { Breadcrumb } from "@liner/components/breadcrumb/breadcrumb";
 import { RadioGroup } from "@liner/components/radio-group/radio-group";
 import { Segmented } from "@liner/components/segmented/segmented";
@@ -85,6 +85,23 @@ const ICONS: Record<SettingsPage, ReactNode> = {
   about: <I.info />,
 };
 const HEADINGS: PlaceGroup[] = ["", "Agents", "Code", "Connections", "foot"];
+/** Each page's one grey line under its title (board Settings): what the page is for, in a sentence. */
+const PAGE_LINES: Record<SettingsPage, string> = {
+  general: "How Liner Code opens, how new sessions start, and what it tells you while agents work.",
+  appearance: "The look of the app: its mode and colours, what sits behind Home, and how things move.",
+  keyboard: "Every shortcut, and the keys you gave them.",
+  tools: `Liner Code runs the agent tools already on ${os.here}, signed in as you. It has no model of its own.`,
+  agents: "Agents of your own, and the modes a session starts in.",
+  fusion: "Who leads, who is its sidekick, and who reads each change.",
+  permissions: "What an agent may do without asking, and what always asks.",
+  projects: "The folders agents work in, and what each starts with.",
+  source: "Where your code lives, its pull requests and issues, and how commits are written.",
+  worktrees: "A branch and folder of its own for each session, so sessions never edit the same files.",
+  mcp: "Agents and apps outside Liner Code that may use it, and how far they reach.",
+  addons: "Connections, panels and apps added to Liner Code.",
+  archive: "Sessions you archived: bring one back, or delete it for good.",
+  about: "Liner Code's version and updates, the agent tools' updates, and where its data lives.",
+};
 
 type Props = { initial?: string; onClose: () => void; onAgent: (agent?: AgentProfile) => void; onOpen?: (threadId: string) => void };
 
@@ -261,6 +278,8 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
     permissions: () => save({ defaultAccess: "auto", guardDestructive: true }),
   };
   const reset = restore[page];
+  // The app's version, at the foot of the column of places.
+  const version = useEngine((x) => x.version);
 
   const row = (p: (typeof PLACES)[number]) => {
     const on = p.id === page;
@@ -316,6 +335,7 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
               {query && !groups.length && <p className="lc-sb-empty">No setting matches that.</p>}
             </div>
           </nav>
+          {version && <p className="lc-st-version">Liner Code {version}</p>}
         </div>
         <main ref={paper} className="lc-st-paper">
           <header className="lc-st-top">
@@ -327,9 +347,13 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
           </header>
           <div ref={scroller} className="lc-st-scroll">
             <div className="lc-st-col" key={page}>
-              <h1 ref={heading} tabIndex={-1} className="l-sr-only">
-                {place.label}
-              </h1>
+              {/* The page's title in the name's face and one grey line on what it is for; focus lands on the title when Settings opens or changes place. */}
+              <header className="lc-st-head">
+                <h1 ref={heading} tabIndex={-1}>
+                  {place.label}
+                </h1>
+                <p>{PAGE_LINES[place.id]}</p>
+              </header>
               {page === "general" && <General go={go} onSetup={onClose} enter={enter} setEnter={setEnter} sound={sound} />}
               {page === "appearance" && <Appearance look={look} set={setLookPart} />}
               {page === "keyboard" && <Keyboard />}
@@ -662,6 +686,20 @@ const MOTION_NOTES: Record<Motion, string> = {
   quick: "A view you open is there at once; what arrives while you watch still comes into focus.",
 };
 
+/**
+  Carry on's one switch (the owner's ruling, 2026-11-27): on by default; off, Home has no cards, the sidebar's More menu
+  no Carry on row, and nothing looks for work to carry on (CarryOn.tsx is not mounted). It is the engine's, so it holds
+  in every window.
+*/
+function CarryOnField() {
+  const on = useEngine((x) => carryOnOn(x.settings));
+  return (
+    <Field title="Carry on" note="Work to pick up, as three cards under the box. Off, it leaves the sidebar's More menu too.">
+      <NamedSwitch name="Show Carry on on Home" checked={on} onCheckedChange={(carryOn) => save({ carryOn })} />
+    </Field>
+  );
+}
+
 function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void }) {
   // One of your themes holds the mode and the accent; choosing either goes back to Liner's own.
   const own = look.custom ? readThemes().find((t) => t.id === look.custom) : undefined;
@@ -736,6 +774,7 @@ function Appearance({ look, set }: { look: Look; set: (p: Partial<Look>) => void
             </button>
           </Field>
         )}
+        <CarryOnField />
       </Group>
       <Group title="Main buttons" note="Send, and Start in the first-run setup; every other action is in ink.">
         <Field title="Colour">

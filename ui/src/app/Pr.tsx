@@ -547,7 +547,9 @@ export function PrSurface({ thread, agentName, visible, onOpenSession }: { threa
       <>
         <PaneHead shows={<>{picker()}<span className="lc-pr-word" data-tone={w.tone}>{w.word}</span></>} tools={<>{lookAgain}<PaneTool label={`Open #${shown.number} on GitHub`} icon={<I.external size={16} />} onClick={() => bridge.openExternal(shown.url)} /></>} />
         <PaneBody>
-          <div className="lc-pr-top">
+          {/* The head card (board Panel): alive with the green halftone while the pull request is open. */}
+          <div className="lc-pr-top" data-open={shown.state === "OPEN" || undefined}>
+            {shown.state === "OPEN" && <i className="lc-ht lc-ht-corner lc-ht-soft lc-ht-ok" aria-hidden />}
             <b className="lc-pr-name">{shown.title}</b>
             <span className="lc-pr-way">
               <code title={shown.head}>{shown.head}</code>

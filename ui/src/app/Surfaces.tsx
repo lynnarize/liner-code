@@ -2,8 +2,9 @@
   Surfaces beside a session. The right panel shows one at a time (dock.ts has its rules, Panel.tsx
   draws it): Changes and Agents, Browser, Design, Files, Pull request (its picker holds what Linked pull
   requests once listed, and the Linked key opens it), Device, Side chat, a routine's run, and the add-on
-  panels you have; the Terminal lives in the bottom panel and Session is a popup. Each has a key (⌘⇧ and its letter) and a place in the session header's icon row or
-  its ··· (Switcher.tsx). A surface keeps its state while another shows, so a terminal keeps running and
+  panels you have, and Session (the details toggle opens it here while the panel is open); the Terminal lives in the
+  bottom panel. Each has a key (⌘⇧ and its letter) and a row in the panel's + (Switcher.tsx), and an open one a tab in
+  the panel's head row. A surface keeps its state while another shows, so a terminal keeps running and
   a page stays loaded, and each session keeps its own panel.
 */
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";

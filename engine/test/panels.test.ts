@@ -524,43 +524,38 @@ test("dock: a preview becomes its add-on in place, and a kept layout is read bac
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: [], tab: "x" }, { tabs: ["a", "a", 3], tab: "zz" }], at: 9 }), { open: true, full: false, panes: [{ tabs: ["a"], tab: "a" }], at: 0 }, "empty panes, repeats and junk go");
 });
 
-test("switcher: the lit icon is the surface showing, the Terminal's the bottom panel, and ··· is lit for a surface with no icon of its own", () => {
-  const changes = dock.openTab(dock.emptyDock(), "changes");
-  assert.deepEqual(switcher.ICONS, ["session", "terminal", "changes", "browser", "files"], "the icons and their order");
-  assert.equal(switcher.iconLit("changes", changes, false, false), true);
-  assert.equal(switcher.iconLit("files", changes, false, false), false);
-  assert.equal(switcher.iconLit("changes", dock.hideDock(changes), false, false), false, "a hidden panel lights nothing");
-  assert.equal(switcher.iconLit("terminal", changes, true, false), true, "the Terminal's is the bottom panel's");
-  assert.equal(switcher.iconLit("session", changes, false, true), true, "Session's is its popup's");
-  assert.equal(switcher.moreLit(changes), false);
-  for (const t of ["pr", "design", "side", "device", "agents", "linked", "app:todos", "preview:x"]) assert.equal(switcher.moreLit(dock.openTab(changes, t)), true, `${t} showing lights ···`);
-  assert.equal(switcher.moreLit(dock.hideDock(dock.openTab(changes, "pr"))), false);
-});
-
-test("switcher: ··· lists Pull request, Design, Side chat and Device, then your apps pinned first, the one showing ticked", () => {
+test("switcher: the panel's + lists your apps pinned first, the one showing ticked", () => {
+  // The header's icon row is gone (line and dot): nothing lights an icon for a surface any more.
+  assert.equal("iconLit" in switcher || "moreLit" in switcher || "ICONS" in switcher || "MORE" in switcher, false, "the old icon row's rules are back");
   const apps = [{ id: "a", name: "Alpha" }, { id: "b", name: "Beta" }];
   const pr = dock.openTab(dock.emptyDock(), "pr");
   const rows = switcher.moreRows(pr, apps, ["b"]);
-  assert.deepEqual(rows.surfaces, [{ id: "pr", on: true }, { id: "design", on: false }, { id: "side", on: false }, { id: "device", on: false }]);
+  assert.equal("surfaces" in rows, false, "+ lists every surface itself (Switcher.tsx MENU_ORDER); ···'s four came back");
   assert.deepEqual(rows.apps.map((a) => a.id), ["b", "a"], "the pinned app first");
   assert.equal(rows.appOn, false);
   const app = switcher.moreRows(dock.openTab(pr, "app:a"), apps, []);
-  assert.deepEqual([app.appOn, app.apps.find((a) => a.id === "a")?.on, app.surfaces[0].on], [true, true, false]);
+  assert.deepEqual([app.appOn, app.apps.find((a) => a.id === "a")?.on], [true, true]);
 });
 
-test("dock: a kept layout that names the guide, Session or a second pane opens cleanly, with no tab nobody can reach", () => {
-  // The guide and Session were tabs once; Session is a popup now and the guide is gone with the strip.
-  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["changes", "guide", "session"], tab: "changes" }], at: 0 }), { open: true, full: false, panes: [{ tabs: ["changes"], tab: "changes" }], at: 0 }, "the guide and Session stay behind a surface that was up");
+test("dock: a kept layout that names the guide or a second pane opens cleanly, with no tab nobody can reach", () => {
+  // The guide is gone with the strip; Session is a tab of the panel again (line and dot), so it stays.
+  assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["changes", "guide", "session"], tab: "changes" }], at: 0 }), { open: true, full: false, panes: [{ tabs: ["changes", "session"], tab: "changes" }], at: 0 }, "the guide goes, Session stays behind a surface that was up");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["files", "guide"], tab: "guide" }], at: 0 }), { open: false, full: false, panes: [{ tabs: ["files"], tab: "files" }], at: 0 }, "with the guide up, the panel comes back hidden rather than on a surface nobody asked for");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["guide"], tab: "guide" }], at: 0 }), dock.emptyDock(), "a panel that held only the guide is an empty one");
   assert.deepEqual(dock.readDock({ open: true, panes: [{ tabs: ["browser"], tab: "browser" }, { tabs: ["guide", "linked"], tab: "linked" }], at: 1 }), { open: true, full: false, panes: [{ tabs: ["browser", "linked"], tab: "linked" }], at: 0 }, "two panes fold into one, Linked kept up, the guide gone");
-  // A session opened with Session asked for (⌘K from Settings) opens its popup, and the panel stays as it was asked.
-  const asked = dock.dropPopups(dock.openTab(dock.emptyDock(), "session"));
-  assert.equal(asked.popup, "session");
-  assert.equal(asked.dock.open, false, "the panel doesn't come up on Changes for a popup");
-  assert.ok(!asked.dock.panes.some((p) => p.tabs.includes("session")));
+  // A session opened with Session asked for (⌘K from Settings) opens the panel on the Session surface.
+  const asked = dock.openTab(dock.emptyDock(), "session");
+  assert.deepEqual(dock.dropPopups(asked), { dock: asked }, "Session is dropped from the panel as a popup again");
   const kept = dock.openTab(dock.emptyDock(), "files");
-  assert.deepEqual(dock.dropPopups(kept), { dock: kept }, "a layout with neither is the same layout");
+  assert.deepEqual(dock.dropPopups(kept), { dock: kept }, "a layout with no guide is the same layout");
+});
+
+test("dock: the Session surface open in the panel comes back after a restart, showing where it showed", () => {
+  const before = dock.openTab(dock.openTab(dock.emptyDock(), "changes"), "session");
+  const after = dock.readDock(JSON.parse(JSON.stringify(before)));
+  assert.ok(after?.panes[0].tabs.includes("session"), "a kept Session tab is lost on a restart");
+  assert.equal(after?.panes[0].tab, "session", "the panel comes back on another surface");
+  assert.equal(after?.open, true, "the panel comes back hidden");
 });
 
 /* ---------- "Make it an app" ---------- */

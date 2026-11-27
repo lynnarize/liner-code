@@ -1,7 +1,8 @@
 /*
   The sidebar's parts for pull requests, issues and apps (board Approve, 2026-11-26): Pull requests and Issues at the
   foot beside Settings, lit while their page is open, with an amber dot on Pull requests when one waits for your review;
-  and in a session's second line, the logo of the app that started it or its pull request's mark in its state's colour.
+  and in a session's second line, the logo of the app that started it (its pull request's number is among the line's
+  facts since line and dot: SideList.tsx SideFacts).
 */
 .lc-sb-foot .lc-sb-fi {
   position: relative;
@@ -12,10 +13,10 @@
 }
 .lc-sb-fdot {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--l-warn);
   box-shadow: 0 0 0 2px var(--lc-ground);
@@ -33,24 +34,9 @@
 .lc-sb-applogo[data-none] {
   color: var(--l-ink-3);
 }
-.lc-sb-prmk {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  color: var(--l-ink-4);
-}
-.lc-sb-prmk[data-s="open"] {
-  color: var(--l-ok-text);
-}
-.lc-sb-prmk[data-s="merged"] {
-  color: var(--lc-merged);
-}
-.lc-sb-prmk[data-s="bad"] {
-  color: var(--l-danger-text);
-}
 /*
-  Three icons at the foot of a 224 sidebar (Code's) are 28 wide each, 32 high still; should the name ever need more room,
-  it gives way with an ellipsis rather than push Settings past the sidebar's edge.
+  Three icons at the foot of the 240 sidebar (Code's) are 28 square each; should the name ever need more room, it gives
+  way with an ellipsis rather than push Settings past the sidebar's edge.
 */
 .lc-sb-foot .lc-sb-fi,
 .lc-sb-foot .lc-sb-fi ~ .lc-ib {

@@ -43,9 +43,10 @@ export const asksYou = (t: Thread) => (t.status === "waiting" && !reviewHeld(t))
 export const needsYou = (t: Thread, now = Date.now()) => !t.archived && t.turns > 0 && waitsOnYou(t, now) && (asksYou(t) || !t.agentsAtWork);
 /**
   A question you have seen and left open: it waits on your answer, and you have opened the session since it began to (the
-  engine marks a session unread as it starts waiting, and opening it clears that). A question is a notification, as in
-  Claude: its amber goes once you've seen it, and the row says it waits in plain grey. It still Needs you (needsYou): that is
-  how it stands, not news. A problem or a plan's limit isn't a question: those keep their colour.
+  engine marks a session unread as it starts waiting, and opening it clears that). Grey once seen (the owner's ruling): its
+  amber goes, its row says what it waits for in plain grey, and it draws no mark at all (markStateOf's "seen"), never the done
+  tick, since it still waits. It still Needs you (needsYou), and it is no longer news (newsForYou). A problem or a plan's limit
+  isn't a question: those keep their colour.
   `looking`: it is the open session in a focused window. It is being looked at, so it is seen already, though the engine's
   unread mark (set as it starts waiting) is still on its way to being cleared; without this its row would flash amber.
 */
@@ -81,10 +82,12 @@ export const sideStateOf = (t: Thread, busy = t.status === "running"): SideState
 
 /**
   The state mark's states (icons.tsx StateMark): the one mark for how a session, turn, agent, step, scan, design, add-on build or
-  pull request stands, wherever that is shown. Fresh is finished and not opened yet; done is finished and seen (a question you have
-  seen, too); pr, checks, ready and merged are its pull request's.
+  pull request stands, wherever that is shown. Needs is a session that waits on you and you haven't opened since it began to;
+  seen is one that still waits and you have seen, which draws nothing (StateMark), named "Waits for your answer"; fresh is
+  finished and not opened yet; done is finished and seen, and never a session that still waits; pr, checks, ready and merged
+  are its pull request's.
 */
-export type MarkState = "working" | "needs" | "fresh" | "done" | "new" | "pr" | "checks" | "ready" | "merged" | "problem" | "limit";
+export type MarkState = "working" | "needs" | "seen" | "fresh" | "done" | "new" | "pr" | "checks" | "ready" | "merged" | "problem" | "limit";
 
 /** A row's state as the mark draws it. */
 export const MARK_OF: Record<SideState, MarkState> = { working: "working", needs: "needs", limited: "limit", error: "problem", done: "done", new: "new" };
@@ -94,12 +97,13 @@ export type ChecksState = "running" | "passed" | "failed";
 
 /**
   The mark a session shows, from the session alone. `busy` and `looking` as sideStateOf and seenAsk take them; `checks` is its pull
-  request's checks, the session's own (Thread.pr.checks) unless the caller knows better. What asks something of you comes first,
-  then news you haven't opened, then where its pull request stands; a closed one says nothing, so the session reads as finished.
+  request's checks, the session's own (Thread.pr.checks) unless the caller knows better. What asks something of you comes first:
+  amber until you have seen it, then "seen", which draws nothing (never done's tick: it still waits); then news you haven't
+  opened, then where its pull request stands; a closed one says nothing, so the session reads as finished.
 */
 export function markStateOf(t: Thread, o: { busy?: boolean; looking?: boolean; checks?: ChecksState } = {}): MarkState {
   const side = sideStateOf(t, o.busy ?? t.status === "running");
-  if (side === "needs") return seenAsk(t, o.looking) ? "done" : "needs";
+  if (side === "needs") return seenAsk(t, o.looking) ? "seen" : "needs";
   if (side !== "done" && side !== "new") return MARK_OF[side];
   if (t.unread && !o.looking) return "fresh";
   const pr = t.pr?.state.toUpperCase();

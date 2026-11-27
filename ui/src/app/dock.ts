@@ -174,19 +174,18 @@ export function replaceTab(d0: DockState, from: DockTab, to: DockTab): DockState
 }
 
 /**
-  What used to be a tab and isn't any more (2026-11-25): Session is a card the session header's
-  icon row pins, and the New tab guide is gone with the tab strip. A layout that still names them (kept from
-  before, or one App.tsx opened for a session not yet on screen) loses them here. When the one showing
-  was one of them, the panel is hidden rather than showing a surface nobody asked for, and `popup`
-  says the Session card was what was asked for, so the session pins it.
+  What used to be a tab and isn't any more: the New tab guide, gone with the tab strip (2026-11-25). A layout that
+  still names it (kept from before) loses it here; when it was the one showing, the panel is hidden rather than
+  showing a surface nobody asked for. Session is a tab of the panel again since line and dot (2026-11-27): the
+  details toggle opens it there while the panel is open, so a layout that holds it keeps it across a restart.
 */
-export const NOT_TABS: readonly DockTab[] = ["session", GUIDE];
-export function dropPopups(d: DockState): { dock: DockState; popup?: "session" } {
+export const NOT_TABS: readonly DockTab[] = [GUIDE];
+export function dropPopups(d: DockState): { dock: DockState } {
   if (!d.panes.some((p) => p.tabs.some((t) => NOT_TABS.includes(t)))) return { dock: d };
   const shown = d.panes[d.at]?.tab;
   const was = d.open && shown !== undefined && NOT_TABS.includes(shown);
   const left = settle({ ...d, panes: d.panes.map((p) => ({ tabs: p.tabs.filter((t) => !NOT_TABS.includes(t)), tab: p.tab })) });
-  return { dock: was ? { ...left, open: false, full: false } : left, popup: was && shown === "session" ? "session" : undefined };
+  return { dock: was ? { ...left, open: false, full: false } : left };
 }
 
 /**

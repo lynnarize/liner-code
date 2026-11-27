@@ -1,27 +1,27 @@
 /*
-  Home: start a session, laid out as Devin's (docs/research/home-like-home.md, board B). The
-  composer sits in the middle of the paper. On top of it, where a headline was, the project's
-  name (press it for a small picker of your projects, the last used first) and, at the right, one
-  chip for where it works: the branch, in this checkout or a new worktree from a branch. The tool
-  is in the box's who panel and the mode in its + menu (a chip after the + while it isn't
-  Standard), so nothing sits under the box but the quiet line of other ways to start. In the
-  corner, what's new. What there is to carry on (sessions from Claude Code or Codex, work not
-  committed) is Recent, in the sidebar.
+  Home: start a session (board Home of "line and dot", 2026-11-27). In one column in the middle of the paper: the
+  headline in the name's face, with no mark above it; a row of chips over the box (the project with its small tile,
+  press it for your projects, the last used first; where it works, this checkout or a new worktree; and at the right
+  end the branch, or the branch a new worktree starts from); the box; and under it Carry on, three cards of work to
+  pick up (CarryOn.tsx), unless Settings turned it off. No row of tools sits under them. The tool is in the box's who panel
+  and the mode in its + menu (a chip after the + while it isn't Standard). In the corner, what's new.
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Project, RpcResult, SessionMode } from "@contracts";
-import { modeName, startOf } from "@contracts";
+import { carryOnOn, modeName, startOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { bridge } from "./bridge";
 import { ChoiceChip, Composer, type PlusChoice, type RunSettings } from "./Composer";
 import { getState, rpc, useEngine } from "./engine";
 import { I } from "./icons";
 import { listedProjects, pairEffortFor, since, startEffort } from "./model";
-import { BackRow, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
+import { tileLetters } from "./letters";
+import { PanelHead, Pop, Row, ShowSidebar } from "./ui";
 import { ProjectQuickPick } from "./Projects";
 import { ModeIcon, ModeRows } from "./Modes";
 import { HomeUpdates } from "./Updates";
 import { Sea } from "./Sea";
+import { HomeCarry } from "./CarryOn";
 import * as os from "./os";
 
 type Props = { projectId?: string; onProject: (id: string) => void; onStarted: (threadId: string) => void; onCompare: (compareId: string) => void; sidebar: boolean; onSidebar: () => void; onNewAgent: () => void; startMode?: SessionMode; startPrompt?: { text: string; at: number } };
@@ -36,6 +36,11 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   const access = useEngine((s) => s.settings.defaultAccess);
   const worktrees = useEngine((s) => s.settings.worktrees);
   const project = projects.find((p) => p.id === projectId) ?? projects[0];
+  // Carry on's cards under the box, unless Settings turned them off ("Show Carry on on Home").
+  const carryOn = useEngine((s) => carryOnOn(s.settings));
+  // The ask a Carry on card writes into the box (the work not committed here), as the sidebar's panel does through App.
+  const [carried, setCarried] = useState<{ text: string; at: number } | undefined>();
+  const seed = carried && (!startPrompt || carried.at > startPrompt.at) ? carried : startPrompt;
 
   // What's ready, as a key that changes only when a tool or its models come or go, so your picks here aren't reset by a refresh.
   const readyKey = providers.map((p) => `${p.id}:${p.available && p.adapter ? p.models.length : 0}`).join();
@@ -213,10 +218,17 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     <div className="lc-home-in" data-mid={project ? "" : undefined}>
       {project ? (
         <>
-          <div className="lc-home-top">
-            <ProjectName project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} onScratch={() => void scratch()} />
-            <span className="lc-grow" />
-            <WhereChip project={project} worktree={worktree} onWorktree={setWorktree} base={base} onBase={setBase} inWorktree={inWorktree} comparing={compare.length > 0 && mode_ === "standard"} />
+          <div className="lc-home-head">
+            {/* No mark above it (the owner's ruling): the headline alone, ink then grey. */}
+            <h1 className="lc-home-h">
+              What are we making? <span>Pick a folder, say it plainly.</span>
+            </h1>
+            <div className="lc-home-top">
+              <ProjectName project={project} projects={projects} onPick={onProject} onSample={() => void add("@sample")} onScratch={() => void scratch()} />
+              <WhereChip project={project} worktree={worktree} onWorktree={setWorktree} inWorktree={inWorktree} comparing={compare.length > 0 && mode_ === "standard"} />
+              <span className="lc-grow" />
+              <BranchChip project={project} worktree={worktree} base={base} onBase={setBase} inWorktree={inWorktree} comparing={compare.length > 0 && mode_ === "standard"} />
+            </div>
           </div>
           <div
             className="lc-home-compose"
@@ -242,13 +254,14 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
               compare={project.git && mode_ === "standard" ? compare : undefined}
               onCompare={project.git && mode_ === "standard" ? setCompare : undefined}
               autoFocus
-              seed={startPrompt}
+              seed={seed}
               choices={[modeChoice]}
               // The prompt check splits a draft of several tasks into sessions in this mode; Workshop isn't checked.
               mode={mode_}
               checkOff={mode_ === "creator"}
             />
           </div>
+          <div className="lc-home-foot">{carryOn && <HomeCarry projectId={project.id} onOpen={onStarted} onCarryOn={(id, text) => (id !== project.id && onProject(id), setCarried({ text, at: Date.now() }))} />}</div>
         </>
       ) : (
         <div className="lc-noproj">
@@ -280,11 +293,12 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
     <div className="lc-home">
       {/* The sea behind it all (Sea.tsx), unless it's off in Settings, Appearance. */}
       <Sea />
-      <header className="lc-top lc-top-home" data-drag>
+      <header className="lc-top" data-drag>
         {!sidebar && (
           <ShowSidebar onShow={onSidebar} />
         )}
-        {/* No breadcrumb: the headline names the project. The row stays, as the window's drag region. */}
+        {/* What this page is, as a session's row names its session; the rest of the row is the window's drag region. */}
+        <b className="lc-home-crumb">New session</b>
         <span className="lc-grow" data-drag />
       </header>
       {ask}
@@ -293,18 +307,22 @@ export function Home({ projectId, onProject, onStarted, onCompare, sidebar, onSi
   );
 }
 
-/** The project's name over the box: press it for your other projects, another folder or a scratch folder. */
+
+/** The project as the first chip over the box, its tile before its name: press it for your other projects, another folder or a scratch folder. */
 function ProjectName({ project, projects, onPick, onSample, onScratch }: { project: Project; projects: Project[]; onPick: (id: string) => void; onSample: () => void; onScratch: () => void }) {
   const showDemo = useEngine((s) => s.settings.showDemo === true);
   return (
     <Pop
       label={`Project: ${project.name}. Change it`}
       width={260}
-      triggerClass="lc-home-name"
+      triggerClass="lc-home-chip lc-home-name"
       trigger={
         <>
-          <span>{project.name}</span>
-          <I.chevD size={14} />
+          <span className="lc-home-tile" aria-hidden>
+            {tileLetters(project.name)}
+          </span>
+          <span className="lc-home-cap">{project.name}</span>
+          <I.chevD size={12} />
         </>
       }
     >
@@ -347,78 +365,82 @@ function BaseRows({ projectId, current, onPick }: { projectId: string; current?:
 }
 
 /**
-  Where the session works, at the right end of the line over the box: the branch's name, in this
-  checkout, or "New worktree from main". Its menu picks between the two, and with a new worktree,
-  the branch it starts from (in the menu's own place; Escape comes back first). A project without
-  git has no chip. Carrying on in a worktree, or comparing models (each gets a worktree of its own
-  from this branch), it shows the branch with nothing to change.
+  Where the session works, the second chip over the box: this Mac, in this checkout or in a new worktree. Its menu
+  picks between the two. A project without git, or carrying on in a worktree, or comparing models (each gets a
+  worktree of its own), says where it works with nothing to change.
 */
-function WhereChip({ project, worktree, onWorktree, base, onBase, inWorktree, comparing }: { project: Project; worktree: boolean; onWorktree: (on: boolean) => void; base?: string; onBase: (b: string | undefined) => void; inWorktree?: { path: string; branch?: string }; comparing: boolean }) {
-  const branch = inWorktree?.branch ?? project.branch;
-  if (!project.git) return null;
-  if (inWorktree || comparing)
-    return branch ? (
-      <span className="lc-home-branch" title={inWorktree ? "Carrying on in this worktree" : "Each model works in a worktree of its own from this branch"}>
-        <I.branch size={14} />
-        <span className="lc-mono">{branch}</span>
+function WhereChip({ project, worktree, onWorktree, inWorktree, comparing }: { project: Project; worktree: boolean; onWorktree: (on: boolean) => void; inWorktree?: { path: string; branch?: string }; comparing: boolean }) {
+  const fixed = !project.git ? os.Here : inWorktree ? `${os.Here} · this worktree` : comparing ? `${os.Here} · a worktree each` : undefined;
+  if (fixed)
+    return (
+      <span className="lc-home-chip" data-still title={inWorktree ? "Carrying on in this worktree" : comparing ? "Each model works in a worktree of its own" : undefined}>
+        <I.laptop size={14} />
+        <span className="lc-home-cap">{fixed}</span>
       </span>
-    ) : null;
-  const from = base ?? project.branch ?? "HEAD";
-  const onDefault = !worktree && (branch === "main" || branch === "master");
+    );
   return (
     <Pop
-      label={worktree ? `Where it works: a new worktree from ${from}. Change it` : `Where it works: this checkout${branch ? `, on ${branch}` : ""}. Change it`}
-      align="end"
+      label={worktree ? "Where it works: a new worktree. Change it" : "Where it works: this checkout. Change it"}
       width={260}
       menu
-      triggerClass="lc-pb lc-home-branch"
+      triggerClass="lc-home-chip"
       trigger={
         <>
-          <I.branch size={14} />
-          {worktree ? (
-            <span className="lc-strip-cap">
-              New worktree from <span className="lc-mono">{from}</span>
-            </span>
-          ) : (
-            <span className="lc-mono lc-strip-cap" title={onDefault ? `Editing directly on ${branch}: press to work in a new worktree instead` : undefined}>
-              {branch ?? "HEAD"}
-              {onDefault && <span className="lc-home-direct">directly</span>}
-            </span>
-          )}
-          <I.chevD size={14} />
+          <I.laptop size={14} />
+          <span className="lc-home-cap">
+            {os.Here} · {worktree ? "new worktree" : "this checkout"}
+          </span>
+          <I.chevD size={12} />
         </>
       }
     >
-      {(close) => <WhereMenu project={project} worktree={worktree} onWorktree={onWorktree} from={from} base={base} onBase={onBase} close={close} />}
+      {(close) => (
+        <>
+          <Row title="This checkout" on={!worktree} onPick={() => (onWorktree(false), close())} />
+          <Row title="A new worktree" on={worktree} onPick={() => (onWorktree(true), close())} />
+        </>
+      )}
     </Pop>
   );
 }
 
-function WhereMenu({ project, worktree, onWorktree, from, base, onBase, close }: { project: Project; worktree: boolean; onWorktree: (on: boolean) => void; from: string; base?: string; onBase: (b: string | undefined) => void; close: () => void }) {
-  const [branches, setBranches] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  // Back on the row that opened the branches: the menu's last.
-  const out = () => (setBranches(false), requestAnimationFrame(() => [...(box.current?.querySelectorAll<HTMLElement>("[role^='menuitem']") ?? [])].at(-1)?.focus({ preventScroll: true })));
+/**
+  The branch, at the right end of the row over the box: in this checkout, the branch it is on (said "directly" in grey
+  on main or master, its tooltip saying how to keep apart); with a new worktree, the branch it starts from, which its
+  menu picks. A project without git has no chip.
+*/
+function BranchChip({ project, worktree, base, onBase, inWorktree, comparing }: { project: Project; worktree: boolean; base?: string; onBase: (b: string | undefined) => void; inWorktree?: { path: string; branch?: string }; comparing: boolean }) {
+  const branch = inWorktree?.branch ?? project.branch;
+  if (!project.git) return null;
+  if (!worktree || inWorktree || comparing) {
+    const onDefault = !inWorktree && !comparing && (branch === "main" || branch === "master");
+    return (
+      <span className="lc-home-chip lc-home-branch" data-still title={onDefault ? `Editing directly on ${branch}: pick a new worktree to keep this apart` : comparing ? "Each model's worktree starts from this branch" : undefined}>
+        <I.branch size={14} />
+        <span className="lc-mono lc-home-cap">{branch ?? "HEAD"}</span>
+        {onDefault && <span className="lc-home-direct">directly</span>}
+      </span>
+    );
+  }
+  const from = base ?? project.branch ?? "HEAD";
   return (
-    <div ref={box} onKeyDown={(e) => branches && e.key === "Escape" && !e.defaultPrevented && (e.preventDefault(), out())}>
-      {branches ? (
+    <Pop
+      label={`A new worktree from ${from}. Change the branch`}
+      align="end"
+      width={260}
+      menu
+      triggerClass="lc-home-chip lc-home-branch"
+      trigger={
         <>
-          <BackRow name="From a branch" label="Back from the branches" rove={false} onBack={out} />
-          <BaseRows projectId={project.id} current={base ?? project.branch} onPick={(b) => (onBase(b), close())} />
+          <I.branch size={14} />
+          <span className="lc-home-cap">
+            from <span className="lc-mono">{from}</span>
+          </span>
+          <I.chevD size={12} />
         </>
-      ) : (
-        <>
-          <Row title="This checkout" on={!worktree} onPick={() => (onWorktree(false), close())} />
-          {/* Kept open: a new worktree has one more choice, the branch it starts from. */}
-          <Row title="A new worktree" on={worktree} onPick={() => onWorktree(true)} />
-          {worktree && (
-            <>
-              <Sep />
-              <Row title="From a branch" end={<span className="lc-mono">{from}</span>} opens="branches" onPick={() => (setBranches(true), requestAnimationFrame(() => box.current?.querySelector<HTMLElement>("[role^='menuitem'][data-on], [role^='menuitem']:not([data-back])")?.focus({ preventScroll: true })))} />
-            </>
-          )}
-        </>
-      )}
-    </div>
+      }
+    >
+      {(close) => <BaseRows projectId={project.id} current={base ?? project.branch} onPick={(b) => (onBase(b), close())} />}
+    </Pop>
   );
 }

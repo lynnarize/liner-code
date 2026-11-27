@@ -163,15 +163,13 @@ test("What this session no longer asks about forgets a grant only by the word at
   assert.equal((row.match(/<button/g) ?? []).length, 1, "more than the word is a button");
 });
 
-test("The title menu has one Multi-agent row and an Agents row that opens what the Agents key opens", () => {
+test("The title menu has no Multi-agent row, only an Agents row that opens what the Agents key opens; /teamwork and /swarm start a team", () => {
+  // Since 8ba917c a team starts only from the message box: no menu row turns one on.
   const session = src("Session.tsx");
-  assert.doesNotMatch(session, /title="Start Teamwork"|title="Start Swarm"|"Swarm panel"|"Teamwork panel"/);
-  assert.match(session, /<MultiAgentRow thread=\{thread\} close=\{close\} \/>/);
+  assert.doesNotMatch(session, /title="Start Teamwork"|title="Start Swarm"|"Swarm panel"|"Teamwork panel"|<MultiAgentRow/);
   assert.match(session, /<Row title="Agents" icon=\{<I\.agents size=\{16\} \/>\} onPick=\{\(\) => \(close\(\), openAgents\(thread\.id\)\)\} \/>/);
   assert.match(session, /\/\^\\\/\(teamwork\|swarm\)/, "/teamwork and /swarm no longer start a team");
-  const info = src("SessionInfo.tsx");
-  assert.match(info, /export function MultiAgentRow\(/);
-  assert.match(info, /<MultiAgentRow thread=\{thread\} close=\{close\} \/>/, "the Session popup's Setup no longer uses the one row");
+  assert.doesNotMatch(src("SessionInfo.tsx"), /MultiAgentRow/, "the Session surface has a Multi-agent row again");
 });
 
 test("The Session popup's Connections list says it is this session's", () => {

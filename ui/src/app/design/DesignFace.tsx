@@ -30,6 +30,7 @@ import { Canvas, fit, parentIn } from "./Canvas";
 import { Dock } from "./Dock";
 import { ChatColumn, DockFloat, DockHosts, useHosts, useShownSize } from "./Chat";
 import { Inspector } from "./Inspector";
+import { TopBuild } from "./BuildTab";
 import { reorder } from "./Layers";
 import { insert, Rail } from "./Rail";
 import { adoptedOriginOf, design, exportFrameHtml, getDesign, isBlank, takeVanished, useDesign } from "./store";
@@ -270,6 +271,15 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
           <N.sidebar />
         </button>
       )}
+      {/* Where you are, as the Code face's top row says it: the project's tile and its name in grey, then a slash. A design
+          on its own has no project round it (its folder is its own), so it has no crumb: the name alone says where you are. */}
+      {project.kind !== "design" && (
+        <span className="lc-crumb ld-crumb" aria-hidden>
+          <span className="lc-crumb-tile">{tileOf(project.name)}</span>
+          <span className="lc-crumb-pj">{project.name}</span>
+          <span className="lc-crumb-sl">/</span>
+        </span>
+      )}
       <TabTitle />
       {/* Where it came from, as a head's quiet words: a press goes back to that session. */}
       {adopted && (
@@ -287,6 +297,8 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
         </button>
       )}
       <span className="lc-grow" data-drag />
+      {/* The tools as one segmented control in the row (board Design), where they once floated on the canvas's left. */}
+      <RailPart />
       <Versions />
       <Pop label={`Zoom, ${Math.round(zoom * 100)}%`} width={220} align="end" triggerClass="ld-zoom" trigger={<><span className="ld-num">{Math.round(zoom * 100)}%</span><I.chevD size={12} /></>} menu>
         {(close) => (
@@ -299,6 +311,7 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
           </>
         )}
       </Pop>
+      <TopBuild onShow={() => !inspOpen && onToggleInsp()} />
       {/* The session header's buttons (the Code face's switcher): 32 square, 20px icons. */}
       <button type="button" className="lc-sw-b l-focus" aria-label="Play: try the screens as they would run" title={play ? "Stop playing (Esc)" : "Play: try the screens as they would run"} aria-pressed={play} onClick={() => design.setTool(play ? "select" : "play")}>
         <I.play size={20} />
@@ -313,13 +326,19 @@ function TopRow({ sidebar, onSidebar, cv, tab, project, inspOpen, onToggleInsp }
   );
 }
 
+/** A project's tile in the top row: the first letters of its first two words ("liner-code" is LC), as Session.tsx's tileOf. */
+function tileOf(name: string) {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_\-./]+/).filter(Boolean);
+  return (words.length > 1 ? [...words[0]][0] + [...words[1]][0] : [...(words[0] ?? "?")].slice(0, 2).join("")).toUpperCase();
+}
+
 /** Under an empty canvas: what to do first. */
 function EmptyHint() {
   const empty = useDesign((s) => Boolean(s.file) && s.scrub === undefined && (s.file!.frames.length === 0 || s.file!.frames.every((f) => isBlank(s, f))));
   if (!empty) return null;
   return (
     <p className="ld-hint" aria-live="polite">
-      <b>Nothing here yet.</b> Say what to make, or draw with the tools on the left.
+      <b>Nothing here yet.</b> Say what to make, or draw with the tools in the top row.
     </p>
   );
 }
@@ -449,7 +468,6 @@ export function DesignFace({ tab, project, thread, sidebar, onSidebar }: { tab: 
               </FaceBoundary>
             )}
             <div className="ld-cv">
-              <RailPart />
               {fileId && mine ? (
                 <FaceBoundary what="canvas">
                   <Canvas root={cv} />

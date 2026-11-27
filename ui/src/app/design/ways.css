@@ -74,9 +74,10 @@
   font-size: 13px;
   color: var(--l-ink-2);
 }
-/* The words for a picture: the shared box (app.css, .lc-sbox), as wide as the inspector. */
+/* The words for a picture: the shared box (app.css, .lc-sbox), as wide as the section's text column. Its width is the
+   column's own (auto), not 100% on top of the section's 16px insets, which pushed Send past the panel's edge. */
 .ld-pic-ask {
-  width: 100%;
+  width: auto;
 }
 /* A picture being made: the working mark, then the word. */
 .ld-pic-busy {

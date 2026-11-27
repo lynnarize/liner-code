@@ -138,17 +138,18 @@ test("one agent at work is said once, by the live line, not also by the card at 
 test("a step's mark has the dots only while it runs: finished is a tick, waiting an empty ring, failed a red cross (board Marks, choice B)", () => {
   const icons = app("icons.tsx");
   const step = span(icons, "export function StepMark(");
-  assert.match(step, /if \(state === "working"\) return <StateMark state="working"/, "a working step isn't the state mark's travelling light");
-  assert.match(icons, /const STEP_SHAPE: Record<Exclude<StepState, "working">, "tick" \| "ring" \| "cross"> = \{ waiting: "ring", done: "tick", skipped: "ring", failed: "cross" \};/);
+  // Line and dot: only a live step (the lone sign of work) is the moving box; in a list the step in work is a still ring with its middle lit.
+  assert.match(step, /if \(state === "working" && live\) return <StateMark state="working"/, "a live working step isn't the state mark's travelling light");
+  assert.match(icons, /const STEP_SHAPE: Record<StepState, "tick" \| "ring" \| "cross" \| "now"> = \{ waiting: "ring", working: "now", done: "tick", skipped: "ring", failed: "cross" \};/);
   assert.match(step, /className=\{`lc-mk \$\{cls\}`\} data-step=\{shape\}/, "the shapes lose the classes the lists place a mark by");
   const css = app("app.css");
   assert.match(css, /\.lc-mk\[data-step="tick"\] \{\s*color: var\(--l-ink-4\);/, "a finished step's tick isn't in the fourth ink");
   assert.match(css, /\.lc-mk\[data-step="cross"\] \{\s*color: var\(--l-danger\);/, "a failed step's cross isn't in the danger colour");
-  // Working is three lit dots with nothing behind them, in the progress yellow (as Capy's), whoever's model it is.
+  // Working is three lit pixels travelling round the box, the rest of the box at rest under them (line and dot's 27 November notes), in the progress yellow, whoever's model it is.
   // No holder tints it either (RULING 5): only a mark on a coloured chip takes the chip's white (app.css).
   assert.match(css, /\.lc-mk\[data-s="working"\] \{\s*--mk-loop: 1\.2s;\s*color: var\(--lc-progress\);/, "working isn't in the progress yellow");
   assert.ok(!/\.lc-mk\[data-s="working"\][^{]*data-brand/.test(css), "working is tinted by its model again");
-  assert.match(css, /\.lc-mk\[data-s="working"\] > i \{\s*opacity: 0;/, "working draws a dim grid behind its light");
+  assert.match(css, /\.lc-mk\[data-s="working"\] > i \{\s*opacity: 0\.22;/, "working's box isn't at rest under its light");
 });
 
 test("What moves while something runs is in colour, as Capy's progress marks are: Working and Checks in a yellow of their own, light and dark, apart from Needs you's amber", () => {

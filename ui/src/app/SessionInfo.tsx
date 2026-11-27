@@ -1,40 +1,39 @@
 /*
-  The Session card (SPEC rule 5, board Session, 2026-11-25): the Session icon at the right end of the session's header
-  pins it at the chat's right (Session.tsx), in the menu's shape. Three sections: where it runs (the Mac or its worktree, the project and its
-  folder, the branch, the changes still to commit, the agents that worked, a pull request and its checks), its context
-  (used of the window, a bar split by source, what fills it opened in place, Compact, what came from cache) and its setup
-  (Tool preset, Sidekick context, Connections, Spend limit, Workspace memory), each a row with its value and
-  a menu to its side. Tool, Lead, Sidekick and Reviewer are not here: the message box and the header say them. It asks
-  the engine when it opens, again when a turn starts or ends, and on Look again.
+  The Session surface (line and dot, board Panel, 2026-11-27), in the right panel; the details toggle opens it there while
+  the panel is open (Session.tsx), and so do ⌘K and its key. From the top: a small card with the halftone naming who leads
+  (the model, its tool, its effort, Fusion); Where it runs (the Mac or its worktree, the project and its folder, the branch
+  with the lines still to commit, the agents that worked, a pull request and its checks); Context (how much is used, a bar
+  of dots with one colour per source, a round dot and a count per source, Compact); Setup (Tool preset, Sidekick context,
+  Connections, Spend limit, Workspace memory, Keep this Mac awake). It says no money: Usage and cost is where that is.
+  It asks the engine when it shows, again when a turn starts or ends, and on Look again.
 */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type ContextPart, type ContextSource, type FileChange, type Item, type LimitWindow, type PrInfo, type SessionInfo, type Thread, type ToolLimits } from "@contracts";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { isSwarm, type ContextPart, type ContextSource, type FileChange, type Item, type LimitWindow, type PrInfo, type SessionInfo, type Thread, type ToolLimits } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
-import { rpc, useEngine, useItems } from "./engine";
-import { I, StateMark } from "./icons";
-import { checkpointsOf, compact, duration, money, plural, sumLines } from "./model";
+import { rpc, useEngine } from "./engine";
+import { I, ModelMark, StateMark } from "./icons";
+import { agentOf, checkpointsOf, compact, duration, markOf, modelLabel, plural, sumLines, threadModel } from "./model";
 import { openSurface } from "./TopBar";
 import { openAgents } from "./Crew";
-import { addFive, agentsWorked, spendWords } from "./session-pop";
-import { Lines, MenuFoot, PanelHead, Row, Sep, SubMenu } from "./ui";
+import { addFive, agentsWorked } from "./session-pop";
+import { hasAgents } from "./agent-rows";
+import { Badge, Lines, MenuFoot, NamedSwitch, PanelHead, Row, Sep, SubMenu } from "./ui";
+import { PaneBody, PaneRow, PaneSection } from "./Pane";
+import * as os from "./os";
 
 const fail = (e: Error) => toast.error(e.message);
 
-/** The popup as the header's Session icon opens it: reads the session's items itself, and closes itself when a row takes you elsewhere. */
-export function SessionPopup({ thread, onShowChange, onClose }: { thread: Thread; onShowChange: (path: string) => void; onClose: () => void }) {
-  const items = useItems(thread.id);
-  return <SessionSurface thread={thread} items={items} visible onShowChange={onShowChange} onClose={onClose} />;
-}
-
-export function SessionSurface({ thread, items, visible, onShowChange, onClose = () => {} }: { thread: Thread; items: Item[]; visible: boolean; onShowChange: (path: string) => void; onClose?: () => void }) {
+export function SessionSurface({ thread, items, visible, onShowChange }: { thread: Thread; items: Item[]; visible: boolean; onShowChange: (path: string) => void }) {
   const [info, setInfo] = useState<SessionInfo | null>(null);
   const { files } = useMemo(() => openFiles(items), [items]);
   const [failed, setFailed] = useState("");
   const [looking, setLooking] = useState(false);
   const limits = useEngine((s) => s.limits);
+  const agents = useEngine((s) => s.agents);
+  const providers = useEngine((s) => s.providers);
+  const keepAwake = useEngine((s) => s.settings.keepAwake !== false);
   // The pull request's checks, as its card reads them (pr.status): asked only when the session has one.
   const [checks, setChecks] = useState<PrInfo["checks"]>([]);
-  const usage = thread.usage;
   const running = thread.status === "running";
   // Only the latest ask is shown: one sent as a turn started can answer after the one sent as it ended.
   const asked = useRef(0);
@@ -76,45 +75,100 @@ export function SessionSurface({ thread, items, visible, onShowChange, onClose =
   }, [compacting, running]);
 
   const relook = (
-    <button type="button" className="lc-ib l-focus lc-spop-look" aria-label="Look again" title="Look again" disabled={looking} onClick={look}>
+    <button type="button" className="lc-pane-tool l-focus" aria-label="Look again" title="Look again" disabled={looking} onClick={look}>
       <I.refresh size={14} />
     </button>
   );
   if (!info)
     return (
-      <div className="lc-spop">
-        <PanelHead end={relook}>Where it runs</PanelHead>
-        {failed ? <MenuFoot>{failed}</MenuFoot> : <MenuFoot><span className="l-shimmer">Asking the session</span></MenuFoot>}
-      </div>
+      <PaneBody className="lc-ss">
+        <PaneSection label="Where it runs" note={relook}>
+          <p className={failed ? "lc-ss-note" : "lc-ss-note l-shimmer"}>{failed || "Asking the session"}</p>
+        </PaneSection>
+      </PaneBody>
     );
 
   const worked = agentsWorked(items);
-  const go = (tab: "pr" | "changes") => (onClose(), openSurface(thread.id, tab));
   const limit = limits.find((t) => t.provider === info.provider);
+  const lead = agentOf(thread.agent, agents, providers);
+  const model = threadModel(thread, agents, providers);
+  const effort = thread.effortNow ?? thread.effort ?? lead.effort;
+  const changed = sumLines(files);
   return (
-    <div className="lc-spop">
-      {failed && <MenuFoot>{failed}</MenuFoot>}
-      <PanelHead end={relook}>Where it runs</PanelHead>
-      {/* "This Mac", as the board says it: the machine's own name is in its tooltip, so a picture of the popup never shows it. */}
-      <Row title="This Mac" note={info.machine || undefined} icon={<I.laptop size={14} />} end={info.worktree ? "its own worktree" : "the checkout"} />
-      <Row title={info.project} icon={<I.folder size={14} />} which={tilde(info.path)} whichPath />
-      {info.branch && <Row title={<span className="lc-mono">{info.branch}</span>} icon={<I.branch size={14} />} />}
-      <Row title={files.length ? `${plural(files.length, "file")} changed` : "No changes yet"} icon={<I.changes size={14} />} end={files.length ? <Lines {...sumLines(files)} /> : undefined} chevron={files.length > 0} disabled={!files.length} onPick={() => (files[0] ? (onClose(), onShowChange(files[0].path)) : go("changes"))} />
-      {worked.count > 0 && <Row title={`${plural(worked.count, "agent")} worked`} icon={<I.agents size={14} />} end={duration(worked.seconds) || undefined} chevron onPick={() => (onClose(), openAgents(thread.id))} />}
-      {thread.pr && <Row title="Pull request" icon={<I.pr size={14} />} end={`#${thread.pr.number}`} chevron onPick={() => go("pr")} />}
-      {thread.pr && checks.length > 0 && <ChecksLine checks={checks} />}
-      <Sep />
-      <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} compacting={compacting} onCompact={compactNow} cost={usage?.costUsd ?? 0} cache={usage && usage.inputTokens + usage.cacheReadTokens > 0 ? usage.cacheReadTokens / (usage.inputTokens + usage.cacheReadTokens) : undefined} />
-      {thread.effortNow && thread.effort && thread.effortNow !== thread.effort && <Row title="Running effort" icon={<I.effort size={14} />} end={`${thread.effortNow}, asked ${thread.effort}`} />}
-      <PlanLimit limits={limit} />
-      <Sep />
-      <PanelHead>Setup</PanelHead>
-      <Setup thread={thread} />
-    </div>
+    <>
+      <PaneBody className="lc-ss">
+        {failed && <p className="lc-ss-note">{failed}</p>}
+        {/* Who leads, on a card that is alive with the halftone: the one thing here that is chosen. */}
+        <div className="lc-ss-hero">
+          <i className="lc-ht lc-ht-corner lc-ht-soft" aria-hidden />
+          <b>
+            <ModelMark kind={markOf(model)} size={16} />
+            <span className="lc-ss-hero-n">{modelLabel(model, providers)}</span>
+            <Badge>{thread.sidekick ? "Lead" : "Works alone"}</Badge>
+          </b>
+          <span className="lc-ss-cap">
+            Through {info.tool}
+            {effort ? ` · effort ${effort[0].toUpperCase()}${effort.slice(1)}` : ""}
+            {thread.sidekick ? " · in Fusion" : ""}
+          </span>
+        </div>
+        {/* Look again sits by the first label: the surface has no bar of its own (board Panel). */}
+        <PaneSection label="Where it runs" note={relook}>
+          {/* "This Mac", as the board says it: the machine's own name is in its tooltip, so a picture of it never shows it. */}
+          <PaneRow icon={<I.laptop size={14} />} value={info.worktree ? "in a worktree" : "in the checkout"} quiet title={info.machine || undefined}>
+            {os.here[0].toUpperCase() + os.here.slice(1)}
+          </PaneRow>
+          <PaneRow icon={<I.folder size={14} />} value={<span className="lc-mono lc-ss-path"><bdi>{tilde(info.path)}</bdi></span>} quiet title={info.path}>
+            {info.project}
+          </PaneRow>
+          {info.branch && (
+            <PaneRow icon={<I.branch size={14} />} value={files.length ? <Lines {...changed} /> : undefined} opens={files.length > 0} title={files.length ? `${plural(files.length, "file")} to commit` : undefined} onClick={files.length ? () => onShowChange(files[0].path) : undefined}>
+              <span className="lc-mono">{info.branch}</span>
+            </PaneRow>
+          )}
+          {!info.branch && files.length > 0 && (
+            <PaneRow icon={<I.changes size={14} />} value={<Lines {...changed} />} opens onClick={() => onShowChange(files[0].path)}>
+              {plural(files.length, "file")} changed
+            </PaneRow>
+          )}
+          {/* Only for a session that has agents, by the test the details card's agents section asks (agent-rows.ts). */}
+          {hasAgents({ sidekick: thread.sidekick, swarm: isSwarm(thread), atWork: thread.agentsAtWork, worked: worked.count }) && worked.count > 0 && (
+            <PaneRow icon={<I.agents size={14} />} value={duration(worked.seconds) || undefined} quiet opens onClick={() => openAgents(thread.id)}>
+              {plural(worked.count, "agent")} worked
+            </PaneRow>
+          )}
+          {thread.pr && (
+            <PaneRow icon={<I.pr size={14} />} value={`#${thread.pr.number}`} quiet opens onClick={() => openSurface(thread.id, "pr")}>
+              Pull request
+            </PaneRow>
+          )}
+          {thread.pr && checks.length > 0 && <ChecksLine checks={checks} />}
+        </PaneSection>
+        <ContextCard info={info} doing={running ? doingOf(items) : ""} running={running} compacting={compacting} onCompact={compactNow} />
+        {(thread.effortNow && thread.effort && thread.effortNow !== thread.effort) || limit ? (
+          <div className="lc-ss-extra">
+            {thread.effortNow && thread.effort && thread.effortNow !== thread.effort && (
+              <PaneRow icon={<I.effort size={14} />} value={`${thread.effortNow}, asked ${thread.effort}`} quiet>
+                Running effort
+              </PaneRow>
+            )}
+            <PlanLimit limits={limit} />
+          </div>
+        ) : null}
+        <PaneSection label="Setup">
+          <div className="lc-ss-setup">
+            <Setup thread={thread} />
+          </div>
+          <PaneRow icon={<I.laptop size={14} />} value={<NamedSwitch name={`Keep ${os.here} awake`} checked={keepAwake} onCheckedChange={(on) => void rpc("settings.save", { keepAwake: on }).catch(fail)} />}>
+            Keep {os.here} awake
+          </PaneRow>
+        </PaneSection>
+      </PaneBody>
+    </>
   );
 }
 
-/** "~/tides" for a folder in the home folder: the popup's path is a place, not a string to copy. */
+/** "~/tides" for a folder in the home folder: the surface's path is a place, not a string to copy. */
 const tilde = (path: string) => path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 
 /** The setup rows: each a value and a menu to its side, as the board's Setup section has them. */
@@ -142,13 +196,14 @@ function Setup({ thread }: { thread: Thread }) {
         </SubMenu>
       )}
       <Connections thread={thread} />
-      <SubMenu title="Spend limit" icon={<I.speed size={14} />} value={spendWords(thread.spendLimit, usage?.costUsd ?? 0)} label="Spend limit" width={240}>
+      {/* No money on the surface (line and dot): the row says whether a limit is set; the amounts are in its menu. */}
+      <SubMenu title="Spend limit" icon={<I.speed size={14} />} value={thread.spendLimit ? "Set" : "None"} label="Spend limit" width={240}>
         {(done) => (
           <>
             <Row title="Add $5" icon={<I.plus size={14} />} onPick={() => (done(), update({ spendLimit: addFive(thread.spendLimit, usage?.costUsd ?? 0) }))} />
             <Row title="Clear the limit" icon={<I.close size={14} />} disabled={!thread.spendLimit} onPick={() => (done(), update({ spendLimit: null }))} />
             <Sep />
-            <MenuFoot>{thread.spendLimit ? `${money(usage?.costUsd ?? 0)} used of ${money(thread.spendLimit)}` : "No limit set"}</MenuFoot>
+            <MenuFoot>{thread.spendLimit ? "Its turns stop once it is reached. Usage and cost says what it has spent." : "No limit set"}</MenuFoot>
           </>
         )}
       </SubMenu>
@@ -256,70 +311,66 @@ function doingOf(items: Item[]) {
   return last?.kind === "reasoning" && last.streaming ? "thinking" : last?.kind === "text" && last.streaming ? "writing" : "working";
 }
 
+/** Each kind of source's colour in the bar of dots and on its round dot (one colour per source, board Panel). */
+const GROUP_COLOUR: Record<ContextSource["group"], string> = { setup: "var(--l-ink-3)", project: "var(--l-warn)", talk: "var(--lc-blue)", files: "var(--lc-merged)", runs: "var(--l-ok)", web: "var(--lc-progress)", tools: "var(--l-ink-2)" };
+
 /**
-  The Context section: used of the window as the label's note, a bar of the sources in their colours with a mark where
-  the tool compacts, "N% used" whose "What fills it ›" opens each source with what it takes in place, Compact now with
-  how far off the tool's own compacting is, and what came from cache with what it cost.
+  The Context section: "N% used" by its label and Compact at its right end; the bar of dots, one colour per source over the
+  grey of what's free, with a mark where the tool compacts; then each source as a row with its round dot and its count.
+  Pointing at a source lights its part of the bar. No money: what the context costs is Usage and cost's to say.
 */
-function ContextCard({ info, doing, running, compacting, onCompact, cost, cache }: { info: SessionInfo; doing: string; running: boolean; compacting: boolean; onCompact: () => void; cost: number; cache?: number }) {
+function ContextCard({ info, doing, running, compacting, onCompact }: { info: SessionInfo; doing: string; running: boolean; compacting: boolean; onCompact: () => void }) {
   const [hl, setHl] = useState<number | null>(null);
-  const [more, setMore] = useState(false);
   const ctx = info.context;
-  const compactRow = info.compact && (
-    <Row
-      title="Compact now"
-      icon={<I.shrink size={14} />}
-      end={running ? "once the turn ends" : ctx?.autoCompact === false ? "auto-compact is off" : ctx?.compactAt && ctx.compactAt > ctx.used ? `${compact(ctx.compactAt - ctx.used)} until it does` : undefined}
-      disabled={running || !ctx || compacting}
-      onPick={onCompact}
-    />
+  const compactNote = running ? "Once the turn ends" : ctx?.autoCompact === false ? "Auto-compact is off" : ctx?.compactAt && ctx.compactAt > ctx.used ? `${compact(ctx.compactAt - ctx.used)} until the tool compacts` : undefined;
+  const compactB = info.compact && (
+    <button type="button" className="lc-btn l-focus" data-size="sm" title={compactNote} disabled={running || !ctx || compacting} onClick={onCompact}>
+      Compact
+    </button>
   );
-  const cacheRow = cache !== undefined && <Row title="From cache" icon={<I.layers size={14} />} end={`${Math.round(cache * 100)}%, ${cost > 0 ? `${money(cost)} so far` : "nothing to pay"}`} />;
   if (!ctx)
     return (
-      <div className="lc-cx">
-        <PanelHead end="Empty">Context</PanelHead>
-        <Row title="The first turn fills it" icon={<I.usage size={14} />} />
-        {compactRow}
-        {cacheRow}
-      </div>
+      <PaneSection label={<>Context <span className="lc-ss-ct">empty</span></>} note={compactB || undefined}>
+        <PaneRow icon={<I.usage size={14} />}>The first turn fills it</PaneRow>
+      </PaneSection>
     );
   const sources = ctx.sources?.length ? ctx.sources : ctx.measured ? asSources(ctx.parts) : [{ name: "Used", tokens: ctx.used, group: "talk" as const }];
   const pct = (n: number) => `${Math.min(100, (n / ctx.max) * 100)}%`;
   const share = Math.round((ctx.used / ctx.max) * 100);
   const known = Boolean(ctx.measured || ctx.sources?.length);
   return (
-    <div className="lc-cx">
-      <PanelHead end={<span className="l-num">{compact(ctx.used)} / {compact(ctx.max)}</span>}>
-        Context{doing && <span className="lc-spop-doing l-shimmer"> · {doing}</span>}
-      </PanelHead>
-      <div className="lc-cx-bar lc-spop-bar" role="img" aria-label={`${share}% of the context used${ctx.compactAt ? `; it compacts at ${compact(ctx.compactAt)}` : ""}`}>
-        <div className="lc-cx-ticks" data-hl={hl !== null || undefined}>
+    <PaneSection
+      label={
+        <>
+          Context <span className="lc-ss-ct">{share}% used</span>
+          {doing && <span className="lc-ss-ct l-shimmer"> · {doing}</span>}
+        </>
+      }
+      note={compactB || <span className="l-num">{compact(ctx.used)} / {compact(ctx.max)}</span>}
+    >
+      <div className="lc-ss-bar" role="img" aria-label={`${share}% of the context used${ctx.compactAt ? `; it compacts at ${compact(ctx.compactAt)}` : ""}`} title={`${compact(ctx.used)} of ${compact(ctx.max)}`}>
+        <div className="lc-dotbar" data-hl={hl !== null || undefined}>
           {sources.map((s, i) => (
-            <i key={`${i}:${s.group}:${s.name}`} data-g={s.group} data-on={hl === i || undefined} style={{ width: pct(s.tokens) }} />
+            <span key={`${i}:${s.group}:${s.name}`} data-on={hl === i || undefined} style={{ width: pct(s.tokens), "--lc-dotbar-c": GROUP_COLOUR[s.group] } as CSSProperties} />
           ))}
         </div>
-        {ctx.compactAt && ctx.autoCompact !== false && ctx.compactAt < ctx.max && <span className="lc-cx-mark" style={{ left: pct(ctx.compactAt) }} aria-hidden />}
+        {ctx.compactAt && ctx.autoCompact !== false && ctx.compactAt < ctx.max && <span className="lc-ss-mark" style={{ left: pct(ctx.compactAt) }} aria-hidden />}
       </div>
-      {/* "What fills it ›" always, as the board has it: where the tool gives only the total, it opens to say so. */}
-      <Row title={`${share}% used`} icon={<I.usage size={14} />} end={more ? "Fewer" : "What fills it"} chevron onPick={() => setMore((m) => !m)} />
-      {more && !known && <MenuFoot>As of the last turn. {info.provider === "claude" ? "Claude Code shows what fills it once its session is open here again." : `${info.tool} gives the total, not the parts.`}</MenuFoot>}
-      {/* Each source opens in place under its row, with what it takes; pointing at one lights its part of the bar. */}
-      {more && known && (
-        <div className="lc-spop-src" onMouseLeave={() => setHl(null)}>
-          {sources.map((s, i) => (
-            <div key={`${i}:${s.group}:${s.name}`} className="lc-spop-srow" title={`${s.detail ?? GROUP_WORD[s.group]} · ${s.tokens / ctx.max < 0.001 ? "under 0.1%" : `${((s.tokens / ctx.max) * 100).toFixed(1)}%`}`} onMouseEnter={() => setHl(i)}>
-              <i data-g={s.group} aria-hidden />
-              <span className="lc-spop-sn">{s.name}</span>
-              <span className="l-num">{compact(s.tokens)}</span>
-            </div>
-          ))}
-          {ctx.deferred ? <MenuFoot>{compact(ctx.deferred)} of tools wait until used</MenuFoot> : null}
-        </div>
-      )}
-      {compactRow}
-      {cacheRow}
-    </div>
+      {/* Each source with its round dot and its count; pointing at one lights its part of the bar. */}
+      <div className="lc-ss-src" onMouseLeave={() => setHl(null)}>
+        {sources.map((s, i) => (
+          <div key={`${i}:${s.group}:${s.name}`} className="lc-pane-row" title={`${s.detail ?? GROUP_WORD[s.group]} · ${s.tokens / ctx.max < 0.001 ? "under 0.1%" : `${((s.tokens / ctx.max) * 100).toFixed(1)}%`}`} onMouseEnter={() => setHl(i)}>
+            <span className="lc-pane-ri">
+              <i className="lc-ss-dot" style={{ background: GROUP_COLOUR[s.group] }} aria-hidden />
+            </span>
+            <span className="lc-pane-rt">{s.name}</span>
+            <span className="lc-pane-rv l-num">{compact(s.tokens)}</span>
+          </div>
+        ))}
+      </div>
+      {!known && <p className="lc-ss-note">As of the last turn. {info.provider === "claude" ? "Claude Code shows what fills it once its session is open here again." : `${info.tool} gives the total, not the parts.`}</p>}
+      {ctx.deferred ? <p className="lc-ss-note">{compact(ctx.deferred)} of tools wait until used</p> : null}
+    </PaneSection>
   );
 }
 

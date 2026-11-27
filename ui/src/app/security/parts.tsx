@@ -15,7 +15,7 @@ import "./security.css";
 /** A colour key for a part of a whole: a severity, or the second look's three answers. */
 export type Tone = Severity | "ok" | "no" | "na";
 
-/** How bad: a small square in the severity's colour and its word, drawn this one way everywhere; in a list's fixed column, or as wide as it is (`dot`) where it stands alone (a finding's own top row). */
+/** How bad: its word on a tag in the severity's colour, drawn this one way everywhere; in a list's fixed column, or as wide as it is (`dot`) where it stands alone (a finding's own top row). */
 export function SevMark({ severity, dot, children }: { severity: Severity; dot?: boolean; children?: ReactNode }) {
   return (
     <span className="ls-sev" data-sev={severity} data-dot={dot || undefined}>
@@ -25,27 +25,35 @@ export function SevMark({ severity, dot, children }: { severity: Severity; dot?:
   );
 }
 
-/** How bad, as its square alone, with its word for a screen reader: the icon of a finding's row in a pane (PaneRow). */
+/** How bad, as its round dot alone, with its word for a screen reader: the icon of a finding's row in a pane (PaneRow). */
 export const SevSquare = ({ severity }: { severity: Severity }) => (
   <span className="ls-sev ls-sev-sq" data-sev={severity} role="img" aria-label={SEVERITY_LABEL[severity]}>
     <i />
   </span>
 );
 
-/** One part of a whole, for Parts and Legend. */
-export type Part = { tone: Tone; value: number; label: string; title?: string };
+/** One part of a whole, for Parts and Legend: a tone the sheet knows, or its own `color` (a project's, "p0"…). */
+export type Part = { tone: Tone | `p${number}`; value: number; label: string; title?: string; color?: string };
 
-/** A whole split into parts: a block per part, as wide as its share, its count inside (Overview's "Open, by how bad"). Parts of 0 are left out. */
+/** The parts that break into dots when they lead a split: the worst severities, the ones that want you first. */
+const DOTTED: Part["tone"][] = ["critical", "high"];
+const DOT_TONE: Partial<Record<Part["tone"], string>> = { critical: "var(--ls-sv-c)", high: "var(--ls-sv-h)" };
+
+/** A whole split into parts: a thin bar per part, as wide as its share, the counts in the key under it (Overview's "How
+    bad"). Parts of 0 are left out. The first part, when it is a worst severity, is solid then dots (the halftone's fill). */
 export function Parts({ parts, label }: { parts: Part[]; label: string }) {
   const shown = parts.filter((p) => p.value > 0);
   return (
     <div className="ls-parts" role="img" aria-label={`${label}: ${parts.map((p) => `${p.value} ${p.label.toLowerCase()}`).join(", ")}`}>
       {shown.length ? (
-        shown.map((p) => (
-          <i key={p.tone} data-tone={p.tone} style={{ flex: p.value }} title={p.title ?? `${p.label}: ${p.value}`}>
-            {p.value}
-          </i>
-        ))
+        shown.map((p, i) => {
+          const dots = i === 0 && DOTTED.includes(p.tone);
+          return (
+            <i key={p.tone} data-tone={p.tone} data-dots={dots || undefined} style={{ flex: p.value, ...(p.color ? { background: p.color } : {}) }} title={p.title ?? `${p.label}: ${p.value}`}>
+              {dots && <span className="lc-ht lc-ht-fill" style={{ ["--lc-ht-c" as string]: DOT_TONE[p.tone] }} />}
+            </i>
+          );
+        })
       ) : (
         <i data-tone="na" style={{ flex: 1 }} />
       )}
@@ -53,13 +61,13 @@ export function Parts({ parts, label }: { parts: Part[]; label: string }) {
   );
 }
 
-/** The key under a split: a square per part and its word; `count` shows a part's number (dimmed at 0, as "Critical 0"). */
+/** The key under a split: a round dot per part and its word; `count` shows a part's number (dimmed at 0, as "Critical 0"). */
 export function Legend({ parts, count, tight }: { parts: Part[]; count?: (p: Part) => boolean; tight?: boolean }) {
   return (
     <div className="ls-leg" data-tight={tight || undefined}>
       {parts.map((p) => (
         <span key={p.tone} data-zero={(count?.(p) && p.value === 0) || undefined}>
-          <i data-tone={p.tone} />
+          <i data-tone={p.tone} style={p.color ? { background: p.color } : undefined} />
           {p.label}
           {count?.(p) && <b>{p.value}</b>}
         </span>
@@ -71,13 +79,14 @@ export function Legend({ parts, count, tight }: { parts: Part[]; count?: (p: Par
 /** Severity counts as parts, worst first. */
 export const sevParts = (c: SeverityCounts): Part[] => SEVERITIES.map((s) => ({ tone: s, value: c[s], label: SEVERITY_LABEL[s] }));
 
-/** The open findings by severity as a split with its key: Critical shows its count, so a 0 there reads as good news. */
+/** The open findings by severity as a split with its key: every part says its count, the bar has none; Critical shows
+    its count at 0 too, so a 0 there reads as good news. */
 export function SevSplit({ counts }: { counts: SeverityCounts }) {
   const parts = sevParts(counts);
   return (
     <>
       <Parts parts={parts} label="Open findings by severity" />
-      <Legend parts={parts} count={(p) => p.tone === "critical"} />
+      <Legend parts={parts} count={() => true} tight />
     </>
   );
 }

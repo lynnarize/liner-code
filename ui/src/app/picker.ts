@@ -5,8 +5,8 @@
 */
 import { lineupOf, nearestEffort } from "../../../contracts/src/index.ts";
 
-/** The picker's parts, in px: the rail of tools, the fixed middle card with the models, the side card, and the room between them. */
-export const PICKER = { rail: 40, gap: 8, list: 312, height: 476, side: 268 } as const;
+/** The picker's parts, in px, as board Menus draws them: the rail of tools, the fixed middle card with the models, the side card, and the room between them. */
+export const PICKER = { rail: 37, gap: 11, list: 320, height: 476, side: 288 } as const;
 /** The whole picker side by side: rail, list and card. */
 export const PICKER_WIDE = PICKER.rail + PICKER.gap + PICKER.list + PICKER.gap + PICKER.side;
 /** The picker without its side card, whose words then sit in one line at the list's foot. */

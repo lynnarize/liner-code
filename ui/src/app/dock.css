@@ -32,10 +32,9 @@
   color: var(--l-ink);
 }
 
-/* ---------- The session header's row of surfaces (Switcher.tsx) ----------
-   At the header's right end, after the Reviewer: 20px navigation icons in 32px buttons, as the sidebar's
-   own top icons; the lit one (the surface showing, the bottom panel up, the Session card pinned or ··· open) on
-   a wash in ink. */
+/* ---------- The toggles at the top row's right end, and the panel's head row (Switcher.tsx) ----------
+   Line and dot (board Main): 28px icon buttons with 16px icons in the third ink, a wash under the one you point at and the
+   hover-two plate under one that is on. The same button ends the panel's head row (Fill the window, Hide the panel). */
 .lc-sw {
   display: flex;
   flex: none;
@@ -46,8 +45,8 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: var(--lc-r-row);
@@ -63,8 +62,8 @@
   place-items: center;
 }
 .lc-sw-b > svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
 }
 .lc-sw-b[aria-pressed="true"],
 .lc-sw-b[data-open] {
@@ -76,15 +75,159 @@
     background: var(--l-wash);
     color: var(--l-ink);
   }
+  .lc-sw-b[aria-pressed="true"]:hover {
+    background: var(--l-wash-3);
+  }
 }
 /* A narrow header keeps the row whole: the title and the chips give way first (app.css, lc-bar). */
 @container lc-bar (max-width: 420px) {
   .lc-sw {
     gap: 0;
   }
-  .lc-sw-b {
-    width: 28px;
+}
+
+/* The panel's head row: on the chat's top row's line, 44 high, a hairline under it. Tabs 26 high at 12.5/500, a 8px corner,
+   the open one filled; each with its × while you point at it or it is open. The list scrolls sideways rather than wrap. */
+.lc-ptabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: var(--lc-head);
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-bottom: 0.5px solid var(--lc-hair);
+}
+.lc-ptabs-list {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+/* +, Fill the window and Hide the panel never shrink or scroll: only the tabs before them give way. */
+.lc-ptabs > :not(.lc-ptabs-list, .lc-grow) {
+  flex: none;
+}
+/* Past what dropping names could save the tabs scroll, faded over 28px at each end that has more (as .lc-fade-y does down a
+   scroller, across here). */
+.lc-ptabs-list[data-fade="start"] {
+  -webkit-mask-image: linear-gradient(to right, #0000 0, #000 28px);
+  mask-image: linear-gradient(to right, #0000 0, #000 28px);
+}
+.lc-ptabs-list[data-fade="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), #0000 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), #0000 100%);
+}
+.lc-ptabs-list[data-fade="both"] {
+  -webkit-mask-image: linear-gradient(to right, #0000 0, #000 28px, #000 calc(100% - 28px), #0000 100%);
+  mask-image: linear-gradient(to right, #0000 0, #000 28px, #000 calc(100% - 28px), #0000 100%);
+}
+.lc-ptab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 26px;
+  border-radius: var(--lc-r-row);
+  color: var(--l-ink-3);
+}
+.lc-ptab[data-on] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+.lc-ptab-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--lc-r-row);
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lc-ptab-b > svg {
+  flex: none;
+}
+/* A long name (an add-on's) is cut, so one tab never takes the row. */
+.lc-ptab-n {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-ptab-ct {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+/* The ×: in the tab's own room at its right end, shown with the tab; the tab's words make room for it then. */
+.lc-ptab-x {
+  display: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 4px 0 -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--l-ink-3);
+  cursor: pointer;
+}
+.lc-ptab:hover .lc-ptab-x,
+.lc-ptab:focus-within .lc-ptab-x {
+  display: inline-grid;
+}
+@media (hover: hover) {
+  .lc-ptab:not([data-on]):hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
   }
+  .lc-ptab-x:hover {
+    background: var(--l-wash-2);
+    color: var(--l-ink);
+  }
+}
+.lc-ptab-plus {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--lc-r-row);
+  color: var(--l-ink-3);
+}
+.lc-ptab-plus[data-open] {
+  background: var(--l-wash-2);
+  color: var(--l-ink);
+}
+@media (hover: hover) {
+  .lc-ptab-plus:hover {
+    background: var(--l-wash);
+    color: var(--l-ink);
+  }
+}
+/* "2 shells" in the + menu's Terminals line: a live dot before it, in the done green. */
+.lc-ptab-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lc-ptab-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--l-ok);
 }
 
 /* Two panes side by side: the dock half as wide again, the thread still keeping its 420px. */
@@ -573,7 +716,7 @@
   border: 0;
   border-radius: var(--lc-r-card);
   background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -608,7 +751,7 @@
   border-radius: 10px;
   outline: none;
   background: var(--l-surface);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   font: 13px/1.5 var(--l-font-body);
   color: var(--l-ink);
   resize: vertical;

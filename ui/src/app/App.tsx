@@ -874,7 +874,7 @@ export function App() {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Show the Session card" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Show session details" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
         { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, icon: <I.copy size={16} />, onSelect: () => copy(here.id, "the session id") },
         // A session's own rows in the words and order of its row menu in the sidebar (board RowMenu, row-menu.ts): Pin, Mark unread, Settle; Open beside, Export as Markdown; Stop it while it works, Archive.

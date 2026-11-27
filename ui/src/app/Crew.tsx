@@ -25,6 +25,7 @@ import { openSurface } from "./TopBar";
 import { ConfirmRow, Lines, MenuFoot, NamedSwitch, Num, PanelHead, Pop, Row, Sep } from "./ui";
 import { PANE_PICK, PANE_ROW, PANE_TOOL, PaneButton, PaneHead, PaneNote, PaneRow, PaneRowIn, PaneWords } from "./Pane";
 import { agentsReach, crewCounts, teamCounts, teamLine, teamTree, type TeamLevel } from "./chat-cards";
+import type { AgentRow, RowState } from "./agent-rows";
 import { SendBox } from "./Composer";
 import "./crew.css";
 
@@ -166,6 +167,21 @@ export function crewOf(items: Item[], thread: Thread, profiles: AgentProfile[], 
   if (!members.length) return null;
   const mode = pair ? "Fusion" : "One model";
   return { turn, mode, members, reviews, agents, earlier, plan, planEnd: planEnd(planStatus(items, turn)), start: members[0].at, lead: members.findLast((m) => m.status === "running") ?? members.at(-1), pair };
+}
+
+/**
+  The crew as the session details card's rows (Env.tsx, agent-rows.ts): each model's part, the agents it sent under it as
+  crewOf nests them, and the agents of earlier messages still at work. `asking`: the session waits on your answer, so the
+  agents still at work are held on you (amber). The Reviewer is a setting, not an agent you sent, so it has no row.
+*/
+export function crewRows(crew: Crew, providers: ProviderInfo[], asking: boolean): AgentRow[] {
+  const state = (t: Tool): RowState => {
+    const s = stateOf(t);
+    return s === "running" ? (asking ? "waits" : "working") : s === "done" ? "done" : s === "failed" ? "failed" : "idle";
+  };
+  const node = (n: AgentNode): AgentRow => ({ key: n.it.id, name: whoIs(n.it, providers), role: isSidekick(n.it) ? "Sidekick" : n.it.agent?.model ? modelLabel(n.it.agent.model, providers) : undefined, state: state(n.it), now: running(n.it) ? agentNow(n.it) : undefined, item: n.it.id, kids: n.kids.map(node) });
+  const members = crew.members.map((m): AgentRow => ({ key: m.key, name: m.name, role: m.role, state: m.status === "running" ? (asking ? "waits" : "working") : m.status === "error" ? "failed" : m.status === "stopped" ? "idle" : "done", kids: m.agents.map(node) }));
+  return [...members, ...crew.earlier.map((t) => node({ it: t, kids: [] }))];
 }
 
 /** The crew of a session, read from only the items that make it (not every streamed word). */
@@ -770,8 +786,8 @@ function PairShares({ thread }: { thread: Thread }) {
     <>
       {shares.models.map((m) => {
         const ref = m.ref.replace(/^@/, "");
-        const cost = m.costShare !== undefined;
-        const share = cost ? m.costShare! : m.tokenShare;
+        // Tokens only: this panel says no money (the owner's ruling, line and dot); the Usage and cost page (⌘⇧U) has it.
+        const share = m.tokenShare;
         const role = m.role === "lead" ? "Lead" : "Sidekick";
         return (
           <div key={`${m.role}:${m.ref}`} className="lc-crp-m">
@@ -781,12 +797,9 @@ function PairShares({ thread }: { thread: Thread }) {
               <span className="lc-crp-role">{role}</span>
             </b>
             <span className="lc-crp-n">{compact(m.tokens)} tokens</span>
-            <span className="lc-crp-share" role="img" aria-label={`${role}: ${pct(share)} of ${cost ? "cost" : "tokens"}${cost ? `, ${pct(m.tokenShare)} of tokens` : ""}`}>
+            <span className="lc-crp-share" role="img" aria-label={`${role}: ${pct(share)} of tokens`}>
               <i style={{ "--w": `${Math.max(0, Math.min(1, share)) * 100}%` } as CSSProperties} />
-              <span>
-                {pct(share)} of {cost ? "cost" : "tokens"}
-                {cost && <span className="lc-quiet"> · {pct(m.tokenShare)} of tokens</span>}
-              </span>
+              <span>{pct(share)} of tokens</span>
             </span>
           </div>
         );
@@ -801,7 +814,7 @@ function PairShares({ thread }: { thread: Thread }) {
       )}
       <div className="lc-crp-l lc-quiet">
         {live ? "Through the last finished turn. " : ""}
-        {shares.estimated ? "Tokens are counted. Cost is an estimate from list prices, and your plan may differ." : "Tokens and cost are as each tool reported them."}
+        {shares.estimated ? "Tokens are counted where a tool doesn't report them." : "Tokens are as each tool reported them."}
       </div>
       <div className="lc-crp-sep" />
     </>
@@ -1310,7 +1323,10 @@ function Lanes({ crew, now }: { crew: Crew; now: number }) {
         </div>
         {lanes.map((l) => (
           <LaneRow key={l.key} label={l.label}>
-            <span className="lc-cr-bar" data-live={l.live || undefined} style={{ left: pct(l.from), width: width(l.from, l.to) }} />
+            {/* A finished part is flat; the part still running is the shared halftone fill, solid then breaking into dots (board Panel). */}
+            <span className="lc-cr-bar" data-live={l.live || undefined} style={{ left: pct(l.from), width: width(l.from, l.to) }}>
+              {l.live && <i className="lc-ht lc-ht-fill lc-ht-prog" aria-hidden />}
+            </span>
             {l.wait && <span className="lc-cr-bar" data-wait style={{ left: pct(Math.max(l.from, l.wait[0])), width: width(Math.max(l.from, l.wait[0]), Math.min(l.to, l.wait[1])) }} title="Waiting on its agents" />}
           </LaneRow>
         ))}
@@ -1570,31 +1586,13 @@ function Measured({ threadId, files, frames = [], running }: { threadId: string;
   );
 }
 
-/** What the session has used: tokens, the cache, the cost, the context, the tools. */
+/** What the session has used: tokens, the context, the tools (no money: the Usage and cost page, ⌘⇧U, has that). */
 /** SessionUse's view: every tool call and every turn, and no reply's words. */
 const isToolOrTurn = (it: Item) => it.kind === "tool" || it.kind === "turn";
 function SessionUse({ thread }: { thread: Thread }) {
   const items = useItemsWhere(thread.id, isToolOrTurn);
-  const settings = useEngine((s) => s.settings);
-  const keys = useEngine((s) => s.keys);
-  const providers = useEngine((s) => s.providers);
-  const agents = useEngine((s) => s.agents);
   const u = thread.usage;
   const tools = items.filter((x) => x.kind === "tool").length;
-  const turns = items.filter((x): x is Turn => x.kind === "turn");
-  const coder = agentOf(thread.agent, agents, providers);
-  // No cost reported: say who pays, as the engine bills it (runtime.ts gives Claude Code the Anthropic
-  // key when it bills to the key, and Codex the OpenAI key whenever one is saved).
-  const ran = [...new Set([...turns.map((t) => t.model), thread.model ?? coder.model].filter(Boolean).map((m) => m!.replace(/^@/, "").split(":")[0]))];
-  const payer = (id: string) => {
-    if (id === "demo") return "Nothing: a scripted run";
-    const p = providers.find((x) => x.id === id);
-    if (p?.endpoint) return `Billed by ${p.label}`;
-    if (id === "claude" && settings.claudeBilling === "key" && keys.includes("anthropic")) return "Billed to your Anthropic key";
-    if (id === "codex" && keys.includes("openai")) return "Billed to your OpenAI key";
-    return "Included in your plan";
-  };
-  const unpriced = [...new Set(ran.map(payer))].join("; ") || "Included in your plan";
   return (
     <>
       <div className="lc-cr-h">
@@ -1602,8 +1600,7 @@ function SessionUse({ thread }: { thread: Thread }) {
       </div>
       {/* Rows of the frame (PaneRow), not a table: the pane's body has no boxes or wells (SPEC rule 3). */}
       <PaneRow icon={<I.usage size={14} />} value={<Num as="compact" value={u.inputTokens + u.cacheReadTokens + u.outputTokens} />}>Tokens</PaneRow>
-      <PaneRow icon={<I.layers size={14} />} value={u.inputTokens + u.cacheReadTokens ? <Num as="percent" value={u.cacheReadTokens / (u.inputTokens + u.cacheReadTokens)} /> : "–"}>From cache</PaneRow>
-      <PaneRow icon={<I.speed size={14} />} value={u.costUsd ? <Num as="money" value={u.costUsd} /> : unpriced} quiet={!u.costUsd}>Cost</PaneRow>
+      {/* No Cost and no From cache (line and dot, the owner's ruling on this panel): the Usage and cost page (⌘⇧U) says what a session spent. */}
       {u.contextWindow ? (
         <PaneRow icon={<I.chip size={14} />} value={<>{compact(u.contextTokens ?? 0)} of {compact(u.contextWindow)}</>}>Context</PaneRow>
       ) : null}

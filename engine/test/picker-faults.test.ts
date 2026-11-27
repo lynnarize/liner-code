@@ -175,44 +175,76 @@ test("Effort is one slider of the model's own levels with no shared list of leve
   // The fill and the knob move only as decoration: Reduce motion stops them.
   assert.match(sheet("models.css"), /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-slide-fill,\s*\.lc-pk-slide-knob \{\s*transition: none;/);
   const css = sheet("models.css");
+  // The owner's track (SPEC 4.8, board Menus .eff): round, 24 high; the fill is halftone.css's .lc-dither, solid accent with
+  // light round dots coming in sparse to a checkerboard at the knob, the dots only before the knob, and the fill running
+  // on round the knob to end as a half circle 2px outside it; a round white knob 20 across, 2 in.
   assert.equal(value(blocks(css, ".lc-pk-slide")[0], "height"), "24px");
-  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "border-radius"), "8px");
-  // The fill is the model's maker's colour, the app's accent for one drawn in ink, a gradient laid across the whole track.
-  assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background"), "var(--lc-pk-tint, var(--l-accent))", "the fill isn't in the model's colour");
-  assert.equal(value(blocks(css, ".lc-pk-slide-fill")[0], "background-size"), "100cqw 100%", "a gradient is squeezed into a low level's fill");
-  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "container-type"), "inline-size");
-  assert.match(slider, /"--lc-pk-tint": tint/, "the slider doesn't take its model's colour");
-  for (const where of ["function ModelCard(", "export function EffortPick("]) assert.match(body(models, where), /tint=\{[^}]*tintPaint\(markOf\(/, `${where} doesn't hand the slider its model's colour`);
-  // A halftone of dots runs small and faint to big and bright across the whole track, and the fill shows as much of it as the level reaches.
-  assert.match(models, /const DOTS = Array\.from\(\{ length: DOT_COLUMNS \* 3 \}, \(_, k\) => \(\{ at: \(k % DOT_COLUMNS\) \/ \(DOT_COLUMNS - 1\)/, "a dot doesn't know how far along the track it stands");
-  assert.match(slider, /<span className="lc-pk-slide-dots">/);
-  assert.doesNotMatch(models, /lc-pk-slide-ascii|const RAMP/, "the ASCII ramp is left behind");
-  assert.equal(value(blocks(css, ".lc-pk-slide-dots")[0], "width"), "100cqw", "the dots are squeezed into the fill instead of cut by it");
-  assert.equal(value(blocks(css, ".lc-pk-slide-dots > i")[0], "width"), "calc(1px + var(--d) * 2.4px)", "the dots don't grow toward the high end");
-  assert.equal(value(blocks(css, ".lc-pk-slide-dots > i")[0], "border-radius"), "50%", "the dots aren't round");
-  assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "width"), "12px");
-  assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "height"), "18px");
-  assert.equal(value(blocks(css, ".lc-pk-slide-knob")[0], "border-radius"), "5px");
+  assert.equal(value(blocks(css, ".lc-pk-slide")[0], "border-radius"), "999px", "the track isn't round");
+  assert.match(slider, /<span className="lc-dither lc-pk-slide-fill" aria-hidden>\s*\{DITHER\.map\(\(k\) => \(\s*<i key=\{k\} \/>/, "the fill isn't the shared dither with its eight layers");
+  assert.match(models, /const DITHER = \[0, 1, 2, 3, 4, 5, 6, 7\];/, "the dither doesn't have its eight layers");
+  assert.match(slider, /\{at >= 0 && \(\s*<span className="lc-dither/, "an empty track (the tool's own default) still draws a fill");
+  assert.doesNotMatch(slider, /--lc-pk-tint/, "the fill takes the model's maker's colour again, not the one accent");
+  assert.doesNotMatch(models, /lc-pk-slide-dots|const DOTS|lc-pk-slide-ascii|const RAMP/, "an older fill is left behind");
+  const fill = blocks(css, ".lc-pk-slide-fill")[0];
+  // The knob's centre travels from 12 to the width less 12; the fill reaches 12 past it, so its round end is just outside the knob.
+  assert.equal(value(fill, "width"), "calc(var(--lc-pk-fill, 0) * (100% - 24px) + 24px)", "the fill doesn't end as a half circle just outside the knob");
+  assert.equal(value(fill, "background"), undefined, "the fill paints over the dither's accent");
+  const knob = blocks(css, ".lc-pk-slide-knob")[0];
+  assert.equal(value(knob, "left"), "calc(2px + var(--lc-pk-fill, 0) * (100% - 24px))");
+  assert.equal(value(knob, "width"), "20px");
+  assert.equal(value(knob, "height"), "20px");
+  assert.equal(value(knob, "border-radius"), "50%", "the knob isn't round");
+  const dither = sheet("halftone.css");
+  assert.equal(value(blocks(dither, ".lc-dither")[0], "background"), "var(--lc-act)", "the dither's fill isn't the accent");
+  assert.equal(value(blocks(dither, ".lc-dither > i")[0], "right"), "12px", "the dots run past the knob's centre");
+  assert.match(value(blocks(dither, ".lc-dither > i:nth-child(1)")[0], "background-image") ?? "", /radial-gradient\(circle/, "the dots aren't round");
+  // The small ticks stand on the stops past the knob only.
+  assert.equal(value(blocks(css, ".lc-pk-slide-stop[data-tick]::after")[0], "width"), "2px");
+  assert.equal(value(blocks(css, ".lc-pk-slide-stop[data-tick]::after")[0], "height"), "6px");
 });
 
-test("Fusion's pair at the row's end is cut with an ellipsis and whole in its tooltip, and the word Fusion never shrinks", () => {
+test("Fusion is a small card under the model's card, Enable Fusion with a switch, and the sidekick shows as one row under it only while it is on", () => {
+  // The owner's ruling (SPEC 4.7, board Menus): no Fusion row pinned under Find, and no Sidekick row on the model's card.
   const composer = code("Composer.tsx");
-  assert.match(composer, /<span className="lc-who-row-t lc-pk-word">Fusion<\/span>\s*(\{\}\s*)?<span className="lc-pk-pair" title=\{note\}>/, "the pair is clipped mid-letter with no tooltip");
-  assert.match(composer, /shortName\(label\(cast\.lead\)\)\} \+ \$\{shortName\(label\(cast\.sidekick\)\)\}/, "the pair doesn't use each model's short name");
-  assert.match(code("Models.tsx"), /<span className="lc-pk-pair" title=\{c\.note\}>/, "a pinned choice's note is clipped mid-letter");
+  const panel = body(composer, "function WhoPanel(");
+  assert.doesNotMatch(panel, /data-way="pair"|const fusionRow|first=\{solo \? undefined : fusionRow\}/, "Fusion is still a row pinned under Find");
+  assert.match(panel, /<button type="button" role="switch" aria-checked=\{own\} className="lc-who-row lc-pk-fzrow l-focus"[^\n]*>\s*<FusionMark size=\{14\} \/>\s*<span className="lc-who-row-t">Enable Fusion<\/span>\s*<span className="lc-pk-sw" data-on=\{own \|\| undefined\} aria-hidden \/>/, "Enable Fusion isn't its mark, its words and a switch");
+  assert.match(panel, /\{own && side && \(\s*<button type="button" className="lc-who-row lc-pk-sidek l-focus" data-rove data-holds[^\n]*onClick=\{\(\) => open\("fusion"\)\}>\s*<ModelMark kind=\{markOf\(side\)\} size=\{14\} \/>\s*<span className="lc-who-row-t">\{label\(side\)\}<\/span>\s*<em>sidekick<\/em>\s*<I\.chevR/, "the sidekick's row shows while Fusion is off, or doesn't open Fusion's card");
+  assert.match(panel, /under=\{solo \|\| way === "demo" \? undefined : \(_t, open\) => fusionSwitch\(open\)\}/, "the Fusion card is offered in a side chat or for the Demo run");
+  // Everything the old Fusion card could do is behind that row: Lead, Sidekick, How it works, the cost and the lead's effort.
+  assert.match(panel, /card=\{\(key, _t, inPlace\) => \(key === "fusion" && !solo && own \? fusionCard\(pairTool, inPlace\) : undefined\)\}/, "the sidekick's row opens nothing");
+  for (const part of ['aria-label={`Lead: ${pLeadName}. Change it`}', 'aria-label={`Sidekick: ${label(pSide)}. Change it`}', '<span className="lc-who-row-t">How it works</span>', "<PairCost lead={pLeadModel}"]) assert.ok(panel.includes(part), `Fusion's card lost ${part}`);
+  // The model's own card has no Sidekick row.
+  assert.doesNotMatch(body(code("Models.tsx"), "function ModelCard("), /[Ss]idekick/, "the model's card has a Sidekick row");
+  // The picker puts the caller's card under the side card, and turns the side card to Fusion's with a way back.
+  const picker = body(code("Models.tsx"), "export function ModelPicker(");
+  assert.match(picker, /\{underCard && \(\s*<section ref=\{cardUnder\} className="lc-pk-card lc-pk-fz">/);
+  assert.match(picker, /\{heldCard && !heldCard\.ownBack && <BackRow name=\{heldCard\.label\} onBack=\{unhold\} \/>\}/);
+  // The switch is drawn as the app's: the control fill off, the accent on.
   const css = sheet("models.css");
-  assert.equal(value(blocks(css, ".lc-who-row-t.lc-pk-word")[0] ?? "", "flex"), "none", "the word Fusion gives way to the pair");
-  const pair = blocks(css, ".lc-pk-pair")[0] ?? "";
-  assert.equal(value(pair, "display"), "block", "an ellipsis can't cut text in a flex box");
-  assert.equal(value(pair, "text-overflow"), "ellipsis");
-  assert.equal(value(pair, "min-width"), "0");
+  assert.equal(value(blocks(css, ".lc-pk-sw")[0], "background"), "var(--lc-g4)");
+  assert.equal(value(blocks(css, ".lc-pk-sw[data-on]")[0], "background"), "var(--lc-act)");
+  // StartPick's pinned Fusion choice (Settings) keeps its pair cut with an ellipsis.
+  assert.match(code("Models.tsx"), /<span className="lc-pk-pair" title=\{c\.note\}>/, "a pinned choice's note is clipped mid-letter");
+});
+
+test("With a sidekick on, the message box shows one chip, Fusion with its two strokes, and never two models", () => {
+  // The owner's ruling (SPEC 4.6, board Main).
+  const composer = code("Composer.tsx");
+  const chip = composer.slice(composer.indexOf("const whoChip = fused ? ("), composer.indexOf("const LevelIcon"));
+  assert.match(composer, /const fused = Boolean\(settings\.sidekick\) && settings\.agent !== "demo";/);
+  const on = chip.slice(0, chip.indexOf(") : ("));
+  assert.match(on, /<FusionMark size=\{14\} \/>\s*<span className="lc-chip-name" title=\{whoNow\.full\}>\s*Fusion\s*<\/span>/, "the chip isn't Fusion's mark and its name");
+  assert.doesNotMatch(on, /ModelMark|lc-who-eff|whoNow\.name|Glyph/, "the Fusion chip shows a model, an agent or an effort");
+  const fz = body(code("Models.tsx"), "export function FusionMark(");
+  assert.match(fz, /<path d="M3\.45 13\.05 7\.05 2\.95" stroke="currentColor" \/>\s*<path d="M8\.95 13\.05 12\.55 2\.95" stroke="var\(--lc-act\)" \/>/, "Fusion's mark isn't the two strokes, the second in the accent");
 });
 
 test("The rail and the cards start on one line, and a hairline parts the models' scroll from the foot rows", () => {
   const css = sheet("models.css");
   assert.equal(value(blocks(css, ".lc-pk")[0], "align-items"), "start", "the rail and the cards don't share their top");
   for (const sel of [".lc-pk-rail", ".lc-pk-mid", ".lc-pk-side"]) for (const b of blocks(css, sel)) assert.equal(value(b, "margin-top") ?? value(b, "margin"), undefined, `${sel} is moved off the shared top`);
-  assert.equal(value(blocks(css, ".lc-pk-foot")[0], "border-top"), "1px solid var(--l-line)", "nothing parts the scroll from the foot rows");
+  assert.equal(value(blocks(css, ".lc-pk-foot")[0], "border-top"), "0.5px solid var(--lc-line2)", "nothing parts the scroll from the foot rows");
   assert.equal(value(blocks(css, ".lc-pk-scroll")[0], "min-height"), "0");
 });
 
@@ -268,12 +300,13 @@ test("In the picker the marks are in their makers' colours, a row's corner follo
   assert.match(brands, /claude: "#D97757"/);
   assert.match(brands, /gemini: \[/, "Gemini isn't its gradient");
   assert.doesNotMatch(brands, /\n  (openai|grok|cursor|opencode|ollama): "#/, "a maker drawn in black is given a colour");
-  // A row 4 in from a 14 card's edge takes 10, so the Star at the card's foot and the foot rows follow its corners.
-  assert.equal(value(blocks(css, ".lc-pk[data-side]")[0] ?? "", "--lc-pk-r"), "10px");
+  // A row 4 in from a card's 10 edge takes the menu row's 6, so the Star at the card's foot and the foot rows follow its corners.
+  assert.equal(value(blocks(css, ".lc-pk[data-side]")[0] ?? "", "--lc-pk-r"), "6px");
   assert.equal(value(blocks(css, ".lc-pk-side")[0], "padding"), "4px");
   assert.equal(value(blocks(css, ".lc-pk-star")[0], "border-radius"), "var(--lc-pk-r)", "the Star's corners don't follow the card's");
   assert.equal(value(blocks(css, ".lc-pk .lc-who-row")[0], "border-radius"), "var(--lc-pk-r)");
-  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-rail")[0], "border-radius"), "14px", "the rail's corner isn't the cards'");
+  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-rail")[0], "border-radius"), "var(--lc-r-field)", "the rail's corner isn't the cards'");
+  assert.equal(value(blocks(css, ".lc-pk[data-side] .lc-pk-card")[0], "border-radius"), "var(--lc-r-field)", "the cards aren't in the menu shape");
   // One plate slides under the rows; the rows in the list don't light themselves.
   const models = code("Models.tsx");
   assert.match(body(models, "export function ModelPicker("), /<HoverPlate within=\{scroll\} reset=/, "the list has no sliding plate");
@@ -283,19 +316,20 @@ test("In the picker the marks are in their makers' colours, a row's corner follo
   assert.match(body(models, "export function ModelPicker("), /useEasedHeight\(card_, cardIn\)/);
   assert.match(value(blocks(css, ".lc-pk-side")[0], "transition") ?? "", /^height 220ms/);
   assert.equal(value(blocks(css, ".lc-pk-side")[0], "overflow"), "hidden", "a scrollbar shows while the card eases");
-  assert.match(body(models, "export function ModelPicker("), /<div key=\{shown\?\.label \?\? ""\} className="lc-pk-side-in lc-pk-fade">/);
+  assert.match(body(models, "export function ModelPicker("), /<div key=\{`\$\{held \? "held:" : ""\}\$\{shown\?\.label \?\? ""\}`\} className="lc-pk-side-in lc-pk-fade">/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-fade \{\s*animation: none;/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-side \{\s*transition: none;/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.lc-pk-side,\s*\.lc-pk-col,/);
 });
 
 test("The side card drops to the list's foot beside a row pointed at in the list's lower half, and stands at its top otherwise, never in between", () => {
   const picker = body(code("Models.tsx"), "export function ModelPicker(");
   assert.match(picker, /setLow\(r\.top \+ r\.height \/ 2 > a\.top \+ a\.height \/ 2\)/, "the card's place isn't judged by which half of the list the row is in");
   assert.match(picker, /if \(!m \|\| !row\) return setLow\(false\);/, "with nothing pointed at the card isn't at the top");
-  assert.match(picker, /className="lc-pk-card lc-pk-side" data-low=\{low \|\| undefined\}/);
+  // The side card and Fusion's card under it move as one column.
+  assert.match(picker, /<div className="lc-pk-col" data-low=\{low \|\| undefined\}>/);
   const css = sheet("models.css");
-  assert.equal(value(blocks(css, ".lc-pk-side[data-low]")[0] ?? "", "transform"), "translateY(calc(var(--lc-pk-tall) - 100%))", "the dropped card's bottom isn't on the list's bottom");
-  assert.match(value(blocks(css, ".lc-pk-side")[0], "transition") ?? "", /transform 220ms/, "the card jumps between top and foot");
+  assert.equal(value(blocks(css, ".lc-pk-col[data-low]")[0] ?? "", "transform"), "translateY(calc(var(--lc-pk-tall) - 100%))", "the dropped card's bottom isn't on the list's bottom");
+  assert.match(value(blocks(css, ".lc-pk-col")[0], "transition") ?? "", /transform 220ms/, "the card jumps between top and foot");
 });
 
 test("Your agents is a place on the picker's rail under the tools, not a row at the middle card's foot, so the models keep the card's height", () => {
@@ -330,6 +364,19 @@ test("Picking an effort level on a model's card leaves the picker open, whether 
   assert.ok(at >= 0, "the composer's effort hook is gone");
   const hook = composer.slice(at, composer.indexOf("\n  };", at));
   assert.match(hook, /if \(ref === runs\) return onSettings\(\{ effort: id \}\);/);
-  assert.match(hook, /onSettings\(\{ agent: `@\$\{ref\}`, sidekick: undefined, model: undefined, effort: id \}\);/, "another model's level doesn't pick that model");
+  // Another model's level picks that model to lead; with Fusion on, the sidekick stays.
+  assert.match(hook, /onSettings\(\{ agent: `@\$\{ref\}`, \.\.\.\(own \? \{\} : \{ sidekick: undefined \}\), model: undefined, effort: id \}\);/, "another model's level doesn't pick that model");
+});
+
+test("With Fusion on, the sidekick's model is refused as the lead the same way whether picked in the list or at a level", () => {
+  const composer = code("Composer.tsx");
+  const refuse = composer.slice(composer.indexOf("const sidekickAsLead = (ref: string) => {"), composer.indexOf("const pickOne = "));
+  assert.match(refuse, /if \(!own \|\| ref !== settings\.sidekick\) return false;\s*toast\("The lead and its sidekick are two different models"/, "the sidekick's model isn't refused with the toast");
+  const one = composer.slice(composer.indexOf("const pickOne = "), composer.indexOf("const pickAgent = "));
+  assert.match(one, /if \(sidekickAsLead\(ref\)\) return;/, "the list's pick of the sidekick's model isn't refused");
+  const at = composer.indexOf("const effort: EffortHook = {");
+  const hook = composer.slice(at, composer.indexOf("\n  };", at));
+  // Refused before anything is changed: a level pick of the sidekick's model must not drop the sidekick and make it lead.
+  assert.match(hook, /if \(sidekickAsLead\(ref\)\) return;\s*onSettings\(\{ agent: `@\$\{ref\}`/, "a level pick of the sidekick's model makes it lead, dropping the sidekick");
   assert.doesNotMatch(hook, /close\(\)|shut\(\)/, "an effort pick closes the picker");
 });

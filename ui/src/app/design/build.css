@@ -45,7 +45,7 @@
   padding: 10px 0 14px;
 }
 .ld-bt + .ld-bt {
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--l-line);
 }
 .ld-bt-h {
   display: flex;
@@ -346,9 +346,9 @@ button.ld-bt-n {
   max-width: min(720px, calc(100% - 120px));
   height: 44px;
   padding: 0 6px 0 14px;
-  border-radius: 14px;
+  border-radius: var(--lc-r-card);
   background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line)), 0 12px 32px -16px oklch(0 0 0 / 0.3);
+  box-shadow: 0 0 0 0.5px var(--lc-hair, var(--l-line)), 0 12px 32px -16px oklch(0 0 0 / 0.3);
   font-size: 13px;
   color: var(--l-ink-2);
   transform: translateX(-50%);

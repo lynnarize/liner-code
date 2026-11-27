@@ -8,7 +8,7 @@
 
   `end` is for the face: what sits at the right of the head (the column's own Hide).
 */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { NodeRef } from "@contracts";
 import { PaneHead, PaneRow } from "../Pane";
 import { frameOf, useDesign } from "./store";
@@ -59,6 +59,15 @@ export function Inspector({ end }: { end?: ReactNode } = {}) {
       // kept for this view only
     }
   };
+  // The top row's Build asks for the Build tab (BuildTab.tsx showInspectorTab).
+  useEffect(() => {
+    const hear = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (TABS.some((t) => t.id === id)) pick(id);
+    };
+    window.addEventListener("ld:insp-tab", hear);
+    return () => window.removeEventListener("ld:insp-tab", hear);
+  }, []);
   const onKey = (e: React.KeyboardEvent) => {
     const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
@@ -84,7 +93,7 @@ export function Inspector({ end }: { end?: ReactNode } = {}) {
   );
   return (
     <aside className="ld-insp" aria-label="Inspector">
-      <PaneHead name={<span className="ld-sr">Inspector</span>} shows={tabs} tools={end} canvas={false} />
+      <PaneHead name={<span className="ld-sr">Inspector</span>} shows={tabs} tools={end} />
       <div className="ld-insp-pane" id="ld-insp-pane" role="tabpanel" aria-labelledby={`ld-tab-${on.id}`}>
         {on.head !== false && <Head />}
         {on.render()}

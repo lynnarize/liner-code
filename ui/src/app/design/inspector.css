@@ -36,27 +36,26 @@
   min-width: 0;
   margin-left: -8px;
 }
-/* The tab that shows reads as a surface's name (13.5, 600, ink); the others are the head's quiet words. */
+/* The tabs are chips, as the panel's tabs are (board Design): 26 high at 12.5/500, the one that shows on a washed plate. */
 .ld-itab {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 5px;
-  height: 28px;
+  height: 26px;
   padding: 0 8px;
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--l-ink-3);
   white-space: nowrap;
   cursor: pointer;
 }
 .ld-itab[aria-selected="true"] {
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  background: var(--l-wash-2);
   color: var(--l-ink);
 }
 @media (hover: hover) {
@@ -138,7 +137,6 @@
 @keyframes ld-in {
   from {
     opacity: 0;
-    filter: blur(4px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -270,11 +268,12 @@
   box-sizing: border-box;
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
-  background: var(--lc-well);
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
   color: var(--l-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: left;
@@ -364,8 +363,9 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: var(--lc-r-row);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  /* Round, as board Design draws the lean's colours. */
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   cursor: pointer;
 }
 span.ld-swt {
@@ -373,9 +373,9 @@ span.ld-swt {
 }
 .ld-swt[aria-pressed="true"] {
   box-shadow:
-    inset 0 0 0 1px var(--l-line),
+    inset 0 0 0 0.5px var(--lc-line2),
     0 0 0 2px var(--lc-paper),
-    0 0 0 3.5px var(--l-accent);
+    0 0 0 3.5px var(--l-ink);
 }
 .ld-nm {
   min-width: 0;
@@ -395,8 +395,8 @@ span.ld-swt {
   margin: 2px 0 6px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: color-mix(in oklab, var(--l-warn) 14%, transparent);
-  color: var(--l-ink-2);
+  background: color-mix(in oklab, var(--l-warn) 12%, transparent);
+  color: var(--l-warn-text, var(--l-warn));
   font-size: 13px;
   line-height: 1.45;
 }

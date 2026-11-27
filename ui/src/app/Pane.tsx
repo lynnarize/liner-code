@@ -17,11 +17,13 @@
       <PaneButton ink>Commit 2 files</PaneButton>
     </PaneFoot>
 
-  The panel (Panel.tsx) puts each surface in a PaneFrame, which gives its head the surface's name,
-  Full canvas and Close (Close hides the panel), and draws a plain head with the name alone until the
-  surface draws its own PaneHead. Outside the panel (a popup, a page) there is no frame: PaneHead then
-  draws no Full canvas and no Close unless it is handed `onClose`, so the same surface can be drawn in
-  the panel, the full canvas and a popup.
+  The panel (Panel.tsx) puts each surface in a PaneFrame. Since line and dot (2026-11-27) the panel's own
+  head row names the open surfaces as tabs and carries Fill the window and Hide the panel (Switcher.tsx
+  PanelTabs), so inside the frame a PaneHead is the surface's own 40px bar under it: its way back, what it
+  shows and at most three tools, and its name only where it says more than the tab (one agent's). A
+  PaneHead with nothing of that draws nothing. Outside the panel (a popup, a page) there is no frame:
+  PaneHead is then the 44px head it always was, with no Full canvas and no Close unless it is handed
+  `onClose`, so the same surface can be drawn in the panel, the full canvas and a popup.
 */
 import { createContext, forwardRef, useContext, useLayoutEffect, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { cx } from "@liner/lib/hooks";
@@ -34,22 +36,12 @@ type Frame = { name: string; full: boolean; onFull?: () => void; onClose?: () =>
 const FrameCtx = createContext<Frame | null>(null);
 
 /**
-  The panel's frame round one surface (Panel.tsx uses it; a surface never does). Until the surface
-  draws a PaneHead of its own, the frame draws one with the name alone, so every surface has a head
-  with Full canvas and Close from the start.
+  The panel's frame round one surface (Panel.tsx uses it; a surface never does). The panel's head row says
+  the surface's name and carries Fill the window and Hide the panel, so the frame draws no head of its own.
 */
 export function PaneFrame({ name, full, onFull, onClose, children }: { name: string; full: boolean; onFull?: () => void; onClose?: () => void; children: ReactNode }) {
-  const [own, setOwn] = useState(0);
-  const [claim] = useState(() => () => {
-    setOwn((n) => n + 1);
-    return () => setOwn((n) => n - 1);
-  });
-  return (
-    <FrameCtx.Provider value={{ name, full, onFull, onClose, claim }}>
-      {own === 0 && <HeadRow frame={{ name, full, onFull, onClose }} name={name} />}
-      {children}
-    </FrameCtx.Provider>
-  );
+  const [claim] = useState(() => () => () => {});
+  return <FrameCtx.Provider value={{ name, full, onFull, onClose, claim }}>{children}</FrameCtx.Provider>;
 }
 
 /** Whether a surface is drawn in the panel (and over the whole paper), or somewhere else (a popup, a page). */
@@ -59,44 +51,49 @@ export function usePaneFrame() {
 }
 
 /**
-  A surface's head, 44px with a hairline under it, on the session header's row:
+  A surface's head. In the panel it is the surface's own 40px bar under the head row's tabs (Panel.tsx), with no
+  Full canvas or Close: the head row has Fill the window and Hide the panel, and the tab its ×. Outside the panel
+  it is 44px with a hairline under it:
   - `name`: the surface's name (13.5px, 600). Left out, the panel's name for it.
   - `lead`: before the name, for a way back (one agent's back arrow).
   - `shows`: the one thing it shows: a picker (a Pop with triggerClass PANE_PICK), a field (PaneField),
     or a few quiet words (PaneWords).
   - `tools`: at most three icon buttons that act on the view (PaneTool, or a Pop with triggerClass PANE_TOOL).
-  Then, a little apart, Full canvas and Close, which the panel gives it; `onClose` stands in for Close where
-  there is no panel (a popup), and `canvas={false}` leaves Full canvas out. `closeLabel` is the Close's own
-  name and tooltip where it hides something other than the panel ("Hide inspector (⌥⌘I)"). `hideName` keeps
-  the name for a screen reader only, where what it shows already says it (the inspector's tabs).
+  Then, a little apart, Close where there is no panel, when it is handed `onClose` (a popup). `closeLabel` is
+  the Close's own name and tooltip where it hides something other than the panel ("Hide inspector (⌥⌘I)").
+  `hideName` keeps the name for a screen reader only, where what it shows already says it (the inspector's tabs).
 */
-export function PaneHead({ name, lead, shows, tools, canvas = true, onClose, closeLabel, hideName }: { name?: ReactNode; lead?: ReactNode; shows?: ReactNode; tools?: ReactNode; canvas?: boolean; onClose?: () => void; closeLabel?: string; hideName?: boolean }) {
+export function PaneHead({ name, lead, shows, tools, onClose, closeLabel, hideName }: { name?: ReactNode; lead?: ReactNode; shows?: ReactNode; tools?: ReactNode; onClose?: () => void; closeLabel?: string; hideName?: boolean }) {
   const frame = useContext(FrameCtx);
   useLayoutEffect(() => frame?.claim(), [frame?.claim]);
-  return <HeadRow frame={frame ? { ...frame, onFull: canvas ? frame.onFull : undefined, onClose: onClose ?? frame.onClose } : { name: "", full: false, onClose }} name={name ?? frame?.name ?? ""} lead={lead} shows={shows} tools={tools} closeLabel={closeLabel} hideName={hideName} />;
-}
-
-function HeadRow({ frame, name, lead, shows, tools, closeLabel = "Close the panel", hideName }: { frame: Omit<Frame, "claim">; name: ReactNode; lead?: ReactNode; shows?: ReactNode; tools?: ReactNode; closeLabel?: string; hideName?: boolean }) {
-  const end = frame.onFull || frame.onClose;
+  if (frame) {
+    // In the panel: the surface's own bar, under the head row's tabs. The name only where it is not the tab's.
+    const own = name !== undefined && name !== frame.name && !hideName ? name : null;
+    if (!lead && !own && !shows && !tools) return null;
+    return (
+      <div className="lc-pane-head lc-pane-bar">
+        {lead}
+        {own !== null && <h2 className="lc-pane-name">{own}</h2>}
+        {shows && <div className="lc-pane-shows">{shows}</div>}
+        <span className="lc-grow" />
+        {tools && <div className="lc-pane-tools">{tools}</div>}
+      </div>
+    );
+  }
+  // Outside the panel: the 44px head, with Close only where it is handed one.
+  const label = closeLabel ?? "Close the panel";
   return (
     <div className="lc-pane-head">
       {lead}
-      <h2 className={hideName ? "lc-pane-name l-sr-only" : "lc-pane-name"}>{name}</h2>
+      <h2 className={hideName ? "lc-pane-name l-sr-only" : "lc-pane-name"}>{name ?? ""}</h2>
       {shows && <div className="lc-pane-shows">{shows}</div>}
       <span className="lc-grow" />
       {tools && <div className="lc-pane-tools">{tools}</div>}
-      {end && (
+      {onClose && (
         <div className="lc-pane-end">
-          {frame.onFull && (
-            <button type="button" className="lc-pane-tool l-focus" aria-label={frame.full ? "Leave the full canvas" : "Full canvas"} title={frame.full ? "Leave the full canvas" : "Full canvas"} aria-pressed={frame.full} onClick={frame.onFull}>
-              {frame.full ? <I.shrink size={16} /> : <I.expand size={16} />}
-            </button>
-          )}
-          {frame.onClose && (
-            <button type="button" className="lc-pane-tool l-focus" aria-label={closeLabel} title={closeLabel} onClick={frame.onClose}>
-              <I.close size={16} />
-            </button>
-          )}
+          <button type="button" className="lc-pane-tool l-focus" aria-label={label} title={label} onClick={onClose}>
+            <I.close size={16} />
+          </button>
         </div>
       )}
     </div>

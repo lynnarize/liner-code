@@ -32,6 +32,7 @@ import { PictureOver } from "./Pictures";
 import { design, frameOf, getDesign, isBlank, isGone, keepsView, useDesign, type Sel } from "./store";
 import { onLanding, takeLanding } from "../face";
 import { StateMark } from "../icons";
+import { tagInside } from "./tag-place";
 
 const DRAG = 3;
 // A frame's label chips take only the frame: a pan or a zoom (a new place on screen, the same frame) draws none of them again.
@@ -96,6 +97,8 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
   const presence = useDesign((s) => s.presence);
   const editing = useDesign((s) => s.editing);
   const play = useDesign((s) => s.tool === "play");
+  // The picked layer's name, for its blue tag over the canvas (board Design): one node picked, named as Layers names it.
+  const picked = useDesign((s) => (s.sel.length === 1 && s.sel[0].node ? nodeIn(s.tree[s.sel[0].frame], s.sel[0].node)?.name : undefined));
   const [dropping, setDropping] = useState(false);
   // Which drawn frames have nothing in them yet, as one string so a typed letter elsewhere redraws nothing here.
   const blanks = useDesign((s) => (s.file?.frames ?? []).filter((f) => isBlank(s, f)).map((f) => f.id).join(","));
@@ -582,7 +585,7 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
       ref={root}
       tabIndex={-1}
       className="ld-cv-hit"
-      style={{ cursor }}
+      style={{ cursor, ["--ld-gx" as string]: `${pan.x}px`, ["--ld-gy" as string]: `${pan.y}px` }}
       onPointerDown={(e) => void onDown(e)}
       onPointerMove={onMove}
       onPointerUp={(e) => void onUp(e)}
@@ -698,7 +701,15 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
           const b = boxOf(f, r);
           const one = sel.length === 1 && !(editing && editing.node === x.node);
           return (
-            <div key={`${x.frame}:${x.node ?? ""}`} className="ld-sel" data-frame={!x.node || undefined} style={b}>
+            <div
+              key={`${x.frame}:${x.node ?? ""}`}
+              className="ld-sel"
+              data-frame={!x.node || undefined}
+              data-n={one && x.node && picked ? `${picked} · ${Math.round(r!.w)} × ${Math.round(r!.h)}` : undefined}
+              // Its name tag goes inside its top edge when, above it, the tag would land on the frame's own label row.
+              data-in={(one && x.node && r && tagInside(r.y, zoom)) || undefined}
+              style={b}
+            >
               {one &&
                 (x.node
                   ? (["e", "s", "se"] as Edge[]).map((edge) => <i key={edge} data-edge={edge} data-ld-ui onPointerDown={startNodeSize(x.frame, x.node!, r!, edge)} />)
@@ -736,4 +747,15 @@ export function Canvas({ root }: { root: React.RefObject<HTMLDivElement | null> 
       {sayAt && !editing && !drag.current && <SayBar x={sayAt.x} y={sayAt.y} above={sayAt.above} />}
     </div>
   );
+}
+
+/** A node of a frame's tree by its id, or undefined while the tree is not read yet. */
+function nodeIn(n: TreeNode | undefined, id: string): TreeNode | undefined {
+  if (!n) return undefined;
+  if (n.id === id) return n;
+  for (const c of n.children) {
+    const hit = nodeIn(c, id);
+    if (hit) return hit;
+  }
+  return undefined;
 }

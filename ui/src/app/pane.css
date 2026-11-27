@@ -5,7 +5,7 @@
 */
 
 /* ---------- The head ---------- */
-/* 44 high, on the session header's row, a hairline under it: the name, the one thing it shows, its tools, then Full canvas and Close. */
+/* Outside the panel (a popup, a page) 44 high, a hairline under it: the name, the one thing it shows, its tools, then Close. */
 .lc-pane-head {
   display: flex;
   flex: none;
@@ -15,7 +15,21 @@
   height: var(--lc-head);
   box-sizing: border-box;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--l-line);
+  border-bottom: 0.5px solid var(--lc-hair);
+}
+/* In the panel (line and dot, board Panel): the surface's own bar under the head row's tabs, 40 high at 12.5px, a hairline
+   under it, at most three icons. The tab names the surface, so the bar starts with what it shows. */
+.lc-pane-head.lc-pane-bar {
+  gap: 4px;
+  height: 40px;
+  padding: 0 8px 0 10px;
+  font-size: 12.5px;
+  color: var(--l-ink-2);
+}
+.lc-pane-bar .lc-pane-name {
+  max-width: 60%;
+  font-size: 12.5px;
+  font-weight: 500;
 }
 /* The name and what the head shows give way before the tools and Full canvas and Close, never under them ("Test & Build QA
    Gemini 4 Neon, sent by Teamwork" in a narrow panel): the words go to an ellipsis first; the name keeps its width up to
@@ -93,6 +107,28 @@
     background: var(--l-wash);
     color: var(--l-ink);
   }
+}
+/* Two tools that are one choice (Changes' one column or side by side): a segmented control, a wash track 2px in, the picked
+   one raised on a plate with a 0.5px edge. */
+.lc-pane-seg {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash);
+}
+.lc-pane-seg > .lc-pane-tool {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+}
+.lc-pane-seg > .lc-pane-tool[aria-pressed="true"] {
+  background: var(--lc-g4);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
+}
+.lc-pane-seg > .lc-pane-tool > svg {
+  width: 14px;
+  height: 14px;
 }
 /* The head's picker: quiet words and a small chevron, washed as you point or while it is open. */
 .lc-pane-pick {
@@ -175,31 +211,31 @@
   flex: none;
   flex-direction: column;
 }
-/* A section's label: 12.5, 600, the second ink, its note at the right end in the fourth. */
+/* A section's label (line and dot, board Panel): 32 high, 12.5/600 in ink, its note at the right end in grey. */
 .lc-pane-lab {
   display: flex;
   flex: none;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
-  height: 40px;
+  height: 32px;
   box-sizing: border-box;
-  padding: 0 16px 8px;
+  padding: 0 12px 0 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--l-ink-2);
+  color: var(--l-ink);
 }
 .lc-pane-lab > span:last-child:not(:first-child) {
   margin-left: auto;
   font-size: 12px;
   font-weight: 400;
-  color: var(--l-ink-4);
+  color: var(--l-ink-3);
 }
-/* Every section after the first: an inset hairline over its label. */
+/* Every section after the first: a hairline across the panel over its label. */
 .lc-pane-sec:not(:first-child) > .lc-pane-lab {
-  height: 42px;
-  margin: 12px 16px 0;
-  padding: 0 0 8px;
-  border-top: 1px solid var(--l-line);
+  height: 38px;
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 0.5px solid var(--lc-hair);
 }
 /* A row: 30 high, 8 in, a 14px icon, the words, the value at the right end. */
 .lc-pane-row {
@@ -262,7 +298,7 @@ button.lc-pane-row,
   max-width: 60%;
   padding-left: 12px;
   overflow: hidden;
-  color: var(--l-ink);
+  color: var(--l-ink-3);
   white-space: nowrap;
 }
 .lc-pane-rv[data-quiet] {
@@ -274,26 +310,24 @@ button.lc-pane-row,
 }
 
 /* ---------- A file's own row ---------- */
-/* The same in Changes and Files: a strip on the well, ruled above and below, 36 high, in mono. */
+/* The same in Changes and Files: a strip tinted with the well, 34 high, at 12.5 (board Main's file row). One rule under it
+   only, so two strips, or a strip under the bar's own rule, never meet as a doubled band; a strip that follows a file's
+   lines gets the rule over it instead (surfaces.css .lc-rv-file). */
 .lc-pane-file {
   display: flex;
   flex: none;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 36px;
+  height: 34px;
   box-sizing: border-box;
-  padding: 0 14px 0 12px;
-  border-top: 1px solid var(--l-line);
-  border-bottom: 1px solid var(--l-line);
+  padding: 0 12px 0 10px;
+  border-bottom: 0.5px solid var(--lc-hair);
   background: var(--lc-well);
-  font-family: var(--l-font-mono);
   font-size: 12.5px;
   letter-spacing: 0;
   color: var(--l-ink);
-}
-.lc-pane-body > .lc-pane-file:first-child {
-  border-top: 0;
+  white-space: nowrap;
 }
 .lc-pane-fold {
   display: grid;
@@ -314,23 +348,28 @@ button.lc-pane-row,
 .lc-pane-fold[aria-expanded="false"] > svg {
   rotate: -90deg;
 }
+/* The status letter in a small tinted square of its colour: M amber, A green, D red, the rest grey. */
 .lc-pane-st {
+  --st: var(--l-ink-3);
+  display: grid;
   flex: none;
-  width: 14px;
-  font-family: var(--l-font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--l-ink-3);
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--st) 16%, transparent);
+  font: 600 10px/1 var(--l-font-mono);
+  letter-spacing: 0;
+  color: var(--st);
 }
 .lc-pane-st[data-st="M"] {
-  color: var(--l-warn-text, var(--l-warn));
+  --st: var(--l-warn-text, var(--l-warn));
 }
 .lc-pane-st[data-st="A"] {
-  color: var(--l-ok-text, var(--l-ok));
+  --st: var(--l-ok-text, var(--l-ok));
 }
 .lc-pane-st[data-st="D"] {
-  color: var(--l-danger-text, var(--l-danger));
+  --st: var(--l-danger-text, var(--l-danger));
 }
 .lc-pane-pathb {
   display: flex;
@@ -389,10 +428,10 @@ button.lc-pane-row,
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 56px;
+  height: 48px;
   box-sizing: border-box;
-  padding: 0 12px 0 16px;
-  border-top: 1px solid var(--l-line);
+  padding: 0 10px 0 14px;
+  border-top: 0.5px solid var(--lc-hair);
   font-size: 13px;
   color: var(--l-ink-3);
 }
@@ -408,8 +447,8 @@ button.lc-pane-row,
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 11px;
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
@@ -429,8 +468,8 @@ button.lc-pane-row,
 .lc-pane-btn[data-ink] {
   padding: 0 12px;
   background: var(--l-ink);
-  font-weight: 600;
-  color: var(--lc-paper);
+  font-weight: 500;
+  color: var(--lc-ground);
 }
 @media (hover: hover) {
   .lc-pane-btn[data-ink]:hover:not(:disabled) {

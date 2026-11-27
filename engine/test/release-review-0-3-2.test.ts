@@ -67,10 +67,9 @@ test("The Wall's Review queue counts a session whose pull request is open, as gh
   assert.equal(needsReview({ ...t, pr: undefined }), false);
 });
 
-test("Multi-agent's Off asks before it turns a running team off, as the team card's Turn it off does", () => {
-  const row = span(app("SessionInfo.tsx"), "export function MultiAgentRow(", "function Setup(");
-  assert.match(row, /<ConfirmRow[^>]*title="Off"[^>]*onConfirm=\{\(\) => multiAgent\("off", done\)\}/, "Off stops every worker on one press");
-  assert.match(row, /mode === "Off" \?/, "Off is a confirm even while nothing is on");
+test("Nothing in the Session surface turns a running team off on one press: the Multi-agent row went, and the team card's Turn it off asks first", () => {
+  // The row that asked before Off is gone with Multi-agent (8ba917c); no row of the surface may stop the team in its place.
+  assert.doesNotMatch(app("SessionInfo.tsx"), /swarm\.enable|MultiAgentRow/, "the Session surface turns a team on or off again");
 });
 
 test("A bulk Dismiss or Reopen acts only on the picked findings still shown in the tab", () => {

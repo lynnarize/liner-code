@@ -124,10 +124,10 @@ function visibleBounds(b?: Rectangle) {
 
 // ---------- The window ----------
 
-// Where the traffic lights go: centred on the page's 44px top row, which starts at the window's 6px
-// gap, so their centre is 28px from the top (y is their top edge; they're 14px high). The Swift shell
-// puts them there too (AppDelegate.swift, placeLights).
-const LIGHTS = { x: 20, y: 21 };
+// Where the traffic lights go: centred on the sheet's 44px top row, which starts at the window's 8px
+// gap, so their centre is 30px from the top (y is their top edge; they're 14px high), the line the
+// sidebar's top row and the sheet's top row share. (The older Swift shell, mac/, still puts them at 28.)
+const LIGHTS = { x: 20, y: 23 };
 // The line sits where the page's own boot screen keeps it, under the name, so it doesn't jump when that loads.
 // Over the desktop (a see-through window) it's on a tint of the window's colour, as the page will be, not on nothing.
 const bootPage = (ground: string) => `<html><body style="margin:0;height:100vh;background:${ground};font:13px -apple-system,system-ui,sans-serif;color:#8a8f98"><span style="position:fixed;top:calc(50% + 30px);left:50%;translate:-50% 0;white-space:nowrap">Starting the engine</span></body></html>`;
@@ -168,7 +168,7 @@ const applyMaterialEverywhere = () => {
 */
 let lastLights = { x: LIGHTS.x + 54, y: LIGHTS.y + 7 };
 function lights(w: BrowserWindow | null) {
-  if (!isMac) return { x: 0, y: 28 };
+  if (!isMac) return { x: 0, y: 30 };
   if (w && !w.isDestroyed() && w.isFullScreen()) return { x: 0, y: lastLights.y };
   const real = w && !w.isDestroyed() && mac?.lights(w.getNativeWindowHandle());
   if (real) lastLights = real;

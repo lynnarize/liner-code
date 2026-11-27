@@ -1,6 +1,6 @@
 /*
-  A session that starts waiting on you is unread until you open it, so the sidebar can draw a question you have not seen in
-  amber and one you have in grey (ui/src/app/session-state.ts, seenAsk). Run with `node --test engine/test/waiting-unread.test.ts`.
+  A session that starts waiting on you is unread until you open it, so a question you have not seen is amber and news (the
+  folded folders, the pill), and one you have is grey with no mark and not news (ui/src/app/session-state.ts, seenAsk). Run with `node --test engine/test/waiting-unread.test.ts`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";

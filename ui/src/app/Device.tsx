@@ -172,7 +172,7 @@ export function DeviceSurface({ thread, agentName, visible }: { thread: Thread; 
     return (
       <>
         <PaneHead />
-        <SurfaceNote icon={<I.device size={20} />} title="No simulators yet" action={<PaneButton icon={<I.refresh size={14} />} onClick={() => void load()}>Look again</PaneButton>}>
+        <SurfaceNote icon={<I.device size={20} />} title="No simulators yet" action={<PaneButton ink icon={<I.refresh size={14} />} onClick={() => void load()}>Look again</PaneButton>}>
           Add an iOS runtime in Xcode, under Settings, Components. Its simulators show up here.
         </SurfaceNote>
       </>

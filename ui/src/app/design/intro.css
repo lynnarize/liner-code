@@ -176,7 +176,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
 .ld-in-box {
   border-radius: 12px;
   background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 .ld-in-fr {
   position: absolute;
@@ -213,13 +213,13 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   display: block;
   width: 100%;
   height: auto;
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 /* Desktop / Today's tide: the left 62% of the desktop screen. */
 .ld-in-crop {
   aspect-ratio: 1587 / 1600;
   overflow: hidden;
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 .ld-in-fr .ld-in-crop img {
   width: calc(100% / 0.62);
@@ -337,7 +337,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   bottom: 0;
   left: 0;
   background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
   outline: 1.5px solid var(--ld-lead);
   animation: ld-in-ring 9s linear 1200ms infinite backwards;
 }
@@ -448,7 +448,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--lc-hair);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
 }
 .ld-in-dabs i.on {
   outline: 1.5px solid var(--l-accent);
@@ -554,7 +554,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--lc-hair);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
   animation: ld-in-pop 360ms var(--l-ease-out) 420ms backwards;
 }
 .ld-in-sws i:nth-child(2) { animation-delay: 480ms; }
@@ -767,7 +767,7 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   color: var(--l-ink-3);
 }
 .ld-in-rule {
-  height: 1px;
+  height: 0.5px;
   background: var(--lc-hair);
 }
 .ld-in-go {
@@ -834,10 +834,10 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
 }
 
 @keyframes ld-in-focus {
-  from { opacity: 0; filter: blur(4px); }
+  from { opacity: 0; }
 }
 @keyframes ld-in-rise {
-  from { opacity: 0; filter: blur(4px); translate: 0 8px; }
+  from { opacity: 0; translate: 0 8px; }
 }
 @keyframes ld-in-pop {
   from { opacity: 0; scale: 0.6; }
@@ -896,14 +896,14 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   97%, 100% { opacity: 0; scale: 1; }
 }
 @keyframes ld-in2-chip {
-  0%, 17% { opacity: 0; filter: blur(4px); }
-  21%, 49% { opacity: 1; filter: blur(0); }
-  52%, 100% { opacity: 0; filter: blur(0); }
+  0%, 17% { opacity: 0; }
+  21%, 49% { opacity: 1; }
+  52%, 100% { opacity: 0; }
 }
 @keyframes ld-in2-typed {
-  0%, 30% { opacity: 0; filter: blur(4px); }
-  36%, 49% { opacity: 1; filter: blur(0); }
-  52%, 100% { opacity: 0; filter: blur(0); }
+  0%, 30% { opacity: 0; }
+  36%, 49% { opacity: 1; }
+  52%, 100% { opacity: 0; }
 }
 @keyframes ld-in2-send {
   0%, 30% { opacity: 0.4; scale: 1; }
@@ -950,9 +950,9 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   41%, 100% { opacity: 0; }
 }
 @keyframes ld-in4-find {
-  0%, 9% { opacity: 0; translate: 0 8px; filter: blur(4px); }
-  14%, 94% { opacity: 1; translate: 0 0; filter: blur(0); }
-  98%, 100% { opacity: 0; translate: 0 0; filter: blur(0); }
+  0%, 9% { opacity: 0; translate: 0 8px; }
+  14%, 94% { opacity: 1; translate: 0 0; }
+  98%, 100% { opacity: 0; translate: 0 0; }
 }
 @keyframes ld-in4-p {
   0%, 39% { opacity: 0; }
@@ -965,9 +965,9 @@ html[data-theme="dark"] .lc-sheet.ld-intro {
   100% { opacity: 1; }
 }
 @keyframes ld-in4-b {
-  0%, 64% { opacity: 0; filter: blur(3px); }
-  69%, 94% { opacity: 1; filter: blur(0); }
-  98%, 100% { opacity: 0; filter: blur(0); }
+  0%, 64% { opacity: 0; }
+  69%, 94% { opacity: 1; }
+  98%, 100% { opacity: 0; }
 }
 @keyframes ld-in4-pill {
   0%, 60% { scale: 1; }

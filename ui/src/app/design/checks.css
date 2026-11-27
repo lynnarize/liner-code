@@ -44,7 +44,7 @@
   padding: 10px 0 14px;
 }
 .ld-ck-card + .ld-ck-card {
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--l-line);
 }
 .ld-ck-h {
   display: flex;
@@ -103,7 +103,7 @@
   overflow: hidden;
   border-radius: 8px;
   background: var(--lc-well);
-  box-shadow: inset 0 0 0 1px var(--lc-hair);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
 }
 .ld-ck-ev-in {
   position: relative;

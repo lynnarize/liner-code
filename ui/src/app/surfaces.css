@@ -220,195 +220,119 @@
   container-type: inline-size;
 }
 
-/* ---------- Session: environment, context, changes ----------
-   Labelled groups of rows on the paper, no wells: a quiet 32px label (its tools at the right), then
-   28px rows, 16px in from the column's edges. */
-.lc-sinfo {
+/* ---------- Session (line and dot, board Panel): who leads, where it runs, its context, its setup ----------
+   Sections of 30px rows on the paper (Pane.tsx), the first a small card with the halftone naming who leads. */
+.lc-ss {
+  padding-bottom: 16px;
+}
+.lc-ss-hero {
+  position: relative;
   display: grid;
-  align-content: start;
-  min-height: 0;
-  padding: 2px 0 16px;
-  overflow: auto;
+  gap: 3px;
+  flex: none;
+  margin: 10px;
+  padding: 12px;
+  overflow: hidden;
+  border-radius: var(--lc-r-field);
+  background: var(--lc-well);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
 }
-.lc-sinfo-card {
-  display: grid;
-  min-width: 0;
-  padding: 2px 16px 12px;
-  animation: l-blur-in 360ms var(--l-ease-out) backwards;
+.lc-ss-hero > .lc-ht {
+  left: auto;
+  bottom: auto;
+  width: 240px;
+  height: 84px;
 }
-.lc-sinfo-card .lc-pop-head {
-  min-height: 32px;
-  padding: 0;
-  font-size: 12px;
-}
-.lc-sinfo-card .lc-pop-head > span:first-child {
-  color: var(--l-ink-3);
-  font-size: 12px;
-  font-weight: 500;
-}
-.lc-sinfo-card .lc-pop-head .lc-ib {
-  margin-right: -6px;
-}
-/* Its buttons are the panel's: an 8px corner. */
-.lc-sinfo .lc-btn {
-  border-radius: 8px;
-}
-.lc-sinfo-line {
+.lc-ss-hero b {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  min-height: 28px;
-  font-size: 13px;
+  font-size: 13.5px;
+  font-weight: 500;
 }
-.lc-sinfo-ic {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 18px;
-  color: var(--l-ink-3);
-}
-.lc-sinfo-v {
+.lc-ss-hero-n {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/*
-  Context: a bar of ticks in each source's colour over the grey of what's free, a mark where the
-  tool compacts, then each source as a chip. Resting on a chip lifts its ticks and dims the rest.
-*/
-.lc-cx {
-  --lc-cx-setup: color-mix(in oklab, var(--l-ink) 34%, var(--lc-card));
-  --lc-cx-project: oklch(0.62 0.15 300);
-  --lc-cx-talk: oklch(0.8 0.13 72);
-  --lc-cx-files: oklch(0.54 0.19 274);
-  --lc-cx-runs: oklch(0.66 0.13 162);
-  --lc-cx-web: oklch(0.69 0.13 230);
-  --lc-cx-tools: oklch(0.72 0.09 300);
-  gap: 0;
-}
-[data-theme="dark"] .lc-cx {
-  --lc-cx-setup: color-mix(in oklab, var(--l-ink) 40%, var(--lc-card));
-  --lc-cx-project: oklch(0.7 0.14 300);
-  --lc-cx-talk: oklch(0.83 0.13 75);
-  --lc-cx-files: oklch(0.66 0.17 274);
-  --lc-cx-runs: oklch(0.74 0.13 162);
-  --lc-cx-web: oklch(0.76 0.12 230);
-  --lc-cx-tools: oklch(0.78 0.08 300);
-}
-.lc-cx [data-g="setup"] { background: var(--lc-cx-setup); }
-.lc-cx [data-g="project"] { background: var(--lc-cx-project); }
-.lc-cx [data-g="talk"] { background: var(--lc-cx-talk); }
-.lc-cx [data-g="files"] { background: var(--lc-cx-files); }
-.lc-cx [data-g="runs"] { background: var(--lc-cx-runs); }
-.lc-cx [data-g="web"] { background: var(--lc-cx-web); }
-.lc-cx [data-g="tools"] { background: var(--lc-cx-tools); }
-.lc-cx-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
+.lc-ss-cap {
+  position: relative;
   font-size: 12px;
+  line-height: 17px;
   color: var(--l-ink-3);
 }
-.lc-cx-head b {
+/* "42% used" beside a section's label, in grey at 400. */
+.lc-ss-ct {
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+/* A long folder keeps its end in sight: it is cut at its start. */
+.lc-ss-path {
+  overflow: hidden;
   font-size: 12px;
-  font-weight: 500;
+  text-overflow: ellipsis;
+  direction: rtl;
 }
-.lc-cx-head .l-num {
-  color: var(--l-ink-2);
+.lc-ss .lc-pane-lab .lc-pane-tool {
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
 }
-.lc-cx-bar {
+/* The bar of dots: one colour per source runs under the grid of round dots; a source you point at lights, the rest dim. */
+.lc-ss-bar {
   position: relative;
-  margin: 4px 0 12px;
+  margin: 2px 16px 6px;
 }
-/* The ticks: one bar cut into 3px slivers, so each source's share stays exact to the token. */
-.lc-cx-ticks {
-  display: flex;
-  height: 22px;
-  background: var(--l-wash-2);
-  -webkit-mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
-  mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
+.lc-ss-bar > .lc-dotbar > * {
+  transition: opacity 200ms ease;
 }
-.lc-cx-ticks i {
-  flex: none;
-  transition:
-    width 420ms var(--l-ease-out),
-    opacity 200ms ease;
+.lc-ss-bar > .lc-dotbar[data-hl] > :not([data-on]) {
+  opacity: 0.3;
 }
-.lc-cx-ticks[data-hl] i:not([data-on]) {
-  opacity: 0.28;
-}
-.lc-cx-mark {
+.lc-ss-mark {
   position: absolute;
-  top: -4px;
-  bottom: -4px;
+  top: -3px;
+  bottom: -3px;
   width: 1.5px;
   margin-left: -0.75px;
   border-radius: 1px;
   background: var(--l-ink-3);
 }
-.lc-cx-chips {
+.lc-ss-src {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
 }
-.lc-cx-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  max-width: 100%;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--lc-r-row);
-  background: var(--lc-well);
-  color: var(--l-ink);
-  font: inherit;
-  font-size: 13px;
-  cursor: default;
-  transition: background 160ms ease;
+.lc-ss-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
 }
-@media (hover: hover) {
-  .lc-cx-chip:hover {
-    background: var(--lc-plate);
-  }
-}
-.lc-cx-chip > i {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-}
-.lc-cx-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-cx-more {
+.lc-ss-note {
+  margin: 4px 16px 0;
+  font-size: 12.5px;
+  line-height: 18px;
   color: var(--l-ink-3);
-  cursor: pointer;
 }
-.lc-cx-foot {
+/* The setup rows are menu rows with a menu to their side (ui.tsx Row, SubMenu): here they sit as the panel's rows, 30 high. */
+.lc-ss-setup {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  padding: 0 8px;
+}
+.lc-ss-setup .lc-row {
   min-height: 30px;
-  margin-top: 6px;
   font-size: 13px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .lc-cx-ticks i {
-    transition: none;
-  }
+.lc-ss-extra {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
 }
-/* Asking, or a failed ask, outside a group: at the groups' inset. */
-.lc-sinfo > .lc-sinfo-note {
-  margin: 8px 16px 0;
-}
+/* What a page says while it asks, or what went wrong (Settings, Usage, Liner Design's home). */
 .lc-sinfo-note {
   margin: 2px 0 0;
   font-size: 13px;
@@ -454,9 +378,9 @@
   min-height: 0;
   overflow: hidden;
   padding: 10px 6px 6px 12px;
-  border-radius: 14px;
+  border-radius: var(--lc-r-card);
   background: var(--l-wash);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
 }
 .lc-term-box .xterm {
   height: 100%;
@@ -587,7 +511,7 @@
   height: calc(100% - 24px);
   margin: 12px 0;
   box-shadow:
-    0 0 0 1px var(--l-line-2),
+    0 0 0 0.5px var(--lc-line2),
     0 6px 20px -8px var(--l-drop);
 }
 .lc-br-hint {
@@ -635,7 +559,7 @@
   display: flex;
   flex-direction: column;
   max-height: 40%;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
 }
 .lc-br-console-h {
   display: flex;
@@ -793,7 +717,7 @@
   overflow: auto;
   border-radius: 10px;
   background: var(--l-surface);
-  box-shadow: 0 0 0 1px var(--l-line);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
   color: var(--l-ink-2);
   font-size: 11px;
   line-height: 16px;
@@ -872,7 +796,7 @@
   min-width: 0;
   min-height: 0;
   /* A border, not an inset shadow: the code's pinned numbers take the paper and would cover a shadow. */
-  border-left: 1px solid var(--l-line);
+  border-left: 0.5px solid var(--lc-hair);
 }
 @container (max-width: 520px) {
   .lc-fsv {
@@ -887,7 +811,7 @@
     flex: 0 1 auto;
   }
   .lc-files-view {
-    border-top: 1px solid var(--l-line);
+    border-top: 0.5px solid var(--lc-hair);
     border-left: 0;
   }
 }
@@ -902,8 +826,8 @@
   min-width: max-content;
   margin: 0;
   padding: 0 0 10px;
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
   -webkit-user-select: text;
   user-select: text;
 }
@@ -1221,7 +1145,7 @@
   font-size: 13px;
 }
 .lc-run-steps li + li {
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
 }
 .lc-run-steps time {
   padding-top: 1px;
@@ -1855,11 +1779,10 @@
   top: 0;
   z-index: 2;
 }
-.lc-rv-file:not(:first-child) > .lc-rv-fh {
-  margin-top: 8px;
-}
-.lc-rv-file:first-child > .lc-rv-fh {
-  border-top: 0;
+/* After a file's lines, the next file's strip has a rule over it (board Main: .code + .fh); after a folded file, whose own
+   strip's rule is already there, and for the first, under the bar's own, none. */
+.lc-rv-file:has(> .lc-rv-fh[data-open]) + .lc-rv-file > .lc-rv-fh {
+  border-top: 0.5px solid var(--lc-hair);
 }
 .lc-rv-from {
   font-size: 12px;
@@ -1867,32 +1790,39 @@
   white-space: nowrap;
 }
 /* A grid, so every row is as wide as the widest line and its fill reaches the end when scrolled sideways.
-   13px on a 22px line, in the panel and the full canvas alike. */
+   12px on a 20px line (line and dot, board Main), in the panel and the full canvas alike. */
 .lc-rv-code {
   display: grid;
   container-type: inline-size;
+  padding: 4px 0;
   overflow-x: auto;
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--l-ink-2);
 }
 .lc-rv-l {
   display: grid;
-  grid-template-columns: 40px 44px 16px minmax(0, 1fr);
+  grid-template-columns: 40px 40px 18px minmax(0, 1fr);
   min-width: max-content;
 }
+/* An added or removed line: its tint, and a 2px bar of its colour at the panel's edge. */
 .lc-rv-l[data-kind="add"] {
   background: var(--lc-add);
+  box-shadow: inset 2px 0 0 var(--l-ok);
+  color: var(--l-ink);
 }
 .lc-rv-l[data-kind="del"] {
   background: var(--lc-del);
+  box-shadow: inset 2px 0 0 var(--l-danger);
+  color: var(--l-ink);
 }
 .lc-rv-l[data-sel] {
   box-shadow: inset 3px 0 0 var(--l-accent);
   background: color-mix(in oklab, var(--l-accent) 10%, transparent);
 }
 .lc-rv-n {
-  padding-right: 10px;
-  color: var(--l-ink-4);
+  padding-right: 8px;
+  color: var(--l-ink-5);
   text-align: right;
   -webkit-user-select: none;
   user-select: none;
@@ -1910,7 +1840,8 @@
   }
 }
 .lc-rv-s {
-  color: var(--l-ink-4);
+  color: var(--l-ink-5);
+  text-align: center;
 }
 .lc-rv-l[data-kind="add"] .lc-rv-s {
   color: var(--l-ok-text);
@@ -1924,20 +1855,20 @@
   -webkit-user-select: text;
   user-select: text;
 }
-/* An unchanged run is a quiet row, no band: its words brighten under the pointer. */
+/* An unchanged run between hunks is the hunk's strip (board Main): a faint blue band, 24 high, in mono at 11.5, its words brightening under the pointer. */
 .lc-rv-fold {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: 28px;
-  padding: 0 12px 0 52px;
+  height: 24px;
+  padding: 0 12px;
   border: 0;
-  background: none;
+  background: color-mix(in oklab, var(--lc-blue) 7%, transparent);
   font: inherit;
-  /* The body's face: --l-font-sans isn't one of the tokens, so this fell back to the code's mono. */
-  font-family: var(--l-font-body);
-  font-size: 13px;
+  font-family: var(--l-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
   color: var(--l-ink-3);
   cursor: pointer;
 }
@@ -1954,7 +1885,7 @@
   left: 100px;
   max-width: min(620px, calc(100cqw - 112px));
   margin: 6px 12px 8px 100px;
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: var(--l-font-body);
   font-size: 13px;
   line-height: 19px;
 }
@@ -2002,7 +1933,7 @@
   display: grid;
   gap: 4px;
   padding-top: 10px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
 }
 .lc-rv-a > b {
   display: inline-flex;
@@ -2061,7 +1992,7 @@
   grid-auto-rows: minmax(0, 1fr);
   min-height: 0;
   overflow-x: auto;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
 }
 .lc-cmp-n {
   flex: none;
@@ -2076,7 +2007,7 @@
   animation: l-blur-in 380ms var(--l-ease-out) backwards;
 }
 .lc-cmp-col + .lc-cmp-col {
-  border-left: 1px solid var(--l-line);
+  border-left: 0.5px solid var(--lc-hair);
 }
 .lc-cmp-col .lc-pane-name .lc-model {
   font-size: 13.5px;
@@ -2095,7 +2026,7 @@
 .lc-cmp-stats {
   flex: none;
   padding: 6px 0;
-  border-bottom: 1px solid var(--l-line);
+  border-bottom: 0.5px solid var(--lc-hair);
 }
 .lc-cmp-body {
   display: flex;
@@ -2108,8 +2039,8 @@
 }
 /* A diff reads the same everywhere: 13px on a 22px line, as Changes draws it. */
 .lc-cmp-body .l-cdiff__rows {
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 /* ---------- Timeline additions ---------- */
@@ -2679,9 +2610,9 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-warn) 9%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--l-warn) 22%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--l-warn) 45%, var(--lc-line2));
 }
 .lc-limit-t {
   display: grid;
@@ -2835,7 +2766,7 @@
   align-items: center;
   gap: 10px;
   margin: 0 auto 6px;
-  width: min(100% - 32px, var(--lc-measure, 712px));
+  width: min(100% - 32px, var(--lc-measure, 720px));
   min-height: 34px;
   padding: 2px 4px 2px 12px;
   box-sizing: border-box;
@@ -3355,7 +3286,7 @@
   height: 34px;
   border-radius: var(--lc-r-field);
   background: var(--l-bg);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
 }
 .lc-th-chip span {
   display: grid;
@@ -3532,7 +3463,7 @@
   justify-content: center;
   min-width: 72px;
   height: 32px;
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
 }
 
 /* The PR card in the chat: the card, the request to run the tests, then their console, one width:
@@ -3595,7 +3526,7 @@
   padding: 9px 11px;
   border-radius: 10px;
   background: var(--l-surface-2);
-  box-shadow: 0 0 0 1px var(--l-line);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
   font-family: var(--l-font-mono);
   font-size: 12px;
   line-height: 17px;
@@ -3645,17 +3576,32 @@
   color: var(--l-danger-text, var(--l-danger));
 }
 /* Over the sections: the title, then the branch into its base in mono, with the lines at the right end. */
+/* The pull request's head card (line and dot, board Panel): a card on the well with a 0.5px edge, its title at 13.5/500;
+   the green halftone from its top right corner while it is open. */
 .lc-pr-top {
+  position: relative;
   display: grid;
   gap: 6px;
-  padding: 16px 16px 4px;
+  margin: 10px;
+  padding: 12px;
+  overflow: hidden;
+  border-radius: var(--lc-r-field);
+  background: var(--lc-well);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
+}
+.lc-pr-top > .lc-ht {
+  left: auto;
+  bottom: auto;
+  width: 220px;
+  height: 72px;
+}
+.lc-pr-top > :not(.lc-ht) {
+  position: relative;
 }
 .lc-pr-name {
-  font-family: var(--l-font-display);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 21px;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 19px;
   color: var(--l-ink);
 }
 .lc-pr-way {
@@ -3938,18 +3884,21 @@
    it worked, how many steps and the kinds it used, open for every step in the same quiet style, each
    with its kind's mark. While it works they are the live line at the chat's foot (timeline.css). The
    Wall's tiles draw their steps the same way (wall.css). */
+/* Folded, one line with a hairline under it (board Main): the arrow, "Worked for 1m 12s", and what was done as small tags at its end. */
 .lc-trail {
   display: grid;
   min-width: 0;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--lc-hair);
 }
 .lc-trail-sum {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-self: start;
   gap: 8px;
-  max-width: calc(100% + 6px);
+  width: calc(100% + 12px);
+  min-width: 0;
   min-height: 28px;
-  margin-left: -6px;
+  margin: 0 -6px;
   padding: 0 6px;
   border: 0;
   border-radius: var(--lc-r-row);
@@ -3978,6 +3927,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lc-trail-tags {
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.lc-trail-tag {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--l-wash);
+  color: var(--l-ink-3);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.lc-trail-tag[data-bad] {
+  background: color-mix(in oklab, var(--l-danger) 12%, transparent);
+  color: var(--l-danger-text);
 }
 .lc-trail-chev {
   flex: none;
@@ -4068,11 +4038,11 @@
 }
 .lc-wk-ln {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   min-width: 0;
-  min-height: 24px;
+  min-height: 26px;
   padding: 2px 0;
   border: 0;
   background: none;
@@ -4105,7 +4075,7 @@
 /* Finished steps are grey words; the one at work, and an ask that waits, in full ink; one that didn't work, or that you said no to, in red. */
 .lc-wk-verb {
   flex: none;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--l-ink-3);
 }
 .lc-wk-row:is([data-state="running"], [data-state="wait"]) .lc-wk-verb {
@@ -4123,25 +4093,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* What it touched, as the chat's inline code: a small mono chip (board Light). */
 .lc-wk-target {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--l-ink-3);
-  font-family: var(--l-font-mono);
-  font-size: 13px;
+  padding: 1.5px 5px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  color: var(--l-ink-2);
+  font: 500 12px/1.4 var(--l-font-mono);
+  letter-spacing: 0;
   text-overflow: ellipsis;
+}
+.lc-wk-target[data-plain] {
+  padding: 0;
+  background: none;
 }
 .lc-wk-row[data-state="running"] .lc-wk-target {
   color: var(--l-ink-2);
 }
-/* How it went, inline in grey: it gives way first. */
+/* How it went, at the line's end in grey: it gives way first. */
 .lc-wk-r {
   flex: 0 10 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--l-ink-3);
-  font-size: 13px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 .lc-wk-tag {
@@ -4184,15 +4162,9 @@
   }
 }
 /* ---------- The ask at the composer (Ask.tsx) ---------- */
-/* It takes the head of the composer's tray: nothing else in the session waits on you more. The
-   tray is tinted by its own rule (app.css) and gets a hairline ring with an ask in it, a red one
-   when the ask can't be undone. The card under it keeps its place. */
-.lc-tray:has(> .lc-tray-head > .lc-dask) {
-  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line-2));
-}
-.lc-tray:has(> .lc-tray-head > .lc-dask[data-high]) {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-danger) 45%, transparent);
-}
+/* It takes the head of the composer's tray: nothing else in the session waits on you more. Line and dot (board Light):
+   it is a card in the message box's shape, its corner 16, with an amber-tinted 0.5px edge (red when it can't be undone)
+   and the amber halftone in its corner; the tray itself draws no ring round it. */
 /* A grant in "What this session no longer asks about" (Ask.tsx GrantRow): only its word at the end takes it back, so the row itself is still. */
 .lc-row.lc-dask-rule {
   cursor: default;
@@ -4223,57 +4195,84 @@
   }
 }
 .lc-dask {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-width: 0;
-  padding: 10px 10px 10px 12px;
+  overflow: hidden;
+  border-radius: var(--lc-r-sheet);
+  background: var(--lc-well);
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--l-warn) 45%, var(--lc-line2)), var(--lc-raise, none);
   outline: 0;
   container: lc-dask / inline-size;
   animation: lc-row-in 180ms ease-out backwards;
+}
+.lc-dask[data-high] {
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--l-danger) 50%, var(--lc-line2)), var(--lc-raise, none);
+}
+/* The halftone, behind the card's top right corner only, as the board draws it. */
+.lc-dask-ht {
+  inset: 0 0 auto auto;
+  width: 240px;
+  height: 80px;
+  border-radius: 0;
 }
 html[data-motion="quick"] .lc-dask {
   animation: none;
 }
 .lc-dask-top {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px 14px 4px;
+}
+.lc-dask-h {
+  min-width: 0;
+  margin: 0;
+  color: var(--l-ink);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+/* Under the head, from the card's own 14 inset (the head has no mark, the owner's ruling): who asks in one grey line, the
+   command, what else it says. */
+.lc-dask-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   min-width: 0;
-  color: var(--l-ink-3);
-  font-size: 13px;
+  padding: 0 14px 10px;
 }
 .lc-dask-who {
   min-width: 0;
+  margin: 0;
   overflow: hidden;
+  color: var(--l-ink-2);
+  font-size: 13px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lc-dask-h {
-  margin: 0;
-  color: var(--l-ink);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
 }
 /* The command, a row a step, each on one line until it's shown whole. Past eight rows it scrolls. */
 .lc-dask-cmd {
   min-width: 0;
-  border-radius: 10px;
-  background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair, var(--l-line-2));
+  border-radius: var(--lc-r-row);
+  background: var(--lc-ground);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
 }
 .lc-dask-cmd > pre {
-  max-height: calc(8 * 1.6em + 16px);
+  max-height: calc(8 * 18px + 14px);
   margin: 0;
-  padding: 9px 12px 7px;
+  padding: 7px 10px;
   overflow: auto;
   overscroll-behavior: contain;
-  color: var(--l-ink-2);
-  font-family: var(--l-font-mono);
-  font-size: 13px;
-  line-height: 1.6;
+  color: var(--l-ink);
+  font: 400 12px/18px var(--l-font-mono);
+  letter-spacing: 0;
 }
 .lc-dask-l {
   display: block;
@@ -4421,32 +4420,62 @@ html[data-motion="quick"] .lc-dask {
   white-space: nowrap;
 }
 .lc-dask-acts {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  margin-top: 2px;
+  padding: 0 10px 10px 14px;
 }
+/* A key on a button is its words a step quieter, no cap of its own (board Light). */
 .lc-dask kbd {
-  padding: 0 5px;
-  border-radius: 5px;
-  background: color-mix(in oklab, currentColor 13%, transparent);
+  padding: 0;
+  background: none;
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
+  opacity: 0.6;
 }
-/* The ask's buttons at the app's 30, their corner its 8. */
+/* The ask's buttons at the app's 28, their corner its 8: the rest after the white one are outlined (board Light). */
 .lc-dask-ghost,
 .lc-dask-also {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 10px;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
   border: 0;
   border-radius: var(--lc-r-row);
+  background: none;
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
+  color: var(--l-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The one grant, beside Run it while there's room for it. */
+.lc-dask-also {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lc-dask-ghost kbd,
+.lc-dask-also kbd {
+  background: none;
+  color: var(--l-ink-3);
+  padding: 0;
+  font-size: 11px;
+}
+/* Saying something else: a quiet pill at the line's end, which puts you in the box. */
+.lc-dask-say {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
   background: none;
   color: var(--l-ink-3);
   font: inherit;
@@ -4454,11 +4483,10 @@ html[data-motion="quick"] .lc-dask {
   white-space: nowrap;
   cursor: pointer;
 }
-/* The one grant, as a quiet button beside Run it, while there's room for it: no fill, as Undo beside Commit. */
-.lc-dask-also {
-  flex: 0 1 auto;
-  min-width: 0;
-  color: var(--l-ink-2);
+@container lc-dask (max-width: 440px) {
+  .lc-dask-say {
+    display: none;
+  }
 }
 .lc-dask-also-t {
   min-width: 0;
@@ -4489,16 +4517,16 @@ html[data-motion="quick"] .lc-dask {
 .lc-pick.lc-dask-arrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 12px;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
   border: 0;
   border-radius: var(--lc-r-row) 0 0 var(--lc-r-row);
   background: var(--l-ink);
-  color: var(--lc-paper);
+  color: var(--lc-ground);
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -4511,9 +4539,10 @@ html[data-motion="quick"] .lc-dask {
 }
 @media (hover: hover) {
   .lc-dask-ghost:hover,
-  .lc-dask-more:hover {
+  .lc-dask-more:hover,
+  .lc-dask-say:hover {
     background: var(--l-wash);
-    color: var(--l-ink-2);
+    color: var(--l-ink);
   }
   .lc-dask-also:hover {
     background: var(--l-wash);
@@ -4552,22 +4581,22 @@ html[data-motion="quick"] .lc-dask {
   height: 30px;
   padding: 0 11px;
   border: 0;
-  border-radius: 10px;
-  background: var(--l-card-fill);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  border-radius: var(--lc-r-field);
+  background: var(--lc-card);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   color: var(--l-ink);
   font: inherit;
   font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
-  transition: box-shadow 160ms ease;
+  transition: background-color 160ms ease;
 }
 .lc-foot-chip:disabled {
   cursor: default;
 }
 @media (hover: hover) and (pointer: fine) {
   button.lc-foot-chip:not(:disabled):hover {
-    box-shadow: inset 0 0 0 1px var(--l-line-strong);
+    background: var(--l-wash);
   }
 }
 .lc-foot-chip[data-tone="quiet"] {
@@ -4610,9 +4639,9 @@ html[data-motion="quick"] .lc-dask {
   gap: 2px;
   padding: 8px;
   border-radius: var(--lc-r-card);
-  background: var(--l-card-fill);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
-  animation: l-unblur 300ms var(--l-ease-out) backwards;
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+  animation: lc-focus-in 200ms var(--l-ease-out) backwards;
 }
 .lc-foot-findings > p {
   margin: 2px 6px 6px;
@@ -4827,7 +4856,7 @@ html:not([data-bg]) .lc-br-stage:is([data-width="tablet"], [data-width="phone"])
   height: auto;
   border-radius: 8px;
   background: repeating-conic-gradient(var(--lc-well) 0 25%, var(--lc-card) 0 50%) 0 0 / 16px 16px;
-  box-shadow: 0 0 0 1px var(--l-line);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 .lc-files-md {
   max-width: 760px;
@@ -4933,7 +4962,7 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   flex-direction: column;
   height: min(var(--lc-below-h), calc(100% - 140px));
   min-height: 120px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
   animation: lc-below-in 260ms var(--l-ease-out) backwards;
 }
 .lc-below-grip {
@@ -5056,8 +5085,10 @@ html[data-bg] .lc-thread[data-below] .lc-scroll {
   small triangle; a turn's changes read as a row ("2 files changed +3 −1 · View changes"); agents
   a model started stay in sight under their row while they work.
 */
+/* Line and dot (board Main): the text takes the whole measure, and the box's own 16 of padding puts its words on the
+   same edge, since the box stands 16 past the measure on each side. */
 .lc-scroll-in > .lc-tl {
-  padding-inline: 16px 8px;
+  padding-inline: 0;
 }
 .lc-row-chev {
   width: 11px;

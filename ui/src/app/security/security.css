@@ -1,11 +1,12 @@
 /* Liner Security's sheet, loaded with the face (parts.tsx imports it). Every class is `ls-`; colours are the app's own
    tokens, plus the four severities and the second look's fill, which the app had no names for. Translated from the
    mockup's sec.css; its layout numbers are kept where they are the design. */
+/* Line and dot: High in the board's red, Medium in its amber, Low in grey; Critical a deeper red than High. */
 [data-theme] {
-  --ls-sv-c: oklch(0.5 0.2 25);
-  --ls-sv-h: oklch(0.62 0.19 45);
-  --ls-sv-m: oklch(0.78 0.15 80);
-  --ls-sv-l: var(--l-ink-4);
+  --ls-sv-c: color-mix(in oklab, var(--l-danger) 78%, #000);
+  --ls-sv-h: var(--l-danger);
+  --ls-sv-m: var(--l-warn);
+  --ls-sv-l: var(--l-ink-5);
   --ls-ok: var(--l-ok-text);
   --ls-ok-bg: color-mix(in oklab, var(--l-ok) 12%, transparent);
   --ls-ok-fill: color-mix(in oklab, var(--l-ok) 92%, var(--l-ink));
@@ -76,39 +77,62 @@
   white-space: nowrap;
 }
 
-/* How bad: a square and its word. */
+/* How bad: a tag in the severity's colour on its own tint (board Security's .sev), 58 wide in a list's column so the
+   titles keep one edge. Its square is kept for the places that show the colour alone (SevSquare, a round dot there). */
 .ls-sev {
-  display: inline-flex;
+  --ls-sv: var(--l-ink-3);
+  display: inline-grid;
   flex: none;
-  align-items: center;
-  gap: 7px;
-  width: 78px;
-  font-size: 12.5px;
+  place-items: center;
+  box-sizing: border-box;
+  width: 58px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--l-wash-2);
+  font-size: 11.5px;
   font-weight: 500;
-  color: var(--l-ink);
+  line-height: 1;
+  color: var(--l-ink-2);
+  white-space: nowrap;
+}
+.ls-sev[data-sev="critical"] {
+  --ls-sv: var(--ls-sv-c);
+}
+.ls-sev[data-sev="high"] {
+  --ls-sv: var(--ls-sv-h);
+}
+.ls-sev[data-sev="medium"] {
+  --ls-sv: var(--ls-sv-m);
+}
+.ls-sev:is([data-sev="critical"], [data-sev="high"], [data-sev="medium"]) {
+  background: color-mix(in oklab, var(--ls-sv) 15%, transparent);
+  color: var(--ls-sv);
+}
+.ls-sev[data-sev="critical"] {
+  background: color-mix(in oklab, var(--ls-sv) 24%, transparent);
 }
 .ls-sev[data-dot] {
   width: auto;
 }
+.ls-sev > i {
+  display: none;
+}
 .ls-sev.ls-sev-sq {
   width: 14px;
-  justify-content: center;
+  height: 14px;
+  padding: 0;
+  background: none;
 }
-.ls-sev i {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+.ls-sev.ls-sev-sq > i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ls-sv);
+}
+.ls-sev-sq[data-sev="low"] > i {
   background: var(--ls-sv-l);
-}
-.ls-sev[data-sev="critical"] i {
-  background: var(--ls-sv-c);
-}
-.ls-sev[data-sev="high"] i {
-  background: var(--ls-sv-h);
-}
-.ls-sev[data-sev="medium"] i {
-  background: var(--ls-sv-m);
 }
 
 /* The tones every split, bar and key shares. */
@@ -143,34 +167,27 @@
   background: var(--l-wash-2);
 }
 
-/* A whole split into parts, each with its count inside. */
+/* A whole split into parts (board Security's .se-bar): a 10px bar, 2px between the parts, its counts in the key under it.
+   The worst part breaks into dots (the halftone's fill) where there is one: it is the part that wants you. */
 .ls-parts {
   display: flex;
   gap: 2px;
-  height: 28px;
+  height: 10px;
   margin-top: 4px;
+  border-radius: 5px;
+  overflow: hidden;
 }
-.ls-parts i {
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  min-width: 0;
-  padding: 0 9px;
-  border-radius: 4px;
-  font-size: 12.5px;
-  font-style: normal;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: #16181b;
+.ls-parts > i {
+  position: relative;
+  display: block;
+  min-width: 3px;
+  border-radius: 2px;
 }
-.ls-parts i:hover {
+.ls-parts > i:hover {
   filter: brightness(1.07);
 }
-.ls-parts [data-tone="critical"] {
-  color: #fff;
-}
-.ls-parts [data-tone="na"] {
-  color: var(--l-ink);
+.ls-parts > i[data-dots] {
+  background: none;
 }
 
 /* Its key. */
@@ -178,10 +195,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
-  margin-top: 10px;
-  font-size: 12.5px;
-  color: var(--l-ink-2);
+  gap: 4px 14px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--l-ink-3);
 }
 .ls-leg[data-tight] {
   gap: 4px 12px;
@@ -194,17 +211,17 @@
 }
 .ls-leg i {
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   margin-right: 1px;
-  border-radius: 2px;
+  border-radius: 50%;
 }
 .ls-leg [data-tone="na"] {
-  box-shadow: inset 0 0 0 1px var(--ls-line);
+  box-shadow: inset 0 0 0 0.5px var(--ls-line);
 }
 .ls-leg b {
-  font-weight: 500;
-  color: var(--l-ink);
+  font-weight: 400;
+  color: inherit;
 }
 .ls-leg [data-zero],
 .ls-leg [data-zero] b {
@@ -232,11 +249,12 @@
   flex: none;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  height: 20px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--l-wash-2);
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--l-ink-2);
   white-space: nowrap;
 }
@@ -259,16 +277,17 @@
   min-width: 0;
   padding: 10px 16px 14px;
   border-radius: var(--lc-r-card);
-  box-shadow: inset 0 0 0 1px var(--ls-line);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .ls-blkh {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 28px;
-  /* A pane section's label (PaneSection): 12.5, 600, the second ink. */
+  /* A box's name (board Security's .hl): 12.5, 500, the second ink. */
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--l-ink-2);
 }
 .ls-blkh-end {
@@ -294,7 +313,7 @@
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: var(--l-r-sm);
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 13px;
@@ -320,26 +339,32 @@
   color: var(--l-ink-2);
 }
 
-/* A filter chip. */
+/* A filter chip: outlined, no fill of its own (board Finding's .chip.o); filled while it narrows the list. */
 .ls-chip {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px 0 10px;
   border: 0;
-  border-radius: var(--l-r-sm);
-  background: var(--l-wash);
+  border-radius: var(--lc-r-row);
+  background: none;
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--l-ink-2);
   white-space: nowrap;
   cursor: pointer;
 }
-.ls-chip:hover,
+.ls-chip:hover {
+  background: var(--l-wash);
+  color: var(--l-ink);
+}
 .ls-chip[data-on] {
   background: var(--l-wash-2);
+  box-shadow: none;
   color: var(--l-ink);
 }
 .ls-chip svg {
@@ -353,7 +378,7 @@
   box-sizing: border-box;
   padding: 13px 14px 12px;
   border-radius: var(--lc-r-card);
-  box-shadow: inset 0 0 0 1px var(--ls-line);
+  box-shadow: inset 0 0 0 0.5px var(--ls-line);
   cursor: pointer;
 }
 .ls-bx:hover {
@@ -421,7 +446,7 @@
 }
 .ls-pick[data-nil] {
   background: none;
-  box-shadow: inset 0 0 0 1px var(--ls-line);
+  box-shadow: inset 0 0 0 0.5px var(--ls-line);
 }
 /* A tool's or a model's mark in a pick, bare as every mark is: no plate round it. */
 .ls-mk {

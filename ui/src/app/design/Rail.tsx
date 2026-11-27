@@ -1,5 +1,5 @@
 /*
-  The tool rail at the canvas's left edge: Move and Hand, then what you add (a frame of a size, a
+  The tools, a segmented control in the design's top row (board Design; it was a rail at the canvas's left edge): Move and Hand, then what you add (a frame of a size, a
   box, a text, a picture). What to say goes in the dock, always in view, and the say bar under a
   pick puts the caret there, so the rail has no Say of its own. A box, a text or a picture goes into what's
   picked: inside it when it's a stack, after it when it isn't, at the end of the page when a frame
@@ -93,7 +93,7 @@ export function Rail() {
         <I.hand size={16} />
       </Btn>
       <hr />
-      <Pop label="Frame: a new one, of a size" side="left" width={240} triggerClass="lc-tb" triggerAttrs={{ title: "Frame (F)", "aria-pressed": tool === "frame" }} trigger={<D.frame />} menu>
+      <Pop label="Frame: a new one, of a size" side="bottom" align="center" width={240} triggerClass="lc-tb" triggerAttrs={{ title: "Frame (F)", "aria-pressed": tool === "frame" }} trigger={<D.frame />} menu>
         {(close) => (
           <>
             {/* A size's value at the right end, as every menu shows a value (sizes.ts says them one way). */}

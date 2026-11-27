@@ -29,7 +29,14 @@ import { PaneButton, PaneNote, PaneStatus } from "./Pane";
 import { CardLines } from "./CardLines";
 import * as os from "./os";
 import { wordRead, wordWrite } from "./kept";
+import type { MarkState } from "./session-state";
 import "./wall.css";
+
+/**
+  The colour of a tile's dots by its mark: working yellow, needing you amber, failed red, finished and not seen yet blue.
+  A quiet one has none, and so does one not started yet ("new"): nothing has happened in it to be news.
+*/
+const DOTS_OF: Partial<Record<MarkState, string>> = { working: "lc-ht-prog", checks: "lc-ht-prog", needs: "lc-ht-warn", limit: "lc-ht-warn", problem: "lc-ht-bad", fresh: "lc-ht-blue" };
 
 type Tool = Extract<Item, { kind: "tool" }>;
 type Ask = Extract<Item, { kind: "approval" }>;
@@ -528,6 +535,7 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   // the project, what it does or wants in the row's words (a question in its own words, amber until you open it), and the row's facts.
   const works = kind === "working";
   const mark = markStateOf(t, { busy: works });
+  // A question is amber until you have seen it, then plain grey with no mark (session-state.ts seenAsk), as in the sidebar.
   const said = rowWords(t, { busy: works, agents: t.status === "running" ? 0 : t.agentsAtWork, seenQ: seenAsk(t), now });
   const words = said.asks ? said.text : said.text === "Finished" ? project : [project, said.text].filter(Boolean).join(" · ");
 
@@ -582,6 +590,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
   };
   return (
     <article className="lc-wt" data-tile={t.id} data-kind={kind} data-picked={picked || undefined} aria-label={`${t.title}, ${seenAsk(t) ? "waits for your answer" : (markLabelOf(t, mark) ?? MARK_WORD[mark]).toLowerCase()}`} onClick={tileClick} onDoubleClick={(e) => !own(e) && onOpen(t.id)}>
+      {/* The dots in the tile's top right corner, in its state's colour, while it is alive (board Wall); a settled-looking one has none. */}
+      {DOTS_OF[mark] && <i className={`lc-ht lc-ht-corner lc-ht-soft ${DOTS_OF[mark]}`} aria-hidden />}
       <button
         type="button"
         className="lc-wt-head l-focus"
@@ -591,9 +601,8 @@ const Tile = memo(function Tile({ t, n, picked, now, project, roomy, onPick, onO
         onDoubleClick={() => onOpen(t.id)}
       >
         {/* The sidebar's mark, in the mark's place: an answer you haven't read is fresh here as there, under Finished. */}
-        <span className="lc-wt-mark">
-          <SideMark state={mark} label={seenAsk(t) ? "Waits for your answer" : markLabelOf(t, mark)} />
-        </span>
+        {/* A finished tile it has nothing more to say about draws no mark (board Wall); its place stays, so titles line up. */}
+        <span className="lc-wt-mark">{!(mark === "done" && kind === "done") && <SideMark state={mark} label={seenAsk(t) ? "Waits for your answer" : markLabelOf(t, mark)} />}</span>
         <span className="lc-wt-title">{t.title}</span>
         <span className="lc-wt-ago">{ago(t.updatedAt, now)}</span>
         {/* The key that opens it, after the time: the Wall's own, which no sidebar row has. */}

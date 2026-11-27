@@ -12,10 +12,10 @@ import { DESIGNS_FOLDER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "../engine";
 import { closeTab, getTabs, HOME_TAB, moveTab, showTab, subscribeTabs, tabKey, useTabs, type DesignTab } from "../face";
-import { I, N, type MarkKind } from "../icons";
+import { I, type MarkKind } from "../icons";
 import { ago, clock, markOf, modelLabel, plural, threadModel } from "../model";
 import { keys } from "../os";
-import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused, type SideState } from "../SideList";
+import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useFieldNew, useWindowFocused, type SideState } from "../SideList";
 import { askWords, markStateOf, seenAsk, sideStateOf, type MarkState } from "../session-state";
 import { Pop, Row, Sep } from "../ui";
 import { dropIfUntouched, newDesign, sessionOf } from "./session";
@@ -91,7 +91,7 @@ const VIEW_KEY = "ld:sb-list";
 /** By status's groups, in order, with the sidebar's names, and the marks each holds: Needs you is waiting on you, a problem or its plan's limit, as Code's is. */
 const STATUS: [string, SideState[]][] = [["Needs you", ["needs", "error", "limited"]], ["Working", ["working"]], ["Finished", ["done"]]];
 const asks = (st: SideState) => st === "needs" || st === "error" || st === "limited";
-/** A question you've opened and left, or are looking at (the open design in a focused window): still waiting, no longer news (session-state.ts, seenAsk), so grey, as in Code's list. */
+/** A question you've opened and left, or are looking at (the open design in a focused window): still waiting, no longer news (session-state.ts, seenAsk): no mark, grey words, and a folded folder doesn't count it. */
 const seenQ = (x: { s?: Thread; state: SideState }, looking: boolean) => x.state === "needs" && Boolean(x.s && seenAsk(x.s, looking));
 
 /** How a design's session stands, as its row's mark shows it. */
@@ -112,6 +112,7 @@ export const markOfTab = (s: Thread | undefined, looking: boolean): MarkState =>
 */
 export function designWords(s: Thread | undefined, state: SideState, seen: boolean, n: number | undefined): { text?: string; tone?: "warn" | "danger" } {
   const text = state === "working" ? s?.doing?.text || "Working" : state === "needs" && s ? askWords(s) : state === "error" ? "Ran into a problem" : state === "limited" ? `Hit its plan's limit${s?.limit?.until ? `, back at ${clock(s.limit.until)}` : ""}` : n === undefined ? undefined : n ? plural(n, "frame") : "No frames yet";
+  // A question is amber until you have seen it, then plain grey (session-state.ts seenAsk).
   return { text, tone: (state === "needs" && !seen) || state === "limited" ? "warn" : state === "error" ? "danger" : undefined };
 }
 /** How a design's session stands, for a row that has the session (or none). */
@@ -143,7 +144,7 @@ function laidOut(list: DesignTab[], at: string, view: View, threads: Thread[], p
 }
 
 /**
-  Liner Design's side of the sidebar, as Code's: your places on top (New design and Home; Search is in the head row above),
+  Liner Design's side of the sidebar, as Code's: your places on top (Home; New design and Search are the sidebar's field above),
   "Designs" with its one menu (By folder, By status), and the open designs as Code's two-line rows
   (SideRow, Rows.dc.html). A row says how its session stands in the state mark (working in its
   model's colour, needs when it waits on you and you haven't opened it since, grey after, fresh when
@@ -167,6 +168,8 @@ export function OpenDesigns() {
   const [view, setView] = useKept<View>(VIEW_KEY, "folder", isView);
   const [shut, setShut] = useKept<string[]>("ld:sb-shut", [], isIds);
   const { here, folderOf, folders } = laidOut(list, at, view, threads, projects);
+  // Liner Design's new thing sits in the sidebar's field, where Code's New session is (SideList.tsx useFieldNew), under the same ⌘N.
+  useFieldNew({ label: "New design", onClick: () => void newDesign().catch(fail) });
   // The times move on their own.
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -244,11 +247,8 @@ export function OpenDesigns() {
 
   return (
     <div className="ld-open">
+      {/* New design is the compose button at the end of the sidebar's field (useFieldNew, above), under the same ⌘N. */}
       <div className="lc-sb-top">
-        <button type="button" className="lc-sb-nav l-focus" title={`New design (${keys("mod+n")})`} onClick={() => void newDesign().catch(fail)}>
-          <N.plus size={14} />
-          <span>New design</span>
-        </button>
         <button type="button" className="lc-sb-nav l-focus" aria-current={at === HOME_TAB ? "page" : undefined} title="Design Home: start a design, or find one" onClick={() => showTab(HOME_TAB)}>
           <I.home size={14} />
           <span>Home</span>

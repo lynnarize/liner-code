@@ -427,7 +427,7 @@ button.lc-crp-r:hover {
   box-sizing: border-box;
   margin-top: 12px;
   padding-bottom: 8px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-hair);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--l-ink-2);
@@ -555,7 +555,7 @@ button.lc-cr-bg:hover {
   position: relative;
   margin-left: 14px;
   padding-left: 12px;
-  border-left: 1px solid var(--l-line);
+  border-left: 0.5px solid var(--lc-hair);
 }
 .lc-cr-kid {
   position: relative;
@@ -590,23 +590,29 @@ button.lc-cr-bg:hover {
   position: absolute;
   top: 0;
 }
+/* A thin time bar (line and dot, board Panel): 6 high on a wash, a finished part flat in grey. */
 .lc-cr-track {
   position: relative;
-  height: 12px;
-  border-radius: 4px;
-  background: var(--l-wash);
+  height: 6px;
+  border-radius: 999px;
+  background: var(--l-wash-2);
 }
 .lc-cr-bar {
   position: absolute;
   top: 0;
   bottom: 0;
   min-width: 3px;
-  border-radius: 4px;
-  background: color-mix(in oklab, var(--l-ink) 26%, transparent);
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--l-ink) 30%, transparent);
 }
-/* A lane at work in the second ink, not the accent: it's how long, not an alert (2026-11-26, calmer). Waiting, striped in grey. */
+/* The part still running is the shared halftone fill in the working yellow: solid, then dots toward its live end. It
+   does not move: the one moving mark is the working one. Waiting, striped in grey. */
 .lc-cr-bar[data-live] {
-  background: var(--l-ink-3);
+  background: none;
+}
+.lc-cr-bar > .lc-ht {
+  --lc-ht-s: 3px;
 }
 .lc-cr-bar[data-wait] {
   background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--l-ink) 30%, var(--lc-card)) 0 3px, color-mix(in oklab, var(--l-ink) 10%, var(--lc-card)) 3px 6px);
@@ -918,7 +924,7 @@ button.lc-cr-bg:hover {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
-  border: 1px solid var(--lc-hair);
+  border: 0.5px solid var(--lc-line2);
   border-radius: var(--lc-r-row);
   background: var(--lc-paper);
   font: inherit;
@@ -967,7 +973,7 @@ button.lc-cr-bg:hover {
 }
 .lc-sw-wt {
   padding: 8px 0;
-  border-bottom: 1px solid var(--lc-hair);
+  border-bottom: 0.5px solid var(--lc-hair);
 }
 .lc-sw-wth {
   display: flex;
@@ -1057,8 +1063,7 @@ button.lc-cr-bg:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
 }
-.lc-ap .lc-row-t .lc-quiet,
-.lc-spop .lc-row-t .lc-quiet {
+.lc-ap .lc-row-t .lc-quiet {
   font-weight: 400;
   color: var(--l-ink-4);
 }
@@ -1068,7 +1073,7 @@ button.lc-cr-bg:hover {
   gap: 2px;
   margin-left: 15px;
   padding-left: 6px;
-  border-left: 1px solid var(--l-line);
+  border-left: 0.5px solid var(--lc-hair);
 }
 .lc-ap-kids > div {
   display: grid;
@@ -1076,99 +1081,58 @@ button.lc-cr-bg:hover {
   gap: 2px;
 }
 /* A step mark in a menu row keeps its own colours: working is ink-2, done the fourth ink. */
-.lc-ap .lc-row-tick > .lc-stepmark,
-.lc-spop .lc-row-tick > .lc-mk {
+.lc-ap .lc-row-tick > .lc-stepmark {
   color: inherit;
 }
 
-/* ---------- the Session card (board Session) ---------- */
-.lc-spop {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-.lc-spop-look {
-  width: 22px;
-  height: 22px;
-  margin: -4px -4px -4px 0;
-}
-.lc-spop-doing {
-  font-weight: 400;
-}
-/* The context bar, split by source (board Session): one flat bar on the menu's inset, 6 high, with no slivers. */
-.lc-spop-bar {
-  margin: 2px 8px 8px;
-}
-.lc-spop-bar > .lc-cx-ticks {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 3px;
-  -webkit-mask: none;
-  mask: none;
-}
-.lc-spop-bar > .lc-cx-ticks i + i {
-  box-shadow: -2px 0 0 var(--lc-float, var(--l-wash-2));
-}
-.lc-spop-bar > .lc-cx-mark {
-  top: -2px;
-  bottom: -2px;
-}
-.lc-spop-src {
-  display: grid;
-  gap: 2px;
-  margin: 0 0 4px 30px;
-}
-.lc-spop-srow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 24px;
-  padding: 0 8px 0 0;
-  font-size: 12.5px;
-  color: var(--l-ink-3);
-}
-.lc-spop-srow > i {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-}
-.lc-spop-sn {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--l-ink-2);
-}
-
 /* ---------- the cards at the chat's end (SPEC rule 6, boards Swarm, Tray, Teamwork) ---------- */
-/* Bordered (1px, radius 14, no fill), 30px rows at 13.5px; the last things in the chat, over the live line. */
+/* Line and dot (board Main): the card's faint fill and a 0.5px edge at the card corner, a 36px head, 30px rows at 13px
+   under a hairline each; the last things in the chat, over the live line. */
 .lc-cards {
   display: grid;
-  gap: 10px;
+  gap: 16px;
 }
 .lc-cards:empty {
   display: none;
 }
 .lc-ccard {
+  position: relative;
   min-width: 0;
-  padding: 4px 0;
-  border: 1px solid var(--l-line-2);
-  border-radius: 14px;
-  font-size: 13.5px;
+  overflow: hidden;
+  border-radius: var(--lc-r-card);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
+  font-size: 13px;
   color: var(--l-ink-2);
 }
-.lc-ccard[data-open] {
-  padding-bottom: 8px;
-}
 .lc-ccard-h {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
   height: 36px;
-  padding: 0 12px 0 8px;
+  padding: 0 6px 0 6px;
+}
+/* The plan's halftone: only behind its head's top right corner, the size the board draws it, and still. */
+.lc-ccard-ht {
+  inset: 0 0 auto auto;
+  width: 260px;
+  height: 72px;
+  border-radius: 0;
+}
+.lc-ccard-ic {
+  flex: none;
+  color: var(--l-ink-3);
+}
+/* The fold's chevron at the head's right end: up while the plan is open, down when it is folded. */
+.lc-ccard-chev {
+  flex: none;
+  margin-right: 2px;
+  color: var(--l-ink-3);
+}
+.lc-ccard-fold[aria-expanded="false"] > .lc-ccard-chev {
+  rotate: 180deg;
 }
 .lc-ccard-fold,
 .lc-ccard-name {
@@ -1192,7 +1156,7 @@ button.lc-cr-bg:hover {
 }
 .lc-ccard-fold b,
 .lc-ccard-name b {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--l-ink);
 }
 .lc-ccard-fold .lc-quiet,
@@ -1239,25 +1203,30 @@ button.lc-cr-bg:hover {
 .lc-ccard-rows {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  margin: 2px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .lc-ccard-r {
   --d: 0;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
   min-height: 30px;
-  padding: 0 16px 0 calc(16px + var(--d) * 22px);
+  padding: 0 12px 0 calc(12px + var(--d) * 22px);
+  border-top: 0.5px solid var(--lc-hair);
 }
+/* Done in grey, the step in work in ink, not started a step down (board Main). */
 .lc-ccard-r[data-s="done"] .lc-ccard-t {
   color: var(--l-ink-3);
 }
-.lc-ccard-r[data-s="working"] .lc-ccard-t,
-.lc-ccard-r[data-s="waiting"] .lc-ccard-t {
+.lc-ccard-r[data-s="working"] .lc-ccard-t {
   color: var(--l-ink);
+}
+.lc-ccard-r[data-s="waiting"] .lc-ccard-t {
+  color: var(--l-ink-2);
 }
 /* A member's row is a button that opens it in the panel; it spans the card. */
 .lc-ccard-rb,
@@ -1320,7 +1289,7 @@ button.lc-cr-bg:hover {
 }
 .lc-ccard-r > .lc-ccard-n {
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* ---------- a hand-over or report in the chat: one folded row ---------- */
@@ -1328,49 +1297,60 @@ button.lc-cr-bg:hover {
   display: grid;
   gap: 6px;
 }
+/* One centred grey line between two hairlines (board Light): the names in it a step brighter; it opens in place. */
 .lc-hand {
   min-width: 0;
-  border-radius: 10px;
-  background: var(--l-wash);
 }
 .lc-hand-h {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
-  height: 36px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0;
   border: 0;
-  border-radius: 10px;
   background: none;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 12px;
   color: var(--l-ink-3);
-  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
-.lc-hand-h > svg:first-child {
+.lc-hand-h::before,
+.lc-hand-h::after {
+  content: "";
+  flex: 1 0 16px;
+  height: 0.5px;
+  background: var(--lc-line2);
+}
+.lc-hand-h > svg:first-of-type {
   flex: none;
   color: var(--l-ink-3);
 }
 .lc-hand-h b {
   flex: none;
-  font-weight: 600;
-  color: var(--l-ink);
+  font-weight: 500;
+  color: var(--l-ink-2);
 }
 .lc-hand-t {
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: 40%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .lc-hand-n {
   flex: none;
-  font-family: var(--l-font-mono);
-  font-size: 12.5px;
 }
-.lc-hand-body {
-  padding: 0 14px 12px 36px;
+@media (hover: hover) and (pointer: fine) {
+  .lc-hand-h:hover {
+    color: var(--l-ink-2);
+  }
+}
+.lc-md.lc-hand-body {
+  padding: 8px 0 4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--l-ink-2);
 }

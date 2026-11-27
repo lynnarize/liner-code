@@ -16,7 +16,7 @@ import { PR_TEST_TOOL, type ApprovalGrant, type ApprovalWhy, type GrantKind, typ
 import { toast } from "@liner/components/toast/toast";
 import { HoldToConfirm } from "@liner/components/hold-to-confirm/hold-to-confirm";
 import { rpc, useEngine, useItemsWhere } from "./engine";
-import { I, StateMark } from "./icons";
+import { I } from "./icons";
 import { accessOf, agentOf, plural } from "./model";
 import { BackRow, Kbd, MenuFoot, Pop, Row, Sep } from "./ui";
 import { askKey, bitsOf, rowsOf } from "./ask-text";
@@ -373,6 +373,15 @@ export function AskDock({ dock }: { dock: DockAsk }) {
   const why = high ? (it.why?.find((w) => w.kind === "undo") ?? it.why?.[0]) : it.why?.find((w) => w.kind !== "undo");
   const headline = headlineOf(it);
   const one = !high && it.grants?.length === 1 ? it.grants[0] : undefined;
+  // Board Light: the amber mark and the question on the head line, one grey line of who asks under it, the command in a
+  // block. With no words of its own, who asks is the head line.
+  const sub = headline ? (shell ? `${who} asks to run a command` : `${who} asks`) : undefined;
+  // Typing in the box sends it back with your words (Composer reads them), so saying something else is the box, focused.
+  const say = (
+    <button type="button" className="lc-dask-say l-focus" onClick={() => dock.box.current?.focus()}>
+      Say something else
+    </button>
+  );
   return (
     <section className="lc-dask" data-high={high || undefined} aria-label={`${who} asks: ${askWords(it)}`} tabIndex={-1} onKeyDown={(e) => {
       // A button takes its own Enter; a menu open on the ask has closed itself on Escape.
@@ -380,10 +389,12 @@ export function AskDock({ dock }: { dock: DockAsk }) {
       if (e.key === "Enter" && e.target instanceof HTMLElement && e.target.closest("button, a, input, textarea")) return;
       dock.onKey(e);
     }}>
+      {/* It waits on you: the amber halftone in the card's corner, red when it can't be undone. Still. */}
+      <i className={`lc-ht lc-ht-corner lc-ht-soft lc-dask-ht ${high ? "lc-ht-bad" : "lc-ht-warn"}`} aria-hidden />
       <div className="lc-dask-top">
-        {/* It waits on you: the needs-you mark, as its session's row shows; the red ring says when it can't be undone. */}
-        <StateMark state="needs" size={14} />
-        <span className="lc-dask-who">{top}</span>
+        {/* No mark at the head (the owner's ruling): the amber edge and corner say it waits; a screen reader hears it in words. */}
+        <span className="l-sr-only">Waiting for you: </span>
+        {headline ? <h3 className="lc-dask-h">{headline}</h3> : <span className="lc-dask-h">{top}</span>}
         {dock.total > 1 && (
           <>
             <span className="lc-grow" />
@@ -393,7 +404,8 @@ export function AskDock({ dock }: { dock: DockAsk }) {
           </>
         )}
       </div>
-      {headline && <h3 className="lc-dask-h">{headline}</h3>}
+      <div className="lc-dask-body">
+      {sub && <p className="lc-dask-who">{sub}</p>}
       {command !== undefined && <Command text={command} whole={high} />}
       {rest.length > 0 && (
         <dl className="lc-dask-fields">
@@ -426,44 +438,47 @@ export function AskDock({ dock }: { dock: DockAsk }) {
           ))}
         </ul>
       )}
+      </div>
+      {/* The answers (board Light): the first is the one white button, the rest outlined, and saying something else at the end. */}
       {mode === "back" ? (
         <div className="lc-dask-acts">
+          <button type="button" className="lc-dask-run l-focus" data-solo onClick={dock.sendBack}>
+            Send it back <kbd>↵</kbd>
+          </button>
           <button type="button" className="lc-dask-ghost l-focus" onClick={() => dock.setMode("choose")}>
             Back
           </button>
           <span className="lc-grow" />
           <span className="lc-dask-hint">Say what to do instead below, or send it back as it is</span>
-          <button type="button" className="lc-dask-run l-focus" data-solo onClick={dock.sendBack}>
-            Send it back <kbd>↵</kbd>
-          </button>
         </div>
       ) : (
         <div className="lc-dask-acts">
-          <button type="button" className="lc-dask-ghost l-focus" onClick={() => (dock.setMode("back"), dock.box.current?.focus())}>
-            Not this <kbd>esc</kbd>
-          </button>
-          <span className="lc-grow" />
           {high ? (
             <HoldToConfirm className="lc-dask-hold" duration={900} resetAfter={null} hintLabel="Keep holding" doneLabel={shell ? "Running it" : "Allowed"} onConfirm={() => dock.run()}>
               {shell ? "Hold to run" : /push/i.test(it.title) ? "Hold to push" : "Hold to allow"}
             </HoldToConfirm>
           ) : (
             <>
+              <span className="lc-dask-split">
+                <button type="button" className="lc-dask-run l-focus" onClick={() => dock.run()}>
+                  {yes} <kbd>↵</kbd>
+                </button>
+                <Pop label="More ways to answer" side="top" align="start" width={440} menu triggerClass="lc-dask-arrow" trigger={<I.chevU size={12} />}>
+                  {(close) => <Ways dock={dock} yes={yes} close={close} />}
+                </Pop>
+              </span>
               {one && (
                 <button type="button" className="lc-dask-also l-focus" title={[grantWords(one).folder, grantWords(one).stays].filter(Boolean).join(": ")} onClick={() => dock.run(one.kind)}>
                   <span className="lc-dask-also-t">Don't ask again for {grantWords(one).short}</span> <kbd>{os.mod}↵</kbd>
                 </button>
               )}
-              <span className="lc-dask-split">
-                <button type="button" className="lc-dask-run l-focus" onClick={() => dock.run()}>
-                  {yes} <kbd>↵</kbd>
-                </button>
-                <Pop label="More ways to answer" side="top" align="end" width={440} menu triggerClass="lc-dask-arrow" trigger={<I.chevU size={12} />}>
-                  {(close) => <Ways dock={dock} yes={yes} close={close} />}
-                </Pop>
-              </span>
             </>
           )}
+          <button type="button" className="lc-dask-ghost l-focus" onClick={() => (dock.setMode("back"), dock.box.current?.focus())}>
+            Not this <kbd>esc</kbd>
+          </button>
+          <span className="lc-grow" />
+          {say}
         </div>
       )}
     </section>

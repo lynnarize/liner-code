@@ -185,6 +185,8 @@ export const I = {
   dot: (p: P) => <S {...p} w={0}><circle cx="8" cy="8" r="3" fill="currentColor" /></S>,
   /** Not started, or waiting its turn: an empty ring, the size of the tick's reach, so a list of steps keeps one column. */
   ring: (p: P) => <S {...p}><circle cx="8" cy="8" r="4.25" /></S>,
+  /** The step in work, held still: the same ring with its middle lit (line and dot, 2026-11-27). */
+  now: (p: P) => <S {...p}><circle cx="8" cy="8" r="4.25" /><circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" /></S>,
   star: (p: P) => <S {...p}><path d="m8 2.6 1.6 3.4 3.7.5-2.7 2.5.7 3.7L8 10.9l-3.3 1.8.7-3.7-2.7-2.5 3.7-.5Z" /></S>,
   flow: (p: P) => <S {...p}><circle cx="3.75" cy="8" r="1.75" /><circle cx="12.25" cy="4" r="1.75" /><circle cx="12.25" cy="12" r="1.75" /><path d="M5.5 8h.75c1.1 0 2-.9 2-2v-.5c0-.83.67-1.5 1.5-1.5h.75M6.25 8c1.1 0 2 .9 2 2v.5c0 .83.67 1.5 1.5 1.5h.75" /></S>,
   alert: (p: P) => <S {...p}><path d="M7.13 2.9a1 1 0 0 1 1.74 0l5.02 8.9a1 1 0 0 1-.87 1.5H2.98a1 1 0 0 1-.87-1.5Z" /><path d="M8 6.5v2.5M8 11.25v.01" /></S>,
@@ -213,7 +215,7 @@ export const I = {
   /** Fast: a step forward with motion lines. The bolt stays for triggers. */
   speed: (p: P) => <S {...p}><path d="M8.5 4.25 12.25 8 8.5 11.75" /><path d="M2.75 5.75h3M1.75 8h4.5M2.75 10.25h3" /></S>,
   /** Fusion: two rings that overlap, two models working as one. */
-  fusion: (p: P) => <S {...p}><circle cx="6" cy="8" r="3.75" /><circle cx="10" cy="8" r="3.75" /></S>,
+  fusion: (p: P) => <S {...p} w={2}><path d="M3.45 13.05 7.05 2.95" /><path d="M8.95 13.05 12.55 2.95" stroke="var(--lc-act)" /></S>,
   /** Modes: a switch, because you pick how it works. */
   toggle: (p: P) => <S {...p}><rect x="1.75" y="4.5" width="12.5" height="7" rx="3.5" /><circle cx="10.75" cy="8" r="1.75" fill="currentColor" stroke="none" /></S>,
   /** Thinking: the comment bubble with three dots, the agent mid-thought. The dots are heavier, kept in proportion. */
@@ -347,6 +349,7 @@ export const MARK_WORD: Record<MarkState, string> = {
   needs: "Needs you",
   fresh: "Finished, not opened yet",
   done: "Finished",
+  seen: "Waits for your answer",
   new: "Not started",
   pr: "Pull request open",
   checks: "Checks running",
@@ -357,22 +360,22 @@ export const MARK_WORD: Record<MarkState, string> = {
 };
 
 /*
-  The dot and the gap for each box size. 14 is the drawing's (3px dots, 2.5 apart); the others keep
-  the box whole and every dot and gap on a whole device pixel at 2x, with the dot a near-constant 3px
-  so the mark reads as one at every size. A size off the set scales from 14.
+  The pixel and the gap for each box size (line and dot, 2026-11-27): a compact box of square pixels, set in the middle of
+  the mark's own square so it lines up with the icons beside it. 14 is the board's (3px pixels a pixel apart, 11 across);
+  the others keep every pixel and gap on a whole device pixel at 2x. A size off the set scales from 14.
 */
-const MARK_GRID: Record<number, [number, number]> = { 12: [3, 1.5], 14: [3, 2.5], 16: [3, 3.5], 20: [4, 4] };
+const MARK_GRID: Record<number, [number, number]> = { 12: [2.5, 1], 14: [3, 1], 16: [3.5, 1], 20: [4.5, 1.5] };
 const markGrid = (size: number): [number, number] => {
   if (MARK_GRID[size]) return MARK_GRID[size];
-  const d = Math.max(2, Math.round((size * 6) / 14) / 2);
-  return [d, Math.max(1, (size - 3 * d) / 2)];
+  return [Math.max(2, Math.round((size * 6) / 14) / 2), Math.max(1, Math.round((size * 2) / 14) / 2)];
 };
 
 /**
-  How anything stands, as one mark everywhere (session-state.ts MarkState): nine dots in a 3×3 grid,
-  each state a shape and a colour. Working (choice B, board Marks, 2026-11-25) is three lit dots
-  travelling round the ring with nothing behind them, in the progress yellow (Capy's, 2026-11-26): no dim
-  grid and no tint by model. `brand` is still taken (the places that pass a model's mark need no change)
+  How anything stands, as one mark everywhere (session-state.ts MarkState): a compact 3×3 box of square
+  pixels (line and dot, 2026-11-27), each state a pattern and a colour. Working is three lit pixels
+  travelling round the box in steps, in the progress yellow, the rest of the box at rest: the one mark that
+  moves. Needs you and every warning light all nine in amber, Failed all nine in red, New to you is a blue
+  cross. No tint by model. `brand` is still taken (the places that pass a model's mark need no change)
   but no longer colours it, and nor does `tint`: a Working mark is the same yellow wherever it is. Only a mark on a coloured chip (a Design frame's lead or sidekick tag)
   takes the chip's own white, from app.css, so a dark dot never sits on the lead's colour. Checks is a light
   crossing corner to corner. A change of `state` plays across the dots, so keep the mark mounted and
@@ -383,7 +386,17 @@ export function StateMark({ state, size = 14, label, tint, brand, className }: {
   const [d, g] = markGrid(size);
   // `tint` is taken and dropped (RULING 5): who runs a model is said by its name, never by the mark's colour.
   void tint;
-  const style = { "--mk-d": `${d}px`, "--mk-g": `${g}px` } as CSSProperties;
+  const style = { "--mk-d": `${d}px`, "--mk-g": `${g}px`, "--mk-box": `${size}px` } as CSSProperties;
+  // A question you have seen and not answered yet ("Grey once seen", the owner's ruling): no mark is drawn, never the done tick,
+  // since it still waits. Its name stays for a screen reader where one is given.
+  if (state === "seen") return label ? <span className="l-sr-only" data-s="seen" role="img" aria-label={label} /> : null;
+  // Done is the board's tick in the ok green (the step mark's tick), never a box of pixels: a grey plus read as New to you.
+  if (state === "done")
+    return (
+      <span className={className ? `lc-mk ${className}` : "lc-mk"} data-s="done" data-step="tick" data-tone="ok" style={{ width: size, height: size } as CSSProperties} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+        <I.check size={size} />
+      </span>
+    );
   return (
     <span className={className ? `lc-mk ${className}` : "lc-mk"} data-s={state} data-brand={brand} style={style} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
       <i />
@@ -401,26 +414,26 @@ export function StateMark({ state, size = 14, label, tint, brand, className }: {
 
 export type StepState = "waiting" | "working" | "done" | "skipped" | "failed";
 const STEP_WORD: Record<StepState, string> = { waiting: "Waiting", working: "Working", done: "Finished", skipped: "Skipped", failed: "Ran into a problem" };
-/* A step that waits or was skipped has not started, so both are the empty ring and its words tell them apart. */
-const STEP_SHAPE: Record<Exclude<StepState, "working">, "tick" | "ring" | "cross"> = { waiting: "ring", done: "tick", skipped: "ring", failed: "cross" };
+/* A step that waits or was skipped has not started, so both are the empty ring and its words tell them apart. The step in work is "now". */
+const STEP_SHAPE: Record<StepState, "tick" | "ring" | "cross" | "now"> = { waiting: "ring", working: "now", done: "tick", skipped: "ring", failed: "cross" };
 /**
   How a step stands, in lists of steps and agents (the Plan, Tasks, an agent's rows, step trails, tool
-  checks, add-on steps), choice B of board Marks: the dots only for what runs. Working is the state
-  mark's travelling light; finished is a plain tick in the fourth ink; not started or waiting is an
-  empty ring; failed is a cross in the danger colour. Every shape sits in one box of `size`, carries
-  the classes lc-mk and lc-stepmark (so the lists that place a mark keep placing it) and data-step with
-  its shape, and says its state to a screen reader. `tone="ok"` is for a check that passed (a pull
-  request's checks, a build's): its tick is green, where a step that is done keeps the grey one.
-  Working in a row of a list stands still (2026-11-26, after Capy): the ring of eight, lit and not moving, since the list's
-  head, the live line or the session's row already moves for the same work. `live` keeps it moving where this row is the
-  only sign that something runs (a tool check, a commit being pushed, a scan between turns).
+  checks, add-on steps): finished is a plain tick in the fourth ink; not started or waiting is an
+  empty ring; failed is a cross in the danger colour; the step in work is a still ring with its middle
+  lit, in ink (line and dot, 2026-11-27: in a plan nothing moves, and there is no 3×3 box). Every shape
+  sits in one box of `size`, carries the classes lc-mk and lc-stepmark (so the lists that place a mark
+  keep placing it) and data-step with its shape, and says its state to a screen reader. `tone="ok"` is
+  for a check that passed (a pull request's checks, a build's): its tick is green, where a step that is
+  done keeps the grey one. `live` is for a row that is the only sign that something runs (a tool check,
+  a commit being pushed, a scan between turns): there the step in work is the state mark's moving
+  Working box instead.
 */
 export function StepMark({ state, size = 16, label, tone, live, className }: { state: StepState; size?: number; label?: string; tone?: "ok"; live?: boolean; className?: string }) {
   const cls = [className ? `lc-stepmark ${className}` : "lc-stepmark", live ? "lc-mk-live" : ""].filter(Boolean).join(" ");
   const word = label ?? STEP_WORD[state];
-  if (state === "working") return <StateMark state="working" size={size} label={word} className={cls} />;
+  if (state === "working" && live) return <StateMark state="working" size={size} label={word} className={cls} />;
   const shape = STEP_SHAPE[state];
-  const Icon = shape === "tick" ? I.check : shape === "cross" ? I.close : I.ring;
+  const Icon = shape === "tick" ? I.check : shape === "cross" ? I.close : shape === "now" ? I.now : I.ring;
   return (
     <span className={`lc-mk ${cls}`} data-step={shape} data-tone={tone} style={{ width: size, height: size } as CSSProperties} role="img" aria-label={word}>
       <Icon size={size} />

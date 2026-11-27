@@ -67,7 +67,9 @@ test("Working in a row of a list stands still, the ring lit and not moving; only
   assert.match(icons, /export function StepMark\(\{ state, size = 16, label, tone, live, className \}/);
   assert.match(icons, /live \? "lc-mk-live" : ""/, "live isn't passed to the mark");
   const css = read("app.css");
-  assert.match(block(css, '.lc-mk.lc-stepmark[data-s="working"]:not(.lc-mk-live) > i'), /animation: none;/, "a row's working mark still loops");
+  // Line and dot (2026-11-27): a row's working step is no box of pixels at all but a still ring with its middle lit.
+  assert.match(icons, /if \(state === "working" && live\) return <StateMark state="working"/, "a row's working step is still the moving box");
+  assert.doesNotMatch(block(css, '.lc-mk[data-step="now"]'), /animation/, "a row's working mark moves");
   for (const [file, re] of [
     ["Settings.tsx", /<StepMark state="working" size=\{14\} live \/>/],
     ["Ship.tsx", /<StepMark state="working" size=\{14\} live \/>\s*Committing/],
@@ -116,7 +118,9 @@ test("Look again's arrow turns only after its own press, not each time the list 
 
 test("Bars and tags that aren't alerts are grey, not the accent", () => {
   const crew = read("crew.css");
-  assert.match(block(crew, ".lc-cr-bar[data-live]"), /background: var\(--l-ink-3\);/);
+  // Line and dot: a running lane is the shared halftone in the working yellow (lc-ht-prog), never the accent.
+  assert.doesNotMatch(block(crew, ".lc-cr-bar[data-live]"), /--l-accent|--lc-act/);
+  assert.match(read("Crew.tsx"), /<i className="lc-ht lc-ht-fill lc-ht-prog" aria-hidden \/>/, "a running lane takes a colour other than the working yellow");
   assert.doesNotMatch(block(crew, ".lc-cr-bar[data-wait]"), /--l-accent/);
   assert.match(block(read("app.css"), ".lc-queued-tag"), /color: var\(--l-ink-2\);/);
 });

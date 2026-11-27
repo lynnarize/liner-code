@@ -7,9 +7,10 @@
   and the time since it last did something; under it what it does, how it ended or what it wants,
   and its facts at the line's end (SideFacts: its own worktree, who works on it, its pull request's
   number). The Wall's tiles take the same words (rowWords) and facts.
-  Since 2026-11-26 (Capy's layout) every face's folders are `compact`: a group's header is one small
-  grey line (the folder, its name, its count, a chevron while folded). Code's rows are `compact` too:
-  the title with the mark at its end, and under it the words, the facts and the time.
+  Since 2026-11-26 (Capy's layout) every face's folders are `compact`, and since line and dot
+  (2026-11-27, board Main) a group's header is the fold arrow, the name and, folded, its count at the
+  end. Compact rows: the title with the mark or the time at its end, and under it the words on the
+  left, the facts on the right (who runs it, where, its pull request).
   Styles: app.css, the block headed "The sidebar's list parts" (class prefix lc-sl-).
 
   Tints. A working mark is in the second ink whoever works (the state mark's choice B, board Marks,
@@ -17,12 +18,13 @@
   does only where a holder's own colour says who it is.
   Action buttons in a row's `acts` or a folder's `actions`: use className "lc-sb-a l-focus" (24px in a row, 28px on a folder).
 */
-import { forwardRef, useRef, useSyncExternalStore, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useSyncExternalStore, type HTMLAttributes, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@contracts";
 import { cx } from "@liner/lib/hooks";
 import { I, MARK_WORD, ModelMark, N, StateMark, type MarkKind } from "./icons";
 import { clock, plural } from "./model";
 import { Num, Pop } from "./ui";
+import { here } from "./os";
 import { askWords, prSaid, reviewHeld, type MarkState, type PrTone, type SideState } from "./session-state";
 
 /**
@@ -39,6 +41,38 @@ export function listArrows(e: KeyboardEvent<HTMLElement>) {
 }
 
 export type { SideState } from "./session-state";
+
+/**
+  What the compose button at the end of the sidebar's field does in a face that isn't Code (Design's New design,
+  Security's Start a scan): the face's body says it with useFieldNew while it's shown, and the sidebar draws it
+  (useFieldNewNow) as Code's New session, the same button with the face's own words as its name and tooltip, lit
+  (`on`) while that page is open.
+*/
+export type FieldNew = { label: string; title?: string; on?: boolean; onClick: () => void };
+let fieldNew: FieldNew | null = null;
+const fieldSubs = new Set<() => void>();
+const tellField = () => fieldSubs.forEach((f) => f());
+export function useFieldNew(a: FieldNew) {
+  // The press reads the newest handler, so a new closure each render redraws nothing.
+  const latest = useRef(a);
+  latest.current = a;
+  useEffect(() => {
+    const mine: FieldNew = { label: a.label, title: a.title, on: a.on, onClick: () => latest.current.onClick() };
+    fieldNew = mine;
+    tellField();
+    return () => {
+      if (fieldNew !== mine) return;
+      fieldNew = null;
+      tellField();
+    };
+  }, [a.label, a.title, a.on]);
+}
+export function useFieldNewNow() {
+  return useSyncExternalStore(
+    (f) => (fieldSubs.add(f), () => void fieldSubs.delete(f)),
+    () => fieldNew,
+  );
+}
 
 /**
   Whether this window is focused. The open session in a focused window is being looked at, so every face's list draws it as
@@ -125,8 +159,9 @@ export function SideLabel({ name, count, icon, end }: { name: ReactNode; count?:
   its rows. Folded, its end says what hides in it: the needs mark when a session needs you, the
   working mark when one works, then how many; open, its rows say it themselves, so the end is empty.
   `actions` take the end's place while you point at it.
-  `compact` (Code's sidebar): one small grey line, the icon at 12, then the name with its count
-  always right after it, then the chevron, and folded, a small mark for what waits or works in it.
+  `compact` (every face's sidebar, line and dot): one small grey line, the fold arrow, an icon only
+  where one is given (Pinned's pin), the name; folded, a small mark for what waits or works in it
+  and the count at its end.
 */
 export function SideFolder({ name, count, open, onToggle, needs, working, tint, brand, icon, actions, onContextMenu, what = "sessions", compact, children }: {
   name: string; count: number; open: boolean; onToggle: () => void; needs?: boolean; working?: boolean; tint?: string; brand?: MarkKind; icon?: ReactNode; actions?: ReactNode;
@@ -140,18 +175,23 @@ export function SideFolder({ name, count, open, onToggle, needs, working, tint, 
     <section className="lc-sl-folder" aria-label={name} data-compact={compact || undefined}>
       <div className="lc-sl-fold" data-acts={actions ? "" : undefined} onContextMenu={onContextMenu}>
         {compact ? (
+          // Line and dot (board Main): the fold arrow first, pointing down while it's open, then the name; folded, its end says what hides in it and how many.
           <button type="button" className="lc-sl-fold-b l-focus" aria-expanded={open} title={open ? `Fold its ${what}` : `Show its ${what}`} onClick={onToggle} onKeyDown={listArrows}>
-            <span className="lc-sl-fold-i">{icon ?? <I.folder size={12} />}</span>
+            <I.chevR size={12} />
+            {icon && <span className="lc-sl-fold-i">{icon}</span>}
             <span className="lc-sl-fold-n">
               <span>{name}</span>
             </span>
-            <span className="lc-sl-count">
-              <Num value={count} />
-            </span>
-            <I.chevR size={12} />
-            {/* One small mark, the one that matters more: something waiting on you before something at work. */}
-            {!open && needs && <SideMark state="needs" size={12} label={`One of its ${what} needs you`} />}
-            {!open && !needs && working && <SideMark state="working" size={12} tint={tint} brand={brand} label={`One of its ${what} is working`} />}
+            {!open && (
+              <span className="lc-sl-fold-end">
+                {/* One small mark, the one that matters more: something waiting on you before something at work. */}
+                {needs && <SideMark state="needs" size={12} label={`One of its ${what} needs you`} />}
+                {!needs && working && <SideMark state="working" size={12} tint={tint} brand={brand} label={`One of its ${what} is working`} />}
+                <span className="lc-sl-count">
+                  <Num value={count} />
+                </span>
+              </span>
+            )}
           </button>
         ) : (
         <button type="button" className="lc-sl-fold-b l-focus" aria-expanded={open} title={open ? `Fold its ${what}` : `Show its ${what}`} onClick={onToggle} onKeyDown={listArrows}>
@@ -181,11 +221,11 @@ export function SideFolder({ name, count, open, onToggle, needs, working, tint, 
 type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   mark: ReactNode;
   title: ReactNode;
-  /** The time since it last did something, at the title's end, or with `compact` at the second line's end ("now", "2m", "2h", a day, a date: model.ts ago). */
+  /** The time since it last did something, at the title's end (with `compact`, after the mark): "now", "2m", "2h", a day, a date (model.ts ago). */
   ago?: string;
   sub?: string;
-  /** The second line's colour: amber, red, or `strong`, a step darker than grey for something left for you (files to review). */
-  tone?: "warn" | "danger" | "strong";
+  /** The second line's colour: amber, red, the live blue for what a working session does now, or `strong`, a step darker than grey for something left for you (files to review). */
+  tone?: "warn" | "danger" | "strong" | "live";
   /** Where it is, when no folder over the row says it (By status, Pinned, a group): a small folder and the project's name start the second line, before " · " and `sub`. */
   where?: string;
   /** A small mark that starts the second line in the folder's place: the logo of the app that started the session, its pull request's mark. */
@@ -204,7 +244,7 @@ type SideRowProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   pick?: HTMLAttributes<HTMLDivElement>;
   /** Anything more, laid over the row (a session's forks toggle). */
   children?: ReactNode;
-  /** Code's sidebar (Capy's layout): the title in the second ink with the mark at its end, and the time at the second line's end after the facts. */
+  /** Every face's sidebar (line and dot): the title in the second ink with the mark and the time at its end, and the facts at the second line's end. */
   compact?: boolean;
   /** With `compact`: it waits on you or has news you haven't seen, so its title is in full ink like the open one's. */
   loud?: boolean;
@@ -227,17 +267,20 @@ export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow
       <span className="lc-sl-words">{words}</span>
     </span>
   );
+  // Line and dot (board Main): the title with the state mark, the time or both at its end; under it the words on the left and the facts on the right.
   if (compact)
     return (
       <div ref={ref} {...rest} className={cx("lc-sl-row", className)} data-compact data-current={current || undefined} data-loud={loud || undefined} data-quiet={quiet || undefined}>
         <div {...pick} className={cx("lc-sl-pick", pick?.className)} onKeyDown={(e) => (pick?.onKeyDown?.(e), listArrows(e))}>
           <span className="lc-sl-title">{title}</span>
-          <span className="lc-sl-mark">{mark}</span>
-          {(words || facts || ago) && (
+          <span className="lc-sl-at">
+            <span className="lc-sl-mark">{mark}</span>
+            {ago && <span className="lc-sl-ago">{ago}</span>}
+          </span>
+          {(words || facts) && (
             <span className="lc-sl-l2">
               {second}
               {facts && <span className="lc-sl-facts">{facts}</span>}
-              {ago && <span className="lc-sl-ago">{ago}</span>}
             </span>
           )}
         </div>
@@ -265,29 +308,42 @@ export const SideRow = forwardRef<HTMLDivElement, SideRowProps>(function SideRow
 });
 
 /**
-  A row's facts, in this order and each only when it applies: the branch mark when it works in a
-  worktree of its own (its name in the tooltip), the mark of the model that works on it (a pair's
-  lead), and its pull request's number in mono, coloured by how it stands (PrTone). Bare marks, no
-  tiles. A session carries one pull request (Thread.pr), so the drawing's "+1" has nothing to
-  count yet.
+  A row's facts, in the board's order (line and dot, board Main) and each only when it applies: the mark of
+  who runs it (Code passes the tool's, "Runs through Claude Code"; elsewhere the model's), where it runs (the
+  branch mark when it works in a worktree of its own, its name in the tooltip, or with `local` a laptop for
+  this Mac), and its pull request's number after the pull request's mark, coloured by how it stands
+  (PrTone), or with none, the lines it left not committed ("+27 −6", green and red). Bare marks, no tiles. A
+  session carries one pull request (Thread.pr), so the drawing's "+1" has nothing to count yet.
 */
-export function SideFacts({ branch, model, modelName, pr }: { branch?: string; model?: MarkKind; modelName?: string; pr?: { number: number; tone: PrTone; said: string } }) {
-  if (!branch && !model && !pr) return null;
+export function SideFacts({ branch, local, model, modelName, pr, lines }: { branch?: string; local?: boolean; model?: MarkKind; modelName?: string; pr?: { number: number; tone: PrTone; said: string }; lines?: { added: number; removed: number } }) {
+  if (!branch && !local && !model && !pr && !lines) return null;
   return (
     <>
-      {branch && (
-        <span className="lc-sl-fact" role="img" aria-label={`In its own worktree, on ${branch}`} title={`In its own worktree, on ${branch}`}>
-          <I.branch size={14} />
-        </span>
-      )}
       {model && (
-        <span className="lc-sl-fact" role="img" aria-label={modelName ? `On ${modelName}` : "Its model"}>
+        <span className="lc-sl-fact lc-sl-who" role="img" aria-label={modelName ? (modelName.startsWith("Runs through") ? modelName : `On ${modelName}`) : "Its model"} title={modelName}>
           <ModelMark kind={model} size={12} />
         </span>
       )}
+      {branch ? (
+        <span className="lc-sl-fact lc-sl-where" role="img" aria-label={`In its own worktree, on ${branch}`} title={`In its own worktree, on ${branch}`}>
+          <I.branch size={12} />
+        </span>
+      ) : (
+        local && (
+          <span className="lc-sl-fact lc-sl-where" role="img" aria-label={`On ${here}`} title={`On ${here}, in the project's folder`}>
+            <I.laptop size={12} />
+          </span>
+        )
+      )}
       {pr && (
         <span className="lc-sl-pr" data-s={pr.tone} aria-label={`Pull request #${pr.number}, ${pr.said.toLowerCase()}`}>
-          #{pr.number}
+          <I.pr size={12} />#{pr.number}
+        </span>
+      )}
+      {!pr && lines && (lines.added > 0 || lines.removed > 0) && (
+        <span className="lc-sl-lines" aria-label={`${plural(lines.added, "line")} added and ${plural(lines.removed, "line")} removed, not committed`}>
+          <span data-k="add">+{lines.added}</span>
+          <span data-k="del">−{lines.removed}</span>
         </span>
       )}
     </>
@@ -298,7 +354,7 @@ export function SideFacts({ branch, model, modelName, pr }: { branch?: string; m
   A session's second line, the same in every list and on The Wall: what it is doing while it works
   (the engine's Thread.doing, the agents it sent after it), else how it stands or ended, the first
   that applies: the Reviewer's block, what it waits on you for in its own words (askWords: amber
-  until you open it, `seenQ`), a problem, its plan's limit, a snooze, not started, its pull request
+  until you open it, then plain grey: `seenQ`), a problem, its plan's limit, a snooze, not started, its pull request
   (prSaid), changes left to review (a step darker), else Finished. The time is the row's own (at
   the title's end, or the second line's end in Code), so it is never said here. `asks`: the words are its question, which matters
   more than where it is (a row's `where` steps aside for it).

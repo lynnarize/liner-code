@@ -35,9 +35,10 @@ test("The keyboard on a row turns the card at once", () => {
 });
 
 test("The picker draws its card at the side only where the window has room for all three parts and a menu's edges", () => {
-  assert.equal(PICKER_WIDE, 636);
-  assert.equal(pickerWide(656), true);
-  assert.equal(pickerWide(655), false);
+  // Board Menus: a 37 rail, a 320 list and a 288 card, 11 apart.
+  assert.equal(PICKER_WIDE, 667);
+  assert.equal(pickerWide(687), true);
+  assert.equal(pickerWide(686), false);
 });
 
 type M = { name: string; maker: string; desc?: string; legacy?: boolean };

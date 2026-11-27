@@ -1175,6 +1175,8 @@ export type Settings = {
   capUsd?: number;
   /** Keeps the Mac from sleeping while an agent works (on unless turned off). */
   keepAwake?: boolean;
+  /** Carry on: three cards under Home's box, its row in the sidebar's More menu and the look for past sessions behind them (on unless turned off). */
+  carryOn?: boolean;
   /** The menu bar item: what works and what needs you (on unless turned off). */
   menuBar?: boolean;
   /** Settle a session when its pull request merges, or when a routine run handled everything itself. Off unless you turn them on. */
@@ -1417,6 +1419,9 @@ export type KeyBinding = { key: string; command: string; when?: string };
 /** A project's command with a run button; `key` runs it from the keyboard in a session ("mod+shift+1"). */
 export type ProjectScript = { id: string; name: string; command: string; onWorktree?: boolean; key?: string };
 export type SidebarGroup = { id: string; name: string };
+
+/** Carry on shows (Home's cards, the More menu's row, the look for past sessions) unless it was turned off in Settings. */
+export const carryOnOn = (s: Pick<Settings, "carryOn">): boolean => s.carryOn !== false;
 
 /* Routines: work that runs on its own. Models read and report; code in the engine decides. */
 /**

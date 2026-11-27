@@ -143,7 +143,7 @@
   flex: none;
   padding: 0 6px;
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   font-size: 11px;
   font-weight: 500;
   line-height: 17px;
@@ -365,9 +365,7 @@
   padding: 0 9px 0 10px;
   border-radius: var(--lc-r-row);
   background: var(--l-surface);
-  box-shadow:
-    0 0 0 1px var(--l-line-2),
-    0 1px 2px var(--l-drop);
+  box-shadow: 0 0 0 0.5px var(--lc-line2);
   font-size: 13px;
   color: var(--l-ink);
   white-space: nowrap;
@@ -397,8 +395,9 @@
 }
 
 /*
-  The model picker (Models.tsx ModelPicker; sizes in picker.ts): a 40px rail of tools, a middle card 312 by 476 that never
-  changes size, and a 268px card at its side whose top is the middle card's top. In the middle card only the models
+  The model picker (Models.tsx ModelPicker; sizes in picker.ts, board Menus): a 37px rail of tools, a middle card 320 by 476
+  that never changes size, and a 288px card at its side whose top is the middle card's top, 11 apart, each in the menu
+  shape (the menu's fill and float shadow, no blur), with Fusion's small card under the side card. In the middle card only the models
   scroll: Find, the pinned rows (Fusion), the tool's own row with its source switch, and the foot rows stay put. Narrow,
   the side card's words are one line at the middle card's very foot. Inside a menu or a dialog (no `data-side`) the parts
   are drawn flat, the list as wide as the place.
@@ -409,27 +408,26 @@
   --lc-pk-r: var(--lc-r-row);
   --lc-pk-tall: min(var(--lc-pk-h, 476px), calc(100vh - 96px), var(--lc-pop-room, 100vh));
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: 37px minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
+  gap: 11px;
   min-width: 0;
   text-align: left;
 }
 .lc-pk[data-side="line"] {
-  grid-template-columns: 40px 312px;
+  grid-template-columns: 37px 320px;
 }
 .lc-pk[data-side="card"] {
-  grid-template-columns: 40px 312px 268px;
+  grid-template-columns: 37px 320px 288px;
 }
+/* A row's corner in the cards: the menu row's 6, 4 in from the card's 10. */
 .lc-pk[data-side] {
-  --lc-pk-r: 10px;
+  --lc-pk-r: 6px;
 }
 .lc-pk[data-side] .lc-pk-card {
-  border-radius: 14px;
-  background: var(--l-float);
-  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
-  backdrop-filter: var(--l-lens,) var(--l-backdrop);
-  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  border-radius: var(--lc-r-field);
+  background: var(--lc-float);
+  box-shadow: var(--lc-float-shadow);
 }
 .lc-pk-under {
   grid-column: 1 / -1;
@@ -438,17 +436,17 @@
 .lc-pk-rail {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   box-sizing: border-box;
-  width: 40px;
+  width: 37px;
   max-height: var(--lc-pk-tall);
-  padding: 6px;
+  padding: 4px;
   overflow: hidden auto;
   scrollbar-width: none;
 }
-/* The rail takes the cards' 14 corner: 6 in, a tool's 8 follows it. */
+/* The rail takes the cards' corner: 4 in, a tool's 6 follows it. */
 .lc-pk[data-side] .lc-pk-rail {
-  border-radius: 14px;
+  border-radius: var(--lc-r-field);
 }
 .lc-pk:not([data-side]) .lc-pk-rail {
   padding: 0;
@@ -457,11 +455,11 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
+  width: 29px;
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   color: var(--l-ink-2);
   cursor: pointer;
@@ -474,7 +472,7 @@
 /* The hairline between the tools and the places under them (your agents). */
 .lc-pk-rail-rule {
   flex: none;
-  height: 1px;
+  height: 0.5px;
   margin: 3px 4px;
   background: var(--l-line);
 }
@@ -517,7 +515,7 @@
   overflow: hidden;
 }
 .lc-pk:not([data-side]) .lc-pk-mid {
-  border-left: 1px solid var(--l-line);
+  border-left: 0.5px solid var(--l-line);
 }
 .lc-pk-mid > * {
   flex: none;
@@ -527,7 +525,7 @@
   align-items: center;
   height: 32px;
   padding: 0 6px;
-  border-bottom: 1px solid var(--l-line);
+  border-bottom: 0.5px solid var(--lc-line2);
 }
 .lc-pk-top .lc-mp-find {
   flex: 1;
@@ -560,22 +558,42 @@
   display: flex;
   flex-direction: column;
   padding: 4px;
-  border-bottom: 1px solid var(--l-line);
+  border-bottom: 0.5px solid var(--lc-line2);
 }
-/* The tool's own row, pinned over its models: its mark, name and count at the left, its sources' switch at the right. */
+/* The tool's own row, pinned over its models, as a menu's grey label row (board Menus' .ml): its 12px mark, name and count at
+   the left in 12px grey; at the right its plan with a green dot while signed in, and its sources' switch. */
 .lc-pk-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   height: 28px;
   padding: 0 4px 0 12px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--l-ink);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.lc-pk-plan {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-right: 4px;
+  white-space: nowrap;
+}
+.lc-pk-plan + :is(.lc-pk-src, .lc-pk-srcchip) {
+  margin-left: 4px;
+}
+.lc-pk-on {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--l-ok);
 }
 .lc-pk-head > .lc-mark {
   flex: none;
-  color: var(--l-ink-2);
+  color: var(--l-ink-3);
 }
 /* The tool's name gives way to the switch, but never below its mark and about six letters. */
 .lc-pk-head-t {
@@ -673,11 +691,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A rule inside a card runs edge to edge, as a menu's does (board Menus' .sep). */
 .lc-pk-rule {
   flex: none;
-  height: 1px;
-  margin: 3px 4px;
-  background: var(--l-line);
+  height: 0.5px;
+  margin: 4px -4px;
+  background: var(--lc-line2);
 }
 /*
   Every row in the picker is a menu's row, as dense as Capy's: 28 high, 8 in, 8 between its parts, the rows touching. The
@@ -756,7 +775,12 @@
   padding: 0 8px;
 }
 .lc-pk-row[data-on] {
-  background: var(--lc-plate);
+  background: var(--l-wash-2);
+}
+/* How hard a row's model works, in grey right after its name (board Menus). */
+.lc-pk-eff {
+  flex: none;
+  color: var(--l-ink-3);
 }
 /*
   The name has first call on the room: it never shrinks while the sources or the price can, and is cut only when alone it
@@ -767,7 +791,8 @@
   flex: 0 0 auto;
   max-width: calc(100% - 44px);
 }
-.lc-pk-row > .lc-who-row-t + * {
+.lc-pk-row > .lc-who-row-t + :not(.lc-pk-eff),
+.lc-pk-row > .lc-pk-eff + * {
   margin-left: auto;
 }
 .lc-pk-from {
@@ -804,17 +829,25 @@
   width: 14px;
   color: var(--l-ink);
 }
+/* A starred model's place among your stars, where the tick would be: 12px grey. */
+.lc-pk-tick[data-fav] {
+  width: auto;
+  min-width: 14px;
+  font-size: 12px;
+  color: var(--l-ink-3);
+  font-variant-numeric: tabular-nums;
+}
 .lc-pk-row[data-also] .lc-pk-tick {
   color: var(--l-ink-4);
 }
 .lc-pk-note {
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-line2);
 }
 .lc-pk-foot {
   display: flex;
   flex-direction: column;
   padding: 4px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-line2);
 }
 /* Narrow: the side card's words as one line at the very foot: the mark and name, the price, the Effort chip, a star. */
 .lc-pk-line {
@@ -823,7 +856,7 @@
   gap: 8px;
   min-height: 36px;
   padding: 0 6px 0 12px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--lc-line2);
   color: var(--l-ink-2);
 }
 .lc-pk-line-t {
@@ -845,7 +878,7 @@
   border: 0;
   border-radius: 6px;
   background: none;
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
   font: inherit;
   font-size: 12px;
   color: var(--l-ink-2);
@@ -887,6 +920,7 @@
 }
 /* The side card: what the pointed model is, where it runs, its price, its effort and its star, its facts 12px lines 20 apart as Capy's card. */
 .lc-pk-side {
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -902,8 +936,108 @@
   Beside a row in the list's lower half the card drops to the list's foot: its bottom on the middle card's bottom (476 less
   its own height), moved rather than laid out again, so it slides there; while its height eases the bottom stays put.
 */
-.lc-pk-side[data-low] {
+.lc-pk-col[data-low] {
   transform: translateY(calc(var(--lc-pk-tall) - 100%));
+}
+/* The side card and Fusion's small card under it, 11 apart, moved together. */
+.lc-pk-col {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+  max-height: var(--lc-pk-tall);
+  transition: transform 220ms var(--l-ease-out);
+}
+.lc-pk-col > * {
+  flex: none;
+}
+/* With Fusion's card under it, the side card gives up the room that card takes (at most two rows and the gap). */
+.lc-pk-col:has(> .lc-pk-fz) > .lc-pk-side {
+  max-height: calc(var(--lc-pk-tall) - 83px);
+}
+.lc-pk-col:has(> .lc-pk-fz) > .lc-pk-side > .lc-pk-side-in {
+  max-height: calc(var(--lc-pk-tall) - 91px);
+}
+/* The model pointed at or picked: the halftone from the head's top-right corner, 96 high, under its words. */
+.lc-pk-ht {
+  bottom: auto;
+  height: 96px;
+}
+.lc-pk-side > .lc-pk-side-in {
+  position: relative;
+}
+/* Enable Fusion (board Menus): a small card, its switch row, and while it is on the sidekick's row under it. */
+.lc-pk-fz {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.lc-pk-fzrow {
+  font-weight: 500;
+}
+.lc-pk-fzrow > .lc-who-row-t {
+  flex: 1;
+}
+/* The switch drawn as the app's (26 by 16, the control fill off, the accent on, a plain white thumb): the row is the button. */
+.lc-pk-sw {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--lc-g4);
+  transition: background-color 160ms ease;
+}
+.lc-pk-sw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0.5px 1.5px rgb(0 0 0 / 0.35);
+  transition: translate 160ms var(--l-ease-out);
+}
+.lc-pk-sw[data-on] {
+  background: var(--lc-act);
+}
+.lc-pk-sw[data-on]::after {
+  translate: 10px 0;
+}
+.lc-pk-sidek > em {
+  font-style: normal;
+  color: var(--l-ink-3);
+}
+.lc-pk-sidek > svg:last-child {
+  margin-left: auto;
+  color: var(--l-ink-3);
+}
+/* Narrow, Fusion's card is a part of the middle card's foot. */
+.lc-pk-under-in {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-top: 0.5px solid var(--lc-line2);
+}
+/* The plan's line in the card: a thin bar of what is used, amber from 80%. */
+.lc-pk-meter {
+  display: block;
+  height: 4px;
+  margin: 2px 8px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--l-wash-2);
+}
+.lc-pk-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--l-ink-2);
+}
+.lc-pk-meter[data-high] > i {
+  background: var(--l-warn);
 }
 /* What the card holds, measured for that height; past the card's height it scrolls inside, so the easing never shows a scrollbar. */
 .lc-pk-side > .lc-pk-side-in {
@@ -917,7 +1051,10 @@
   flex-direction: column;
 }
 @media (prefers-reduced-motion: reduce) {
-  .lc-pk-side {
+  .lc-pk-side,
+  .lc-pk-col,
+  .lc-pk-sw,
+  .lc-pk-sw::after {
     transition: none;
   }
 }
@@ -1028,23 +1165,21 @@
   color: var(--l-ink-3);
 }
 /*
-  Effort's slider: one pill 24 high, a stop a level of the model's own, the lowest at its start and the highest at its end.
-  The knob stands on the level it runs at and the ink fills up to it, so the lowest level is the knob alone at the start
-  (a model whose lowest is "none" must not read as half), and with no level picked the track is empty with no knob. Each
-  stop past the knob keeps a 1px tick where the knob would sit; a stop's part of the track is the part nearest it, so the
-  end stops take half a step each. The knob is white in
-  both looks, as the owner's reference and the app's own switch thumb (switch.css) are, and takes the switch thumb's shadow,
-  whose ring keeps it apart from the light ink fill of the dark look. The fill and the knob move in 180ms,
-  the length Quick motion keeps for what you press; Reduce motion stops them (below, and foundation.css).
+  Effort's track (board Menus, `.eff`): one round track 24 high, a stop a level of the model's own, the lowest at its start
+  and the highest at its end. The round white knob (20, 2 in) stands on the level it runs at; the fill is halftone.css's
+  `.lc-dither`, solid accent with light round dots that come in sparse and end as a checkerboard at the knob, and it runs
+  2px past the knob's far side, so its round end is a half circle just outside the knob and the accent melts into it. The
+  knob's centre travels from 12 to the track's width less 12, so the fill is the knob's travel plus 24. With no level
+  picked the track is empty, with no knob. Each stop past the knob keeps a small tick (2 by 6) where the knob would stand.
+  The fill and the knob move in 180ms; Reduce motion stops them.
 */
 .lc-pk-slide {
   position: relative;
-  container-type: inline-size;
   display: flex;
   flex: none;
   height: 24px;
-  margin: 0 8px 4px;
-  border-radius: 8px;
+  margin: 0 8px 8px;
+  border-radius: 999px;
   background: var(--l-wash-2);
   overflow: hidden;
   cursor: pointer;
@@ -1052,51 +1187,11 @@
   user-select: none;
 }
 .lc-pk-slide-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(var(--lc-pk-fill, 0) * (100% - 18px) + 18px);
-  /* The track's own corner, which is the knob's 5 and the 3 it sits in from the fill's edge: the fill ends round about the knob, not in a straight cut beside it. */
-  border-radius: 8px;
-  /* The model's maker's colour (its gradient for Gemini), the app's accent for a maker drawn in ink. */
-  background: var(--lc-pk-tint, var(--l-accent));
-  /* A gradient is laid across the whole track, as the ASCII is: a low level shows its first colour, not all of it squeezed. */
-  background-size: 100cqw 100%;
-  background-repeat: no-repeat;
-  overflow: hidden;
-  pointer-events: none;
+  width: calc(var(--lc-pk-fill, 0) * (100% - 24px) + 24px);
   transition: width 180ms var(--l-ease-out);
 }
-/*
-  The halftone through the fill (Models.tsx DOTS): three staggered rows of round dots laid across the whole track (100cqw)
-  and cut by the fill, so a higher level shows more of them and bigger. A dot grows from 1px at the low end to 3.4px at
-  the high end and goes from a third to most of white, over the colour; the knob's end is where they are thickest.
-*/
-.lc-pk-slide-dots {
-  position: absolute;
-  inset: 0 auto 0 0;
-  display: grid;
-  grid-template-columns: repeat(32, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  place-items: center;
-  box-sizing: border-box;
-  width: 100cqw;
-  padding: 4px 8px 4px 6px;
-}
-.lc-pk-slide-dots > i {
-  width: calc(1px + var(--d) * 2.4px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: oklch(1 0 0 / calc(0.32 + var(--d) * 0.58));
-}
-/* The middle row half a column over, so the dots sit staggered as a halftone's do. */
-.lc-pk-slide-dots > i[data-odd] {
-  translate: calc((100cqw - 14px) / 64) 0;
-}
-.lc-pk-slide[data-empty] .lc-pk-slide-fill {
-  width: 0;
-}
+/* A stop is the part of the track nearest it, so the end stops take half a step each; its tick is placed on the track itself. */
 .lc-pk-slide-stop {
-  position: relative;
   flex: 1 1 0;
 }
 /* Not a lone stop's: one level alone keeps the whole track, and half a share of it would leave its tick in the middle. */
@@ -1106,26 +1201,21 @@
 .lc-pk-slide-stop[data-tick]::after {
   content: "";
   position: absolute;
-  top: 7px;
-  left: calc(50% + 9px - 18px * var(--lc-pk-at, 0.5));
-  width: 1px;
-  height: 10px;
-  background: var(--l-line-strong);
-}
-.lc-pk-slide-stop[data-end="start"][data-tick]::after {
-  left: 9px;
-}
-.lc-pk-slide-stop[data-end="end"][data-tick]::after {
-  left: auto;
-  right: 9px;
+  top: 9px;
+  left: calc(11px + var(--lc-pk-at, 0.5) * (100% - 24px));
+  width: 2px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--l-ink-5);
+  pointer-events: none;
 }
 .lc-pk-slide-knob {
   position: absolute;
-  top: 3px;
-  left: calc(3px + var(--lc-pk-fill, 0) * (100% - 18px));
-  width: 12px;
-  height: 18px;
-  border-radius: 5px;
+  top: 2px;
+  left: calc(2px + var(--lc-pk-fill, 0) * (100% - 24px));
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   background: oklch(0.995 0 0);
   box-shadow: var(--l-thumb-shadow);
   pointer-events: none;
@@ -1232,4 +1322,131 @@
   flex: none;
   width: 58px;
   color: var(--l-ink-3);
+}
+
+/*
+  ---------- Search and commands, ⌘K (Liner's CommandMenu, App.tsx; board Menus) ----------
+  Liner's own sheet is vendored and stays as it is: these say the board's look over it, a step more specific (`.l-root`,
+  the body's class) since Liner's sheet loads after this one. The card's 12 corner in the menu's fill and float shadow,
+  no blur behind it or on its way in; a 44px field with the search icon; grey group labels; rows 38 high at the field
+  corner with their mark or icon bare, grey second words and a key at the end; a grey foot line of keys over a rule.
+*/
+.l-root .l-cmd::backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.l-root .l-cmd__panel {
+  width: min(600px, 100%);
+  border-radius: var(--lc-r-card);
+  background: var(--lc-float);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--lc-float-shadow);
+  animation: lc-cmd-in 200ms var(--l-ease-out) both;
+}
+.l-root .l-cmd[data-closing] .l-cmd__panel {
+  animation: lc-cmd-out 160ms ease both;
+}
+@keyframes lc-cmd-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes lc-cmd-out {
+  to {
+    opacity: 0;
+  }
+}
+.l-root .l-cmd__field {
+  gap: 10px;
+  height: 44px;
+  padding: 0 12px;
+  box-shadow: inset 0 -0.5px 0 var(--lc-line2);
+}
+.l-root .l-cmd__search {
+  width: 16px;
+  height: 16px;
+  color: var(--l-ink-3);
+}
+.l-root .l-cmd__input {
+  font-size: 14px;
+  caret-color: var(--lc-act);
+}
+.l-root .l-cmd__input::placeholder {
+  color: var(--l-ink-3);
+}
+/* Keys read as plain grey words, as the app's key hints do (no key caps). */
+.l-root .l-cmd kbd {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 11px;
+  color: var(--l-ink-3);
+}
+.l-root .l-cmd__inner {
+  padding: 4px;
+}
+.l-root .l-cmd__inner[data-dir] {
+  animation-name: lc-cmd-page;
+}
+@keyframes lc-cmd-page {
+  from {
+    opacity: 0;
+  }
+}
+.l-root .l-cmd__hl {
+  left: 4px;
+  right: 4px;
+  border-radius: var(--lc-r-field);
+}
+.l-root .l-cmd__group + .l-cmd__group {
+  margin-top: 0;
+}
+.l-root .l-cmd__heading {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--l-ink-3);
+}
+.l-root .l-cmd__item {
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: var(--lc-r-field);
+  font-size: 13.5px;
+}
+.l-root .l-cmd__item .l-cmd__label {
+  font-size: 13.5px;
+}
+.l-root .l-cmd__icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.l-root .l-cmd__icon svg {
+  width: 14px;
+  height: 14px;
+}
+.l-root .l-cmd__hint {
+  font-size: 12.5px;
+  color: var(--l-ink-3);
+}
+.l-root .l-cmd__foot {
+  height: 36px;
+  padding: 0 14px;
+  box-shadow: inset 0 0.5px 0 var(--lc-line2);
+  font-size: 12px;
+  color: var(--l-ink-3);
+}
+.l-root .l-cmd__help {
+  gap: 6px;
 }

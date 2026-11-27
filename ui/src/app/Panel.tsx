@@ -1,10 +1,10 @@
 /*
-  The right panel beside the session: a flush column of the paper, one hairline down its left edge
-  (the resize grip is on it), showing one surface at a time (dock.ts has the rules; SPEC rule 2, board
-  Main, 2026-11-25). There is no strip of tabs: the session header's icon row picks the surface
-  (Switcher.tsx), and each surface's own head (Pane.tsx PaneHead), on the session header's row, says
-  its name and carries Full canvas and Close. In the full canvas the panel takes the paper under the
-  session header, which stays in view with its icon row.
+  The right panel beside the session: a flush column of the paper, 500 wide until you drag it, one 0.5px
+  rule down its left edge (the resize grip is on it), showing one surface at a time (dock.ts has the rules).
+  Since line and dot (board Main, 2026-11-27) its own head row, on the chat's top row's line, names the
+  surfaces it holds as tabs, then + for every surface, Fill the window and Hide the panel (Switcher.tsx
+  PanelTabs), with a hairline under it; under that each surface draws its own 40px bar where it needs one
+  (Pane.tsx PaneHead). In the full canvas the panel takes the paper under the chat's top row.
   Every surface you open is mounted once and kept while the panel holds it, so going to another
   never reloads a page or restarts a shell.
   Changes is the diff, kept by turn (Review.tsx, the same in the panel and the full canvas).
@@ -23,6 +23,7 @@ import { PrSurface } from "./Pr";
 import { SideChat } from "./SideChat";
 import { surfaceOf, type Tab } from "./Surfaces";
 import { PaneFrame } from "./Pane";
+import { PanelTabs } from "./Switcher";
 import { entering } from "./look";
 import { early, lazyAgain } from "./early";
 import "./dock.css";
@@ -72,7 +73,7 @@ function useItemsShown(threadId: string, visible: boolean) {
   return items;
 }
 const NO_ITEMS: Item[] = [];
-/** The Session card's inside (Switcher.tsx, from Session.tsx): what it reads of the timeline, as the surfaces here read theirs. */
+/** The Session surface's inside: what it reads of the timeline, as the surfaces here read theirs. */
 export const SessionTab = memo(function SessionTab({ thread, visible, onShowChange }: { thread: Thread; visible: boolean; onShowChange: (path: string) => void }) {
   const items = useItemsShown(thread.id, visible);
   return (
@@ -96,6 +97,10 @@ export function Panel({
   onOpenSession,
   onRoutine,
   leaving,
+  counts = {},
+  below = false,
+  onBelow = () => {},
+  onMake = () => {},
 }: {
   thread: Thread;
   dock: DockState;
@@ -107,6 +112,13 @@ export function Panel({
   onRoutine: (id?: string) => void;
   /** Shut, and on its way out: it stays as it was while its column closes, and takes no clicks. */
   leaving?: boolean;
+  /** The numbers the head row's tabs carry ("Changes 3"). */
+  counts?: Partial<Record<string, number>>;
+  /** The bottom panel with the shells, which the head row's + shows and hides. */
+  below?: boolean;
+  onBelow?: (on: boolean) => void;
+  /** New add-on, from +'s Your apps: asks the agent for one in the composer. */
+  onMake?: () => void;
 }) {
   const runs = useEngine((s) => s.runs);
   const addons = useEngine((s) => s.addons);
@@ -160,7 +172,7 @@ export function Panel({
         </Suspense>
       );
     if (t === "agents") return <AgentsSurface thread={thread} />;
-    // Session is a popup now (Switcher.tsx); a layout that still held it is put right before it gets here (dock.ts dropPopups).
+    // Session is a surface again (line and dot): the details card's toggle opens it here while the panel is open.
     if (t === "session") return <SessionTab thread={thread} visible={visible} onShowChange={showChange} />;
     if (t === "terminal")
       return (
@@ -207,13 +219,14 @@ export function Panel({
 
   return (
     <aside ref={box} className="lc-panel" aria-label="Panel" data-tab={shown} data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} inert={leaving || undefined}>
+      <PanelTabs thread={thread} dock={dock} onDock={onDock} nameOf={nameOf} counts={counts} below={below} onBelow={onBelow} onMake={onMake} />
       {all.map((t) => {
         if (!mounted.has(t)) return null;
         const visible = t === shown;
         return (
           <div key={t} className="lc-surface" hidden={!visible} role="region" aria-label={nameOf(t)}>
             {/* The frame is outside the boundary: a surface that breaks says so in its own place, and its head still closes the panel. */}
-            {/* Close puts the surface away as well as the panel (its lit icon only hides the panel), so a page, a Device or an add-on doesn't stay open unseen; its icon or its card opens it again. */}
+            {/* A surface's own close (usePaneFrame) puts it away as well as the panel, so a page, a Device or an add-on doesn't stay open unseen; + or its card opens it again. */}
             <PaneFrame name={nameOf(t)} full={dock.full} onFull={() => onDock(toggleFull(dock))} onClose={() => onDock(hideDock(closeTab(dock, t)))}>
               <Boundary label={nameOf(t)} quiet>
                 {body(t, visible && dock.open)}

@@ -52,7 +52,7 @@ test("Every menu has the one menu shape's 10px corner and 4px inset, outweighing
   // A rule runs edge to edge, a label is grey, and a foot line sits under a rule.
   assert.ok(blocks(css, ".lc-pop-panel > .lc-sep").some((b) => value(b, "margin") === "4px -4px"), "a menu's rule doesn't run edge to edge");
   assert.ok(blocks(css, ".lc-pop-head").some((b) => value(b, "font-size") === "12.5px" && value(b, "color") === "var(--l-ink-4)"), "a menu's label isn't 12.5px in the fourth ink");
-  assert.ok(blocks(css, ".lc-pop-foot").some((b) => value(b, "border-top") === "1px solid var(--l-line)" && value(b, "color") === "var(--l-ink-4)"), "a menu's foot line isn't grey under a rule");
+  assert.ok(blocks(css, ".lc-pop-foot").some((b) => value(b, "border-top") === "0.5px solid var(--lc-line2)" && value(b, "color") === "var(--l-ink-3)"), "a menu's foot line isn't grey under a 0.5px rule edge to edge (line and dot)");
 });
 
 test("A menu's rows stand 2px apart in every list of rows", () => {
@@ -77,7 +77,7 @@ test("Beside the thread the panel is a flush column of the paper: no card, no ri
       assert.ok(!(value(b, "margin") ?? "").includes("--lc-card-top"), `${sel} still sets the card's margin`);
     }
   }
-  assert.ok(blocks(css, ".lc-session[data-beside] .lc-panel").some((b) => value(b, "box-shadow") === "inset 1px 0 0 var(--l-line)"), "the panel has no hairline down its left edge");
+  assert.ok(blocks(css, ".lc-session[data-beside] .lc-panel").some((b) => value(b, "box-shadow") === "inset 0.5px 0 0 var(--lc-line2)"), "the panel has no 0.5px rule, in the edge's strength, down its left edge");
   assert.ok(blocks(css, ".lc-session .lc-body > .lc-panel").some((b) => value(b, "background") === "var(--lc-paper)" && value(b, "flex-direction") === "column"), "the panel isn't a column on the paper");
   assert.ok(blocks(css, ".lc-session:not([data-wide]) .lc-grip::after").some((b) => value(b, "top") === "0" && value(b, "bottom") === "0"), "the grip's line stops short of the panel's ends, as it did round the card");
   // A surface out of sight lies over the whole panel, now that no strip of tabs stands over them.
@@ -85,9 +85,11 @@ test("Beside the thread the panel is a flush column of the paper: no card, no ri
 });
 
 test("The panel's column lands on whole pixels, in one pane and in two", () => {
-  const one = blocks(sheet("app.css"), ".lc-session[data-panel] .lc-body").filter((b) => (value(b, "grid-template-columns") ?? "").includes("36%"));
-  assert.equal(one.length, 1, "app.css should hold one 36% column for the panel");
-  assert.ok((value(one[0], "grid-template-columns") ?? "").includes("round(down, 36%, 1px)"), "the panel's column is not rounded down to a whole pixel");
+  // Line and dot (board Main): the panel is 500 wide until you drag it, a whole number of pixels already.
+  const one = blocks(sheet("app.css"), ".lc-session[data-panel] .lc-body").filter((b) => (value(b, "grid-template-columns") ?? "").includes("--lc-panel-w"));
+  assert.equal(one.length, 1, "app.css should hold one column for the panel");
+  assert.ok((value(one[0], "grid-template-columns") ?? "").includes("var(--lc-panel-w, 500px)"), "the panel is not 500 wide until it is dragged");
+  assert.ok(!(value(one[0], "grid-template-columns") ?? "").includes("36%"), "the panel's default width is a share of the paper again, which can land between pixels");
   const two = blocks(sheet("dock.css"), ".lc-session[data-panel][data-panes=\"2\"]:not([data-wide]) .lc-body").filter((b) => (value(b, "grid-template-columns") ?? "").includes("* 1.6"));
   assert.equal(two.length, 1, "dock.css should hold one times-1.6 column for two panes");
   assert.ok((value(two[0], "grid-template-columns") ?? "").includes("round(down, calc(var(--lc-panel-w, clamp(340px, 36%, 520px)) * 1.6), 1px)"), "the two-pane column is not rounded down to a whole pixel");
@@ -165,10 +167,11 @@ test("The thread's column keeps the composer's width, its side inset the compose
   assert.equal(value(ins[0], "padding"), "24px 18px calc(var(--lc-dock-h, 132px) + 18px)", "the thread's side inset is not the composer's 14 plus the tray's 4");
 });
 
-test("The conversation's text starts where the composer's text does, and your messages end where its controls end", () => {
+test("The conversation's text starts where the composer's text does: it takes the whole measure, and the box's 16 of padding meets it", () => {
+  // Line and dot (board Main): a 720 column and a 752 box, the box 16 past the column on each side, so neither insets its text twice.
   const tls = blocks(sheet("surfaces.css"), ".lc-scroll-in > .lc-tl");
   assert.equal(tls.length, 1);
-  assert.equal(value(tls[0], "padding-inline"), "16px 8px", "the timeline keeps its own insets instead of the composer card's 16 and 8");
+  assert.equal(value(tls[0], "padding-inline"), "0", "the timeline insets its text inside the measure again");
 });
 
 test("Liner Design's top row starts its words at the same edge as Code's", () => {
@@ -298,7 +301,8 @@ test("the sidebar's width is said once", () => {
 
 test("the corner scale declares its four tokens", () => {
   const css = sheet("app.css");
-  for (const t of ["--lc-r-row: 8px", "--lc-r-field: 10px", "--lc-r-card: 14px", "--lc-r-sheet: 18px"]) assert.equal(css.includes(t), true, t + " is not declared");
+  // Line and dot (2026-11-27, the orchestrator's ruling on corners): rows 8, fields and menus 10, cards and the sheet 12, the message box and large pop-ups 16.
+  for (const t of ["--lc-r-row: 8px", "--lc-r-field: 10px", "--lc-r-card: 12px", "--lc-r-sheet: 16px"]) assert.equal(css.includes(t), true, t + " is not declared");
 });
 
 test("corners follow the four-size scale outside the skipped ranges", () => {
@@ -395,7 +399,8 @@ test("the state mark moves whatever Reduce motion and the Motion setting say", (
   // No rule of the app's own puts the mark's dots, or the mark, to sleep (one that leaves them out with :not() is fine; the middle dot of working stays dim on purpose).
   // One exception by design (2026-11-26, calmer): a working step in a row of a list is drawn still unless it is `live`, so it is
   // the still variant, not a moving mark put to sleep, and Reduce motion has no say in it either way.
-  assert.match(css, /\.lc-mk\.lc-stepmark\[data-s="working"\]:not\(\.lc-mk-live\) > i \{/, "the still row variant left a live one out");
+  // Since line and dot the still variant draws no pixels at all (StepMark's "now" ring), and only a live step is the moving box.
+  assert.match(readFileSync(new URL("../../ui/src/app/icons.tsx", import.meta.url), "utf8"), /if \(state === "working" && live\) return <StateMark state="working"/, "the still row variant left a live one out");
   for (const file of ["app.css", "surfaces.css", "crew.css", "wall.css", "design.css", "design/design-face.css", "security/scan.css"]) {
     const still = [...sheet(file).matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /\.lc-mk\b/.test(m[1].replace(/:not\([^)]*\)\)?/g, "")) && /animation:\s*none|transition:\s*none/.test(m[2]) && !/nth-child\(5\)/.test(m[1]) && !/\.lc-stepmark\[data-s="working"\]:not\(\.lc-mk-live\)/.test(m[1]));
     assert.equal(still.length, 0, `${file} stops the state mark: ${still.map((m) => m[1].trim()).join(", ")}`);
@@ -448,8 +453,8 @@ test("Liner Design's and Liner Security's buttons, chips and tabs take the app's
 
 test("Code's and the shell's buttons, marks and code take the app's sizes, one look each", () => {
   const app = sheet("app.css");
-  // A header's button is 30 (R11), an icon button in content 28, the sidebar's Hide too.
-  assert.ok(blocks(app, ".lc-tb").some((b) => value(b, "height") === "30px" && value(b, "min-width") === "30px"), "the header's button is not 30px");
+  // Every icon button is 28 since line and dot (a header's was 30, R11), in content and in a header, the sidebar's Hide too.
+  assert.ok(blocks(app, ".lc-tb").some((b) => value(b, "height") === "28px" && value(b, "min-width") === "28px"), "the header's button is not 28px");
   assert.ok(blocks(app, ".lc-sb-hb").some((b) => value(b, "width") === "28px" && value(b, "height") === "28px"), "the sidebar's Hide is not 28 square");
   // Pressed, an icon button looks as the right edge's lit icon does: a wash, no ring, in content and in a header.
   for (const sel of ['.lc-ib[aria-pressed="true"]', '.lc-tb[aria-pressed="true"]']) {
@@ -462,11 +467,11 @@ test("Code's and the shell's buttons, marks and code take the app's sizes, one l
   assert.ok(blocks(crew, ".lc-cr-tile").every((b) => !value(b, "background")), "an agent's mark in the Agents surface sits on a plate");
   // A word on a pill has no dot of its own: a state is the state mark.
   assert.equal(blocks(app, ".lc-badge[data-dot]::before").length, 0, "Badge draws its own dot again");
-  // Code is 13 on a 22px line in a file view, as in Changes and Compare.
+  // Code is 12 on a 20px line in a file view, as in Changes and Compare (line and dot, board Main).
   const surfaces = sheet("surfaces.css");
-  assert.ok(blocks(surfaces, ".lc-code-view").some((b) => value(b, "font-size") === "13px" && value(b, "line-height") === "22px"), "Files shows code at another size than Changes");
-  assert.ok(blocks(surfaces, ".lc-rv-code").some((b) => value(b, "font-size") === "13px" && value(b, "line-height") === "22px"), "Changes shows code at another size");
-  assert.ok(blocks(surfaces, ".lc-cmp-body .l-cdiff__rows").some((b) => value(b, "font-size") === "13px" && value(b, "line-height") === "22px"), "Compare shows code at another size");
+  assert.ok(blocks(surfaces, ".lc-code-view").some((b) => value(b, "font-size") === "12px" && value(b, "line-height") === "20px"), "Files shows code at another size than Changes");
+  assert.ok(blocks(surfaces, ".lc-rv-code").some((b) => value(b, "font-size") === "12px" && value(b, "line-height") === "20px"), "Changes shows code at another size");
+  assert.ok(blocks(surfaces, ".lc-cmp-body .l-cdiff__rows").some((b) => value(b, "font-size") === "12px" && value(b, "line-height") === "20px"), "Compare shows code at another size");
   // A changed line in Files is tinted green as an added line in Changes is, never amber.
   assert.equal(blocks(surfaces, '.lc-cl[data-mark="changed"]').length, 0, "Files tints a changed line its own amber again");
   // A shell tab's close is the panel tabs' size.
@@ -512,9 +517,10 @@ test("The model picker is a rail, a middle card that never changes size, and a c
     assert.equal(bs.length, 1, `models.css should hold one ${selector} block`);
     return bs[0];
   };
-  // Side by side: 40 of rail, 312 of list, 268 of card; narrow, the card goes and the list keeps its width.
-  assert.equal(value(one('.lc-pk[data-side="card"]'), "grid-template-columns"), "40px 312px 268px", "the picker's three parts are not 40, 312 and 268 wide");
-  assert.equal(value(one('.lc-pk[data-side="line"]'), "grid-template-columns"), "40px 312px", "narrow, the list doesn't keep its width without the card");
+  // Side by side (board Menus): 37 of rail, 320 of list, 288 of card, 11 apart; narrow, the card goes and the list keeps its width.
+  assert.equal(value(one('.lc-pk[data-side="card"]'), "grid-template-columns"), "37px 320px 288px", "the picker's three parts are not 37, 320 and 288 wide");
+  assert.equal(value(one('.lc-pk[data-side="line"]'), "grid-template-columns"), "37px 320px", "narrow, the list doesn't keep its width without the card");
+  assert.equal(value(one(".lc-pk"), "gap"), "11px", "the picker's parts are not 11 apart");
   assert.match(value(one(".lc-pk"), "--lc-pk-tall") ?? "", /^min\(var\(--lc-pk-h, 476px\)/, "the middle card isn't 476 high");
   assert.equal(value(one(".lc-pk"), "align-items"), "start", "the side card's top isn't on the middle card's top");
   // One height whatever the tool: a set height, never a max, with nothing spilling out of it.
@@ -538,8 +544,8 @@ test("The model picker is a rail, a middle card that never changes size, and a c
   assert.equal(value(one(".lc-pk-f"), "height"), "20px", "the side card's facts are not 20px lines");
   assert.equal(value(one(".lc-pk-f"), "font-size"), "12px", "the side card's facts are not 12px");
   assert.equal(value(one(".lc-pk-lvr"), "height"), "24px", "a source's row in the card is not 24 high");
-  assert.equal(value(one(".lc-pk-rail"), "width"), "40px", "the rail is not 40 wide");
-  assert.equal(value(one(".lc-pk-tool"), "width"), "28px", "a tool's button is not 28 wide");
+  assert.equal(value(one(".lc-pk-rail"), "width"), "37px", "the rail is not 37 wide");
+  assert.equal(value(one(".lc-pk-tool"), "width"), "29px", "a tool's button is not 29 wide");
   assert.equal(value(one('.lc-pk-tool[aria-pressed="true"]'), "background"), "var(--lc-plate)", "the tool shown isn't in the app's one pressed look");
 
   const models = readFileSync(new URL("../../ui/src/app/Models.tsx", import.meta.url), "utf8");
@@ -559,7 +565,7 @@ test("The model picker is a rail, a middle card that never changes size, and a c
   assert.match(head, /className="lc-pk-src" role="group"/, "the source switch isn't in the tool's pinned row");
   assert.match(models, /className="lc-pk-card lc-pk-rail" role="toolbar" aria-orientation="vertical" aria-label="Tools"/, "the rail isn't a vertical toolbar");
   assert.match(models, /className="lc-pk-slide l-focus"\s+role="slider"/, "the effort levels aren't one slider");
-  assert.match(picker, /\{wide && \(\s*<section ref=\{card_\} className="lc-pk-card lc-pk-side"/, "the side card isn't drawn only where there is room");
+  assert.match(picker, /\{wide && \(\s*<div className="lc-pk-col" data-low=\{low \|\| undefined\}>\s*<section ref=\{card_\} className="lc-pk-card lc-pk-side"/, "the side card isn't drawn only where there is room");
   assert.match(picker, /\{side === "line" && shown && <div className="lc-pk-line">\{shown\.line\}<\/div>\}/, "narrow, the card's words aren't a line at the list's foot");
   // The card turns to a row only after the pointer rests on it, and never while the pointer is over the card.
   assert.match(picker, /settle\(d, performance\.now\(\), overCard\.current\)/, "the side card follows the pointer without the dwell");
@@ -569,10 +575,11 @@ test("The model picker is a rail, a middle card that never changes size, and a c
   const composer = readFileSync(new URL("../../ui/src/app/Composer.tsx", import.meta.url), "utf8");
   const pop = composer.split("\n").find((l) => l.includes("<Pop label={`Who works on this, and how hard"));
   assert.ok(pop, "the who panel's Pop is gone");
-  assert.match(pop, /width=\{pickerWide \? PICKER_WIDE : PICKER_NARROW\} out=\{pickerOut\("end", pickerWide\)\} bare/, "the who chip doesn't open the picker at its own widths, its list over the chip, drawing its own cards");
+  // The chip stands straight after the + (board Main), so the picker hangs from its left edge, the rail before the chip.
+  assert.match(pop, /align="start" width=\{pickerWide \? PICKER_WIDE : PICKER_NARROW\} out=\{pickerOut\("start", pickerWide\)\} bare/, "the who chip doesn't open the picker at its own widths, its list over the chip, drawing its own cards");
   assert.match(composer, /<WhoPanel [^>]*side=\{pickerWide \? "card" : "line"\}/, "the who panel doesn't fold its card into a line when narrow");
   const picker_ = readFileSync(new URL("../../ui/src/app/picker.ts", import.meta.url), "utf8");
-  assert.match(picker_, /export const PICKER = \{ rail: 40, gap: 8, list: 312, height: 476, side: 268 \} as const;/, "the picker's sizes moved");
+  assert.match(picker_, /export const PICKER = \{ rail: 37, gap: 11, list: 320, height: 476, side: 288 \} as const;/, "the picker's sizes moved");
 });
 
 test("No effort level is invented in the app: a model's levels are what its tool reported for it, and nothing stands in when it reported none", () => {
@@ -706,7 +713,7 @@ test("Home's project chooser is a small card: the picker's plain find line, six 
   assert.equal(value(list, "max-height"), "calc(30px * 6 + 2px * 5)", "more than six rows show before the list scrolls");
   assert.equal(value(list, "overflow"), "hidden auto");
   assert.equal(value(list, "min-height"), "0", "the list can't give way to a short room");
-  assert.equal(value(blocks(css, ".lc-qp-foot")[0], "border-top"), "1px solid var(--l-line)", "no hairline over the foot rows");
+  assert.equal(value(blocks(css, ".lc-qp-foot")[0], "border-top"), "0.5px solid var(--l-line)", "no 0.5px hairline over the foot rows");
   assert.match(readFileSync(new URL("../../ui/src/app/Home.tsx", import.meta.url), "utf8"), /label=\{`Project: \$\{project\.name\}\. Change it`\}\s*width=\{260\}/, "the chooser isn't 260 wide");
   assert.match(readFileSync(new URL("../../ui/src/app/ui.tsx", import.meta.url), "utf8"), /\.\.\.\(at\.max !== undefined \? \{ "--lc-pop-room"/, "a Pop's room isn't handed to what it holds");
 });

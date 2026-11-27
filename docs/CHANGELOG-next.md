@@ -94,3 +94,64 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - The Code, Design and Security menu at the sidebar's foot no longer scrolls sideways with a bar over its last row.
 - A panel's heading (an agent's "Gemini 4 Neon, sent by Teamwork") no longer runs under Full canvas and Close in a
   narrow panel: its words end in "…" and say the rest when you point at them.
+- Liner Code has a new look, "line and dot": the sidebar sits flush on a near-black ground and everything else is one
+  sheet inset 8px with a 12px corner, every rule is half a pixel, and menus, cards and buttons share one set of corners.
+- Every state mark is a small box of nine square pixels: Working lights three of them in yellow and travels round the
+  box, Needs you and every warning light all nine in amber, a failure all nine in red, and something new to you is a
+  blue cross.
+- In a plan the step in work is a still ring with its middle lit: nothing in the plan moves.
+- Buttons are 28px high with the row's corner, key hints are plain grey words, and switches are the small red ones.
+- The message box is solid by default; glass stays in Appearance for anyone who picked it.
+- Search and New session share one field at the top of the sidebar; The Wall says how many of its sessions are live,
+  and Settled sits at the foot of the list with its count.
+- A session's row says what it is doing in blue while it works and what it wants in amber, and on the right the tool
+  that runs it, whether it runs on this Mac or in a worktree, and its pull request's number in green or purple.
+- The traffic lights sit on the same line as the sidebar's top row and the sheet's top row.
+- In the chat your message is a bubble on the right with a hairline edge, inline code is a small mono chip, and a file's
+  name that opens in the app is a blue chip with the file icon.
+- A finished stretch of work folds to one line with a hairline under it, "Worked for 1m 12s", and what was done as small
+  tags at its end ("Read 6 files", "Edited 2").
+- The files a turn changed are one card: the count, the lines and Review at its head, then a row a file with its letter,
+  its folder in grey and five small bars.
+- The Plan card is a bordered card with the halftone in its corner while a step is in work; hand-overs and switches to
+  another tool are one centred grey line between two hairlines.
+- An ask reads as a card with an amber edge and amber dots in its corner, Run it first, and "Say something else" at its
+  end, at the message box and in the chat alike.
+- Home asks "What are we making?" over a row of chips for the project, where it works and the branch, and Carry on is
+  three cards under the box, with "All" for the whole list.
+- Carry on can be switched off in Settings › Appearance ("Show Carry on on Home"), which takes its cards off Home and
+  its rows out of the sidebar; it is on unless you turn it off.
+- Settings is a smaller pop-up in the middle of the window: each page has its title and one line, and its settings are
+  rows split by hairlines, with the app's version at the foot of the places.
+- First-time setup is one page on the sheet: a row per agent tool with Ready, Sign in or Install, the projects to bring
+  in as ticked rows, who works, and one button to start.
+- The Wall's tiles are cards with the state's colour in dots in their corner, and the picked tile has a stronger ring.
+- The message box is one rounded card with its controls in a row 28 high; Send is a square in the accent, and while a
+  turn runs it is Stop, a white square on the same accent.
+- With a sidekick on, the message box shows one chip, "Fusion", never two models.
+- In the model picker, Fusion is a small card under the model's card, "Enable Fusion" with a switch; while it is on, the
+  sidekick shows as one row there, which opens the lead, the sidekick and how the pair works.
+- The Effort track is round, its accent fill breaking into light dots that end as a checkerboard at the round knob.
+- Under a session's message box one grey line says where it runs, how many agents are at work, and how full the
+  context is.
+- The permissions menu shows each level with a small icon, and Search and commands (⌘K) is the app's menu shape with
+  no blur.
+- A session's top row shows its project's tile and name, a slash and its title, and ends in three toggles: session
+  details, the terminal and the panel.
+- The right panel names its open surfaces as tabs in its own head row, with + listing every surface and its key, the
+  shells and New terminal; it opens 500 wide.
+- Session details is a card under the top row's right end: where it runs, your editor, scripts, branch, Commit,
+  Changes, Context and Fusion; the chat keeps clear of it, and it stays shown or hidden across sessions and restarts.
+- The Session surface names who leads on a small card, shows its context as a bar of dots with a colour per source,
+  and has no Cost section.
+- Changes shows one column or side by side as a switch on its bar, with Wrap beside it, and its lines at 12px with a
+  thin bar at the edge of each added or removed line.
+- While a session works with agents (Fusion, its tool's subagents, a Swarm or Teamwork), Session details shows them as a
+  small tree with each one's state, folding, and a way into the Agents panel; a session that works alone shows none.
+- What is ready to commit is a tab on the message box's top edge, with the commit's first line beside it when one is
+  already written.
+- A session's top row has a chip for its branch.
+- New design and Start a scan sit in the sidebar's search field, as New session does.
+- The Agents surface no longer shows cost or cache rows.
+- A Session tab left open in the panel is still there after a restart.
+- An ask's card has no state mark in its head.

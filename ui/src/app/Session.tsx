@@ -1,13 +1,14 @@
 /*
-  An open session: its name, which opens its menu (its details, where it works, its branch, rename
-  and pin), the crew chip only while two or more agents work, the Reviewer's word (its own menu:
-  read each change or not, who reads), then the timeline and the composer, and at the paper's right
-  at the header's right end the row of surfaces (Switcher.tsx: Session, Terminal, Changes, Browser, Files,
-  ···). The header heads the thread's column only: the panel beside it is a full-height column of the
-  paper, each surface's own head on the header's line (Panel.tsx, Pane.tsx), with a hairline from the
-  paper's top to its bottom between them that is the resize grip. The full canvas gives the panel the
-  paper under this header, which stays in view with its row of surfaces, and so does a window too
-  narrow for both (on the diff, that's the full-width Review).
+  An open session. Its top row (line and dot, board Main, 2026-11-27), 44 high with no rule under it: the project's small
+  tile and name in grey, a slash, the session's title, which opens its menu (its details, where it works, its branch,
+  rename and pin); the crew chip only while two or more agents work, the mode, the Reviewer's word; and at its right end
+  three toggles (Switcher.tsx TopToggles): the session details card, the terminal, the panel. Then the timeline and the
+  composer. The row heads the thread's column only: the panel beside it is a full-height column of the paper with its own
+  head row of tabs on the same line (Panel.tsx), and a 0.5px rule between them that is the resize grip. The full canvas
+  gives the panel the paper under this row, and so does a window too narrow for both.
+  The details card (Env.tsx DetailsCard) floats under the row's right end; while it shows, the chat and the message box
+  keep a gutter clear of it and centre in the room that is left. Shown or hidden is one choice for every session, kept
+  across launches (pinned.ts). With the panel open there is no room for it, so its toggle shows the Session surface there.
 */
 import { memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type RefObject } from "react";
 import { isPair, isSwarm, makerOf, reviewOn, type Item, type Project, type ProjectScript, type Thread } from "@contracts";
@@ -19,14 +20,16 @@ import { EngineAway, getState, isCheckpoint, isPrompt, loadItems, rpc, useEngine
 import { bridge } from "./bridge";
 import { Composer, type RunSettings } from "./Composer";
 import { AskDock, useDockAsk } from "./Ask";
-import { EnvMenu } from "./Env";
+import { BranchChip, DetailsCard, EnvMenu } from "./Env";
 import { ShipCard } from "./Ship";
+import { heldMessage } from "./commit-held";
 import { I, ModelMark } from "./icons";
 import { agentOf, checkpointsOf, markOf, modelLabel, plural, sumLines, threadModel } from "./model";
+import { tileLetters } from "./letters";
 import { ModelPicker } from "./Models";
 import { myPicks, reviewerFor, savePick } from "./Agentic";
 import { Panel } from "./Panel";
-import { Switcher } from "./Switcher";
+import { TopToggles } from "./Switcher";
 import { lazyAgain } from "./early";
 import { Boundary } from "./Boundary";
 import { FindBar, onComposerInsert, toComposer } from "./Find";
@@ -37,7 +40,7 @@ import { entering, readLook } from "./look";
 import { keepDock, keptDock, PANE_MIN, PanelGrip, runScript, SURFACES, TerminalGrip, useBelowHeight, usePanelWidth, type Tab } from "./Surfaces";
 import { useSeen } from "./launch";
 import { useReadWhileShown } from "./unread";
-import { closeTab, closeWhere, dropPopups, openTab, paneOf, replaceTab, toggleFull, toggleTab, type DockState } from "./dock";
+import { closeTab, closeWhere, onScreen, openTab, paneOf, replaceTab, showDock, toggleFull, toggleTab, type DockState } from "./dock";
 import { AddonView, appIcon, appsFor, isPanelAsk } from "./Addon";
 import { toComposer as putInComposer } from "./Find";
 import { onFullCanvas, onOpenSurface, SideKeys } from "./TopBar";
@@ -77,6 +80,8 @@ const NONE_SEEN = new Set<string>();
 /** Where Changes' own width is kept, and what the chat keeps beside it. */
 const CHANGES_W = "lc:panel-w-changes";
 const CHANGES_CHAT_MIN = 480;
+/** The panel's width until you drag it, the same 500 as app.css's default (board Main), Changes included. */
+const PANEL_DEFAULT_W = 500;
 /** How long a shut dock stays while its column closes (the body's shutting transition, app.css). */
 const PANEL_EXIT_MS = 400;
 
@@ -99,8 +104,6 @@ export function showBelow(threadId: string) {
   belows.set(threadId, true);
 }
 const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
-// The Session card reads the session itself (SessionInfo.tsx); pinned, it stays up when a row takes you to a surface.
-const SessionPopup = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionPopup));
 /** The install previews that have come up by themselves once, while the app runs. */
 const openedPreviews = new Set<string>();
 
@@ -125,17 +128,16 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   const agents = useEngine((s) => s.agents);
   const providers = useEngine((s) => s.providers);
   const project = useEngine((s) => s.projects.find((p) => p.id === thread.projectId));
-  // A kept layout that still names Session or the old guide loses them; Session asked for that way opens its popup (dock.ts dropPopups).
-  // One that names Linked pull requests, gone into Pull request's picker on 2026-11-25, has Pull request in its place.
-  const [first] = useState(() => dropPopups(replaceTab(keptDock(thread.id), "linked", "pr")));
-  const [dock, setDockState] = useState<DockState>(first.dock);
-  // The Session card, pinned at the chat's right as T3 Code's is, from its icon in the header's row, its key, ⌘K and the
-  // title's menu: one choice for every session (pinned.ts). A kept layout that asked for the old popup pins it.
+  // A kept layout that names Linked pull requests, gone into Pull request's picker on 2026-11-25, has Pull request in its place.
+  // Session is a surface of the panel again (line and dot), so it stays in a layout kept while the app runs.
+  const [dock, setDockState] = useState<DockState>(() => replaceTab(keptDock(thread.id), "linked", "pr"));
+  // The dock as it is now, for keys and toggles that read it outside a render.
+  const dockNow = useRef(dock);
+  dockNow.current = dock;
+  // The session details card, from the first toggle at the top row's right end, its key, ⌘K and the title's menu: one
+  // choice for every session, kept across launches (pinned.ts).
   const sessionOpen = useSessionPinned();
   const setSessionOpen = setSessionPinned;
-  useEffect(() => {
-    if (first.popup === "session") setSessionPinned(true);
-  }, []);
   const setDock = (d: DockState | ((d: DockState) => DockState)) =>
     setDockState((prev) => {
       const next = typeof d === "function" ? d(prev) : d;
@@ -168,8 +170,13 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
     the bottom panel and leaves the right panel be. T3 Code keeps its terminal drawer apart from the
     right panel the same way (chat/useChatTerminalActions.ts).
   */
-  // Linked pull requests is Pull request with its picker open (pr-pick.ts).
-  const bring = (tab: Tab) => (tab === "terminal" ? setBelow(true) : tab === "session" ? setSessionOpen(true) : tab === "linked" ? (askPicker(thread.id), setDock((d) => openTab(d, "pr"))) : setDock((d) => openTab(d, tab)));
+  // Linked pull requests is Pull request with its picker open (pr-pick.ts). Session is the details card, or with the panel open its surface there.
+  const bring = (tab: Tab) => (tab === "terminal" ? setBelow(true) : tab === "session" ? (dockNow.current.open ? setDock((d) => openTab(d, "session")) : setSessionOpen(true)) : tab === "linked" ? (askPicker(thread.id), setDock((d) => openTab(d, "pr"))) : setDock((d) => openTab(d, tab)));
+  /*
+    The details toggle: the card while the panel is hidden; with the panel open there is no room for it, so the toggle
+    shows the Session surface there, and hides it again when it is the one showing.
+  */
+  const toggleDetails = () => (dockNow.current.open ? setDock((d) => (onScreen(d, "session") ? closeTab(d, "session") : openTab(d, "session"))) : setSessionOpen((o) => !o));
   // The right panel's + (its guide) opens the Terminal below too, with the right panel as it was.
   const fromPanel = (d: DockState) => (paneOf(d, "terminal") >= 0 && paneOf(dock, "terminal") < 0 ? setBelow(true) : setDock(d));
   const [focus, setFocus] = useState<{ id: string; path?: string } | null>(null);
@@ -179,7 +186,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   // The panel's width, while you drag its edge and after.
   const body = useRef<HTMLDivElement>(null);
   const [panelW, setPanelW] = usePanelWidth();
-  // Changes keeps a width of its own (CHANGES_W), from the body's width: half of it until you drag.
+  // Changes keeps a width of its own (CHANGES_W) once you drag it: until then the panel's 500, as every surface's (board Main).
   const [changesW, setChangesW] = usePanelWidth(CHANGES_W);
   const [bodyW, setBodyW] = useState(0);
   useEffect(() => {
@@ -359,8 +366,6 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   // ⌘K's "Open Browser" and the like reach this session's dock (its Terminal, the bottom panel).
   useEffect(() => onOpenSurface(thread.id, bring), [thread.id]);
   // The full canvas, for a surface's own menu (Changes') to give it the paper and take it back.
-  const dockNow = useRef(dock);
-  dockNow.current = dock;
   useEffect(() => onFullCanvas(thread.id, { toggle: () => setDock(toggleFull), full: () => dockNow.current.open && dockNow.current.full }), [thread.id]);
   // Something put in the composer from an app's tab ("Ask … to fix it", composer.put): back to Chat, where it is.
   useEffect(() => onComposerInsert(thread.id, () => setView("chat")), [thread.id]);
@@ -529,8 +534,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
       e.preventDefault();
       // The Terminal's key shows the bottom panel, and hides it when it's up, as its button's tip says.
       if (s.id === "terminal") setBelow((b) => !b);
-      // Session's key opens its popup from the header's row, and shuts it when it's open.
-      else if (s.id === "session") !e.repeat && setSessionOpen((o) => !o);
+      // Session's key is the details toggle: the card, or with the panel open the Session surface there.
+      else if (s.id === "session") !e.repeat && toggleDetails();
       // The Linked key opens Pull request with its picker open (pr-pick.ts), the project's pull requests in it.
       else if (s.id === "linked") !e.repeat && (askPicker(thread.id), setDock((d) => openTab(d, "pr")));
       // The Agents key opens the agents popup from the header's chip, or the Agents surface where no chip shows (Crew.tsx openAgents).
@@ -580,14 +585,17 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
 
   // The dock beside the thread, rather than over the whole paper.
   const beside = dock.open && !dock.full;
+  // The details toggle is lit for the card, or with the panel open for the Session surface showing there.
+  const detailsOn = dock.open ? onScreen(dock, "session") : sessionOpen;
+  const cardShown = sessionOpen && !dock.open && !leaving;
   /*
-    Beside the thread, Changes shows at its own width: the one you dragged it to, else half the body,
-    never leaving the chat under CHANGES_CHAT_MIN. A window too narrow for that has the usual width.
+    Beside the thread, Changes shows at its own width: the one you dragged it to, else the panel's 500 (line and dot:
+    no wider default for Changes), never leaving the chat under CHANGES_CHAT_MIN. A window too narrow for that has the usual width.
     The grip, while Changes shows, moves and keeps Changes' width; while another surface shows, the usual one.
     Two panes show the panel 1.6 times the kept width (dock.css), so the kept width is worked out in those terms.
   */
   const paneK = dock.panes.length > 1 ? 1.6 : 1;
-  const changesFit = bodyW > 0 ? Math.floor(Math.min(changesW ?? bodyW / 2 / paneK, (bodyW - CHANGES_CHAT_MIN) / paneK)) : 0;
+  const changesFit = bodyW > 0 ? Math.floor(Math.min(changesW ?? panelW ?? PANEL_DEFAULT_W, (bodyW - CHANGES_CHAT_MIN) / paneK)) : 0;
   const changesOwn = beside && dock.panes[dock.at]?.tab === "changes" && changesFit >= PANE_MIN;
   const widthNow = changesOwn ? changesFit : panelW;
   /*
@@ -706,8 +714,14 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                 }}
               />
             ) : project ? (
-              // The title is the menu's button, as Claude Code's is: where it works, its branch, rename, pin.
+              // The title is the menu's button, as Claude Code's is: where it works, its branch, rename, pin. The project's
+              // tile and name come before it, in grey, as where you are.
               <>
+                <span className="lc-crumb" aria-hidden>
+                  <span className="lc-crumb-tile">{tileLetters(project.name)}</span>
+                  <span className="lc-crumb-pj">{project.name}</span>
+                  <span className="lc-crumb-sl">/</span>
+                </span>
                 <h1 className="l-sr-only">{thread.title}</h1>
                 <EnvMenu
                   thread={thread}
@@ -718,8 +732,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   onChanges={() => setDock((d) => openTab(d, "changes"))}
                   actions={(close) => (
                     <>
-                      {/* The Session card, as its icon in the header's row pins it. */}
-                      <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), setSessionOpen(true))} />
+                      {/* The details card, as the first toggle at the row's right end shows it (or the Session surface, with the panel open). */}
+                      <Row title="Session details" icon={<I.details size={16} />} onPick={() => (close(), bring("session"))} />
                       {/* Agents opens what the Agents key opens (the popup, or the panel's surface). Teamwork and Swarm have no
                           row in a menu: they start only from the message box, with /teamwork and /swarm. */}
                       {!thread.sideOf && !thread.security && <Row title="Agents" icon={<I.agents size={16} />} onPick={() => (close(), openAgents(thread.id))} />}
@@ -750,16 +764,9 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             )}
             <span className="lc-grow" data-drag />
             <ReviewerSwitch thread={thread} />
-            <Switcher
-              thread={thread}
-              dock={dock}
-              onDock={fromPanel}
-              below={below}
-              onBelow={() => setBelow(!below)}
-              files={openFiles}
-              onMake={() => putInComposer(thread.id, "Make me a panel that ")}
-              session={{ open: sessionOpen, onOpen: setSessionOpen }}
-            />
+            {/* The branch, before the toggles; the details card has its own branch row, so the chip steps aside while it shows. */}
+            {project && !cardShown && <BranchChip thread={thread} project={project} files={openFiles || wtChanges} lines={lines} onChanges={() => setDock((d) => openTab(d, "changes"))} />}
+            <TopToggles details={{ on: detailsOn, onToggle: toggleDetails }} below={below} onBelow={() => setBelow(!below)} panel={{ open: dock.open, onShow: () => setDock((d) => showDock(d)) }} />
             {onCloseSide && (
               <button type="button" className="lc-tb l-focus" aria-label="Close this side" title="Close this side" onClick={onCloseSide}>
                 <I.close size={14} />
@@ -768,17 +775,22 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
           </header>
           <div className="lc-stage" hidden={view !== "chat"}>
             {/*
-              The pinned column at the chat's right, as T3 Code has its card: the Session card while its icon is pressed.
-              It stays until shut; a row that opens something else leaves it up. Where the thread is wide the chat and
-              the message box make room for it. A Teamwork or a Swarm is not pinned here: the Agents panel holds it.
+              The session details card, floating under the top row's right end while its toggle is on and the panel is
+              hidden. It stays until its toggle shuts it; a row that opens something else leaves it up. The chat and the
+              message box keep a gutter clear of it (app.css). A Teamwork or a Swarm is not here: the Agents panel holds it.
             */}
             <aside className="lc-pin" aria-label="Session details">
-              {sessionOpen && (
-                <div className="lc-pin-card lc-pop-panel">
-                  <Suspense fallback={null}>
-                    <SessionPopup thread={thread} onShowChange={(path) => review("all", path)} onClose={() => {}} />
-                  </Suspense>
-                </div>
+              {cardShown && project && (
+                <DetailsCard
+                  thread={thread}
+                  project={project}
+                  files={openFiles || wtChanges}
+                  lines={lines}
+                  onChanges={() => setDock((d) => openTab(d, "changes"))}
+                  onContext={() => setDock((d) => openTab(d, "session"))}
+                  onAgents={() => openAgents(thread.id)}
+                  onTerminal={() => setBelow(true)}
+                />
               )}
             </aside>
             <div ref={scroller} className="lc-scroll">
@@ -879,7 +891,7 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   top={
                     <>
                       {asking && <AskDock dock={asking} />}
-                      {(openFiles > 0 || wtChanges > 0) && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles || wtChanges} lines={openFiles > 0 ? lines : { added: 0, removed: 0 }} onView={() => setDock((d) => openTab(d, "changes"))} />}
+                      {(openFiles > 0 || wtChanges > 0) && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles || wtChanges} lines={openFiles > 0 ? lines : { added: 0, removed: 0 }} held={heldMessage(thread.id, cps, openFiles || wtChanges)} onView={() => setDock((d) => openTab(d, "changes"))} />}
                     </>
                   }
                 />
@@ -903,6 +915,10 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
             thread={thread}
             dock={dock.open ? dock : leaving!}
             onDock={fromPanel}
+            counts={{ changes: openFiles || wtChanges || undefined }}
+            below={below}
+            onBelow={setBelow}
+            onMake={() => putInComposer(thread.id, "Make me a panel that ")}
             focus={focus}
             onFocus={setFocus}
             agentName={pair?.lead ?? coder.name}
@@ -920,19 +936,26 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
 
 /**
   What's waiting to commit, as a row of the composer tray's head, so it stays in sight with the
-  panel closed (the rail's dot said it before). Its words open the Changes surface, and Commit, the
-  one filled button, does too. The session leaves it out while Changes shows: Changes' foot commits.
+  panel closed (the rail's dot said it before). Its words open the Changes surface, and its small
+  Commit does too. The session leaves it out while Changes shows: Changes' foot commits.
 */
-function ToCommit({ files, lines, onView }: { files: number; lines: { added: number; removed: number }; onView: () => void }) {
+function ToCommit({ files, lines, held, onView }: { files: number; lines: { added: number; removed: number }; held?: string; onView: () => void }) {
   return (
     <div className="lc-trow">
-      <I.changes size={16} />
+      <I.commit size={16} />
       <button type="button" className="lc-trow-t lc-trow-open l-focus" aria-label={`${plural(files, "file")} to commit. Open Changes`} onClick={onView}>
         {plural(files, "file")} to commit
       </button>
       <Lines {...lines} />
       <span className="lc-grow" />
-      <button type="button" className="lc-btn lc-trow-commit l-focus" data-kind="ink" onClick={onView}>
+      {/* What the commit would say, dim, only when the app already holds it (Commit.tsx heldMessage): never asked of a model here. */}
+      {held && (
+        <span className="lc-trow-dim" title={held}>
+          {held}
+        </span>
+      )}
+      {/* A small soft button, as the board draws it: the send button stays the box's one filled control. */}
+      <button type="button" className="lc-btn lc-trow-commit l-focus" data-size="sm" onClick={onView}>
         Commit
       </button>
     </div>
@@ -943,6 +966,7 @@ function ToCommit({ files, lines, onView }: { files: number; lines: { added: num
 function SessionPanel(props: ComponentProps<typeof Panel>) {
   return <Panel {...props} />;
 }
+
 
 /** useStickToBottom lets go when you scroll up; a scroll of nothing upward tells it so when the session moves you itself. */
 const letGo = (el: HTMLElement) => el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));

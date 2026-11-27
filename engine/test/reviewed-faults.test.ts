@@ -60,10 +60,10 @@ test("The side chat's box offers one model, with no Fusion and nothing that make
   const composer = app("Composer.tsx");
   assert.ok(/<WhoPanel [^>]*solo=\{aside\}/.test(composer), "the box doesn't pass its side chat's mark to the who panel");
   const panel = span(composer, "function WhoPanel(", "export function PermissionRows(");
-  // The picker draws the rows a caller pins; the who panel pins Fusion only when the box isn't a side chat's.
-  assert.ok(/first=\{solo \? undefined : fusionRow\}/.test(panel), "the Fusion row is offered in a side chat");
-  assert.ok(/<button type="button" className="lc-who-row l-focus" data-rove data-way="pair"/.test(panel), "the Fusion row is gone");
-  assert.ok(/card=\{\(key, t, inPlace\) => \(key === "fusion" && !solo \? fusionCard\(t, inPlace\) : undefined\)\}/.test(panel), "Fusion's card is offered in a side chat");
+  // Fusion is the small card under the model's card (board Menus): the who panel offers it only when the box isn't a side chat's.
+  assert.ok(/under=\{solo \|\| way === "demo" \? undefined : \(_t, open\) => fusionSwitch\(open\)\}/.test(panel), "Enable Fusion is offered in a side chat");
+  assert.ok(/const fusionOn = \(\) => \{\s*if \(solo \|\| own \|\| !freshSide\) return;/.test(panel), "Enable Fusion still makes a pair in a side chat");
+  assert.ok(/card=\{\(key, _t, inPlace\) => \(key === "fusion" && !solo && own \? fusionCard\(pairTool, inPlace\) : undefined\)\}/.test(panel), "Fusion's card is offered in a side chat");
   assert.ok(/const pickFusion = \(t: string, effort\?: string\) => \{\s*if \(solo\) return;/.test(panel), "picking Fusion still makes a pair in a side chat");
   // The rail only shows a tool's models now: pressing a tool starts nothing, so no other tool's pair can start there.
   assert.doesNotMatch(panel, /const pickTool =/, "pressing a tool on the rail still changes the session");

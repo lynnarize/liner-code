@@ -209,14 +209,19 @@ function PlanCard({ threadId, it, foldDone, end }: { threadId: string; it: Extra
       {e.owner ? <span className="lc-ccard-n">{e.owner}</span> : owned && e.status === "pending" ? <span className="lc-ccard-n">no one yet</span> : null}
     </li>
   );
+  // While a step is in work the head carries the halftone in its top right corner (board Main). It is still: nothing in this card moves.
+  const alive = !end && it.entries.some((e) => e.status === "in_progress");
   return (
-    <section className="lc-ccard" aria-label="Plan" data-open={open || undefined}>
+    <section className="lc-ccard lc-plan-card" aria-label="Plan" data-open={open || undefined}>
+      {alive && <i className="lc-ht lc-ht-corner lc-ht-soft lc-ccard-ht" aria-hidden />}
       <div className="lc-ccard-h">
         <button type="button" className="lc-ccard-fold l-focus" aria-expanded={open} aria-label={open ? "Fold the plan" : "Open the plan"} onClick={() => setOpen(!open)}>
-          <I.chevR size={12} className="lc-sum-chev" />
+          <I.list size={14} className="lc-ccard-ic" />
           <b>Plan</b>
           <span className="lc-quiet">{planCount(it.entries)}</span>
           {!open && <span className="lc-ccard-line">{planLine(it.entries)}</span>}
+          <span className="lc-grow" />
+          <I.chevU size={12} className="lc-ccard-chev" />
         </button>
       </div>
       {open && (
@@ -686,20 +691,32 @@ function workOf(items: Item[], docked: boolean, draw?: Props["draw"]) {
 /** Each kind of step's mark (contracts/doing.ts stepKind): one place, so the live line, a step's row and the folded line agree. */
 const KIND_MARK: Record<StepKind, typeof I.file> = { file: I.file, search: I.search, command: I.terminal, web: I.globe, agent: I.agents, canvas: I.design, other: I.tool };
 const stepsIn = (rows: Row[]) => rows.flatMap((r) => (r.kind === "step" ? [r.step] : []));
-/** The kinds of step a turn used, once each, in the line's own order, and one red problem mark when any step didn't work. */
-function Kinds({ tools, failed }: { tools: Tool[]; failed: number }) {
-  const used = new Set(tools.map(stepKind));
-  const kinds = STEP_KINDS.filter((k) => used.has(k));
-  if (!kinds.length && !failed) return null;
-  return (
-    <span className="lc-kinds" aria-hidden>
-      {kinds.map((k) => {
-        const Mark = KIND_MARK[k];
-        return <Mark key={k} size={14} />;
-      })}
-      {failed > 0 && <StateMark state="problem" size={14} />}
-    </span>
-  );
+/**
+  What a finished part did, as the folded line's small tags (board Main): "Read 6 files", "Searched 3 times", "Edited 2",
+  "Ran 2", in the kinds' own order (STEP_KINDS), from the calls the part made. Files are counted once each where the call
+  names one; the agents it sent are one tag.
+*/
+export function didTags(tools: Tool[], sent: Tool[] = []): string[] {
+  const own = tools.filter((t) => !sent.includes(t));
+  const files = (ts: Tool[]) => new Set(ts.map((t) => t.path ?? t.id)).size;
+  const of = (k: StepKind) => own.filter((t) => stepKind(t) === k);
+  const tags: string[] = [];
+  for (const k of STEP_KINDS) {
+    const ts = of(k);
+    if (k === "file") {
+      const reads = ts.filter((t) => t.toolKind === "read");
+      const edits = ts.filter(writes);
+      if (reads.length) tags.push(`Read ${plural(files(reads), "file")}`);
+      if (edits.length) tags.push(`Edited ${files(edits)}`);
+    } else if (!ts.length) continue;
+    else if (k === "search") tags.push(ts.length === 1 ? "Searched once" : `Searched ${ts.length} times`);
+    else if (k === "command") tags.push(`Ran ${ts.length}`);
+    else if (k === "web") tags.push(`Browsed ${ts.length === 1 ? "once" : `${ts.length} times`}`);
+    else if (k === "canvas") tags.push(`Drew ${ts.length}`);
+    else if (k === "agent") tags.push(`Sent ${plural(ts.length, "agent")}`);
+  }
+  if (sent.length) tags.push(`Sent ${plural(sent.length, "agent")}`);
+  return tags;
 }
 /** How many steps a part took (an agent it sent is one) and how many didn't work. */
 function countOf(rows: Row[], sent: Tool[]) {
@@ -1279,14 +1296,30 @@ function Summary({ threadId, rows, sent, asks, cp, lead, cost, onReview }: Trail
   const [open, setOpen] = useState(false);
   const { n, failed, tools } = countOf(rows, sent);
   const has = rows.length > 0;
-  const said = [lead, n > 0 ? plural(n, "step") : !lead && has ? "Thought it through" : undefined, failed > 0 && `${failed} didn't work`].filter(Boolean).join(" · ");
+  // What was done, as small tags at the line's end (board Main): "Read 6 files", "Edited 2". With none to say, the count of steps stays in the words.
+  const tags = didTags(tools, sent);
+  const said = [lead, n > 0 && !tags.length ? plural(n, "step") : !lead && has && !n ? "Thought it through" : undefined].filter(Boolean).join(" · ");
   return (
     <div className="lc-trail" data-open={open || undefined}>
       <button type="button" className="lc-trail-sum l-focus" aria-expanded={has ? open : undefined} disabled={!has} onClick={() => setOpen(!open)}>
         {has && <I.chevR size={12} className="lc-sum-chev" />}
         {said && <span className="lc-trail-parts l-num">{said}</span>}
-        <Kinds tools={tools} failed={0} />
         {cost !== undefined && <span className="l-num">{said ? `· ${money(cost)}` : money(cost)}</span>}
+        <span className="lc-grow" />
+        {(tags.length > 0 || failed > 0) && (
+          <span className="lc-trail-tags l-num">
+            {tags.map((t) => (
+              <span key={t} className="lc-trail-tag">
+                {t}
+              </span>
+            ))}
+            {failed > 0 && (
+              <span className="lc-trail-tag" data-bad>
+                {failed} didn't work
+              </span>
+            )}
+          </span>
+        )}
       </button>
       {open && has && <StepList rows={rows} asks={asks} cp={cp} onReview={onReview} />}
       <Fanout threadId={threadId} tools={sent} />
@@ -1328,7 +1361,6 @@ function StepRow({ s, said, cp, open, onToggle, onReview, fresh }: { s: TrailSte
         <b className="lc-wk-verb">{s.verb}</b>
         {/* A frame's name in the Design face reads as a name, not code (plainTarget); files and commands stay mono. */}
         {s.target && (s.plainTarget ? <span className="lc-wk-target" data-plain>{s.target}</span> : <code className="lc-wk-target">{s.target}</code>)}
-        {result && <span className="lc-wk-r">{result}</span>}
         {tagsOf(said).map((t) => (
           <span key={t} className="lc-wk-tag">
             {t}
@@ -1340,6 +1372,8 @@ function StepRow({ s, said, cp, open, onToggle, onReview, fresh }: { s: TrailSte
           </span>
         )}
         <span className="lc-grow" />
+        {/* How it went, at the line's end (board Light): "14 pass · 2.1s". */}
+        {result && <span className="lc-wk-r">{result}</span>}
         {s.state === "running" ? <Tick className="lc-wk-time l-num" text={() => ((Date.now() - at) / 1000 >= 2 ? ticked((Date.now() - at) / 1000) : "")} /> : <span className="lc-wk-time l-num">{s.seconds >= 1 ? duration(s.seconds) : ""}</span>}
       </button>
       {has && open && (
@@ -1901,6 +1935,8 @@ function QuestionCard({ threadId, it, who }: { threadId: string; it: Extract<Ite
   return (
     <section className="lc-q lc-frame" aria-label={`${who} asks: ${q.question}`}>
       <div className="lc-fcard">
+        {/* It waits on you: drawn as the ask on the message box is (board Light), the amber halftone in its corner. */}
+        <i className="lc-ht lc-ht-corner lc-ht-soft lc-ht-warn lc-ask-ht" aria-hidden />
         <div className="lc-q-top">
           <span className="lc-dots" aria-hidden>
             {it.questions.map((_, i) => (
@@ -2082,6 +2118,7 @@ function Proposal({ threadId, it, who }: { threadId: string; it: Extract<Item, {
   return (
     <section className="lc-plan lc-frame" aria-label={`${who}'s plan`}>
       <div className="lc-fcard">
+        {it.state === "asking" && <i className="lc-ht lc-ht-corner lc-ht-soft lc-ht-warn lc-ask-ht" aria-hidden />}
         <div className="lc-plan-top">
           <span>
             <small>{who}'s plan</small>
@@ -2674,6 +2711,9 @@ function Escalation({ it, providers }: { it: Tool; providers: ProviderInfo[] }) 
   );
 }
 
+/** A changed file's letter, said in words for its title. */
+const FILE_STATUS: Record<"added" | "modified" | "deleted" | "renamed", string> = { added: "Added", modified: "Changed", deleted: "Deleted", renamed: "Renamed" };
+
 /**
   The turn's last line: what changed (all its parts' changes as one, when `all`; each file's row opens
   Changes on it, and the one Changes shows is tinted) and the Reviewer's verdict, side by side. Its findings open under the line; blockers open
@@ -2704,20 +2744,35 @@ function TurnFoot({ cp, all, review, providers, onReview, reviewing }: { cp?: Ch
               Committed {cp.committed}
             </span>
           ) : (
+            // One bordered card (board Main): a head with the count, the lines and Review, then a row a file with its letter,
+            // its folder in grey and its name in ink, its own lines and five small bars.
             <section className="lc-ledger" aria-label="What this turn changed">
               <div className="lc-ledger-h">
+                <I.changes size={14} />
                 <b>{plural(cp.files.length, "file")} changed</b>
+                <span className="lc-grow" />
                 <Lines {...sumLines(cp.files)} />
+                {onReview && (
+                  <button type="button" className="lc-btn" data-size="sm" onClick={() => onReview(all ? "all" : cp.id)}>
+                    Review
+                  </button>
+                )}
               </div>
               {cp.files.slice(0, 6).map((f) => {
                 // Five squares: the share of the file's changed lines that were added, and removed.
                 const sum = f.added + f.removed;
                 const plus = sum ? Math.max(f.added ? 1 : 0, Math.round((f.added / sum) * 5)) : 0;
                 const minus = sum ? Math.min(5 - plus, Math.max(f.removed ? 1 : 0, 5 - plus)) : 0;
+                const cut = f.path.lastIndexOf("/") + 1;
                 const inside = (
                   <>
-                    <span className="lc-mono lc-ledger-p">{f.path}</span>
-                    {f.status === "added" && <span className="lc-ledger-new">new</span>}
+                    <span className="lc-ledger-badge" data-s={f.status} title={FILE_STATUS[f.status]}>
+                      {f.status[0].toUpperCase()}
+                    </span>
+                    <span className="lc-ledger-p">
+                      <span className="lc-ledger-dir">{f.path.slice(0, cut)}</span>
+                      {f.path.slice(cut)}
+                    </span>
                     <span className="lc-grow" />
                     <Lines added={f.added} removed={f.removed} />
                     <span className="lc-ledger-sq" aria-hidden>

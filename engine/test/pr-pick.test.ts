@@ -91,7 +91,7 @@ test("Linked pull requests is no surface of its own: its key, ⌘K and a kept la
   assert.equal(both.filter((t) => t === "pr").length, 1, "Pull request twice");
   assert.ok(!both.includes("linked"));
   const session = app("Session.tsx");
-  assert.match(session, /dropPopups\(replaceTab\(keptDock\(thread\.id\), "linked", "pr"\)\)/, "a kept layout still opens the Linked surface");
+  assert.match(session, /useState<DockState>\(\(\) => replaceTab\(keptDock\(thread\.id\), "linked", "pr"\)\)/, "a kept layout still opens the Linked surface");
   assert.match(session, /else if \(s\.id === "linked"\) !e\.repeat && \(askPicker\(thread\.id\), setDock\(\(d\) => openTab\(d, "pr"\)\)\)/, "the Linked key doesn't open Pull request with its picker");
   assert.match(session, /tab === "linked" \? \(askPicker\(thread\.id\), setDock\(\(d\) => openTab\(d, "pr"\)\)\)/, "⌘K's Linked row doesn't open Pull request with its picker in an open session");
   assert.match(app("App.tsx"), /else if \(tab === "linked"\) \(askPicker\(id\), openSession\(id, "pr"\)\)/, "⌘K's Linked row doesn't open Pull request with its picker in a session that isn't open");

@@ -61,9 +61,9 @@ test("markStateOf: the state mark a session shows, from working to its pull requ
   assert.equal(markStateOf(t({ status: "limited" })), "limit");
   assert.equal(markStateOf(t({ turns: 0 })), "new");
   assert.equal(markStateOf(t()), "done");
-  // A question you have seen is done in grey; the same question looked at now is seen too.
-  assert.equal(markStateOf(t({ status: "waiting" })), "done");
-  assert.equal(markStateOf(t({ status: "waiting", unread: true }), { looking: true }), "done");
+  // A question you have seen is "seen", which draws no mark (never done's tick); the same question looked at now is seen too.
+  assert.equal(markStateOf(t({ status: "waiting" })), "seen");
+  assert.equal(markStateOf(t({ status: "waiting", unread: true }), { looking: true }), "seen");
   // Finished while you were elsewhere is fresh until you open it, and a Reviewer block reads as finished.
   assert.equal(markStateOf(t({ unread: true })), "fresh");
   assert.equal(markStateOf(t({ unread: true }), { looking: true }), "done");
@@ -78,6 +78,40 @@ test("markStateOf: the state mark a session shows, from working to its pull requ
   assert.equal(markStateOf(t(pr("CLOSED"))), "done");
   assert.equal(markStateOf(t({ ...pr("OPEN"), unread: true })), "fresh");
   assert.equal(markStateOf(t({ ...pr("OPEN"), status: "running" })), "working");
+});
+
+test("A session that waits on your answer is amber until you have seen it, then draws no mark and grey words, and nothing draws the done tick for a session whose status is waiting", () => {
+  const read = (path: string) => readFileSync(new URL(`../../ui/src/app/${path}`, import.meta.url), "utf8");
+  // Not seen: needs, amber. Seen, or looked at now: "seen". Every waiting session, whatever else it carries, is never done.
+  assert.equal(markStateOf(t({ status: "waiting", unread: true })), "needs");
+  for (const [more, looking] of [[{}, false], [{ unread: true }, true], [{}, true], [{ pr: { number: 4, url: "u", state: "MERGED" } }, false], [{ turns: 0 }, false]] as const) {
+    const w = t({ status: "waiting", ...more });
+    const mark = markStateOf(w, { looking });
+    assert.notEqual(mark, "done", `a waiting session draws the done tick (${JSON.stringify(more)}, looking ${looking})`);
+    assert.ok(mark === "seen" || mark === "needs", `a waiting session draws ${mark}`);
+    assert.equal(needsYou(w) || w.turns === 0, true);
+  }
+  assert.equal(markStateOf(t({ status: "waiting" })), "seen");
+  // Seen is no longer news; looked at now, it never flashes.
+  assert.equal(newsForYou(t({ status: "waiting" })), false);
+  assert.equal(newsForYou(t({ status: "waiting", unread: true }), Date.now(), true), false);
+  // "seen" draws nothing: no box of pixels and no tick, only its name for a screen reader.
+  const icons = read("icons.tsx");
+  assert.match(icons, /if \(state === "seen"\) return label \? <span className="l-sr-only" data-s="seen" role="img" aria-label=\{label\} \/> : null;/);
+  assert.ok(icons.indexOf('if (state === "seen")') < icons.indexOf('if (state === "done")'), "seen falls through to another drawing");
+  assert.match(icons, /seen: "Waits for your answer",/);
+  // Its words are grey once seen, amber before, in the shared line (the sidebar, The Wall) and in Security's and Design's.
+  assert.match(read("SideList.tsx"), /if \(t\.status === "waiting"\) return \{ text: askWords\(t\), tone: o\.seenQ \? undefined : "warn", asks: true \};/);
+  assert.match(read("Sidebar.tsx"), /rowWords\(t, \{ busy, agents: agentsNow, seenQ, snoozed/);
+  assert.match(read("Wall.tsx"), /rowWords\(t, \{[^}]*seenQ: seenAsk\(t\)/);
+  assert.match(read("security/Side.tsx"), /tone: seenAsk\(t, looking\(t\.id\)\) \? undefined : "warn"/);
+  assert.match(read("design/Tabs.tsx"), /tone: \(state === "needs" && !seen\) \|\| state === "limited" \? "warn"/);
+  // No caller turns a seen question into done, the green tick: not the state, Code's rows, The Wall, Security's or Design's.
+  assert.doesNotMatch(read("session-state.ts"), /seenAsk\(t, o\.looking\) \? "done"/);
+  for (const file of ["Sidebar.tsx", "Wall.tsx", "App.tsx", "security/Side.tsx", "design/Tabs.tsx"]) assert.doesNotMatch(read(file), /seen(Q|Ask\([^)]*\))? \? "done"/, `${file} draws a seen question as done`);
+  assert.match(read("security/Side.tsx"), /state=\{seen \? "seen" : state\}/, "Security's seen question isn't drawn as nothing");
+  // Home's Carry on card for work not committed draws no done tick: that work isn't finished.
+  assert.doesNotMatch(read("CarryOn.tsx"), /<StateMark state="done"/, "the card for work not committed shows a finished tick");
 });
 
 test("wallKind: working, needs you, or done on the Wall", () => {

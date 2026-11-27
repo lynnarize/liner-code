@@ -28,7 +28,7 @@ const SURFACE_KEYS: [string, string, string][] = [
 ].filter(([id]) => ROUTINES_ON || id !== "routines") as [string, string, string][];
 
 /** What a surface key does where it no longer shows or hides a surface. */
-const SURFACE_SAID: Record<string, string> = { session: "Show or hide the Session card", agents: "Open the agents", linked: "Pull request, with the project's pull requests to pick from" };
+const SURFACE_SAID: Record<string, string> = { session: "Show or hide session details", agents: "Open the agents", linked: "Pull request, with the project's pull requests to pick from" };
 
 export const COMMANDS: Command[] = [
   { id: "new", label: "New session (in Liner Design, a new design)", group: "Anywhere", keys: ["mod+n"] },

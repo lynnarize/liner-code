@@ -1919,6 +1919,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Home's picker and a session started without an agent read it (startOf): only its forms are kept, and null clears it.
       if (patch.start !== undefined && patch.start !== null && !startIn(patch.start)) throw new Error('A new session starts as "pair", "best", "fast" or "@" and a model.');
       if (patch.start === null) patch.start = undefined;
+      // Home and the sidebar read it as on unless it is false, so only a yes or a no is kept.
+      if (patch.carryOn !== undefined && typeof patch.carryOn !== "boolean") throw new Error("Carry on is on or off.");
       if (patch.maxActiveSubagents !== undefined && (!Number.isInteger(patch.maxActiveSubagents) || patch.maxActiveSubagents < 1 || patch.maxActiveSubagents > 8)) throw new Error("Parallel subagents must be a whole number from 1 to 8.");
       if (patch.swarmMaxActive !== undefined && (!Number.isInteger(patch.swarmMaxActive) || patch.swarmMaxActive < 1 || patch.swarmMaxActive > 4)) throw new Error("Swarm active processes must be a whole number from 1 to 4.");
       if (patch.swarmHibernateSec !== undefined && (!Number.isInteger(patch.swarmHibernateSec) || patch.swarmHibernateSec < 0 || patch.swarmHibernateSec > 300)) throw new Error("Swarm hibernation delay must be a whole number of seconds from 0 to 300.");

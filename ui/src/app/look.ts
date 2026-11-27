@@ -94,7 +94,8 @@ export const dotsOf = (l: Look, paper: "light" | "dark" = "dark"): DotLook => {
     pic: within(d.pic, 0, Number.MAX_SAFE_INTEGER, 0),
   };
 };
-export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "tinted", designs: "panel", designsAuto: true, action: "red", motion: "quick" };
+/* Line and dot (2026-11-27) has no blur anywhere, so the message box is solid unless you chose its glass. */
+export const LOOK_DEFAULT: Look = { theme: "system", accent: "blue", composer: "solid", designs: "panel", designsAuto: true, action: "red", motion: "quick" };
 export const readLook = (): Look => {
   let saved: Partial<Look> & { v?: number } = {};
   try {

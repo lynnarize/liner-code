@@ -78,7 +78,7 @@ test("A menu's foot line after a rule takes that rule rather than drawing a seco
 
 test("The keyboard settings name what the keys open now", () => {
   const keys = src("keymap.ts");
-  assert.match(keys, /session: "Show or hide the Session card"/);
+  assert.match(keys, /session: "Show or hide session details"/);
   assert.match(keys, /"Pin, snooze, settle"/);
   assert.match(keys, /"Find in the session, or in Changes"/);
   assert.ok(!/mark done|in the diff/.test(keys), "an old name is left in the keyboard settings");
@@ -103,7 +103,7 @@ test("The chat's Ship and pull request cards wear the cards' bordered skin and o
   const css = sheet("app.css");
   for (const sel of [".lc-ship-morph", ".lc-prc"]) {
     const b = blocks(css, sel)[0];
-    assert.equal(value(b, "border"), "1px solid var(--l-line-2)", `${sel} has no rule round it`);
+    assert.equal(value(b, "border"), "0.5px solid var(--l-line-2)", `${sel} has no 0.5px rule round it`);
     assert.equal(value(b, "border-radius"), "14px", `${sel} is not at the cards' corner`);
     assert.equal(value(b, "background"), "none", `${sel} is still filled`);
     assert.equal(value(b, "box-shadow"), undefined, `${sel} still has the card ring`);

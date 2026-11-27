@@ -29,6 +29,7 @@ import { toast } from "@liner/components/toast/toast";
 import { BehindHome, Dots, DotsHello, onWater, useBehindHome } from "./Dots";
 import { I } from "./icons";
 import { homeShown, updateLook, useLook } from "./look";
+import { startTide } from "./homeTide";
 
 /** The small card on the sea stays, visit after visit, until its × closes it for good. */
 const HELLO_KEY = "liner-code:sea-hello";
@@ -856,13 +857,27 @@ export function Sea() {
   return (
     <>
       {/* Nothing chosen behind Home: the paper's own faint halftone from its top right corner (board Home). */}
-      {home === "none" && !open && <i className="lc-ht lc-ht-corner lc-ht-big lc-ht-faint lc-home-ht" aria-hidden />}
+      {home === "none" && !open && <Tide />}
       {home === "sea" && <Whale card={!open} onMake={() => (updateLook({ home: "dots" }), setOpen(true))} />}
       {home === "dots" && <Dots look={look} />}
       {home === "dots" && !open && <DotsHello onChange={() => setOpen(true)} />}
       {open && <BehindHome look={look} onClose={() => setOpen(false)} />}
     </>
   );
+}
+
+/** The paper's halftone in the top right corner, drifting (homeTide.ts); the still one in CSS where WebGL can't be had. */
+function Tide() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [still, setStill] = useState(false);
+  useEffect(() => {
+    if (still) return;
+    const tide = startTide(ref.current!, ref.current!.parentElement!, onWater, () => setStill(true));
+    if (!tide) return setStill(true);
+    return () => tide.stop();
+  }, [still]);
+  if (still) return <i className="lc-ht lc-ht-corner lc-ht-big lc-ht-faint lc-home-ht" aria-hidden />;
+  return <canvas ref={ref} className="lc-home-ht lc-home-tide" aria-hidden />;
 }
 
 /** The sea, filling Home's paper behind everything on it, and the card that introduces it the first time (not while Behind Home is open). */

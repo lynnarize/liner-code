@@ -8397,6 +8397,13 @@ body,
   z-index: 0;
   border-radius: 0;
 }
+/* The same corner drawn live (homeTide.ts): its colour is the ink the shader reads. */
+.lc-home > .lc-home-tide {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  color: var(--lc-act);
+}
 
 /* Carry on on Home (CarryOn.tsx HomeCarry): a grey label with "All N" at its end, then three cards. */
 .lc-hc {

@@ -36,6 +36,9 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 
 ### Changed
 
+- The dots in Home's top right corner drift: their edge moves like a cloud, a slow swell runs out from
+  the corner, and they swell a little round the pointer. The GPU draws it, 20 frames a second, none
+  while the window isn't the one in use, and Reduce motion holds it still.
 - Settings opens as a pop-up over the window, with its places regrouped: General (Notifications are
   in it now), Appearance and Keyboard; Agent tools, Agents and modes, Fusion and review and
   Permissions; Projects, Source control & issues and Worktrees; Liner MCP and Add-ons; then Archive

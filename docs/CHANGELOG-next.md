@@ -174,3 +174,7 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
   folder's files on the page only once you open it, so the panel opens without a stutter and the window no longer runs
   hot while Files is up. Files and @ mentions also list the project's own files before new ones, so such a folder can't
   crowd the project out of the tree.
+- Files stays light on a project with a folder of thousands of new files (video frames, an export): the tree puts a
+  folder's files on the page only once you open it, so the panel opens without a stutter and the window no longer runs
+  hot while Files is up. Files and @ mentions also list the project's own files before new ones, so such a folder can't
+  crowd the project out of the tree.

@@ -782,6 +782,25 @@
   font-size: 11px;
   font-weight: 500;
 }
+/* Under a list cut at the rows drawn at a time (treeRows.ts): the next of them, in the place and height of a row. */
+.lc-files-more {
+  display: block;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px 0 28px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lc-files-more:hover {
+    background: var(--l-wash);
+  }
+}
 .lc-files-wait,
 .lc-files-none {
   display: block;

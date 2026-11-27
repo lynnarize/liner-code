@@ -12,9 +12,11 @@ const SKIP = new Set([".git", "node_modules", ".next", "dist", "build", ".venv",
 
 export async function listFiles(root: string, limit = 20000): Promise<string[]> {
   // -z: without it git quotes a name like café.txt as "caf\303\251.txt", which matches no file.
-  const r = await run("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, timeout: 15000 });
+  // The project's own files come first, then the new ones: asked for together git lists the new ones first, and a folder of
+  // thousands of them (video frames, an export) took every place up to the limit, so Files showed none of the project.
+  const [own, fresh] = await Promise.all([run("git", ["ls-files", "-c", "-z"], { cwd: root, timeout: 15000 }), run("git", ["ls-files", "-o", "--exclude-standard", "-z"], { cwd: root, timeout: 15000 })]);
   // A conflicted file is listed once per stage, and an untracked nested repo as "dir/".
-  if (r.code === 0) return [...new Set(r.stdout.split("\0"))].filter((p) => p && !p.endsWith("/")).slice(0, limit);
+  if (own.code === 0) return [...new Set([...own.stdout.split("\0"), ...(fresh.code === 0 ? fresh.stdout.split("\0") : [])])].filter((p) => p && !p.endsWith("/")).slice(0, limit);
   const out: string[] = [];
   const walk = (dir: string, depth: number) => {
     if (out.length >= limit || depth > 8) return;
@@ -68,8 +70,9 @@ export async function findFiles(root: string, query = "", limit = 40) {
   });
 }
 
-export async function tree(root: string): Promise<TreeEntry[]> {
-  const files = await listFiles(root, 5000);
+/** The folder as a tree. The Files surface draws only the folders that are open (ui/src/app/treeRows.ts), so it can take as many files as @ mentions do. */
+export async function tree(root: string, limit = 20000): Promise<TreeEntry[]> {
+  const files = await listFiles(root, limit);
   const top: TreeEntry[] = [];
   const dirs = new Map<string, TreeEntry>();
   const dirOf = (path: string): TreeEntry[] => {

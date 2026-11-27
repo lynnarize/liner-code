@@ -418,7 +418,7 @@ export function ChatColumn({ thread }: { thread?: Thread }) {
   return (
     <aside className="ldc-col" aria-label="Chat">
       {/* The panel's own head (Pane.tsx), as Code's Side chat has: its name, then its tools. */}
-      <PaneHead name="Chat" tools={<><Pin /><OpenInCode /></>} canvas={false} />
+      <PaneHead name="Chat" tools={<><Pin /><OpenInCode /></>} />
       {thread && hosts ? <Slot host={hosts.body} className="ldc-slot ldc-grow" /> : <p className="ldc-empty ldc-grow">Nothing said yet. Say what to draw below.</p>}
       <div className="ldc-foot">
         <div className="ld-dock" data-place="column">

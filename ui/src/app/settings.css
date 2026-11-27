@@ -13,7 +13,8 @@
   display: grid;
   padding: clamp(10px, 4vh, 36px) clamp(10px, 6.67vw, 96px);
   background: oklch(0.2 0.01 265 / 0.28);
-  animation: lc-st-dim 220ms ease backwards;
+  /* A dialog's motion (app.css, .lc-sheet): in over 225ms and out over 160 on the even curve, dim and sheet together. */
+  animation: lc-st-dim var(--lc-sheet-in) var(--lc-ease-even) backwards;
 }
 [data-theme="dark"] .lc-st-pop {
   background: oklch(0 0 0 / 0.55);
@@ -34,16 +35,30 @@
   border-radius: var(--lc-r-sheet);
   background: var(--lc-paper);
   box-shadow:
-    0 0 0 1px var(--l-line-2),
+    0 0 0 0.5px var(--l-line-2),
     0 24px 64px oklch(0 0 0 / 0.32);
   /* The app's bars under it move the window in the Electron shell; nothing in the sheet does. */
   -webkit-app-region: no-drag;
-  animation: lc-st-rise 280ms var(--l-ease-out) backwards;
+  animation: lc-st-rise var(--lc-sheet-in) var(--lc-ease-even) backwards;
 }
+/* A fade and 4px, nothing more. */
 @keyframes lc-st-rise {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.99);
+    transform: translateY(4px);
+  }
+}
+/* Shut, it fades out with its dim before it goes (App keeps it, usePresence), and takes no presses meanwhile. */
+.lc-st-pop[data-closing] {
+  pointer-events: none;
+  animation: lc-st-undim var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+.lc-st-pop[data-closing] .lc-st-sheet {
+  animation: lc-sheet-out var(--lc-sheet-out) var(--lc-ease-even) forwards;
+}
+@keyframes lc-st-undim {
+  to {
+    background: transparent;
   }
 }
 @media (max-width: 760px) {
@@ -61,7 +76,7 @@
   box-sizing: border-box;
   padding: 12px 10px 10px;
   background: color-mix(in oklab, var(--lc-ground) 60%, var(--lc-paper));
-  box-shadow: inset -1px 0 0 var(--l-line);
+  box-shadow: inset -0.5px 0 0 var(--l-line);
 }
 .lc-st-side .lc-sb-key {
   font-family: var(--l-font-mono);
@@ -191,7 +206,7 @@
 }
 .lc-st-place[aria-current] {
   background: var(--lc-plate);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  box-shadow: inset 0 0 0 0.5px var(--l-line);
   font-weight: 500;
   color: var(--l-ink);
 }
@@ -223,7 +238,7 @@
   height: 52px;
   box-sizing: border-box;
   padding: 0 12px 0 28px;
-  box-shadow: inset 0 -1px 0 var(--l-line);
+  box-shadow: inset 0 -0.5px 0 var(--l-line);
 }
 /* The header's trail stays on one line: Settings / the place. */
 .lc-st-crumbs ol {
@@ -283,7 +298,7 @@
   overflow: hidden;
   border-radius: var(--lc-r-card);
   background: color-mix(in oklab, var(--l-ink) 2.5%, var(--lc-paper));
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
 }
 .lc-st-paper .lc-st-card {
   padding: 0 18px;
@@ -391,7 +406,7 @@ b > .lc-st-code {
   background-color: oklch(0.16 0.01 280);
   background-image: radial-gradient(circle, #6f5cff 1.2px, transparent 1.6px);
   background-size: 5px 5px;
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
 }
 /* What an opened row holds: quieter sub-rows in line with its words. */
 .lc-st-more {
@@ -431,7 +446,7 @@ b > .lc-st-code {
 .lc-st-paper .lc-swatch:not([data-on]) {
   box-shadow:
     inset 0 0 0 1px oklch(0 0 0 / 0.1),
-    0 0 0 1px var(--l-line-2);
+    0 0 0 0.5px var(--l-line-2);
 }
 /* A row that doesn't apply now (its switch is off too). */
 .lc-st-row[data-off] .lc-st-t {
@@ -450,7 +465,7 @@ b > .lc-st-code {
   overflow: hidden;
   border-radius: var(--lc-r-row);
   background: var(--lc-well);
-  box-shadow: inset 0 0 0 1px var(--lc-hair);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
 }
 .lc-st-pic[data-kind="panel"] {
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
@@ -491,7 +506,7 @@ b > .lc-st-code {
   background-color: var(--lc-paper);
   background-image: radial-gradient(color-mix(in oklab, var(--l-ink) 14%, transparent) 1px, transparent 1.2px);
   background-size: 7px 7px;
-  box-shadow: inset 1px 0 0 var(--lc-hair);
+  box-shadow: inset 0.5px 0 0 var(--lc-hair);
 }
 .lc-st-pic-art {
   flex: none;
@@ -537,7 +552,7 @@ b > .lc-st-code {
   align-items: center;
   gap: 10px;
   padding: 10px 0;
-  box-shadow: inset 0 1px 0 var(--l-line);
+  box-shadow: inset 0 0.5px 0 var(--l-line);
   color: var(--l-ink-3);
   font-size: 13px;
 }
@@ -628,6 +643,205 @@ b > .lc-st-code {
 /* An endpoint's model picked in the add form: the pressed plate, ringed, so it isn't read as the form's ink action. */
 .lc-btn.lc-st-pick[aria-pressed="true"] {
   background: var(--lc-plate);
-  box-shadow: inset 0 0 0 1px var(--l-line-2);
+  box-shadow: inset 0 0 0 0.5px var(--l-line-2);
   color: var(--l-ink);
+}
+
+/* ---------- 2026-11-27 "line and dot": Settings (board Settings) ---------- */
+/*
+  A pop-up 1040 by 720 at most in the middle of the dimmed app, corner 16, its float shadow and no other edge. Down its
+  left, on the ground: Find a setting, the places as 28px rows in grey-labelled groups, and the app's version at the
+  foot. Its right: the crumb and the ×, then the page's title in the name's face and one grey line, and sections with a
+  bold label over rows 52 high split by hairlines: no cards.
+*/
+.lc-st-pop {
+  place-items: center;
+}
+.lc-st-sheet {
+  /* 248, not the board's 232: the longest place with its New tag ("Source control & issues") shows whole. */
+  grid-template-columns: 248px minmax(0, 1fr);
+  width: min(1040px, 100%);
+  height: min(720px, 100%);
+  max-width: none;
+  border-radius: var(--lc-r-sheet);
+  box-shadow: var(--lc-float-shadow);
+}
+.lc-st-side {
+  padding: 10px 8px;
+  background: var(--lc-ground);
+  box-shadow: inset -0.5px 0 0 var(--lc-line2);
+}
+[data-theme="light"] .lc-st-side {
+  background: var(--lc-well);
+}
+.lc-sb-find.lc-st-find {
+  height: 30px;
+  margin: 0 0 4px;
+  padding: 0 5px 0 9px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
+}
+.lc-sb-find.lc-st-find:focus-within {
+  box-shadow:
+    inset 0 0 0 0.5px var(--l-accent),
+    0 0 0 3px var(--l-accent-soft);
+}
+.lc-st-find input {
+  font-size: 13px;
+}
+.lc-st-find > svg {
+  width: 14px;
+  height: 14px;
+}
+.lc-st-nav-in {
+  gap: 10px;
+}
+.lc-st-places {
+  gap: 1px;
+}
+.lc-st-label {
+  height: 24px;
+  padding: 0 9px 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--l-ink-4);
+}
+.lc-st-place {
+  gap: 9px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: var(--lc-r-row);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--l-ink-2);
+}
+.lc-st-place-i svg {
+  width: 14px;
+  height: 14px;
+}
+.lc-st-place[aria-current] {
+  background: var(--l-wash-2);
+  box-shadow: none;
+  font-weight: 500;
+}
+.lc-st-version {
+  flex: none;
+  margin: 8px 0 0;
+  padding: 0 9px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--l-ink-4);
+}
+.lc-st-top {
+  height: 44px;
+  padding: 0 10px 0 28px;
+  box-shadow: none;
+}
+.lc-st-paper .lc-st-col {
+  gap: 0;
+  max-width: 820px;
+  margin: 0;
+  padding: 6px 28px 40px;
+}
+.lc-st-head {
+  margin-bottom: 8px;
+}
+.lc-st-head h1 {
+  margin: 0;
+  font: 600 22px/1.2 var(--lc-font-name);
+  letter-spacing: -0.02em;
+  color: var(--l-ink);
+}
+.lc-st-head h1:focus {
+  outline: none;
+}
+.lc-st-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--l-ink-3);
+}
+/* A section: its label in bold at 12.5 with any note in grey, the control for the whole section at its end, then its rows. */
+.lc-st-paper .lc-st-group {
+  gap: 0;
+  margin-top: 16px;
+}
+.lc-st-paper .lc-st-group > header {
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+}
+.lc-st-paper .lc-st-group h2 {
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--l-ink);
+}
+.lc-st-paper .lc-st-group > header p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 17px;
+}
+.lc-st-paper .lc-st-card,
+.lc-st-paper .lc-fcard.lc-st-card {
+  overflow: visible;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.lc-st-paper .lc-st-card > * {
+  box-shadow: inset 0 0.5px 0 var(--lc-hair);
+}
+.lc-st-paper .lc-st-card > .lc-st-more {
+  box-shadow: none;
+}
+.lc-st-paper .lc-st-row {
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+}
+.lc-st-paper .lc-st-row[data-below] {
+  padding: 12px 0 14px;
+}
+.lc-st-paper .lc-st-t {
+  gap: 1px;
+}
+.lc-st-paper .lc-st-t b {
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.lc-st-paper .lc-st-t small {
+  font-size: 12px;
+  line-height: 17px;
+}
+.lc-st-tile {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--lc-r-row);
+  background: var(--l-wash-2);
+}
+.lc-st-tile > img,
+.lc-st-tile > svg {
+  max-width: 15px;
+  max-height: 15px;
+}
+/* A tool's state as the board draws it: a small dot after its name, not over its tile. */
+.lc-st-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 2px var(--lc-paper);
+}
+.lc-st-restore {
+  margin: 16px 0 0;
+}
+/* A place's New tag stays small, so its name keeps the room. */
+.lc-st-place .lc-st-tag {
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10.5px;
 }

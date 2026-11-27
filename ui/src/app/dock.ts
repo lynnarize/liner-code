@@ -14,6 +14,9 @@
   and the Browser as its tabs (STARTERS), the one asked for in front. Since 2026-11-25 there is no tab
   strip: the panel shows one surface at a time, picked from the session header's icon row
   (Switcher.tsx); the tabs a pane holds are the surfaces kept mounted, so a page stays loaded.
+  Since the start page (2026-11-27, after Kimi's empty right panel) the starters are gone: a panel shown with nothing in it
+  stays open and empty, and draws the start page (PanelStart.tsx), which lists Changes, Files and the Browser itself; a
+  surface asked for on an empty panel comes up as its one tab. Closing the last tab still hides the panel.
 */
 
 /** A tab: a built-in surface, the New tab guide, one routine run, an add-on's panel (`app:<id>`), or one an agent asks to add (`preview:<item>`). */
@@ -22,8 +25,6 @@ type Pane = { tabs: DockTab[]; tab: DockTab };
 export type DockState = { open: boolean; full: boolean; panes: Pane[]; at: number };
 
 export const GUIDE = "guide";
-/** What an empty panel opens with: the surfaces the session's header no longer has a button for. */
-const STARTERS: readonly DockTab[] = ["changes", "files", "browser"];
 /** Two panes side by side at most. */
 const MAX_PANES = 2;
 
@@ -46,14 +47,17 @@ function settle(d: DockState): DockState {
   return { ...d, panes, at: Math.max(0, Math.min(d.at, panes.length - 1)) };
 }
 
+/** Whether the panel shows with nothing in it, which is when it draws the start page (PanelStart.tsx). */
+export const isEmptyOpen = (d: DockState) => d.open && d.panes.length === 0;
+
 /**
-  Shows the dock. One with nothing in it opens with the starters, `first` in front: one of them where
-  it stands, anything else after them (the guide too, though nothing asks for it on an empty dock).
+  Shows the dock. One with nothing in it shows empty, with the start page, rather than a surface nobody asked
+  for; with `first` it opens on that one alone, still filling the window if the empty panel did.
 */
-export function showDock(d: DockState, first: DockTab = STARTERS[0]): DockState {
+export function showDock(d: DockState, first?: DockTab): DockState {
   if (d.panes.length) return { ...d, open: true };
-  const tabs = STARTERS.includes(first) ? [...STARTERS] : [...STARTERS, first];
-  return { open: true, full: false, panes: [{ tabs, tab: first }], at: 0 };
+  if (first === undefined) return { open: true, full: d.open && d.full, panes: [], at: 0 };
+  return { open: true, full: d.open && d.full, panes: [{ tabs: [first], tab: first }], at: 0 };
 }
 export const hideDock = (d: DockState): DockState => ({ ...d, open: false, full: false });
 export const toggleFull = (d: DockState): DockState => (d.open ? { ...d, full: !d.full } : { ...showDock(d), full: true });
@@ -61,7 +65,7 @@ export const toggleFull = (d: DockState): DockState => (d.open ? { ...d, full: !
 /**
   Opens a tab and shows the dock. One open already comes up where it is; a new one goes in the
   pane asked for, else the focused one, in place of a guide that's up there. An empty dock opens
-  with the starters and this one in front (showDock).
+  with this one as its only tab (showDock).
 */
 export function openTab(d0: DockState, tab: DockTab, pane?: number): DockState {
   if (!d0.panes.length) return showDock(d0, tab);
@@ -174,19 +178,23 @@ export function replaceTab(d0: DockState, from: DockTab, to: DockTab): DockState
 }
 
 /**
-  What used to be a tab and isn't any more (2026-11-25): Session is a card the session header's
-  icon row pins, and the New tab guide is gone with the tab strip. A layout that still names them (kept from
-  before, or one App.tsx opened for a session not yet on screen) loses them here. When the one showing
-  was one of them, the panel is hidden rather than showing a surface nobody asked for, and `popup`
-  says the Session card was what was asked for, so the session pins it.
+  What used to be a tab and isn't any more: the New tab guide, gone with the tab strip (2026-11-25). A layout that
+  still names it (kept from before) loses it here; when it was the one showing, the panel is hidden rather than
+  showing a surface nobody asked for.
 */
-export const NOT_TABS: readonly DockTab[] = ["session", GUIDE];
-export function dropPopups(d: DockState): { dock: DockState; popup?: "session" } {
+export const NOT_TABS: readonly DockTab[] = [GUIDE];
+/**
+  Surfaces that are gone, which a kept layout loses as it is read: Session, whose rows the details card holds since
+  2026-11-27 (Env.tsx DetailsCard). Unlike the guide, nothing is hidden for it: the panel stays as it was left, on the
+  tab before it, or on its start page when it held nothing else.
+*/
+export const GONE_TABS: readonly DockTab[] = ["session"];
+export function dropPopups(d: DockState): { dock: DockState } {
   if (!d.panes.some((p) => p.tabs.some((t) => NOT_TABS.includes(t)))) return { dock: d };
   const shown = d.panes[d.at]?.tab;
   const was = d.open && shown !== undefined && NOT_TABS.includes(shown);
   const left = settle({ ...d, panes: d.panes.map((p) => ({ tabs: p.tabs.filter((t) => !NOT_TABS.includes(t)), tab: p.tab })) });
-  return { dock: was ? { ...left, open: false, full: false } : left, popup: was && shown === "session" ? "session" : undefined };
+  return { dock: was ? { ...left, open: false, full: false } : left };
 }
 
 /**
@@ -202,10 +210,15 @@ export function readDock(raw: unknown): DockState | null {
   const panes: Pane[] = [];
   for (const p of r.panes) {
     if (!p || !Array.isArray(p.tabs) || typeof p.tab !== "string") return null;
-    const tabs = p.tabs.filter((t): t is string => typeof t === "string" && t.length > 0 && t.length < 200 && (t === GUIDE || !seen.has(t)));
+    const tabs = p.tabs.filter((t): t is string => typeof t === "string" && t.length > 0 && t.length < 200 && !GONE_TABS.includes(t) && (t === GUIDE || !seen.has(t)));
     for (const t of tabs) if (t !== GUIDE) seen.add(t);
-    if (tabs.length) panes.push({ tabs: [...new Set(tabs)], tab: tabs.includes(p.tab) ? p.tab : tabs[tabs.length - 1] });
+    // A gone tab that was showing gives way to the one before it, as closing it would.
+    const was = p.tabs.indexOf(p.tab);
+    const before = was > 0 ? p.tabs.slice(0, was).findLast((t) => tabs.includes(t)) : undefined;
+    if (tabs.length) panes.push({ tabs: [...new Set(tabs)], tab: tabs.includes(p.tab) ? p.tab : (before ?? tabs[tabs.length - 1]) });
   }
+  // A panel left open with nothing in it comes back open, on its start page, as it was left.
+  if (!panes.length) return r.open === true ? showDock(emptyDock()) : emptyDock();
   const d = settle({ open: Boolean(r.open) && panes.length > 0, full: Boolean(r.full), panes, at: Number(r.at) || 0 });
   if (d.panes.length < 2) return dropPopups(d).dock;
   return dropPopups({ ...d, panes: [{ tabs: [...new Set(d.panes.flatMap((p) => p.tabs))], tab: (d.panes[d.at] ?? d.panes[0]).tab }], at: 0 }).dock;

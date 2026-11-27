@@ -7,7 +7,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readF
 import { readdir as readdirAsync, stat as statAsync } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { homedir, hostname, userInfo } from "node:os";
-import { castOf, CodedError, endpointKey, isPair, READS_GO_KEY, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
+import { castOf, CodedError, endpointKey, familyOf, isPair, READS_GO_KEY, ROUTINES_ON, sealable, splitModel, startIn, startOf, VOUCHER, WRITER_CANCELLED } from "../../contracts/src/index.ts";
 import type { AddedAgent, CommandInfo, FileChange, Item, FoundRepo, GitCommit, ModelInfo, PairTuning, SkillInfo, ProviderId, ProviderInfo, QueuedMessage, Rpc, RpcMethod, RpcParams, Snapshot, SystemCheck, Thread, ToolLimits, UsageRecord, UsageSummary } from "../../contracts/src/index.ts";
 import { CLASSES, pairShare, TUNING } from "./sidekick.ts";
 import { emptyUsage, keptSince, prChecksOf, sameChecks } from "../../contracts/src/index.ts";
@@ -253,7 +253,7 @@ const LOOK_FIRST = new Set(["thread.create", "thread.send", "thread.carryOn", "t
 type Extras = { routines: Routines; terms: Terminals; logs: DeviceLogs; proxies: Proxies; tools?: AgentTools; designs?: Designs; design?: canvas.DesignCtx; outside?: { apply(): void }; mcp?: LinerMcp; offers?: Offers; sources?: Sources; launch?: Launcher; dsh?: DshHosts; security?: security.Security };
 
 export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv, x: Extras) {
-  syncProviders(store.settings, runtime.keys);
+  syncProviders(store.settings, runtime.keys, runtime.promo);
   let detected: ProviderInfo[] = [];
   // Model ids you added go after the tool's own. With no effort levels: the tool doesn't list them, so it hasn't said which
   // they take, and another model's would be a guess (levels differ by model). Unless the tool showed its levels are the same
@@ -925,13 +925,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         agent = { id: slugFor(p.label || command[0].split("/").pop() || "agent", taken), label: p.label.trim() || (command[0].split("/").pop() ?? "Agent"), command, from: "local" };
       }
       store.setSettings({ addedAgents: [...have.filter((a) => !(agent.registryId && a.registryId === agent.registryId)), agent] });
-      syncProviders(store.settings, runtime.keys);
+      syncProviders(store.settings, runtime.keys, runtime.promo);
       await detect(true);
       return agent;
     },
     "acp.remove": async ({ id }) => {
       const settings = store.setSettings({ addedAgents: (store.settings.addedAgents ?? []).filter((a) => a.id !== id), customModels: (store.settings.customModels ?? []).filter((c) => c.provider !== `acp.${id}`) });
-      syncProviders(settings, runtime.keys);
+      syncProviders(settings, runtime.keys, runtime.promo);
       await detect();
       return settings;
     },
@@ -1329,7 +1329,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         access: s.access,
         live: s.live,
         context: s.context ? { ...s.context, measured: true } : last,
-        compact: s.provider === "claude" || s.provider === "codex",
+        // Any Claude Code account compacts on request (a second one is "claude.work"); another tool where its look says it does, and Codex before that look.
+        compact: familyOf(s.provider) === "claude" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
       };
     },
     "outside.info": () => {
@@ -1356,6 +1357,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     "mcp.decide": ({ id, allow, trust }) => (mcpOf().gate.decide(id, allow === true, trust === true), null),
     "mcp.signIn": ({ id, allow, level }) => (mcpOf().oauth.decide(id, allow === true, level), null),
     "mcp.retry": async () => (await mcpOf().retry(), mcpOf().status()),
+    "mcp.checkAgain": async () => (await mcpOf().tunnel.checkAgain(), mcpOf().status()),
+    "mcp.halt": async () => (await mcpOf().tunnel.halt(), mcpOf().status()),
     "mcp.unblock": ({ id }) => (mcpOf().apps.unblock(id), null),
     "mcp.rename": ({ id, name }) => mcpOf().apps.rename(id, String(name ?? "")),
     "mcp.expectSignIn": ({ kind }) => (mcpOf().oauth.expect(kind === "claude" || kind === "chatgpt" ? kind : "other"), null),
@@ -1885,7 +1888,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       } else runtime.keys.delete(endpointKey(VOUCHER.id));
       store.emit({ type: "keys", keys: keyList() });
       const settings = store.setSettings({ voucher: Boolean(k) });
-      syncProviders(settings, runtime.keys);
+      syncProviders(settings, runtime.keys, runtime.promo);
       void detect();
       return settings;
     },
@@ -1917,6 +1920,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       // Home's picker and a session started without an agent read it (startOf): only its forms are kept, and null clears it.
       if (patch.start !== undefined && patch.start !== null && !startIn(patch.start)) throw new Error('A new session starts as "pair", "best", "fast" or "@" and a model.');
       if (patch.start === null) patch.start = undefined;
+      // Home and the sidebar read it as on unless it is false, so only a yes or a no is kept.
+      if (patch.carryOn !== undefined && typeof patch.carryOn !== "boolean") throw new Error("Carry on is on or off.");
       if (patch.maxActiveSubagents !== undefined && (!Number.isInteger(patch.maxActiveSubagents) || patch.maxActiveSubagents < 1 || patch.maxActiveSubagents > 8)) throw new Error("Parallel subagents must be a whole number from 1 to 8.");
       if (patch.swarmMaxActive !== undefined && (!Number.isInteger(patch.swarmMaxActive) || patch.swarmMaxActive < 1 || patch.swarmMaxActive > 4)) throw new Error("Swarm active processes must be a whole number from 1 to 4.");
       if (patch.swarmHibernateSec !== undefined && (!Number.isInteger(patch.swarmHibernateSec) || patch.swarmHibernateSec < 0 || patch.swarmHibernateSec > 300)) throw new Error("Swarm hibernation delay must be a whole number of seconds from 0 to 300.");
@@ -1941,7 +1946,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       if (patch.outside !== undefined || patch.mcpReach !== undefined || patch.mcpOwnUrl !== undefined || patch.mcpStdioLevel !== undefined) void x.mcp?.apply().catch((e) => console.error("[mcp]", e));
       // A new or changed account or endpoint is a tool to find; a model id you added only changes the lists.
       if (patch.accounts || patch.endpoints) {
-        syncProviders(settings, runtime.keys);
+        syncProviders(settings, runtime.keys, runtime.promo);
         void detect();
       } else if (patch.customModels) publish();
       // Turned on: it looks now rather than in six hours.

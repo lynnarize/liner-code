@@ -148,7 +148,7 @@ export async function acpModels(cmd: string[], label: string, env: NodeJS.Proces
       else if (there && m === other) m.efforts = there;
     }
     const now = out.find((m) => m.isDefault);
-    return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with`, ...(wide ? { efforts: wide } : {}) }, ...out.map((m) => ({ ...m, isDefault: undefined }))];
+    return [{ id: "default", label: `${label} default`, description: now ? `What ${label} is set to: ${now.label}` : `The model ${label} is set up with`, ...(now ? { now: now.label } : {}), ...(wide ? { efforts: wide } : {}) },...out.map((m) => ({ ...m, isDefault: undefined }))];
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);

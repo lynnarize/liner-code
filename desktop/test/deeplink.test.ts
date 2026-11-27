@@ -35,3 +35,12 @@ test("under electron <path> (npm run app:dev) the app's own folder isn't taken f
   assert.equal(extractLaunchTarget(["/path/to/electron", "desktop"], "/repo", isDir, 2), null);
   assert.deepEqual(extractLaunchTarget(["/path/to/electron", "desktop", "/workspace/project-a"], "/repo", isDir, 2), { kind: "project", path: "/workspace/project-a" });
 });
+
+test("a link with a broken percent sign or a .. spelled half in percent codes is refused instead of throwing", () => {
+  assert.equal(parseDeepLink("liner-code://thread/%ZZ"), null);
+  assert.equal(extractLaunchTarget(["Liner Code", "liner-code://thread/%ZZ"], "/workspace", () => false), null);
+  assert.equal(parseDeepLink("liner-code://open?path=/a/%2e./b"), null);
+  assert.equal(parseDeepLink("liner-code://open?path=/a/.%2E/b"), null);
+  assert.equal(parseDeepLink("liner-code://open?path=C:%5Ca%5C..%5Cb"), null);
+  assert.deepEqual(parseDeepLink("liner-code://open?path=%2Ftmp%2Fa..b"), { kind: "project", path: "/tmp/a..b", link: true });
+});

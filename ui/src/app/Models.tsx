@@ -11,14 +11,14 @@
 */
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { EffortInfo, ProviderInfo, Settings as EngineSettings } from "@contracts";
-import { castOf, familyOf } from "@contracts";
+import { castOf, ENDPOINT_TOOL, familyOf, VOUCHER } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { getState, rpc, useEngine } from "./engine";
-import { tintPaint } from "./brands";
 import { I, ModelMark, type MarkKind } from "./icons";
 import { allModels, effortsFor, everyModel, isGoModel, makerName, markOf, modelLabel, pairReady, shortName, sourceMarkOf, toolMarkOf, type ModelChoice } from "./model";
 import { aimAt, cardKey, DWELL_MS, dwellAt, effortIn, effortParts, effortShown, fillOf, focusAt, isFree, levelName, mergeOffers, noLevels, PICKER, PICKER_NARROW, PICKER_WIDE, pickerOut, pickerWide, priceSaid, releaseStop, settle, sliderNow, sourcesInOrder, sourceWriter, stopAt, stopKey, switchAsChip, switchExtra, toggleStars, toolList, type EffortShown, type Offered } from "./picker";
 import { BackRow, ModelTag, NamedSwitch, Pop } from "./ui";
+import { ringOf } from "./worklists-logic";
 import "./models.css";
 
 /** A tool with two sources or more shows them as a switch (OpenCode's Zen and Go); one with a source and models of no source does past this many. */
@@ -63,8 +63,23 @@ export function tabOfRef(ref: string, providers: ProviderInfo[]) {
   const m = allModels(tools, providers).find((x) => x.ref === ref);
   return m ? tabberOf(tools)(m) : undefined;
 }
-/** A tool's mark on the rail: an API endpoint's service's logo (as markOf has it), else the tool's own. */
-const railMarkOf = (id: string): MarkKind => (/\.api-/.test(id) ? sourceMarkOf(id.slice(id.indexOf(".api-") + 5)) : toolMarkOf(id));
+/** The promo's tool, from a redeemed voucher: its one model's maker on the rail, not the tool that runs it. */
+const PROMO_TOOL = `${ENDPOINT_TOOL[VOUCHER.protocol]}.${VOUCHER.id}`;
+/** A tool's mark on the rail: an API endpoint's service's logo (as markOf has it), the promo's model's, else the tool's own. */
+const railMarkOf = (id: string): MarkKind => (id === PROMO_TOOL ? "deepseek" : /\.api-/.test(id) ? sourceMarkOf(id.slice(id.indexOf(".api-") + 5)) : toolMarkOf(id));
+
+/**
+  Fusion's mark, the two strokes of board Menus: the first in the ink it stands in, the second in the action colour. Wherever
+  the pairing is labelled in the message box and the picker (the who chip, the Enable Fusion card), it is this mark.
+*/
+export function FusionMark({ size = 14 }: { size?: number }) {
+  return (
+    <svg className="lc-fz" width={size} height={size} viewBox="0 0 16 16" fill="none" strokeWidth={2} strokeLinecap="round" aria-hidden>
+      <path d="M3.45 13.05 7.05 2.95" stroke="currentColor" />
+      <path d="M8.95 13.05 12.55 2.95" stroke="var(--lc-act)" />
+    </svg>
+  );
+}
 
 /**
   The models you starred (Settings' favoriteModels), first in every tool's list, and the toggle that stars one: every id of
@@ -268,11 +283,13 @@ export function ModelSearch({ query, keysFrom, value, also = [], only, height = 
   shift-click does, where it does something. `aim` is the key the side card turns to. The name has first call on the room:
   the sources give way first (cut, their words whole in `fromTitle`), then the price.
 */
-export function ModelRow({ model: id, label, on, also, old, from, fromTitle, price, star, title, aim, onPick }: { model: string; label: string; on?: boolean; also?: boolean; old?: boolean; from?: ReactNode; fromTitle?: string; price?: string; star?: { on: boolean; toggle: () => void }; title?: string; aim?: string; onPick: (ref: string, how: { shiftKey: boolean }) => void }) {
+export function ModelRow({ model: id, label, on, also, old, from, fromTitle, price, effortWord, favNo, star, title, aim, onPick }: { model: string; label: string; on?: boolean; also?: boolean; old?: boolean; from?: ReactNode; fromTitle?: string; price?: string; effortWord?: string; favNo?: number; star?: { on: boolean; toggle: () => void }; title?: string; aim?: string; onPick: (ref: string, how: { shiftKey: boolean }) => void }) {
   const pick = (
     <button type="button" className="lc-who-row lc-pk-row l-focus" data-rove data-aim={aim ?? id} data-on={on || undefined} data-also={also || undefined} data-old={old || undefined} aria-pressed={on} title={title} onClick={(e) => onPick(id, { shiftKey: e.shiftKey })}>
       <ModelMark kind={markOf(id)} size={14} />
       <span className="lc-who-row-t">{label}</span>
+      {/* How hard it works, in grey after its name (board Menus): the level it runs at here, else its tool's own default. */}
+      {effortWord && <span className="lc-pk-eff">{effortWord}</span>}
       {from && (
         <span className="lc-pk-from" title={fromTitle}>
           {from}
@@ -283,8 +300,9 @@ export function ModelRow({ model: id, label, on, also, old, from, fromTitle, pri
           {price}
         </span>
       )}
-      <span className="lc-pk-tick" aria-hidden>
-        {(on || also) && <I.check size={14} />}
+      {/* At the end a tick on the one picked, else a starred model's place among your stars. */}
+      <span className="lc-pk-tick" aria-hidden data-fav={(!on && !also && favNo) || undefined}>
+        {on || also ? <I.check size={14} /> : favNo ? favNo : null}
       </span>
     </button>
   );
@@ -405,7 +423,8 @@ function ToolRail({ tools, extras, places, on, open, rail, onPick, onPlace }: { 
 */
 export type EffortHook = { label?: string; of: (ref: string) => string | undefined; held?: (ref: string) => boolean; pick: (ref: string, id: string) => void };
 /** What a caller draws for a row of its own the card turns to (Fusion): the card's words, and the narrow form's one line. */
-export type OwnCard = { label: string; body: ReactNode; line: ReactNode };
+/** `ownBack`: the card draws its own way back right now (a list opened inside it), so the picker adds none. */
+export type OwnCard = { label: string; body: ReactNode; line: ReactNode; ownBack?: boolean };
 /** A place on the rail, under the tools, that opens a list in the middle card's place (your agents). */
 export type Place = { id: string; label: string; icon: ReactNode; on?: boolean; note?: string; body: ReactNode };
 
@@ -417,11 +436,11 @@ const EXTRA_SAID: Record<string, string> = { ultracode: "Extra high, and it may 
   are on a line under it, then one slider of exactly the model's own levels in its tool's order (never a list of the app's),
   and Claude Code's Ultracode and Ultrathink as switches under it, since they are the app's and not levels the model reports.
   The head is one line: the label, whose levels they are in grey (cut first when the room runs out, the whole sentence on
-  its tooltip), and the level at its end. `tint` is the paint the pill fills with, the model's maker's colour (brands.ts).
+  its tooltip), and the level at its end. The track is in the one accent whatever the model's maker (board Menus).
   The engine holds one effort, an extra being one of its values: a switch on sets it, off goes back to the level picked
   before it while this part was up. A model with no levels says so, and offers none.
 */
-export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, said, tint, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; said?: boolean; tint?: string; onPick: (id: string) => void }) {
+export function EffortPart({ list, fallback, value, held = true, label = "Effort", tool, said, onPick }: { list: EffortInfo[]; fallback?: string; value?: string; held?: boolean; label?: string; tool?: string; said?: boolean; onPick: (id: string) => void }) {
   const { levels, extras } = effortParts(list);
   const shown = effortShown(list, value, fallback, held);
   // The level picked before an extra went on, for the switch to go back to; kept for this model's levels only.
@@ -444,7 +463,7 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
           {name}
         </span>
       </div>
-      {levels.length > 0 && <EffortSlider levels={levels} shown={shown} fallback={fallback} label={label} name={name} tint={tint} onPick={onPick} />}
+      {levels.length > 0 && <EffortSlider levels={levels} shown={shown} fallback={fallback} label={label} name={name} onPick={onPick} />}
       {extras.map((e) => (
         <div key={e.id} className="lc-pk-xr">
           <span className="lc-pk-xr-t">
@@ -459,15 +478,15 @@ export function EffortPart({ list, fallback, value, held = true, label = "Effort
 }
 
 /**
-  The levels as one pill: the stops stand from its start (the lowest) to its end (the highest), the knob on the one it runs
-  at and the fill up to the knob, a tick on each stop past it. A press by a stop picks that level (its own again, the tool's default); a drag moves through the
+  The levels as one round track: the stops stand from its start (the lowest) to its end (the highest), the round knob on the
+  one it runs at, a small tick on each stop past it. A press by a stop picks that level (its own again, the tool's default); a drag moves through the
   stops and picks on release. One focus stop: Left and Right change the level, Home and End go to the ends, Delete goes
   back to the tool's default, and Up and Down are left to the card, which walks its parts with them (rove).
-  The fill is the model's maker's colour (`tint`, the app's accent for a maker drawn in ink), and a halftone of dots runs
-  through it, small and faint at the low end and grown and bright at the high end, so more effort reads as more ink before
-  a word is read: the same dot matrix as Home's whale.
+  The fill is the owner's (board Menus, `.eff`): solid accent with light round dots that come in sparse and end as a
+  checkerboard at the knob (halftone.css `.lc-dither`, eight layers of an ordered 4x4 dither on a 3px grid), the dots
+  only before the knob, and the fill running on round the knob to end as a half circle just outside it.
 */
-function EffortSlider({ levels, shown, fallback, label, name, tint, onPick }: { levels: EffortInfo[]; shown: EffortShown; fallback?: string; label: string; name: string; tint?: string; onPick: (id: string) => void }) {
+function EffortSlider({ levels, shown, fallback, label, name, onPick }: { levels: EffortInfo[]; shown: EffortShown; fallback?: string; label: string; name: string; onPick: (id: string) => void }) {
   const n = levels.length;
   // Where a drag is, drawn while the pointer is down; the pick waits for the release.
   const [drag, setDrag] = useState<number | null>(null);
@@ -499,7 +518,7 @@ function EffortSlider({ levels, shown, fallback, label, name, tint, onPick }: { 
       aria-valuemax={n - 1}
       aria-valuenow={sliderNow(shown.at)}
       aria-valuetext={name}
-      style={{ "--lc-pk-fill": p, "--lc-pk-tint": tint } as CSSProperties}
+      style={{ "--lc-pk-fill": p } as CSSProperties}
       onKeyDown={keys}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -525,13 +544,14 @@ function EffortSlider({ levels, shown, fallback, label, name, tint, onPick }: { 
       }}
       onPointerCancel={() => ((press.current = null), setDrag(null))}
     >
-      <span className="lc-pk-slide-fill" aria-hidden>
-        <span className="lc-pk-slide-dots">
-          {DOTS.map((d, i) => (
-            <i key={i} data-odd={d.odd || undefined} style={{ "--d": d.at } as CSSProperties} />
+      {/* Its width runs to just past the knob's far side (models.css); the dots stop at the knob's centre (halftone.css). */}
+      {at >= 0 && (
+        <span className="lc-dither lc-pk-slide-fill" aria-hidden>
+          {DITHER.map((k) => (
+            <i key={k} />
           ))}
         </span>
-      </span>
+      )}
       {levels.map((e, i) => (
         <span key={e.id} className="lc-pk-slide-stop" aria-hidden data-tick={i > at || undefined} data-end={i === n - 1 ? "end" : i === 0 ? "start" : undefined} data-half={(n > 1 && (i === 0 || i === n - 1)) || undefined} style={{ "--lc-pk-at": fillOf(i, n) } as CSSProperties} title={stopTitle(e, i, shown, fallback)} />
       ))}
@@ -539,12 +559,8 @@ function EffortSlider({ levels, shown, fallback, label, name, tint, onPick }: { 
     </div>
   );
 }
-/**
-  The pill's halftone: three rows of DOT_COLUMNS dots across the whole track, row by row, each knowing how far along the
-  track it stands (`at`, 0 to 1, which sizes and lights it) and the middle row set half a step over, so they sit staggered.
-*/
-const DOT_COLUMNS = 32;
-const DOTS = Array.from({ length: DOT_COLUMNS * 3 }, (_, k) => ({ at: (k % DOT_COLUMNS) / (DOT_COLUMNS - 1), odd: Math.floor(k / DOT_COLUMNS) === 1 }));
+/** The dither's eight layers, one cell of the 4x4 pattern each (halftone.css `.lc-dither > i:nth-child(1…8)`). */
+const DITHER = [0, 1, 2, 3, 4, 5, 6, 7];
 /** A stop's name for a mouse user, and on the one it runs at what a press there does. */
 function stopTitle(e: EffortInfo, i: number, shown: EffortShown, fallback?: string) {
   const name = levelName(e.label);
@@ -569,6 +585,9 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
   const fav = row.offers.some((x) => favs.includes(x.ref));
   const src = sourceOf(m);
   const where = (x: ModelChoice) => shortSource(sourceOf(x), providers.find((p) => p.id === x.providerId)?.label ?? x.provider);
+  // How much of its tool's plan is used now (the message box's usage ring's numbers), as a fact and a thin bar.
+  const limits = useEngine((s) => s.limits);
+  const plan = ringOf(limits, m.ref);
   return (
     <>
       <div className="lc-pk-sh">
@@ -617,8 +636,20 @@ function ModelCard({ row, effort, onSource }: { row: Offered<ModelChoice>; effor
         )
       )}
       {m.price?.note && <p className="lc-pk-pnote">{m.price.note}</p>}
+      {plan && (
+        <>
+          <div className="lc-pk-f" title={plan.tip}>
+            <span>Plan, used now</span>
+            <b className="lc-pk-num">{plan.pct}%</b>
+          </div>
+          <span className="lc-pk-meter" data-high={plan.high || undefined} aria-hidden>
+            <i style={{ width: `${plan.pct}%` }} />
+          </span>
+        </>
+      )}
       <div className="lc-pk-rule" />
-      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} tint={tintPaint(markOf(m.ref))} onPick={(id) => effort.pick(m.ref, id)} />}
+      {effort && <EffortPart list={list} fallback={fallback} value={effort.of(m.ref)} held={effort.held?.(m.ref) ?? true} label={effort.label ?? "Effort"} tool={toolLabel} said={said} onPick={(id) => effort.pick(m.ref, id)} />}
+      {effort && <div className="lc-pk-rule" />}
       <button type="button" className="lc-pk-star l-focus" data-rove aria-pressed={fav} onClick={() => star(row.offers.map((x) => x.ref))}>
         <I.star size={14} />
         {fav ? "Starred" : "Star this model"}
@@ -695,6 +726,11 @@ type Props = {
   fallback?: string;
   /** Another source chosen for the model picked now: by default it is picked as any model is. */
   onSource?: (ref: string) => void;
+  /**
+    A small card of the caller's under the side card (Fusion's switch, board Menus), given the rail's tool and a way to turn
+    the side card to one of the caller's own (`card`) keys, with a way back; narrow, it stands at the middle card's foot.
+  */
+  under?: (tool: string, open: (key: string) => void) => ReactNode;
 };
 
 /**
@@ -703,9 +739,11 @@ type Props = {
   or the keyboard is on, else shows what is picked. Keys: Up and Down walk the rows, Left goes to the rail, Right into the
   card, Enter picks, a letter goes to Find, Escape steps back out of a list opened in place.
 */
-export function ModelPicker({ value, also = [], onPick, only, height = PICKER.height, autoFocus, foot, first, places = [], open, railExtras = [], startTool, hint, note, side = false, effort, card, fallback, onSource }: Props) {
+export function ModelPicker({ value, also = [], onPick, only, height = PICKER.height, autoFocus, foot, first, places = [], open, railExtras = [], startTool, hint, note, side = false, effort, card, fallback, onSource, under }: Props) {
   const providers = useEngine((s) => s.providers);
   const showDemo = useEngine((s) => s.settings.showDemo === true);
+  // The tools' limits as the engine already keeps them (the usage ring's): their plan's name, for the tool's label row. No read of its own.
+  const limits = useEngine((s) => s.limits);
   const { favs, star } = useStars();
   const { kept, keep } = useSources();
   // The model picked now runs from the source it was picked from, whatever is kept for the others: its row says that one (as Find's does).
@@ -782,30 +820,47 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       line: <ModelLine row={r} effort={effort} onEffort={() => (setEffortOf(r.pick.ref), enter("effort"))} />,
     };
   };
+  // A card of the caller's opened from its card under the side card (Fusion's): it holds the side card until its way back.
+  const [held, setHeld] = useState<string | null>(null);
+  const heldCard = held ? shownOf(held) : undefined;
   // Another tool's would-be pair, or the place's own model, never stands in on another tool's rail (picker.ts cardKey).
-  const shown = shownOf(dwell.shown) ?? shownOf(cardKey(null, fallback ?? value ?? null, toolId, home));
+  const shown = heldCard ?? shownOf(dwell.shown) ?? shownOf(cardKey(null, fallback ?? value ?? null, toolId, home));
   // The side card stands level with the list's top, or drops to its foot for a row pointed at in the list's lower half, so
   // the card (and its Effort) sits beside the row and the pointer goes straight across to it. Two places only, never in
   // between; with nothing pointed at, the top.
   const [low, setLow] = useState(false);
   useLayoutEffect(() => {
     const m = mid.current;
-    const row = dwell.shown && m ? m.querySelector<HTMLElement>(`[data-aim="${CSS.escape(dwell.shown)}"]`) : null;
+    const row = dwell.shown && m && !held ? m.querySelector<HTMLElement>(`[data-aim="${CSS.escape(dwell.shown)}"]`) : null;
     if (!m || !row) return setLow(false);
     const a = m.getBoundingClientRect();
     const r = row.getBoundingClientRect();
     setLow(r.top + r.height / 2 > a.top + a.height / 2);
-  }, [dwell.shown]);
+  }, [dwell.shown, held]);
 
   const refocus = (el: () => HTMLElement | null | undefined) => requestAnimationFrame(() => el()?.focus({ preventScroll: true }));
   const enter = (v: string) => (setView(v), refocus(() => mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove][data-on]:not([data-back]), .lc-pk-scroll [data-rove]:not([data-back])")));
   const leave = () => {
     const was = view;
+    if (was === "card") setHeld(null);
     setView("");
     refocus(() => mid.current?.querySelector<HTMLElement>(`[data-view="${was}"]`) ?? rail.current?.querySelector<HTMLElement>(`[data-view="${was}"]`) ?? find.current);
   };
   // A row pointed at on the tool before isn't one of this tool's: the card starts again from nothing pointed at.
-  const pickTool = (id: string) => (setToolId(id), setView(""), setQuery(""), window.clearTimeout(timer.current), setDwell(dwellAt(null)));
+  const pickTool = (id: string) => (setToolId(id), setView(""), setQuery(""), setHeld(null), window.clearTimeout(timer.current), setDwell(dwellAt(null)));
+  /** The caller's card turned to from its card underneath: in the side card, or narrow in the middle card's place. */
+  const hold = (key: string) => {
+    setHeld(key);
+    if (side !== "card") enter("card");
+    else refocus(() => card_.current?.querySelector<HTMLElement>("[data-rove]:not(:disabled)"));
+  };
+  const unhold = () => {
+    const was = held;
+    setHeld(null);
+    refocus(() => (was ? under && cardUnder.current?.querySelector<HTMLElement>("[data-holds]") : null));
+  };
+  const cardUnder = useRef<HTMLElement>(null);
+  const underCard = under?.(toolId, hold);
   const toRail = () => rail.current?.querySelector<HTMLElement>("[aria-pressed='true']")?.focus();
   const toList = () => (mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove][data-on]") ?? mid.current?.querySelector<HTMLElement>(".lc-pk-scroll [data-rove]") ?? find.current)?.focus();
   const keys = (e: KeyEvent<HTMLDivElement>) => {
@@ -814,6 +869,7 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
     const typing = t instanceof HTMLInputElement;
     if (e.key === "Escape") {
       if (view && !typing) (e.preventDefault(), leave());
+      else if (held && !typing) (e.preventDefault(), unhold());
       return;
     }
     if (rail.current?.contains(t)) {
@@ -852,6 +908,22 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
     }
   };
 
+  /** A row's effort in grey: the level the place runs it at when its card holds the effort, else its tool's own default. */
+  const effortWordOf = (ref: string) => {
+    if (!effort) return undefined;
+    const { list, fallback: def } = effortsFor(ref, providers);
+    if (!list.length) return undefined;
+    const holds = effort.held?.(ref) ?? true;
+    const now = holds ? effortShown(list, effort.of(ref), def, true) : undefined;
+    const id = now ? (now.extra ?? now.level) : def;
+    const e = list.find((x) => x.id === id);
+    return e ? levelName(e.label) : undefined;
+  };
+  /** A starred row's place among your stars, counted from one, as board Menus numbers them. */
+  const favNoOf = (r: Offered<ModelChoice>) => {
+    const i = favs.findIndex((f) => r.offers.some((m) => m.ref === f));
+    return i < 0 ? undefined : i + 1;
+  };
   if (!tools.length && !railExtras.length) return <p className="lc-quiet lc-mp-none">No tool is signed in yet. Settings › Agent tools connects one.</p>;
   const row = (r: Offered<ModelChoice>, old?: boolean) => (
     <ModelRow
@@ -864,6 +936,8 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       from={stepped && tool && source === null ? <FromSaid row={r} tool={tool.label} /> : undefined}
       fromTitle={stepped && tool && source === null ? fromWords(r, tool.label) : undefined}
       price={priceSaid(r.pick.price)}
+      effortWord={effortWordOf(r.pick.ref)}
+      favNo={favNoOf(r)}
       title={hint}
       star={side === false ? { on: isStarred(r), toggle: () => star((rowsAll.find((x) => x.key === r.key) ?? r).offers.map((x) => x.ref)) } : undefined}
       onPick={onPick}
@@ -907,13 +981,13 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       <>
         <BackRow name={effort.label ?? "Effort"} onBack={leave} />
         {/* Left open after a pick, as the card's is: a slider's Left and Right and the switches change it a step at a time. */}
-        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} said={said} tint={tintPaint(markOf(effortOf))} onPick={(id) => effort.pick(effortOf, id)} />
+        <EffortPart list={list} fallback={def} value={effort.of(effortOf)} held={effort.held?.(effortOf) ?? true} label={effort.label ?? "Effort"} tool={providers.find((p) => effortOf.startsWith(`${p.id}:`))?.label} said={said} onPick={(id) => effort.pick(effortOf, id)} />
       </>
     );
   } else if (view === "card" && shown)
     body = (
       <>
-        <BackRow name={shown.label} onBack={leave} />
+        {!shown.ownBack && <BackRow name={shown.label} onBack={leave} />}
         {shown.body}
       </>
     );
@@ -946,11 +1020,21 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
       </div>
     );
   // The tool's name and count, and its source switch at the right: one row pinned over the models, so the switch never scrolls away.
+  // The tool's label row (board Menus' .ml): grey 12px, its mark, its name and count, and at its end its plan as the engine
+  // already holds it, with a green dot while the tool is signed in.
+  const plan = tool ? limits.find((l) => l.provider === tool.id && l.plan)?.plan : undefined;
+  const signed = tool?.signedIn === true;
   const head = !view && !query.trim() && (extra || tool) && (
     <div className="lc-pk-head">
-      <ModelMark kind={extra ? extra.mark : railMarkOf(tool!.id)} size={14} />
+      <ModelMark kind={extra ? extra.mark : railMarkOf(tool!.id)} size={12} />
       <span className="lc-pk-head-t">{extra ? extra.label : tool!.label}</span>
       {tool && <span className="lc-pk-count">{count}</span>}
+      {(plan || signed) && (
+        <span className="lc-pk-plan" title={signed ? `${tool!.label} is signed in` : undefined}>
+          {signed && <i className="lc-pk-on" aria-hidden />}
+          {plan}
+        </span>
+      )}
       {/* All and two sources fit beside the name as buttons, the pressed one a stop of Up and Down (Left and Right walk them);
           more becomes one chip naming the choice, which opens them as a list in place (picker.ts switchAsChip). */}
       {tool && stepped && !switchAsChip(sources.length) && (
@@ -1015,16 +1099,31 @@ export function ModelPicker({ value, also = [], onPick, only, height = PICKER.he
           </div>
         )}
         {side === "line" && shown && <div className="lc-pk-line">{shown.line}</div>}
+        {side === "line" && underCard && !held && (
+          <section ref={cardUnder} className="lc-pk-under-in">
+            {underCard}
+          </section>
+        )}
       </section>
       {wide && (
-        <section ref={card_} className="lc-pk-card lc-pk-side" data-low={low || undefined} aria-label={shown?.label ?? "About the model"} onPointerEnter={() => ((overCard.current = true), window.clearTimeout(timer.current))} onPointerLeave={() => (overCard.current = false)}>
-          {/* Measured for the card's eased height; what it holds fades in afresh each time the card turns to another model. */}
-          <div ref={cardIn} className="lc-pk-side-in">
-            <div key={shown?.label ?? ""} className="lc-pk-side-in lc-pk-fade">
-              {shown?.body ?? <p className="lc-who-note">Point at a model to read about it.</p>}
+        <div className="lc-pk-col" data-low={low || undefined}>
+          <section ref={card_} className="lc-pk-card lc-pk-side" aria-label={shown?.label ?? "About the model"} onPointerEnter={() => ((overCard.current = true), window.clearTimeout(timer.current))} onPointerLeave={() => (overCard.current = false)}>
+            {/* The model pointed at or picked is the one thing chosen here: the halftone at its head's corner. */}
+            {shown && !heldCard && <i className="lc-ht lc-ht-corner lc-ht-soft lc-pk-ht" aria-hidden />}
+            {/* Measured for the card's eased height; what it holds fades in afresh each time the card turns to another model. */}
+            <div ref={cardIn} className="lc-pk-side-in">
+              <div key={`${held ? "held:" : ""}${shown?.label ?? ""}`} className="lc-pk-side-in lc-pk-fade">
+                {heldCard && !heldCard.ownBack && <BackRow name={heldCard.label} onBack={unhold} />}
+                {shown?.body ?? <p className="lc-who-note">Point at a model to read about it.</p>}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+          {underCard && (
+            <section ref={cardUnder} className="lc-pk-card lc-pk-fz">
+              {underCard}
+            </section>
+          )}
+        </div>
       )}
       {foot && <div className="lc-mp-foot lc-pk-under">{foot}</div>}
     </div>
@@ -1144,7 +1243,7 @@ export function EffortPick({ modelRef, value, held = true, label = "Effort", onC
         <div className="lc-mp" onKeyDown={rove}>
           {/* Left open after a pick: the slider's Left and Right and the switches change it a step at a time. */}
           {/* The stored word, not `shown`: resolved, "" would come in as the tool's default and read as chosen. */}
-          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} said={all.said} tint={modelRef ? tintPaint(markOf(modelRef)) : undefined} onPick={onChange} />
+          <EffortPart list={list} fallback={fallback} value={value} held={held} label={label} tool={providers.find((p) => modelRef?.startsWith(`${p.id}:`))?.label} said={all.said} onPick={onChange} />
         </div>
       )}
     </Pop>

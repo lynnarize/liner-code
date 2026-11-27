@@ -861,8 +861,8 @@ function pictureOf(pic: number) {
       throw e;
     });
   held = { pic, at };
-  // The one it replaces is never drawn again.
-  void old?.at.then((b) => b?.close());
+  // The one it replaces is never drawn again. One that failed has nothing to close, and its failure was the caller's to hear.
+  void old?.at.then((b) => b?.close(), () => {});
   return at;
 }
 

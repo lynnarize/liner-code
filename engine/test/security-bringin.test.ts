@@ -209,6 +209,22 @@ test("bring in: findings stored with a line in their rule (before keys knew inst
   assert.deepEqual(r, { added: 0, already: 0, leftOut: 1 });
 });
 
+test("bring in: a GitHub alert met again under a finding stored without its instance stays open, and the next run says it is already there", async () => {
+  const { store, sec, path, bin } = rig({ remote: "https://github.com/acme/harbour.git" });
+  // As an older build stored GitHub's alert: its rule without a line and no instance, so its key is the bare one.
+  const old = { id: "sf_bare", projectId: "p", title: "Database query built from user-controlled sources", severity: "high", file: "src/station.js", line: 3, source: "github", sources: ["github"], rule: "js/sql-injection", key: "x", state: "open", look: { state: "none" }, activity: [{ at: 1, kind: "found", text: "Brought in" }], foundAt: 1, updatedAt: 1, url: "https://github.com/acme/harbour/security/code-scanning/9" };
+  const file = join(store.home, "security", `${createHash("sha256").update(resolve(path)).digest("hex").slice(0, 16)}.json`);
+  mkdirSync(join(store.home, "security"), { recursive: true });
+  writeFileSync(file, JSON.stringify({ v: 1, path, findings: [old], dismissed: [], scans: [] }));
+  const again = new Security(store, sec.env);
+  assert.equal(again.finding("sf_bare").instance, undefined);
+  fakeGh(bin, { code: [codeAlert(9, 3)] });
+  assert.deepEqual(await bringGitHub(again, "p"), { added: 0, already: 1, leftOut: 0 });
+  assert.equal(again.finding("sf_bare").state, "open", "the alert that is still open on GitHub isn't closed here");
+  assert.deepEqual(await bringGitHub(again, "p"), { added: 0, already: 1, leftOut: 0 });
+  assert.equal(again.findings("p").length, 1);
+});
+
 test("bring in: a batch is one write of the project's record, not one a result", async () => {
   const { sec } = rig();
   let saves = 0;

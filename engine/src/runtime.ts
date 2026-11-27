@@ -49,14 +49,16 @@ import { draftCheck, sendCheck, SEND_LIMIT_MS, type DraftFacts } from "./prechec
 import { BRIEF_MIN_MS, BRIEF_WIND_MS, briefCap, briefPrompt, isSidekickTool, knownWays, leadRules, NOBODY, SIDEKICK_MS, sidekickResult, sidekickRules, sidekickTitle, taskOf, tookBackOf, UNSTARTED, type BriefMark, type BriefOutcome } from "./sidekick.ts";
 import { isSubagentTool, needsSubagentTool, SUBAGENT_MS, subagentLeadNote, subagentPrompt, subagentResult, subagentRules, subagentTask, subagentTitle, type SubagentOutcome } from "./subagent.ts";
 import { SwarmManager, pickSwarmWorkerModel, swarmCoordinatorDirective, swarmCoordinatorRules } from "./swarm.ts";
+import { PromoRelay } from "./promo.ts";
 
 export const providers: Record<ProviderId, Provider> = { claude, codex, hermes, opencode, cursor, grok, antigravity, demo };
 
 /**
   Your other accounts, the agents you added and your API endpoints, as tools beside the known
   ones. Run whenever they change. `keys` is the engine's, read when an endpoint's session opens.
+  `promo` is the engine's relay: the voucher's model is run through it, so its tool never holds the voucher.
 */
-export function syncProviders(s: Settings, keys?: Map<string, string>) {
+export function syncProviders(s: Settings, keys?: Map<string, string>, promo?: PromoRelay) {
   for (const id of Object.keys(providers) as ProviderId[]) if (id.includes(".")) delete providers[id];
   for (const a of s.accounts ?? []) if (a.provider !== "demo" && providers[a.provider]) providers[`${a.provider}.${a.id}`] = accountProvider(providers[a.provider], a);
   for (const a of s.addedAgents ?? []) providers[`acp.${a.id}`] = addedProvider(a);
@@ -64,9 +66,9 @@ export function syncProviders(s: Settings, keys?: Map<string, string>) {
     const tool = ENDPOINT_TOOL[e.protocol];
     if (providers[tool]) providers[`${tool}.${e.id}`] = endpointProvider(providers[tool], e, () => keys?.get(endpointKey(e.id)));
   }
-  // A redeemed voucher's model: an endpoint of its own that Settings doesn't list.
+  // A redeemed voucher's model: an endpoint of its own that Settings doesn't list, its tool pointed at the relay.
   const tool = ENDPOINT_TOOL[VOUCHER.protocol];
-  if (s.voucher && providers[tool]) providers[`${tool}.${VOUCHER.id}`] = endpointProvider(providers[tool], VOUCHER, () => keys?.get(endpointKey(VOUCHER.id)));
+  if (s.voucher && providers[tool]) providers[`${tool}.${VOUCHER.id}`] = endpointProvider(providers[tool], VOUCHER, () => keys?.get(endpointKey(VOUCHER.id)), () => promo?.via());
 }
 
 /**
@@ -295,6 +297,8 @@ export class Runtime {
   private limitedUntil = new Map<string, number>();
   /** Keys you added, by provider; handed to the tools that use them, never written to disk. */
   keys = new Map<string, string>();
+  /** The promo's relay: the voucher stays here, and its model's tool is given a key of this run's (promo.ts). */
+  promo = new PromoRelay(() => this.keys.get(endpointKey(VOUCHER.id)));
   /** What's installed, kept up to date by the API, for choosing a Reviewer. */
   providerInfo: ProviderInfo[] = [];
   /** Your add-ons: the connections each session's tool gets beside Liner Code's own server. */
@@ -446,7 +450,13 @@ export class Runtime {
         const tagged = { ...req, title: `@${memberName}: ${req.title}` };
         return cards.api.approve(tagged, signal).finally(() => cards.end());
       },
-      putItem: (threadId, item) => this.store.putItem(threadId, item),
+      // A team's rows are agents too: the session counts them as each starts or finishes, as a tool's own agents. The count at a
+      // turn's end alone came before the coordinator was marked waiting, and kept "1 agent" at work on a finished session.
+      putItem: (threadId, item) => {
+        const was = item.kind === "tool" && item.agent ? this.store.timeline(threadId).find((x) => x.id === item.id) : undefined;
+        this.store.putItem(threadId, item);
+        if (item.kind === "tool" && item.agent && (was?.kind === "tool" ? agentState(was) : undefined) !== agentState(item)) this.countAgents(threadId);
+      },
       turnOf: (threadId) => this.turns.get(threadId)?.turn ?? this.store.thread(threadId).turns,
       forgetWorkerKey: (threadId, worker) => this.tools?.forgetSwarmWorker(threadId, worker),
       resetCoordinatorSession: (threadId) => {
@@ -2654,10 +2664,13 @@ export class Runtime {
     const line = before.then(() => mine);
     this.briefLine.set(threadId, line);
     // Waiting in line ends when the time this call has left gets too short for a brief (BRIEF_MIN_MS): then none starts.
+    // The timer ending the wait says so itself: Node's timers can fire a millisecond before Date.now has reached their
+    // time, and the clock alone would then read a little over BRIEF_MIN_MS left and start a brief beside the one ahead.
     let late: NodeJS.Timeout | undefined;
+    let timedOut = false;
     try {
       if (waits) row.paint({ state: "running", now: "Waiting for the brief before this one" }, true);
-      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true })), new Promise((r) => (late = setTimeout(r, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+      if (!stop.signal.aborted) await Promise.race([before, new Promise((r) => stop.signal.addEventListener("abort", r, { once: true })), new Promise((r) => (late = setTimeout(() => ((timedOut = true), r(undefined)), Math.max(0, by - this.briefMinMs - Date.now()))))]);
       // The sidekick may have been taken off the session while this brief waited (runBrief runs the one it has now).
       const now = this.store.threads.find((x) => x.id === threadId);
       if (!now?.sidekick || !this.pairOf(now)) {
@@ -2665,7 +2678,7 @@ export class Runtime {
         return { text: "This session has no sidekick now (it was taken off while this brief waited), so nothing was done. Do it yourself.", isError: true };
       }
       const left = by - Date.now();
-      if (left < this.briefMinMs && !stop.signal.aborted) {
+      if ((timedOut || left < this.briefMinMs) && !stop.signal.aborted) {
         row.paint({ name: "Sidekick", task: taskOf(brief), brief, model: now.sidekick, state: "stopped", now: undefined, report: "No time was left for it.", files: [] }, true, "failed");
         return { text: "Your tool gives up on a call to Liner Code's tools sooner than this brief could run (or the briefs before it used that time up), so the sidekick didn't start on it: nothing was done. Do it yourself, or call it again with a smaller brief.", isError: true };
       }
@@ -2978,7 +2991,9 @@ export class Runtime {
     let releaseRead: (() => void) | null = null;
     let releaseWrite = () => {};
     let writeLine: Promise<void> | undefined;
+    // As in delegate: the timer ending a writer's wait in line says so, since the clock can read a little behind it.
     let late: NodeJS.Timeout | undefined;
+    let timedOut = false;
     try {
       if (mode === "read") {
         releaseRead = await this.acquireSubagentSlot(threadId, stop.signal, by - this.briefMinMs, () => row.paint({ state: "running", now: "Waiting for a subagent slot" }, true));
@@ -2997,10 +3012,10 @@ export class Runtime {
         writeLine = before.then(() => mine);
         this.briefLine.set(threadId, writeLine);
         if (waits) row.paint({ state: "running", now: "Waiting for the current writer to finish" }, true);
-        if (!stop.signal.aborted) await Promise.race([before, new Promise((resolve) => stop.signal.addEventListener("abort", resolve, { once: true })), new Promise((resolve) => (late = setTimeout(resolve, Math.max(0, by - this.briefMinMs - Date.now()))))]);
+        if (!stop.signal.aborted) await Promise.race([before, new Promise((resolve) => stop.signal.addEventListener("abort", resolve, { once: true })), new Promise((resolve) => (late = setTimeout(() => ((timedOut = true), resolve(undefined)), Math.max(0, by - this.briefMinMs - Date.now()))))]);
       }
       const left = by - Date.now();
-      if (left < this.briefMinMs && !stop.signal.aborted) {
+      if ((timedOut || left < this.briefMinMs) && !stop.signal.aborted) {
         row.paint({ name: "Subagent", task: subagentTask(title, prompt), brief: prompt, model: modelRef, state: "stopped", now: undefined, report: "No time was left for it.", ...(mode === "write" ? { files: [] } : {}) }, true, "failed");
         return { text: "Your tool gives up on a call to Liner Code's tools sooner than this subagent could run, so it didn't start: nothing was done.", isError: true };
       }
@@ -3849,9 +3864,12 @@ export class Runtime {
       const tool = this.providerInfo.find((p) => p.id === t.limit?.provider)?.label ?? t.limit?.provider ?? "The tool";
       this.store.patchThread(t.id, { status: "idle", limit: undefined });
       this.store.putItem(t.id, { kind: "notice", id: uid("it"), turn: t.turns, at: now, text: `${tool}'s usage window reopened, so this session carries on by itself.` });
-      // If queued messages are waiting, drain them; otherwise carry on where the turn paused.
+      // If queued messages are waiting, drain them; otherwise carry on where the turn paused. Either way a worktree
+      // session's folder comes back first, and the queue goes when that hold ends, so it doesn't start in a missing folder.
       if (t.queue?.length) {
-        this.drain(t.id);
+        void this.hold(t.id, async () => {
+          await this.worktreeBack?.(t.id).catch(() => {});
+        }).catch(() => {});
       } else {
         void this.hold(t.id, async () => {
           await this.worktreeBack?.(t.id).catch(() => {});

@@ -10,9 +10,9 @@ import type { OverviewDay, ScanRecord } from "@contracts";
 import { targetName } from "@contracts";
 import { plural } from "../model";
 
-// The plot is 150px tall at least (the compact Overview); when the boxes beside it make its box taller, it grows to fill
+// The plot is 150px tall at least (under the figures, line and dot); when the boxes beside it make its box taller, it grows to fill
 // it rather than leave it empty. The top line at 24, then the axis, the scan dots and the dates under it.
-const MIN_H = 214;
+const MIN_H = 150;
 const X0 = 22;
 const PAD_R = 6;
 const TOP = 24;

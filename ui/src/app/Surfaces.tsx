@@ -2,8 +2,9 @@
   Surfaces beside a session. The right panel shows one at a time (dock.ts has its rules, Panel.tsx
   draws it): Changes and Agents, Browser, Design, Files, Pull request (its picker holds what Linked pull
   requests once listed, and the Linked key opens it), Device, Side chat, a routine's run, and the add-on
-  panels you have; the Terminal lives in the bottom panel and Session is a popup. Each has a key (⌘⇧ and its letter) and a place in the session header's icon row or
-  its ··· (Switcher.tsx). A surface keeps its state while another shows, so a terminal keeps running and
+  panels you have; the Terminal lives in the bottom panel. Session was one until 2026-11-27: the details card holds all it
+  showed now (Env.tsx DetailsCard), and its key opens the card. Each has a key (⌘⇧ and its letter) and a row in the panel's + (Switcher.tsx), and an open one a tab in
+  the panel's head row. A surface keeps its state while another shows, so a terminal keeps running and
   a page stays loaded, and each session keeps its own panel.
 */
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -15,13 +16,12 @@ import { ago, plural, sumLines } from "./model";
 import { Lines, Pop, Row as PickRow, Sep } from "./ui";
 import "./surfaces.css";
 
-export type SurfaceId = "session" | "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
+export type SurfaceId = "side" | "changes" | "agents" | "files" | "terminal" | "browser" | "design" | "pr" | "linked" | "device" | "routines";
 /** A tab: a surface, the New tab guide, one routine run (`run:<id>`), a panel (`app:<id>`) or the preview of one on its card (`preview:<item>`). */
 export type Tab = DockTab;
 
 type Surface = { id: SurfaceId; label: string; key: string; icon: (p: { size?: number }) => ReactNode };
 const EVERY_SURFACE: Surface[] = [
-  { id: "session", label: "Session", key: "I", icon: I.details },
   { id: "side", label: "Side chat", key: "C", icon: I.comment },
   { id: "browser", label: "Browser", key: "B", icon: I.globe },
   { id: "design", label: "Design", key: "E", icon: I.design },

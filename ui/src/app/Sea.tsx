@@ -855,6 +855,8 @@ export function Sea() {
   const [open, setOpen] = useBehindHome();
   return (
     <>
+      {/* Nothing chosen behind Home: the paper's own faint halftone from its top right corner (board Home). */}
+      {home === "none" && !open && <i className="lc-ht lc-ht-corner lc-ht-big lc-ht-faint lc-home-ht" aria-hidden />}
       {home === "sea" && <Whale card={!open} onMake={() => (updateLook({ home: "dots" }), setOpen(true))} />}
       {home === "dots" && <Dots look={look} />}
       {home === "dots" && !open && <DotsHello onChange={() => setOpen(true)} />}

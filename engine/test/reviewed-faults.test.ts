@@ -60,10 +60,10 @@ test("The side chat's box offers one model, with no Fusion and nothing that make
   const composer = app("Composer.tsx");
   assert.ok(/<WhoPanel [^>]*solo=\{aside\}/.test(composer), "the box doesn't pass its side chat's mark to the who panel");
   const panel = span(composer, "function WhoPanel(", "export function PermissionRows(");
-  // The picker draws the rows a caller pins; the who panel pins Fusion only when the box isn't a side chat's.
-  assert.ok(/first=\{solo \? undefined : fusionRow\}/.test(panel), "the Fusion row is offered in a side chat");
-  assert.ok(/<button type="button" className="lc-who-row l-focus" data-rove data-way="pair"/.test(panel), "the Fusion row is gone");
-  assert.ok(/card=\{\(key, t, inPlace\) => \(key === "fusion" && !solo \? fusionCard\(t, inPlace\) : undefined\)\}/.test(panel), "Fusion's card is offered in a side chat");
+  // Fusion is the small card under the model's card (board Menus): the who panel offers it only when the box isn't a side chat's.
+  assert.ok(/under=\{solo \|\| way === "demo" \? undefined : \(_t, open\) => fusionSwitch\(open\)\}/.test(panel), "Enable Fusion is offered in a side chat");
+  assert.ok(/const fusionOn = \(\) => \{\s*if \(solo \|\| own \|\| !freshSide\) return;/.test(panel), "Enable Fusion still makes a pair in a side chat");
+  assert.ok(/card=\{\(key, _t, inPlace\) => \(key === "fusion" && !solo && own \? fusionCard\(pairTool, inPlace\) : undefined\)\}/.test(panel), "Fusion's card is offered in a side chat");
   assert.ok(/const pickFusion = \(t: string, effort\?: string\) => \{\s*if \(solo\) return;/.test(panel), "picking Fusion still makes a pair in a side chat");
   // The rail only shows a tool's models now: pressing a tool starts nothing, so no other tool's pair can start there.
   assert.doesNotMatch(panel, /const pickTool =/, "pressing a tool on the rail still changes the session");
@@ -126,7 +126,8 @@ test("While a part works, the live line says what it is thinking and its open li
   assert.ok(/<span className="lc-wk-r">\{thought\.sentence\}<\/span>/.test(live), "the thought's last sentence isn't on the line in the quiet style");
   assert.ok(/const list = rows;/.test(live), "the list the head opens still leaves the thoughts out");
   assert.ok(/if \(!n && !newest\)/.test(live), "thinking before the first step shows the clock alone, without its words");
-  assert.ok(/<Tick text=\{fine\} every=\{100\} \/>/.test(live), "the clock no longer redraws only its own text");
+  // Whole seconds once a second since 2026-11-26 (tenths at ten a second were the busiest thing on screen); still only its own text.
+  assert.ok(/<Tick text=\{secs\} \/>/.test(live), "the clock no longer redraws only its own text");
 });
 
 /* 7. Dead code */

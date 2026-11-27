@@ -190,6 +190,16 @@ test("checks: outside a git repository file checks fall back to walking the fold
   assert.equal(sec.findings("p").length, 1);
 });
 
+test("checks: an .env file in a folder that isn't a git repository is found, without saying it's tracked in git or to take it out of git", async () => {
+  const { sec } = rig({ ".env": "API_KEY=test\n" }, { repo: false });
+  const run = await runChecks(sec, "p");
+  assert.equal(rowOf(run, "files").state, "found");
+  const f = sec.findings("p").find((x) => x.rule === "file/env");
+  assert.ok(f, "the .env file is found");
+  assert.doesNotMatch(f.title, /git/);
+  assert.doesNotMatch(JSON.stringify(f.explain), /git rm|tracked in git|git ls-files/);
+});
+
 test("checks: run for a scan, each finding counts on it", async () => {
   const { sec } = rig({ "a.js": `const t = "${GH}";\n`, ".env": "X=1\n" });
   const scan = sec.newScan({ projectId: "p", depth: "checks", title: "Sample project, free checks" });

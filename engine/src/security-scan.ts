@@ -442,16 +442,22 @@ function carryOn(sec: Security, scanId: string, t: Thread) {
 
 /** A fix session moved on: working while it runs, ready when its turn ended, fixed when its pull request is merged. */
 function fixMoved(sec: Security, t: Thread) {
-  let f: SecurityFinding;
+  let tagged: SecurityFinding;
   try {
-    f = sec.finding(t.security!.finding!);
+    tagged = sec.finding(t.security!.finding!);
   } catch {
     return;
   }
-  if (f.state !== "open" || f.fix?.threadId !== t.id) return;
-  if (t.pr?.state === "MERGED") return void sec.fixed(f.id, `Fixed: its pull request #${t.pr.number} was merged`);
-  const next = t.archived ? "stopped" : t.status === "running" || t.status === "waiting" ? "working" : t.status === "error" ? "stopped" : t.status === "done" ? "ready" : f.fix.state;
-  if (next !== f.fix.state) sec.update(f.id, (x) => ({ ...x, fix: { ...x.fix!, state: next, at: Date.now() } }));
+  // Fix them works on every open finding of a scan, though the session is tagged with only the first: each one it works on moves with it.
+  for (const f of sec.findings(tagged.projectId)) {
+    if (f.state !== "open" || f.fix?.threadId !== t.id) continue;
+    if (t.pr?.state === "MERGED") {
+      sec.fixed(f.id, `Fixed: its pull request #${t.pr.number} was merged`);
+      continue;
+    }
+    const next = t.archived ? "stopped" : t.status === "running" || t.status === "waiting" ? "working" : t.status === "error" ? "stopped" : t.status === "done" ? "ready" : f.fix.state;
+    if (next !== f.fix.state) sec.update(f.id, (x) => ({ ...x, fix: { ...x.fix!, state: next, at: Date.now() } }));
+  }
 }
 
 /** The scan's turn is over (done, stopped by you or its time, failed): its second look, then its record and its last line. */

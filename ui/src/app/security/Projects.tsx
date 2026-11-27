@@ -303,8 +303,8 @@ function AreaRow({ name, line, found, count }: { name: string; line?: string; fo
   );
 }
 
-/** A scan's mark in the list of its scans, as every list of steps draws it (StepMark): working, a ring while it waits on you, a cross when it stopped or failed, else the tick. */
-const scanStep = (s: ScanRecord): StepState => (s.state === "running" ? "working" : s.state === "asking" ? "waiting" : s.state === "stopped" || s.state === "failed" ? "failed" : "done");
+/** A scan's mark in the list of its scans, as every list of steps draws it (StepMark): working, a ring while it waits on you or after you stopped it (stopped by you is not a failure, as the scan's own screen says it), a cross only when it failed, else the tick. */
+const scanStep = (s: ScanRecord): StepState => (s.state === "running" ? "working" : s.state === "asking" ? "waiting" : s.state === "stopped" ? "skipped" : s.state === "failed" ? "failed" : "done");
 
 /** One of its scans: its state mark, what it read, when, and what came of it ("4 found", "1 found, dismissed"). Opens its session. */
 function ScanRow({ s, found }: { s: ScanRecord; found: SecurityFinding[] }) {

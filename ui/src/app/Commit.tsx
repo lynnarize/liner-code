@@ -7,6 +7,7 @@
 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WRITER_CANCELLED, type Thread } from "@contracts";
+import { changeKey, HELD_KEY } from "./commit-held.ts";
 import { toast } from "@liner/components/toast/toast";
 import { isCheckpoint, rpc, useEngine, useItemsWhere } from "./engine";
 import { checkpointsOf, modelLabel, plural } from "./model";
@@ -39,7 +40,8 @@ export type Then = "commit" | "push" | "pr";
 
 /** The last message per session, with the changes it was written for. */
 type Saved = { key: string; message: string; by: string | null };
-const SAVED = "lc:commit-messages";
+// The same key the message box's commit tab reads (commit-held.ts), with the same change-set key.
+const SAVED = HELD_KEY;
 const saved = (): Record<string, Saved> => {
   try {
     return JSON.parse(localStorage.getItem(SAVED) || "{}") as Record<string, Saved>;
@@ -69,8 +71,7 @@ export function CommitForm({ thread, files, onDone, then = "commit" }: { thread:
       const had = by.get(f.path);
       by.set(f.path, { path: f.path, added: (had?.added ?? 0) + f.added, removed: (had?.removed ?? 0) + f.removed });
     }
-    // What the message was written for: each turn's snapshot, so any change to the files makes a new one.
-    const key = items ? waiting.map((c) => `${c.id}:${c.to ?? ""}:${c.files.map((f) => `${f.path}+${f.added}-${f.removed}`).join(",")}`).join("|") || `files:${files}` : null;
+    const key = items ? changeKey(items, files) : null;
     return { open: [...by.values()], key };
   }, [items, files]);
   const kept = key ? saved()[thread.id] : undefined;

@@ -76,7 +76,7 @@ test("Add $5 never sets a spend limit below what the session has spent", () => {
   assert.equal(addFive(10, 3), 15);
   assert.equal(addFive(10, 12.5), 17.5, "a limit already passed stays passed");
   assert.equal(addFive(0.1, 0.2), 5.2, "the sum is not rounded to cents");
-  assert.match(src("SessionInfo.tsx"), /update\(\{ spendLimit: addFive\(thread\.spendLimit, usage\?\.costUsd \?\? 0\) \}\)/);
+  assert.match(src("DetailsParts.tsx"), /update\(\{ spendLimit: addFive\(thread\.spendLimit, usage\?\.costUsd \?\? 0\) \}\)/);
 });
 
 test("The Agents key opens the agents popup, and its name in Settings says so", () => {
@@ -163,20 +163,18 @@ test("What this session no longer asks about forgets a grant only by the word at
   assert.equal((row.match(/<button/g) ?? []).length, 1, "more than the word is a button");
 });
 
-test("The title menu has one Multi-agent row and an Agents row that opens what the Agents key opens", () => {
+test("The title menu has no Multi-agent row, only an Agents row that opens what the Agents key opens; /teamwork and /swarm start a team", () => {
+  // Since 8ba917c a team starts only from the message box: no menu row turns one on.
   const session = src("Session.tsx");
-  assert.doesNotMatch(session, /title="Start Teamwork"|title="Start Swarm"|"Swarm panel"|"Teamwork panel"/);
-  assert.match(session, /<MultiAgentRow thread=\{thread\} close=\{close\} \/>/);
+  assert.doesNotMatch(session, /title="Start Teamwork"|title="Start Swarm"|"Swarm panel"|"Teamwork panel"|<MultiAgentRow/);
   assert.match(session, /<Row title="Agents" icon=\{<I\.agents size=\{16\} \/>\} onPick=\{\(\) => \(close\(\), openAgents\(thread\.id\)\)\} \/>/);
   assert.match(session, /\/\^\\\/\(teamwork\|swarm\)/, "/teamwork and /swarm no longer start a team");
-  const info = src("SessionInfo.tsx");
-  assert.match(info, /export function MultiAgentRow\(/);
-  assert.match(info, /<MultiAgentRow thread=\{thread\} close=\{close\} \/>/, "the Session popup's Setup no longer uses the one row");
+  assert.doesNotMatch(src("DetailsParts.tsx"), /MultiAgentRow/, "the details card's Setup has a Multi-agent row again");
 });
 
-test("The Session popup's Connections list says it is this session's", () => {
-  const info = src("SessionInfo.tsx");
-  const conn = info.slice(info.indexOf("function Connections("), info.indexOf("function spanOf("));
+test("The details card's Connections list (in its Setup menu) says it is this session's", () => {
+  const info = src("DetailsParts.tsx");
+  const conn = info.slice(info.indexOf("function Connections("));
   assert.match(conn, /<PanelHead>In this session<\/PanelHead>/);
 });
 

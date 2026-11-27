@@ -237,7 +237,6 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
     <aside ref={root} className="lf-x" aria-label={`The finding: ${f.title}`}>
       <PaneHead
         name="Finding"
-        canvas={false}
         onClose={onClose}
         shows={
           <>
@@ -275,7 +274,9 @@ export function FindingPanel({ finding: f, onClose, onPrev, onNext, place, proje
 
         {/* Summary, Code and Activity are sections of one column, as the panel's surfaces have them: no tabs in a body. */}
         <PaneSection label="Summary">
-          <div className="lf-x-txt">
+          {/* The lead sentence in a block tinted by how bad it is, with that colour's halftone in its corner. */}
+          <div className="lf-x-leadbox" data-sev={f.severity}>
+            <i className="lc-ht lc-ht-corner lc-ht-soft" aria-hidden />
             <p className="lf-x-lead"><Inline text={tidyEnd(ex?.lead || f.title)} /></p>
             {!ex && <p className="lf-x-quiet">No more was said about it than its title{f.rule ? ` and its rule, ${f.rule}` : ""}.</p>}
           </div>

@@ -19,7 +19,7 @@ import { seedComposer, type SlashRow } from "../Composer";
 import { getState, rpc, subscribe as subscribeEngine } from "../engine";
 import { I } from "../icons";
 import { plural } from "../model";
-import { MenuFoot, Pop, Row, Sep } from "../ui";
+import { MenuFoot, NamedSwitch, Pop, Row, Sep } from "../ui";
 import { offLeanMore, type OffAbout } from "./inspect/controls";
 import { homeSlots } from "./DesignHome";
 import { sideSlots } from "./Layers";
@@ -187,30 +187,19 @@ function SideSkills({ cwd }: { cwd: string }) {
   const rest = mine.filter((s) => !loaded.includes(s.name)).length;
   return (
     <>
-      {/* A loaded skill's row opens the lean; its ··· (while you point at it) unloads it, as a frame's row has its own. */}
+      {/* A loaded skill's row (board Design): its name opens the lean, its switch at the end unloads it, on in the accent. */}
       {loaded.map((n) => (
         <div key={n} className="ld-tr ld-tr-w">
           <button type="button" className="ld-tr-b l-focus" title={`The ${n} skill is loaded for this design. Open the lean`} onClick={openLean}>
-            <span className="ld-sl" aria-hidden>
-              /
-            </span>
-            <span className="ld-ell">{n}</span>
+            <I.bolt size={14} />
+            <span className="ld-ell">/{n}</span>
           </button>
-          <span className="ld-ly-acts">
-            <Pop label={`/${n}: what to do with it`} menu align="end" width={220} triggerClass="lc-sb-a l-focus" triggerAttrs={{ title: "Unload or open the lean" }} trigger={<I.more size={14} />}>
-              {(close) => (
-                <>
-                  <Row title="Unload it" icon={<I.close size={16} />} onPick={() => (close(), setSkill(n, false, cwd))} />
-                  <Row title="Open the lean" icon={<I.forward size={16} />} onPick={() => (close(), openLean())} />
-                </>
-              )}
-            </Pop>
-          </span>
+          <NamedSwitch name={`/${n}, loaded for this design`} size="sm" checked onCheckedChange={(on) => !on && setSkill(n, false, cwd)} />
         </div>
       ))}
       {/* Skills load with or without a DESIGN.md: the list, with how many more there are. */}
       {skills && mine.length > 0 && (
-        <Pop label="Load a skill for this design" width={340} triggerClass="ld-tr ld-tr-add" trigger={<><I.plus size={14} /><span className="ld-ell">Load a skill</span>{rest > 0 ? <span className="ld-m">{rest === mine.length ? rest : `${rest} more`}</span> : <span className="ld-m">all loaded</span>}</>} menu>
+        <Pop label="Load a skill for this design" width={340} triggerClass="ld-tr ld-tr-add" trigger={loaded.length ? <><I.more size={14} /><span className="ld-ell">{rest > 0 ? `${rest} more ${rest === 1 ? "skill" : "skills"}` : "Every skill is loaded"}</span></> : <><I.plus size={14} /><span className="ld-ell">Load a skill</span>{rest > 0 && <span className="ld-m">{rest}</span>}</>} menu>
           {() => (
             <>
               {mine.map((s) => (

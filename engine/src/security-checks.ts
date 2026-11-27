@@ -16,7 +16,7 @@ import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileS
 import { tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import type { FreeCheckId, FreeCheckResult, FreeCheckRun, FindingExplain, NewFinding, SecurityFinding, SecurityFindingAdded, Severity, CodeExcerpt } from "../../contracts/src/index.ts";
-import { findingKey, normalKey } from "../../contracts/src/index.ts";
+import { normalKey } from "../../contracts/src/index.ts";
 import { outside, pathOf, run, which } from "./exec.ts";
 import { insideReal, type Security } from "./security.ts";
 
@@ -443,16 +443,18 @@ function walkNonGit(root: string): string[] {
   return out;
 }
 
-/** The tracked files, relative to the project's folder; falls back to a safe ignore-walked list outside a git repository. */
-async function tracked(root: string, env: NodeJS.ProcessEnv): Promise<string[] | null> {
+/**
+  The tracked files, relative to the project's folder, and whether it is a git repository: outside one, a safe
+  ignore-walked list, which the secrets check reads but the files check doesn't, since nothing there is tracked in git.
+*/
+async function tracked(root: string, env: NodeJS.ProcessEnv): Promise<{ files: string[]; git: boolean }> {
   const r = await git(root, ["ls-files", "-z"], env);
-  if (r.code === 0) return r.stdout.split("\0").filter(Boolean);
-  return walkNonGit(root);
+  if (r.code === 0) return { files: r.stdout.split("\0").filter(Boolean), git: true };
+  return { files: walkNonGit(root), git: false };
 }
 
-async function secretsCheck(root: string, files: string[] | null, skip: Set<string>): Promise<CheckOut> {
+async function secretsCheck(root: string, files: string[], skip: Set<string>): Promise<CheckOut> {
   const at = Date.now();
-  if (!files) return { result: { check: "secrets", state: "skipped", count: 0, note: "not a git repository", at }, found: [] };
   const found: Found[] = [];
   const read = new Set<string>();
   let bytes = 0;
@@ -517,10 +519,9 @@ async function secretsCheck(root: string, files: string[] | null, skip: Set<stri
   return { result: { check: "secrets", state: found.length ? "found" : "clean", count: found.length, ...(cut ? { note: `read the first ${read.size} files` } : {}), at }, found, read, tracked: new Set(files) };
 }
 
-function filesCheck(root: string, files: string[] | null): CheckOut & { flagged: Set<string> } {
+function filesCheck(root: string, files: string[], inGit: boolean): CheckOut & { flagged: Set<string> } {
   const at = Date.now();
   const flagged = new Set<string>();
-  if (!files) return { result: { check: "files", state: "skipped", count: 0, note: "not a git repository", at }, found: [], flagged };
   const found: Found[] = [];
   for (const f of files) {
     const b = badFile(f);
@@ -535,7 +536,9 @@ function filesCheck(root: string, files: string[] | null): CheckOut & { flagged:
       }
     }
     flagged.add(f);
-    found.push({ check: "files", finding: { title: b.title(f), severity: b.severity, source: "checks", file: f, rule: `file/${b.id}`, explain: { lead: `${f} is tracked in git, and a file like it should never be.`, wrong: `${b.wrong} Take it out of git (git rm --cached), add it to .gitignore, and change what it held: it stays in the history.`, who: "Anyone who can read the repository, or any copy of it.", see: [`Run git ls-files ${f} in the project's folder.`] } } });
+    if (inGit) found.push({ check: "files", finding: { title: b.title(f), severity: b.severity, source: "checks", file: f, rule: `file/${b.id}`, explain: { lead: `${f} is tracked in git, and a file like it should never be.`, wrong: `${b.wrong} Take it out of git (git rm --cached), add it to .gitignore, and change what it held: it stays in the history.`, who: "Anyone who can read the repository, or any copy of it.", see: [`Run git ls-files ${f} in the project's folder.`] } } });
+    // Outside git nothing is tracked: the file is still worth knowing about, said as it is, with no git advice for a folder that has none.
+    else found.push({ check: "files", finding: { title: b.title(f).replace(/ is tracked in git$/, " is in the project's folder"), severity: b.severity, source: "checks", file: f, rule: `file/${b.id}`, explain: { lead: `${f} is in the project's folder, which isn't a git repository.`, wrong: `${b.wrong.split(". ")[0].replace(/\.$/, "")}. If this folder is ever shared, zipped or put in git, add it to an ignore file first, and keep it out of copies.`, who: "Anyone who gets a copy of this folder.", see: [`Open ${f} in the project's folder.`] } } });
   }
   return { result: { check: "files", state: found.length ? "found" : "clean", count: found.length, at }, found, flagged };
 }
@@ -775,8 +778,8 @@ export function runChecks(sec: Security, projectId: string, scan?: string): Prom
 
 async function checkNow(sec: Security, projectId: string, root: string, scan?: string): Promise<FreeCheckRun> {
   const at = Date.now();
-  const files = await tracked(root, sec.env);
-  const bad = filesCheck(root, files);
+  const { files, git: inGit } = await tracked(root, sec.env);
+  const bad = filesCheck(root, files, inGit);
   const [secrets, packages] = await Promise.all([secretsCheck(root, files, bad.flagged), packagesCheck(root, sec.env)]);
   const outs: Record<FreeCheckId, CheckOut> = { secrets, packages, files: bad };
   let added = 0;
@@ -787,9 +790,10 @@ async function checkNow(sec: Security, projectId: string, root: string, scan?: s
     const o = outs[id];
     let count = 0;
     const list = o.found.map(({ finding }): NewFinding => (scan ? { ...finding, scan } : finding));
-    for (const n of list) seen.add(findingKey(projectId, n));
-    // The check's findings in one write; counted on the scan once, after all three.
+    // The check's findings in one write; counted on the scan once, after all three. What was met is known by the stored
+    // finding's own key, which can differ from the one the check made (a record kept under an older key).
     for (const a of sec.addMany(projectId, list, BY) as SecurityFindingAdded[]) {
+      seen.add(a.finding.key);
       if (a.outcome === "new" || a.outcome === "reopened") added++;
       // What you dismissed before isn't counted as found.
       if (a.outcome !== "dismissed-before") count++;

@@ -1,11 +1,12 @@
 /*
-  First launch, as one window that never scrolls: Liner Code on a quiet aside at the left (what this is,
-  which computer is being set up, and that it never sees a sign-in), and at the right what it guessed,
-  ready to start. Three rows, each a status circle, a line of what it found and one quiet button:
-  the tools that are ready (with installs, sign-ins and an API key under Add more), the projects to add
-  (every repository under Choose), and who works on a new session. One part opens at a time, takes the
-  room the window has and scrolls inside itself; the button at the foot stays in view. The name the boot
-  screen showed stays in place while the line under it says what this is, then gives way to the page.
+  First launch (board Setup of "line and dot", 2026-11-27): one page on the sheet, with no sidebar, in one left-set
+  column. "Welcome to Liner Code." in ink and "Setting up this Mac." in grey, one grey line of what it found, then
+  sections with a grey label in a narrow column at their left: Agents (a row per tool with Ready, Sign in or Install
+  at its end, and under them a way to add more: installs, an API key, Look again), Projects (the repositories to bring
+  in as ticked rows, the newest three first, the rest a press away, a folder or a clone after them) and Who works.
+  A ruled foot holds "Start without an agent" while no agent is ready, else the one white button that brings the
+  picked projects in and starts. The faint halftone sits in the sheet's top right corner. The name the boot screen
+  showed stays in place while the line under it says what this is, then gives way to the page.
 */
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { FoundRepo, ProviderInfo, Settings, SystemCheck } from "@contracts";
@@ -14,9 +15,9 @@ import { toast } from "@liner/components/toast/toast";
 import { prefersReducedMotion } from "@liner/lib/spring";
 import { bridge } from "./bridge";
 import { rpc, useEngine } from "./engine";
-import { I, ModelMark, StateMark, StepMark, type MarkKind } from "./icons";
+import { I, ModelMark, StateMark, type MarkKind } from "./icons";
 import { PaneCheck } from "./Pane";
-import { LookAgain } from "./ui";
+import { Badge, LookAgain } from "./ui";
 import { markOf, modelLabel, pairReady, plural, since } from "./model";
 import { startModel, StartPick } from "./Models";
 import * as os from "./os";
@@ -99,35 +100,48 @@ export function Setup({ onDone }: { onDone: () => void }) {
           ? "Liner Code found your projects, and no agent yet. Install one or add a key, then start."
           : "Pick an agent and a project to start.";
 
+  const starting = busy ? (adds.count ? "Adding…" : "Starting…") : undefined;
   return (
     <div className="lc-wel" data-intro={played || undefined}>
       <div className="lc-wel-drag" data-drag />
-      <aside className="lc-wel-side" style={{ "--i": 0 } as CSSProperties}>
-        <div className="lc-wel-name">Liner Code</div>
-        <p className="lc-wel-what">Your models, your code. Agents when you want them.</p>
-        <span className="lc-wel-grow" />
-        <div className="lc-wel-machine">Setting up {machine}</div>
-        <p className="lc-wel-note">{note}</p>
-      </aside>
-      <main className="lc-wel-main" aria-label="Set up Liner Code">
-        <header className="lc-wel-head" style={{ "--i": 1 } as CSSProperties}>
-          <h1>Ready when you are</h1>
-          <p>{found}</p>
-        </header>
-        <div className="lc-wel-rows">
-          <SystemRows />
-          <Tools opened={opened} toggle={toggle} setOpened={setOpened} />
-          <Projects onAdds={setAdds} opened={opened} toggle={toggle} />
-          <Work onStart={setStart} />
-        </div>
-        <p className="lc-wel-note lc-wel-narrow-note">{note}</p>
-        <div className="lc-wel-foot" style={{ "--i": 6 } as CSSProperties}>
-          <span>Change any of it later in Settings.</span>
-          <button type="button" className="lc-btn" data-kind="accent" data-size="lg" disabled={busy} onClick={() => void go()}>
-            {busy ? (adds.count ? "Adding…" : "Starting…") : adds.count ? `Start with ${plural(adds.count, "project")}` : "Start"}
-          </button>
-        </div>
-      </main>
+      <div className="lc-wel-sheet">
+        <i className="lc-ht lc-ht-corner lc-ht-big lc-ht-faint lc-wel-ht" aria-hidden />
+        <main className="lc-wel-main" aria-label="Set up Liner Code">
+          <header className="lc-wel-head" style={{ "--i": 1 } as CSSProperties}>
+            <h1>
+              Welcome to Liner Code. <span>Setting up {machine}.</span>
+            </h1>
+            <p>
+              {found} {note}
+            </p>
+          </header>
+          <Part label="Agents" i={2}>
+            <SystemRows />
+            <Tools opened={opened} toggle={toggle} setOpened={setOpened} />
+          </Part>
+          <Part label="Projects" i={3}>
+            <Projects onAdds={setAdds} opened={opened} toggle={toggle} />
+          </Part>
+          <Part label="Who works" i={4}>
+            <Work onStart={setStart} />
+          </Part>
+          <div className="lc-wel-foot" style={{ "--i": 5 } as CSSProperties}>
+            {/* With no agent ready the way on is the outlined one; with one, the white button brings the projects in and starts. */}
+            {!tool && (
+              <button type="button" className="lc-btn" data-kind="outline" disabled={busy} onClick={() => void go()}>
+                {starting ?? "Start without an agent"}
+              </button>
+            )}
+            <span className="lc-grow" />
+            <span className="lc-wel-later">You can change all of this in Settings</span>
+            {tool && (
+              <button type="button" className="lc-btn" data-kind="ink" disabled={busy} onClick={() => void go()}>
+                {starting ?? (adds.count ? `Bring in ${plural(adds.count, "project")} and start` : "Start")}
+              </button>
+            )}
+          </div>
+        </main>
+      </div>
       {intro && (
         <div className="lc-wel-intro" data-from-boot={fromBoot || undefined} aria-hidden>
           <span className="lc-wel-wm">Liner Code</span>
@@ -138,28 +152,33 @@ export function Setup({ onDone }: { onDone: () => void }) {
   );
 }
 
-/**
-  Where a row stands, as every list of steps does (the step mark): a grey tick when finished, an empty ring when
-  not started. Needing you keeps the state mark's own shape, since it asks for something rather than failing.
-*/
-function Status({ state }: { state: "ok" | "todo" | "warn" }) {
-  return <span className="lc-wel-st">{state === "warn" ? <StateMark state="needs" size={16} /> : <StepMark state={state === "ok" ? "done" : "waiting"} size={16} />}</span>;
+/** A section of the page: its grey label in the narrow column at the left, its rows at the right. */
+function Part({ label, i, children }: { label: string; i: number; children: ReactNode }) {
+  return (
+    <section className="lc-wel-part" aria-label={label} style={{ "--i": i } as CSSProperties}>
+      <h2 className="lc-wel-lab">{label}</h2>
+      <div className="lc-wel-rows">{children}</div>
+    </section>
+  );
 }
 
-/** A row: its status, a title over one grey line, what you can do at the right, and what it opens under it. */
-function Row({ state, title, line, end, i, open, fold }: { state: "ok" | "todo" | "warn"; title: ReactNode; line: ReactNode; end: ReactNode; i: number; open?: boolean; fold?: ReactNode }) {
+/**
+  A row: a tile with a mark (or a state mark for something this computer needs), a title over one grey line, what you
+  can do at its end, and what it opens under it.
+*/
+function Row({ lead, title, line, end, open, fold, off }: { lead: ReactNode; title: ReactNode; line?: ReactNode; end?: ReactNode; open?: boolean; fold?: ReactNode; off?: boolean }) {
   return (
-    <section className="lc-wel-row" data-open={open || undefined} style={{ "--i": i } as CSSProperties}>
+    <div className="lc-wel-row" data-open={open || undefined} data-off={off || undefined}>
       <div className="lc-wel-rh">
-        <Status state={state} />
+        <span className="lc-wel-tile">{lead}</span>
         <div className="lc-wel-rt">
           <div className="lc-wel-title">{title}</div>
-          <div className="lc-wel-line">{line}</div>
+          {line && <div className="lc-wel-line">{line}</div>}
         </div>
-        <div className="lc-wel-end">{end}</div>
+        {end && <div className="lc-wel-end">{end}</div>}
       </div>
       {fold}
-    </section>
+    </div>
   );
 }
 
@@ -200,8 +219,7 @@ function SystemRows() {
     <>
       {mac.install && (
         <Row
-          state="warn"
-          i={2}
+          lead={<StateMark state="needs" size={14} />}
           title={`${os.Here} needs Apple's command line tools`}
           line={`${[!mac.git && "Git", !mac.python && "Python"].filter(Boolean).join(" and ") || "Git and Python"} come with them. Apple's installer takes a few minutes.`}
           end={
@@ -214,8 +232,7 @@ function SystemRows() {
       )}
       {!mac.rg && (
         <Row
-          state="warn"
-          i={2}
+          lead={<StateMark state="needs" size={14} />}
           title={`${os.Here} needs ripgrep`}
           line={mac.rgInstall ? "Agents search code with it; without it, their first search fails." : "Agents search code with it. Install it from github.com/BurntSushi/ripgrep."}
           end={
@@ -244,7 +261,6 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
     return { ...t, p, state: toolState(p, t.id, keys) };
   });
   const ready = rows.filter((r) => r.state === "ready");
-  const signin = rows.filter((r) => r.state === "signin");
   const install = rows.filter((r) => r.state === "install" && r.p?.install);
 
   // With no tool ready this row starts open, so Install is in view; it never shuts by itself.
@@ -271,53 +287,52 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
     setChecking(true);
     void rpc("providers.refresh", {}).finally(() => setChecking(false));
   };
-  const needs = signin.length ? <span className="lc-wel-grey"> · {signin.length} {signin.length === 1 ? "needs" : "need"} you to sign in</span> : null;
+  // What a tool's row says under its name, and what it offers at its end: Ready, Sign in, Install, or why there is nothing to press.
+  const lineOf = (r: (typeof rows)[number]) =>
+    r.state === "looking" ? <span className="l-shimmer">Looking for it</span> : r.state === "ready" ? [r.p?.version, r.p?.detail].filter(Boolean).join(" · ") || "Installed" : r.state === "signin" ? [r.p?.version, "not signed in"].filter(Boolean).join(" · ") : r.state === "soon" ? "Installed · Liner Code can't drive it yet" : `Not on ${os.here}`;
+  const endOf = (r: (typeof rows)[number]) =>
+    r.state === "ready" ? (
+      <Badge tone="ok">Ready</Badge>
+    ) : r.state === "signin" ? (
+      <Tb title={`${r.p!.login}, in Terminal`} onClick={() => bridge.runInTerminal(r.p!.login)}>
+        Sign in
+      </Tb>
+    ) : r.state === "install" && r.p?.install ? (
+      <Tb title={r.p.install} onClick={() => bridge.runInTerminal(r.p!.install!)}>
+        Install
+      </Tb>
+    ) : undefined;
 
   return (
-    <Row
-      state={ready.length ? "ok" : "todo"}
-      i={3}
-      open={open}
-      title={
-        <>
-          {ready.length ? `${plural(ready.length, "tool")} ${ready.length === 1 ? "is" : "are"} ready` : "No coding tool yet"}
-          {needs}
-        </>
-      }
-      line={
-        ready.length ? (
-          <>
-            <span className="lc-wel-marks" aria-hidden>
-              {ready.map((r) => (
-                <ModelMark key={r.id} kind={r.mark} size={16} />
-              ))}
-            </span>
-            <span className="lc-wel-cut">{ready.map((r) => r.name.replace(/ CLI$/, "")).join(", ")}</span>
-          </>
-        ) : (
-          <span className="lc-wel-cut">Install one, or add an API key</span>
-        )
-      }
-      end={
-        <Tb expanded={open} controls="lc-wel-tools" onClick={() => toggle("tools")}>
-          {open ? "Close" : "Add more"}
-        </Tb>
-      }
-      fold={
-        <Fold open={open} id="lc-wel-tools">
+    <>
+      {rows.map((r) => (
+        <Row
+          key={r.id}
+          off={r.state === "install" || r.state === "soon"}
+          lead={<ModelMark kind={r.mark} size={14} />}
+          title={
+            <>
+              {r.name.replace(/ CLI$/, "")}
+              {r.beta && <Badge>Beta</Badge>}
+            </>
+          }
+          line={<span className="lc-wel-cut">{lineOf(r)}</span>}
+          end={endOf(r)}
+        />
+      ))}
+      <Row
+        open={open}
+        lead={<I.plus size={14} />}
+        title={
+          <button type="button" className="lc-wel-more l-focus" aria-expanded={open} aria-controls="lc-wel-tools" onClick={() => toggle("tools")}>
+            Add more agents, or an API key
+            <I.chevD size={12} className="lc-wel-chev" />
+          </button>
+        }
+        line={ready.length || install.length ? undefined : "Install one, or add an API key"}
+        fold={
+          <Fold open={open} id="lc-wel-tools">
           <div className="lc-wel-pills">
-            {install.map((r) => (
-              <Pill key={r.id} title={r.p!.install} onClick={() => bridge.runInTerminal(r.p!.install!)}>
-                <ModelMark kind={r.mark} size={14} />
-                Install {r.name}
-              </Pill>
-            ))}
-            {signin.map((r) => (
-              <Pill key={r.id} title={`${r.p!.login}, in Terminal`} onClick={() => bridge.runInTerminal(r.p!.login)}>
-                <ModelMark kind={r.mark} size={14} />
-                Sign in to {r.name}
-              </Pill>
-            ))}
             <Pill on={Boolean(keyFor)} onClick={() => (setKeyFor((k) => (k ? null : "anthropic")), setValue(""))}>
               Add an API key
             </Pill>
@@ -335,14 +350,15 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
                 <I.lock size={12} />
                 <input autoFocus type="password" placeholder={keyFor === "anthropic" ? "sk-ant-…" : "sk-…"} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? void save() : e.key === "Escape" && (setKeyFor(null), setValue("")))} aria-label={`${KEYS.find((k) => k.id === keyFor)?.name} key`} />
               </span>
-              <button type="button" className="lc-btn" data-kind="ink" data-size="sm" disabled={!value.trim()} onClick={() => void save()}>
+              <button type="button" className="lc-btn" data-size="sm" disabled={!value.trim()} onClick={() => void save()}>
                 Save
               </button>
             </div>
           )}
-        </Fold>
-      }
-    />
+          </Fold>
+        }
+      />
+    </>
   );
 }
 
@@ -426,54 +442,16 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
       return n;
     });
 
-  const names = [...(offer && sample ? ["Sample project"] : []), ...(found ?? []).filter((f) => picked.has(f.path)).map((f) => f.name)];
-  // "the newest of 13" only while the picks are still the newest; once you've chosen, just where they were found.
-  const newest = picked.size === first.length && first.every((p) => picked.has(p));
-  const where = found?.length ? ` · ${newest ? "the newest of" : "of"} ${found.length} found${roots.length ? ` in ${roots.join(", ")}` : ""}` : "";
-  const title = found === null ? "Projects to add" : count ? `${plural(count, "project")} to add` : "No projects yet";
-  const line =
-    found === null ? (
-      <span className="l-shimmer">Looking for Git repositories on {os.here}</span>
-    ) : count ? (
-      <span className="lc-wel-cut">
-        {names.join(", ")}
-        {where}
-      </span>
-    ) : (
-      <span className="lc-wel-cut">{found.length || offer ? "Choose some, or start without one" : "No Git repositories in the usual places. Add a folder, or clone one."}</span>
-    );
+  // The newest three first (the ones ticked for you), and every other one a press away; one you added or ticked stays in view.
+  const shown = open ? (found ?? []) : (found ?? []).filter((f) => first.includes(f.path) || picked.has(f.path) || f.added);
+  const more = (found?.length ?? 0) - shown.length;
+  const where = roots.length ? ` in ${roots.join(", ")}` : "";
 
   return (
-    <Row
-      state={count ? "ok" : "todo"}
-      i={4}
-      open={open}
-      title={title}
-      line={line}
-      end={
-        <Tb expanded={open} controls="lc-wel-projects" disabled={found === null} onClick={() => toggle("projects")}>
-          {open ? "Close" : "Choose"}
-        </Tb>
-      }
-      fold={
-        <Fold
-          open={open}
-          id="lc-wel-projects"
-          foot={
-            <div className="lc-wel-extras">
-              <Tb onClick={() => void addFolder()}>
-                <I.folder size={14} />
-                Add a folder…
-              </Tb>
-              <span className="lc-wel-clone">
-                <input className="l-focus" placeholder="Clone owner/repo or a URL" aria-label="Clone from GitHub: owner/repo or a URL" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
-                <Tb disabled={cloning || !clone.trim()} onClick={() => void doClone()}>
-                  {cloning ? "Cloning" : "Clone"}
-                </Tb>
-              </span>
-            </div>
-          }
-        >
+    <>
+      {found === null && <p className="lc-wel-say l-shimmer">Looking for Git repositories on {os.here}</p>}
+      {found !== null && !found.length && !offer && <p className="lc-wel-say">No Git repositories in the usual places. Add a folder, or clone one.</p>}
+      <div id="lc-wel-projects" className="lc-wel-repos">
           {offer && (
             <label className="lc-wel-repo">
               <PaneCheck checked={sample} label="Add the sample project" onChange={setSample} />
@@ -482,7 +460,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
               <span className="lc-wel-grey lc-wel-mono">main</span>
             </label>
           )}
-          {(found ?? []).map((f) => (
+          {shown.map((f) => (
             <label key={f.path} className="lc-wel-repo" data-added={f.added || undefined}>
               {/* An added one is ticked for good: the same box, but not a control, so the row can't untick it. */}
               {f.added ? (
@@ -506,9 +484,26 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
               </span>
             </label>
           ))}
-        </Fold>
-      }
-    />
+      </div>
+      {(more > 0 || open) && (
+        <button type="button" className="lc-wel-more l-focus" aria-expanded={open} aria-controls="lc-wel-projects" onClick={() => toggle("projects")}>
+          {open ? "Show the newest only" : `Look at all ${found?.length} found${where}`}
+          <I.chevR size={12} />
+        </button>
+      )}
+      <div className="lc-wel-extras">
+        <Tb onClick={() => void addFolder()}>
+          <I.folder size={14} />
+          Add a folder…
+        </Tb>
+        <span className="lc-wel-clone">
+          <input className="l-focus" placeholder="Clone owner/repo or a URL" aria-label="Clone from GitHub: owner/repo or a URL" value={clone} onChange={(e) => setClone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void doClone()} />
+          <Tb disabled={cloning || !clone.trim()} onClick={() => void doClone()}>
+            {cloning ? "Cloning" : "Clone"}
+          </Tb>
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -541,17 +536,13 @@ function Work({ onStart }: { onStart: (s: Start) => void }) {
       : one
         ? { name: name(one), line: <>{model(one)} alone, on everything</>, plain: `${name(one)} alone, on everything` }
         : { name: "A model", line: "The model you connect, on everything", plain: "The model you connect, on everything" };
+  // The pick first, as the board draws it, then what it means in one grey line with its models' marks.
   return (
-    <Row
-      state="ok"
-      i={5}
-      title={<span key={shown}>{w.name}</span>}
-      line={
-        <span className="lc-wel-cut" key={shown} title={w.plain}>
-          {w.line}
-        </span>
-      }
-      end={<StartPick value={shown} onPick={setPick} />}
-    />
+    <div className="lc-wel-work">
+      <StartPick value={shown} onPick={setPick} align="start" />
+      <span className="lc-wel-line lc-wel-cut" key={shown} title={`${w.name}: ${w.plain}`}>
+        {w.line}
+      </span>
+    </div>
   );
 }

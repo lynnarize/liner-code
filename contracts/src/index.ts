@@ -101,6 +101,8 @@ export type ModelInfo = {
   group?: string;
   /** What the tool picks when you don't. */
   isDefault?: boolean;
+  /** On a tool's "default" row, the model it is set to by name ("Kimi K3"), when the tool said; unset when it didn't. */
+  now?: string;
   /** A model id you added that the tool doesn't list. */
   custom?: boolean;
 };
@@ -1173,6 +1175,8 @@ export type Settings = {
   capUsd?: number;
   /** Keeps the Mac from sleeping while an agent works (on unless turned off). */
   keepAwake?: boolean;
+  /** Carry on: three cards under Home's box, its row in the sidebar's More menu and the look for past sessions behind them (on unless turned off). */
+  carryOn?: boolean;
   /** The menu bar item: what works and what needs you (on unless turned off). */
   menuBar?: boolean;
   /** Settle a session when its pull request merges, or when a routine run handled everything itself. Off unless you turn them on. */
@@ -1315,7 +1319,7 @@ export type ContextUse = {
   deferred?: number;
 };
 
-/** What the Session surface shows from the engine: where a session runs, and what fills its context. */
+/** What the session details card shows from the engine: where a session runs, and what fills its context. */
 export type SessionInfo = {
   machine: string;
   project: string;
@@ -1415,6 +1419,9 @@ export type KeyBinding = { key: string; command: string; when?: string };
 /** A project's command with a run button; `key` runs it from the keyboard in a session ("mod+shift+1"). */
 export type ProjectScript = { id: string; name: string; command: string; onWorktree?: boolean; key?: string };
 export type SidebarGroup = { id: string; name: string };
+
+/** Carry on shows (Home's cards, the More menu's row, the look for past sessions) unless it was turned off in Settings. */
+export const carryOnOn = (s: Pick<Settings, "carryOn">): boolean => s.carryOn !== false;
 
 /* Routines: work that runs on its own. Models read and report; code in the engine decides. */
 /**
@@ -1745,6 +1752,8 @@ export type Rpc = {
   "mcp.decide": [{ id: string; allow: boolean; trust?: boolean }, null];
   "mcp.signIn": [{ id: string; allow: boolean; level?: McpLevel }, null];
   "mcp.retry": [Record<string, never>, McpStatus];
+  "mcp.checkAgain": [Record<string, never>, McpStatus];
+  "mcp.halt": [Record<string, never>, McpStatus];
   /** A terminal agent you turned away, let in again; and a sign-in expected for the next 15 minutes (Add an app, an app that signs in itself). */
   "mcp.unblock": [{ id: string }, null];
   /** An app's name in Settings, changed (Another app 2 → Home Assistant). */

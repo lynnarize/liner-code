@@ -425,6 +425,52 @@ function BuildFoot({ tab }: { tab: string }) {
   );
 }
 
+/** Asks the inspector to show one of its tabs (Inspector.tsx hears it), for the top row's Build. */
+export const showInspectorTab = (id: string) => window.dispatchEvent(new CustomEvent("ld:insp-tab", { detail: id }));
+
+/**
+  The design's top row's end, as board Design draws it: Compare as an outlined chip and Build as the one white button.
+  Compare lays the running app over the picked frame, or over the first built one, as the Build tab's own Compare does;
+  Build opens the inspector on its Build tab, where its foot has the one action that sends (so nothing goes to the agent
+  from two places), with how many frames are ahead of their code or not built yet beside its word.
+*/
+export function TopBuild({ onShow }: { onShow: () => void }) {
+  const file = useDesign((s) => s.file);
+  const sel = useDesign((s) => s.sel);
+  const builds = useBuilds();
+  const comparing = useSyncExternalStore(compareOn.sub, compareOn.frame);
+  useDesign((s) => s.html);
+  if (!file) return null;
+  const drawn = file.frames.filter((f) => f.kind === "drawn" && !isGone(f) && !blankHtml(getDesign().html[f.id]));
+  const screens = drawn.filter((f) => !notScreen(f, builds[f.id]));
+  const built = screens.filter((f) => builds[f.id] && builds[f.id].state !== "none");
+  const ahead = screens.filter((f) => builds[f.id]?.state === "design-ahead").length;
+  const notBuilt = screens.filter((f) => !builds[f.id] || builds[f.id].state === "none").length;
+  const target = built.find((f) => sel.some((x) => x.frame === f.id)) ?? built[0];
+  const note = ahead ? `${ahead} ahead` : notBuilt ? `${notBuilt} to build` : "";
+  return (
+    <>
+      <button
+        type="button"
+        className="lc-btn ld-top-cmp l-focus"
+        data-kind="outline"
+        data-size="sm"
+        aria-pressed={Boolean(comparing)}
+        disabled={!comparing && !target}
+        title={comparing ? "Stop comparing" : target ? `Compare ${target.name} with the running app` : "Build a frame first: Compare lays the running app over a built one"}
+        onClick={() => void openCompare(comparing ? undefined : target?.id)}
+      >
+        <I.eye size={14} />
+        {comparing ? "Stop comparing" : "Compare"}
+      </button>
+      <button type="button" className="lc-btn ld-top-build l-focus" data-kind="ink" data-size="sm" title="Build: the frames into the project's code" onClick={() => (onShow(), showInspectorTab("build"))}>
+        Build
+        {note && <span className="ld-top-n">{note}</span>}
+      </button>
+    </>
+  );
+}
+
 // The foot is the inspector's slot: one entry, kept once across reloads of this module.
 {
   const i = FOOT.findIndex((x) => x.id === "build");

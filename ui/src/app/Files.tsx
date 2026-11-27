@@ -12,7 +12,6 @@
 */
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FileDiff, Item, Thread, TreeEntry } from "@contracts";
-import { TreeView, type TreeNode } from "@liner/components/tree-view/tree-view";
 import { toast } from "@liner/components/toast/toast";
 import { StreamedMarkdown } from "@liner/pro/ai-kit/streamed";
 import { bridge } from "./bridge";
@@ -21,6 +20,8 @@ import { rpc, useEngine, useItemsWhere } from "./engine";
 import { I } from "./icons";
 import { agentOf, checkpointsOf } from "./model";
 import { baseOf, langOf, linesOf, marksOf, tokensOf, Toks } from "./code";
+import { FileTree } from "./FileTree";
+import type { TreeNode } from "./treeRows";
 import { SurfaceNote, useCwd } from "./Surfaces";
 import { PANE_TOOL, PaneButton, PaneField, PaneFile, PaneFoot, PaneHead, PaneTool } from "./Pane";
 import { Pop, Row, Sep } from "./ui";
@@ -294,7 +295,7 @@ export function FilesSurface({ thread, onShowChanges, reveal }: { thread: Thread
             {tree === null ? (
               <span className="l-shimmer lc-files-wait">Reading the folder</span>
             ) : nodes.length ? (
-              <TreeView key={`${filter}:${query.trim().toLowerCase()}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
+              <FileTree key={`${filter}:${query.trim().toLowerCase()}:${asked}`} nodes={nodes} label="Files" defaultExpanded={openDirs} selected={sel} onSelect={(n) => !n.children && (setSel(n.id), setGoto(null))} />
             ) : (
               <p className="lc-quiet lc-files-none">{err ?? (filter === "changed" ? "No turn has changed a file yet." : query ? "No file matches that." : "This folder is empty.")}</p>
             )}

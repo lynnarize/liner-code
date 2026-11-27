@@ -2,9 +2,9 @@
   The composer. One card, the same on Home, in a session, in Liner Design and in Liner Security: you
   write in it, and under what you write one row: the + on the left, then any start choice that
   differs from its default; on the right who works, the permissions and Send. One purpose, one
-  control: a default stays out of sight. Round the card, the tray (Devin's): a tinted holder, on
-  Home always, in a session only when its head has a row (files to commit, agents at work). What's
-  queued sits above it.
+  control: a default stays out of sight. Nothing holds the card: over it, only while there is a row
+  (files to commit, the prompt check, a drawing on the canvas), a tab rests on its top edge, and an
+  ask docked here stands over it on its own. What's queued sits above it.
 
   - The + menu: attach files, the `/`, `$` and `@` lists, then the face's own start choices
     (Home's mode, Liner Design's skills and size), each with its value at the row's end.
@@ -18,7 +18,7 @@
     (⌘⇧Enter for the first), or edited where it waits.
   - A paste of 32 KiB or more comes as a text file. Drafts outlast a restart.
 */
-import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, SessionMode, SidekickClass, Thread } from "@contracts";
 import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, picturesOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -26,11 +26,10 @@ import { is } from "./keymap";
 import { mirror } from "./mdMirror";
 import { isPrompt, onStream, rpc, useEngine, useItemsWhere } from "./engine";
 import { Glyph, I, ModelMark, StateMark } from "./icons";
-import { tintPaint } from "./brands";
 import { ACCESS_LEVELS, accessOf, ago, agentOf, compact, designPart, effortIn, effortsFor, isModelAgent, levelName, keepHandOver, markOf, modelLabel, pairEffortFor, pairReady, plural, providerLabel, shortName, wayOf, whoOf, type AccessLevel, type Way } from "./model";
 import { onComposerInsert, toComposer } from "./Find";
 import { loadDraftFiles, saveDraftFiles } from "./draftFiles";
-import { EffortPart, FindField, ModelPicker, ModelSearch, tabOfRef, usePickerWide, type EffortHook, type OwnCard } from "./Models";
+import { EffortPart, FindField, FusionMark, ModelPicker, ModelSearch, tabOfRef, usePickerWide, type EffortHook, type OwnCard } from "./Models";
 import { PICKER_NARROW, PICKER_WIDE, pickerOut } from "./picker";
 import { CostMini, costScale, PairCost } from "./PairCost";
 import { SideKeys } from "./TopBar";
@@ -42,6 +41,7 @@ import { usePrecheck, type SendHow } from "./Precheck";
 import { draftRead, draftSaves, wordRead } from "./kept";
 import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
 import { UsageRing } from "./UsageRing";
+import { showDetails } from "./pinned";
 
 /**
   Who works on a session and how. `agent` is the lead (a model, "@<provider>:<model>", or one of
@@ -1022,27 +1022,33 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   const thumbs = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : null)), [files]);
   useEffect(() => () => thumbs.forEach((u) => u && URL.revokeObjectURL(u)), [thumbs]);
 
-  // Who works, as the chip names them: the lead's mark, bare (an agent's glyph, as bare), and "Fusion" for a pair, else
-  // the one model or agent; then how hard, in the third ink, when the model takes effort levels (a pair's is its lead's).
+  // Who works, as the chip names them (the owner's ruling, board Main): with a sidekick on, one chip, Fusion's two strokes
+  // and "Fusion", and nothing else (never two models); alone, the lead's mark bare (an agent's glyph, as bare), its name,
+  // then how hard in grey when the model takes effort levels. The Demo run keeps its own mark and name.
   const whoNow = whoOf(settings, agents, providers);
+  const fused = Boolean(settings.sidekick) && settings.agent !== "demo";
   // The picker gains its side card where the window has room for it, and keeps it as the window is resized.
   const pickerWide = usePickerWide();
   const levels = effortsFor(model, providers);
   const effortShown = effortIn(levels.list, settings.effort, levels.fallback);
   const effortRow = levels.list.find((e) => e.id === effortShown);
   const effortLabel = effortRow && levelName(effortRow.label);
-  const whoChip = (
+  const whoChip = fused ? (
+    <>
+      <FusionMark size={14} />
+      <span className="lc-chip-name" title={whoNow.full}>
+        Fusion
+      </span>
+      <I.chevD size={12} className="lc-chip-cv" />
+    </>
+  ) : (
     <>
       {whoNow.agent ? <Glyph glyph={whoNow.agent.glyph} size={14} /> : <ModelMark kind={whoNow.marks[0]} size={14} />}
       <span className="lc-chip-name" title={whoNow.full !== whoNow.name ? whoNow.full : undefined}>
-        {settings.sidekick && settings.agent !== "demo" && !whoNow.agent ? "Fusion" : whoNow.name}
+        {whoNow.name}
       </span>
-      {whoNow.agent && settings.sidekick && (
-        <span className="lc-way-marks">
-          <ModelMark kind={markOf(settings.sidekick)} size={12} />
-        </span>
-      )}
-      {effortLabel && <span className="lc-who-eff">· {effortLabel}</span>}
+      {effortLabel && <span className="lc-who-eff">{effortLabel}</span>}
+      <I.chevD size={12} className="lc-chip-cv" />
     </>
   );
   // Permissions as a short list (Claude Code's own): Auto, Manual and Reviewer decides, each a
@@ -1053,7 +1059,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
   const accessPick = accessLock ? (
     // Held where it is (a scan stays at Read only): a chip that says so, with nothing to open.
     <span className="lc-seg-b lc-access" data-locked="" role="note" title={accessLock} aria-label={`Permissions: ${lev.label}. ${accessLock}`}>
-      <I.lock size={16} />
+      <I.lock size={14} />
       <span className="lc-ctl-label">{lev.short}</span>
     </span>
   ) : (
@@ -1061,18 +1067,51 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       label={`Permissions: ${lev.label}. Change them`}
       side={variant === "home" ? "bottom" : "top"}
       keep={variant === "home"}
-      align="end"
+      align="start"
       width={340}
       triggerClass="lc-seg-b lc-access"
       trigger={
         <>
-          <LevelIcon size={16} />
+          <LevelIcon size={14} />
           <span className="lc-ctl-label">{lev.short}</span>
+          <I.chevD size={12} className="lc-chip-cv" />
         </>
       }
     >
       {(close) => <PermissionRows levels={picks} apart={full} value={settings.access} noteOf={(l) => (l.id === "auto" && noAuto ? "With this model Liner Code decides what's routine itself, by simple rules: the safety check Auto relies on only runs on Anthropic's own models." : l.note)} onPick={(access) => (onSettings({ access }), close())} />}
     </Pop>
+  );
+
+  /*
+    The line under the box (board Main), in a session's own box only: where it runs (this Mac, or its worktree's branch), how
+    many agents it sent still work (a small green dot while they do), and at the right how full the context is, as a ring
+    and "42% of context", with the plan's usage ring beside it. Each goes when there is nothing to say.
+  */
+  const ctxPct = usage?.contextTokens && usage.contextWindow ? Math.min(100, Math.round((usage.contextTokens / usage.contextWindow) * 100)) : undefined;
+  const working = thread?.agentsAtWork ?? 0;
+  const under = variant === "session" && thread && !canvas && !aside && (
+    <div className="lc-under">
+      <span className="lc-under-u" title={thread.worktree ? `In a worktree of its own: ${thread.worktree.path}` : `In the project's own folder on ${os.here}`}>
+        {thread.worktree ? <I.branch size={12} /> : <I.laptop size={12} />}
+        <span className="lc-under-t">{thread.worktree ? thread.worktree.branch : os.Here}</span>
+      </span>
+      {working > 0 && (
+        <span className="lc-under-u">
+          <I.agents size={12} />
+          {plural(working, "agent")} {working === 1 ? "works" : "work"}
+          <i className="lc-under-dot" aria-hidden />
+        </span>
+      )}
+      <span className="lc-grow" />
+      {/* Pressed, the session details card shows with its Context unfolded: what fills it, and Compact. */}
+      {ctxPct !== undefined && (
+        <button type="button" className="lc-under-u lc-under-b l-focus" title={`${compact(usage!.contextTokens!)} of ${compact(usage!.contextWindow!)} tokens in the context. Show what fills it`} onClick={() => showDetails({ context: true })}>
+          <i className="lc-under-ring" style={{ "--lc-v": `${ctxPct}%` } as CSSProperties} aria-hidden />
+          {ctxPct}% of context
+        </button>
+      )}
+      <UsageRing model={model} />
+    </div>
   );
 
   const ready = Boolean(text.trim() || files.length);
@@ -1132,7 +1171,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     { key: "@", label: "A file in the project", icon: <I.file size={16} />, kbd: "@", onPick: () => typeKey("@") },
   ];
   const plus = (
-    <Pop label={`Add: files, commands, skills${choices.length ? `, ${choices.map((c) => c.label.toLowerCase()).join(", ")}` : ""}`} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} width={272} triggerClass="lc-plus-b" trigger={<I.plus size={16} />}>
+    <Pop label={`Add: files, commands, skills${choices.length ? `, ${choices.map((c) => c.label.toLowerCase()).join(", ")}` : ""}`} side={variant === "home" ? "bottom" : "top"} keep={variant === "home"} width={272} triggerClass="lc-plus-b" tip="Add files, commands and skills" trigger={<I.plus size={16} />}>
       {(close) => <PlusMenu rows={plusRows} choices={choices} close={close} />}
     </Pop>
   );
@@ -1259,8 +1298,10 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
       )}
 
       <div className="lc-tray" data-variant={variant}>
+        {/* The tab over the box (board Details): its rows only while there is something to say; while an ask is docked here
+            it is the ask's place alone, and the rows step aside (app.css, .lc-tray-head[data-ask]). */}
         {(variant === "session" || check.row) && (
-          <div className="lc-tray-head">
+          <div className="lc-tray-head" data-ask={ask ? "" : undefined}>
             {top}
             {/* An agent drawing on a design file of this session's folder: the canvas is a press away. */}
             {thread && !canvas && <WatchCanvas thread={thread} />}
@@ -1470,23 +1511,26 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
           */}
           <div className="lc-card-row" ref={tray}>
             {plus}
-            {choices.map((c) => c.chip && <Fragment key={c.key}>{c.chip}</Fragment>)}
-            <span className="lc-grow" />
-            {editing ? <span className="lc-tray-note" title="Enter saves it, Esc leaves it as it was">Editing a queued message</span> : comparing && <span className="lc-tray-note">Sending to {compare.length + 1} models</span>}
-            {steerNote}
-            {/* How much of the chosen tool's plan limit is used now, beside who works: gone when the tool reports none. */}
-            <UsageRing model={model} />
+            {/* Who works and the access level stand straight after the +, as boards Main and Home draw the row; their menus open from their left edge. */}
             <span className="lc-seg">
-              <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="end" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} out={pickerOut("end", pickerWide)} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
+              <Pop label={`Who works on this, and how hard: ${whoNow.full}${effortLabel ? `, ${effortLabel}` : ""}. Change it`} side={variant === "home" ? "bottom" : "top"} align="start" width={pickerWide ? PICKER_WIDE : PICKER_NARROW} out={pickerOut("start", pickerWide)} bare keep={variant === "home"} triggerClass="lc-seg-b lc-who" trigger={whoChip}>
                 {(close) => <WhoPanel project={project} settings={settings} onSettings={onSettings} compare={compare} onCompare={onCompare} onNewAgent={onNewAgent} close={close} solo={aside} side={pickerWide ? "card" : "line"} />}
               </Pop>
               {accessPick}
             </span>
+            {choices.map((c) => c.chip && <Fragment key={c.key}>{c.chip}</Fragment>)}
+            <span className="lc-grow" />
+            {editing ? <span className="lc-tray-note" title="Enter saves it, Esc leaves it as it was">Editing a queued message</span> : comparing && <span className="lc-tray-note">Sending to {compare.length + 1} models</span>}
+            {steerNote}
+            {/* How much of the chosen tool's plan limit is used now: gone when the tool reports none. In a session it stands in
+                the line under the box instead, beside the context ring. */}
+            {!under && <UsageRing model={model} />}
             {sendButton}
           </div>
           <input ref={clip} type="file" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
         </div>
       </div>
+      {under}
     </div>
   );
 }
@@ -1592,7 +1636,8 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     The tool the rail opens on: the one whose list holds the session's model (OpenCode's for one of Go's that Hermes runs),
     so its tick is in sight; else the session's tool, else (a tool that's gone) the first that's ready; the Demo's for the Demo.
   */
-  const oneValue = isModelAgent(settings.agent) && !settings.sidekick ? settings.agent.slice(1) : undefined;
+  // A pair's lead is ticked in the list as one model is: Fusion is a switch beside it (board Menus), not a row of its own.
+  const oneValue = isModelAgent(settings.agent) && settings.agent !== "demo" ? settings.agent.slice(1) : undefined;
   const listedOn = tabOfRef(oneValue ?? runs, providers);
   const startTool = way === "demo" ? "demo" : (tools.find((p) => p.id === listedOn) ?? tools.find((p) => p.id === toolNow) ?? tools[0])?.id;
   const yours = agents.filter((a) => a.id !== "demo");
@@ -1629,13 +1674,18 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   const side = own ? settings.sidekick : pairNow?.sidekick;
   const leadWho = lead ? agentOf(lead, agents, providers) : undefined;
   const leadName = !lead || !leadWho ? "" : isModelAgent(lead) ? label(lead.slice(1)) : leadWho.name;
-  const leadShort = lead && isModelAgent(lead) ? shortName(leadName) : leadName;
   const leadModel = leadWho?.model;
 
   /**
     One model or agent, from the lists: no sidekick, and the panel closes. Shift-click adds a model to
     compare instead: a comparison gives each model the ask alone, so a pair's lead goes on without its sidekick.
   */
+  /** With Fusion on, the sidekick's model can't also lead: a pick of it from the list or at a level is refused, the same way. */
+  const sidekickAsLead = (ref: string) => {
+    if (!own || ref !== settings.sidekick) return false;
+    toast("The lead and its sidekick are two different models", { description: `${label(ref)} is the sidekick: pick another model to lead, or turn Fusion off first.` });
+    return true;
+  };
   const pickOne = (ref: string, how: { shiftKey: boolean }) => {
     const id = `@${ref}`;
     if (how.shiftKey && onCompare) {
@@ -1644,7 +1694,9 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       onCompare(compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(0, 3));
       return;
     }
-    onSettings({ agent: id, sidekick: undefined, model: undefined });
+    // With Fusion on, the model picked leads and the sidekick stays: the switch, not the list, turns Fusion off.
+    if (sidekickAsLead(ref)) return;
+    onSettings(own ? { agent: id, model: undefined } : { agent: id, sidekick: undefined, model: undefined });
     onCompare?.(compare.filter((x) => x !== id));
     close();
   };
@@ -1743,26 +1795,6 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     </button>
   );
 
-  /** The Fusion row pinned under Find, for the rail's tool `t`: who's in its pair at its end, or why it can't be picked. */
-  const fusionRow = (t: string) => {
-    const mine = mineOn(t);
-    const cast = mine ? null : castFor(t);
-    const two = mine || pairReady(cast);
-    const note = mine ? `${leadShort} + ${shortName(label(side!))}` : cast && two ? `${shortName(label(cast.lead))} + ${shortName(label(cast.sidekick))}` : cast ? "Needs two different models ready" : "No model is ready yet";
-    const say = mine ? `${leadShort} leads, ${shortName(label(side!))} works` : note;
-    return (
-      <button type="button" className="lc-who-row l-focus" data-rove data-way="pair" data-aim="fusion" data-on={mine || undefined} aria-pressed={mine} disabled={!two} title={two ? "The lead plans, decides and reviews; the sidekick does the work the lead hands it." : note} aria-label={`Fusion, ${say}`} onClick={() => pickFusion(t)}>
-        <I.fusion size={14} />
-        <span className="lc-who-row-t lc-pk-word">Fusion</span>
-        {/* The pair cut with an ellipsis, whole in its tooltip; "Fusion" itself never gives way. */}
-        <span className="lc-pk-pair" title={note}>
-          {note}
-        </span>
-        {mine && <I.check size={14} className="lc-who-tick" />}
-      </button>
-    );
-  };
-
   /** Fusion's card for the rail's tool `t`: the session's own pair, or the one it would start (a press there starts it). */
   const fusionCard = (t: string, inPlace: () => void): OwnCard => {
     const mine = mineOn(t);
@@ -1816,7 +1848,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           {/* The lead's effort is the same part as on Fusion's card above it (the slider and the switches), not a list of its own. */}
           {line === "effort" && (
             <>
-              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} tint={leadRuns ? tintPaint(markOf(leadRuns.replace(/^@/, ""))) : undefined} onPick={(id) => pickLine("effort", id)} />
+              <EffortPart list={efforts.list} fallback={efforts.fallback} value={settings.effort} label="The lead's effort" tool={providers.find((p) => leadRuns?.replace(/^@/, "").startsWith(`${p.id}:`))?.label} said={efforts.said} onPick={(id) => pickLine("effort", id)} />
               {effortAuto && <p className="lc-who-note">{`${autoNote("effort")}: ${levelName(efforts.list.find((e) => e.id === effortAuto)?.label ?? effortAuto)}`}</p>}
             </>
           )}
@@ -1862,10 +1894,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     else
       body = (
         <>
-          <div className="lc-pk-sh">
-            <I.fusion size={16} />
-            <span>Fusion</span>
-          </div>
+          {/* Opened from the sidekick's row under Enable Fusion: the picker's way back names it, so no head of its own. */}
           <p className="lc-pk-sd">The lead plans, decides and reviews. The sidekick does the work the lead hands it.</p>
           {pLead && pSide ? (
             <>
@@ -1897,11 +1926,12 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
           )}
           <div className="lc-pk-rule" />
           {/* The session's own pair holds the effort, so its stored word goes in; another tool's card shows the pair's level from Settings, which a press there picks. */}
-          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} tint={pLeadModel ? tintPaint(markOf(pLeadModel)) : undefined} onPick={(id) => pickFusion(t, id)} />
+          <EffortPart list={pEfforts.list} fallback={pEfforts.fallback} value={mine ? settings.effort : pEffortNow} held={mine} label="The lead's effort" tool={toolLabel} said={pEfforts.said} onPick={(id) => pickFusion(t, id)} />
         </>
       );
     return {
       label: "Fusion",
+      ownBack: Boolean(mine && open),
       body: (
         <div ref={pairCol} className="lc-pk-own" role="group" aria-label={open === "lead" ? "Lead" : open === "side" ? "Sidekick" : open === "lines" ? "How Fusion works here" : "Fusion"} onKeyDown={(e) => open && escape(e, picking ? shut : line ? () => toLines(line) : shut)}>
           {body}
@@ -1909,7 +1939,7 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       ),
       line: (
         <>
-          <I.fusion size={14} />
+          <FusionMark size={14} />
           <b className="lc-pk-line-t">Fusion</b>
           {pLead && pSide && <span className="lc-pk-price">{`${shortName(pLeadName)} + ${shortName(label(pSide))}`}</span>}
           <button type="button" className="lc-pk-chip l-focus" data-view="card" aria-label={level ? `The lead's effort: ${level.label}. Lead, sidekick and how it works` : "Lead, sidekick and how it works"} onClick={inPlace}>
@@ -1929,18 +1959,58 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
   };
 
   /*
+    Enable Fusion (board Menus): a small card under the model's card. Its switch makes the model the session runs the lead
+    and gives it a sidekick: its tool's own pair's sidekick, else the quickest other model ready; a session that only now
+    becomes a pair takes a pair's effort (Settings, Medium unless set), as picking Fusion always has. Off, the lead works
+    alone. Only while it is on, one row under it names the sidekick; its arrow opens Fusion's card in the side card's place,
+    where the Lead, the Sidekick, how the pair works, its cost and the lead's effort are, as they were under Find.
+  */
+  const pairTool = (leadModel && tabOfRef(leadModel, providers)) || toolNow;
+  const freshSide = useMemo(() => {
+    if (own || !runs) return undefined;
+    const cast = castFor(toolNow);
+    if (cast && pairReady(cast) && cast.sidekick !== runs) return cast.sidekick;
+    return shortlistOf(providers, "quicker", { except: [runs] }).find((r) => r !== runs);
+  }, [own, runs, toolNow, providers, picks]);
+  const fusionOn = () => {
+    if (solo || own || !freshSide) return;
+    onSettings({ sidekick: freshSide, tuning: undefined, effort: pairEffortFor(runs, providers, pairEffort) });
+  };
+  const fusionOff = () => onSettings({ sidekick: undefined, tuning: undefined });
+  const fusionSwitch = (open: (key: string) => void) => (
+    <>
+      <button type="button" role="switch" aria-checked={own} className="lc-who-row lc-pk-fzrow l-focus" data-rove disabled={!own && !freshSide} title={own || freshSide ? "The lead plans, decides and reviews; the sidekick does the work the lead hands it." : "Needs two different models ready"} onClick={() => (own ? fusionOff() : fusionOn())}>
+        <FusionMark size={14} />
+        <span className="lc-who-row-t">Enable Fusion</span>
+        <span className="lc-pk-sw" data-on={own || undefined} aria-hidden />
+      </button>
+      {own && side && (
+        <button type="button" className="lc-who-row lc-pk-sidek l-focus" data-rove data-holds aria-label={`Sidekick: ${label(side)}. Lead, sidekick and how Fusion works`} onClick={() => open("fusion")}>
+          <ModelMark kind={markOf(side)} size={14} />
+          <span className="lc-who-row-t">{label(side)}</span>
+          <em>sidekick</em>
+          <I.chevR size={12} />
+        </button>
+      )}
+    </>
+  );
+
+  /*
     How hard a model works, in its tool's levels: the session's model takes the press as its effort; another is picked at that
     level. The stored word goes to every card, unresolved, so "" reads as the tool's own default; only the session's model
-    holds it, so on another model's card the level carried over is one a press picks, never takes back.
+    holds it, so on another model's card the level carried over is one a press picks, never takes back. Either way the
+    picker stays open, as Fusion's effort leaves it: the level can be tried a step at a time, and a click on the model's
+    row or outside closes it.
   */
   const effort: EffortHook = {
     of: () => settings.effort,
     held: (ref) => ref === runs,
     pick: (ref, id) => {
       if (ref === runs) return onSettings({ effort: id });
-      onSettings({ agent: `@${ref}`, sidekick: undefined, model: undefined, effort: id });
+      // Another model at that level leads, and with Fusion on its sidekick stays; the sidekick's own model is refused as a lead, as in the list.
+      if (sidekickAsLead(ref)) return;
+      onSettings({ agent: `@${ref}`, ...(own ? {} : { sidekick: undefined }), model: undefined, effort: id });
       onCompare?.(compare.filter((x) => x !== `@${ref}`));
-      close();
     },
   };
   const agentsOn = !settings.sidekick && yours.some((a) => a.id === settings.agent);
@@ -1954,12 +2024,12 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
       note={compareLine}
       side={cardSide}
       effort={effort}
-      fallback={own ? "fusion" : way === "demo" ? undefined : runs}
+      fallback={way === "demo" ? undefined : runs}
       onPick={pickOne}
       onSource={(ref) => onSettings({ agent: `@${ref}`, model: undefined })}
-      // A side chat is one model answering a quick question: no Fusion there.
-      first={solo ? undefined : fusionRow}
-      card={(key, t, inPlace) => (key === "fusion" && !solo ? fusionCard(t, inPlace) : undefined)}
+      // A side chat is one model answering a quick question: no Fusion there; the Demo run is a scripted pair of its own.
+      under={solo || way === "demo" ? undefined : (_t, open) => fusionSwitch(open)}
+      card={(key, _t, inPlace) => (key === "fusion" && !solo && own ? fusionCard(pairTool, inPlace) : undefined)}
       places={[
         {
           id: AGENTS_TAB,
@@ -2036,11 +2106,21 @@ export const ACCESS_ICONS: Record<Access, (p: { size?: number }) => ReactNode> =
 
 /**
   Permissions as a short list, Claude Code's own, the same wherever a level is picked (the message
-  box, a new agent, Settings): each level with its note, a number away while the list is open, and
-  `apart` (Full access) last, a row of its own that you enable. `noteOf` changes a level's note
-  where it reads otherwise (Auto on a model that isn't Anthropic's).
+  box, a new agent, Settings), in board Menus' shape: a grey line on top, each level as its small icon
+  on a tile, its name and one grey line of what it does, a tick on the chosen one, and a grey foot
+  line saying the number keys pick a level while the list is open. `apart` (Full access) is last, a
+  row of its own that you enable. `noteOf` changes a level's note where it reads otherwise (Auto on a
+  model that isn't Anthropic's).
 */
 export function PermissionRows({ levels, apart, value, noteOf = (l) => l.note, onPick }: { levels: AccessLevel[]; apart?: AccessLevel; value: Access; noteOf?: (l: AccessLevel) => string; onPick: (a: Access) => void }) {
+  const tile = (a: Access) => {
+    const Icon = ACCESS_ICONS[a] ?? I.ahead;
+    return (
+      <span className="lc-perm-tile" aria-hidden>
+        <Icon size={14} />
+      </span>
+    );
+  };
   return (
     <div
       className="lc-perm"
@@ -2055,23 +2135,25 @@ export function PermissionRows({ levels, apart, value, noteOf = (l) => l.note, o
     >
       <PanelHead>Permissions</PanelHead>
       {levels.map((l, i) => (
-        <button key={l.id} type="button" role="radio" aria-checked={value === l.id} className="lc-perm-r l-focus" onClick={() => onPick(l.id)}>
+        <button key={l.id} type="button" role="radio" aria-checked={value === l.id} aria-keyshortcuts={String(i + 1)} className="lc-perm-r l-focus" data-on={value === l.id || undefined} onClick={() => onPick(l.id)}>
+          {tile(l.id)}
           <span className="lc-perm-t">
             <b>{l.label}</b>
             <small>{noteOf(l)}</small>
           </span>
           {value === l.id && <I.check size={14} />}
-          <kbd className="lc-perm-k">{i + 1}</kbd>
         </button>
       ))}
       {apart && (
-        <button type="button" role="radio" aria-checked={value === apart.id} className="lc-perm-r lc-perm-full l-focus" title={apart.note} onClick={() => onPick(apart.id)}>
+        <button type="button" role="radio" aria-checked={value === apart.id} className="lc-perm-r lc-perm-full l-focus" data-on={value === apart.id || undefined} title={apart.note} onClick={() => onPick(apart.id)}>
+          {tile(apart.id)}
           <span className="lc-perm-t">
             <b>{apart.label}</b>
           </span>
           {value === apart.id ? <I.check size={14} /> : <span className="lc-perm-on">Enable</span>}
         </button>
       )}
+      {levels.length > 1 && <MenuFoot>{`1 to ${levels.length} picks a level while this is open`}</MenuFoot>}
     </div>
   );
 }

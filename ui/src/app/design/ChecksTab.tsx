@@ -101,7 +101,7 @@ export function ChecksTab() {
   // Where the checks stand is the first section's note, as a pull request's Checks says "3 of 3 passed".
   const stand = running ? (
     <span className="ld-ck-q" aria-live="polite">
-      <StepMark state="working" size={12} />
+      <StepMark state="working" size={12} live />
       {checked ? `${plural(checked, "screen")} checked` : "Checking"}
     </span>
   ) : (

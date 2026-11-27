@@ -7,16 +7,17 @@
   message to send the app. The engine holds every app to its level (engine/src/mcp-apps.ts); this only shows and asks.
 */
 import { useEffect, useRef, useState } from "react";
-import type { AddonInfo, McpApp, McpAppKind, McpLevel, McpNewKey, McpReach, McpStatus, Settings } from "@contracts";
+import type { AddonInfo, McpApp, McpAppKind, McpLevel, McpNewKey, McpReach, McpStatus, Settings, TunnelCheck } from "@contracts";
 import { MCP_KIND_NAMES, MCP_LEVEL_NAMES, MCP_TOOL_LEVELS } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { APP_LOGO } from "../app-logos";
 import { bridge } from "../bridge";
 import { onStream, rpc, useEngine } from "../engine";
-import { I } from "../icons";
+import { I, StepMark } from "../icons";
 import { ago, plural } from "../model";
 import * as os from "../os";
 import { NamedSwitch, Pop, Row as MenuRow } from "../ui";
+import { closeSheet, openSheet } from "../sheet";
 import { wordRead, wordWrite } from "../kept";
 import { HostTile, Mono, Row, RowMore, Section, SubRow, Tag } from "./parts";
 import "./liner-mcp.css";
@@ -90,7 +91,8 @@ export function LinerMcpPlace() {
   const on = useEngine((x) => x.settings.outside === true);
   const reach = useEngine((x) => x.settings.mcpReach ?? "off");
   const [adding, setAdding] = useState(false);
-  const up = s?.tunnel.state === "up";
+  // An address that's up but doesn't reach this Mac is no way in, so its tile's dot isn't green.
+  const up = s?.tunnel.state === "up" && !s.tunnel.checks?.some((c) => c.id === "reaches" && c.state === "bad");
   return (
     <>
       <Section title="Liner MCP">
@@ -135,7 +137,7 @@ export function LinerMcpPlace() {
         >
           <Choice label="From the internet" value={reach} options={REACH} onPick={(mcpReach) => (mcpReach !== "off" && wordWrite(localStorage, REACH_KEY, mcpReach), void save({ mcpReach }))} />
         </Row>
-        {on && reach !== "off" && s && <Reach s={s} onRetry={() => void rpc("mcp.retry", {}).then(setS).catch(fail)} />}
+        {on && reach !== "off" && s && <Reach s={s} onRetry={() => void rpc("mcp.retry", {}).then(setS).catch(fail)} onCheck={() => void rpc("mcp.checkAgain", {}).then(setS).catch(fail)} onHalt={() => void rpc("mcp.halt", {}).then(setS).catch(fail)} />}
       </Section>
 
       <Section
@@ -188,8 +190,225 @@ export function LinerMcpPlace() {
   );
 }
 
+/** After this long on one step, the list says so and offers Stop: the tools give up at 30 seconds. */
+const SLOW_MS = 20_000;
+const REACH_NAMES: Record<McpReach, string> = { off: "Off", tailscale: "Tailscale Funnel", cloudflare: "Cloudflare quick tunnel", own: "Your own address" };
+const secondsSince = (at: number | undefined, now: number) => Math.max(0, Math.round((now - (at ?? now)) / 1000));
+const linkWord = (link: string) => (/(^|\.)tailscale\.com$/.test(safeHost(link)) ? "Open Tailscale" : "Open the page");
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/** Now, ticking each second while `on`, for a step's seconds. */
+function useNow(on: boolean) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
+}
+
+/** A step as the list shows it; the last one, worked out here, may name the app that needs the new address. */
+type Step = TunnelCheck & { app?: McpAppKind };
+
+/** The last step, worked out here from the apps' last calls: whether any app came in since this tunnel started. */
+function calledCheck(s: McpStatus, now: number): Step | null {
+  const t = s.tunnel;
+  const apps = s.apps.filter((a) => a.via === "internet" && !a.blocked);
+  if (!t.checks?.length || !apps.length) return null;
+  const label = "An app has called in";
+  if (t.state !== "up") return { id: "called", label, state: "wait" };
+  const since = t.since ?? 0;
+  const heard = apps.filter((a) => (a.lastCallAt ?? 0) >= since).sort((a, b) => (b.lastCallAt ?? 0) - (a.lastCallAt ?? 0))[0];
+  if (heard) {
+    const when = ago(heard.lastCallAt!, now);
+    return { id: "called", label, state: "ok", value: `${heard.name}, ${when === "now" ? "just now" : `${when} ago`}` };
+  }
+  // A quick tunnel's address is new each start: an app heard from before it has the old one.
+  const old = s.reach === "cloudflare" ? apps.find((a) => a.lastCallAt && a.lastCallAt < since) : undefined;
+  if (old) return { id: "called", label, state: "warn", value: "none since it started", why: `${old.name} still has the address from before. A quick tunnel's address is new each time Liner starts it, so its calls go to an address that's gone. Send it the new one, or pick Tailscale Funnel for an address that stays.`, app: old.kind };
+  return { id: "called", label, state: "wait", value: "none yet" };
+}
+
+/** The tunnel's state in a few words: the step it's on while starting, and an address that doesn't reach this Mac. */
+function TunnelLine({ s }: { s: McpStatus }) {
+  const t = s.tunnel;
+  const checks = t.checks ?? [];
+  const run = checks.findIndex((c) => c.state === "run");
+  const now = useNow(t.state === "starting");
+  const away = t.state === "up" && checks.some((c) => c.id === "reaches" && c.state === "bad");
+  const said = checks.some((c) => c.state === "bad" && c.why);
+  const words =
+    t.state === "starting"
+      ? run >= 0
+        ? `Starting · step ${run + 1} of ${checks.length} · ${secondsSince(checks[run]!.at, now)} s`
+        : "Starting"
+      : t.state === "up"
+        ? away
+          ? `Up, but not reaching ${os.here}`
+          : (t.note ?? (s.reach === "own" ? `To port ${s.port} on ${os.here}` : "Up"))
+        : t.state === "down"
+          ? said
+            ? "Down"
+            : (t.note ?? "Down")
+          : "Off";
+  return (
+    <span className="lc-mcp-state" data-state={away ? "down" : t.state}>
+      <i />
+      {words}
+    </span>
+  );
+}
+
+/** The steps as text, for Copy details: what a bug report or a friend needs, and nothing else. */
+function detailsOf(s: McpStatus, checks: TunnelCheck[]) {
+  const mark = { ok: "✓", bad: "✗", warn: "!", run: "…", wait: "·" } as const;
+  const lines = [`Liner MCP · ${REACH_NAMES[s.reach]}`, `Tunnel: ${s.tunnel.state}${s.tunnel.note ? `: ${s.tunnel.note}` : ""}`, `Address: ${s.publicUrl ?? "none yet"}`];
+  for (const c of checks) {
+    lines.push(`${mark[c.state]} ${c.label}${c.value ? ` (${c.value})` : ""}`);
+    if (c.why) lines.push(`    ${c.why}`);
+    if (c.fix) lines.push(`    Fix: ${c.fix}`);
+  }
+  if (s.tunnel.checkedAt) lines.push(`Checked at ${new Date(s.tunnel.checkedAt).toISOString()}`);
+  return lines.join("\n");
+}
+
+/**
+  The steps the tunnel went through, one line each: passed, failed, at work or waiting on one before it. A step that
+  failed opens what went wrong and the way out under it (a page, a command, Try again or Check again); a step at work too
+  long offers Stop. When every step passed the list folds into one line, and opens again by itself when one fails.
+*/
+function Checks({ s, onRetry, onCheck, onHalt }: { s: McpStatus; onRetry: () => void; onCheck: () => void; onHalt: () => void }) {
+  const t = s.tunnel;
+  const engine = t.checks ?? [];
+  const running = engine.some((c) => c.state === "run");
+  const now = useNow(running || t.state === "up");
+  const called = calledCheck(s, now);
+  const checks: Step[] = called ? [...engine, called] : engine;
+  const fine = t.state === "up" && checks.every((c) => c.state === "ok" || (c.id === "called" && c.state === "wait"));
+  const [open, setOpen] = useState(false);
+  if (fine && !open)
+    return (
+      <div className="lc-mcp-checks" data-folded>
+        <span>
+          {plural(engine.length, "check")} passed{t.checkedAt ? ` at ${clock(t.checkedAt)}` : ""}. The list opens by itself when one fails.
+        </span>
+        <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setOpen(true)}>
+          Show checks
+        </button>
+      </div>
+    );
+  const firstBad = checks.findIndex((c) => c.state === "bad");
+  const run = checks.findIndex((c) => c.state === "run");
+  return (
+    <div className="lc-mcp-checks">
+      <div className="lc-mcp-checks-h">
+        <span>Checks</span>
+        <span className="lc-mcp-checks-end">
+          {run >= 0 ? `step ${run + 1} of ${engine.length}` : t.checkedAt ? `Checked at ${clock(t.checkedAt)}${t.state === "up" ? " · again every 5 min" : ""}` : null}
+          {fine && (
+            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => setOpen(false)}>
+              Hide
+            </button>
+          )}
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => copy(detailsOf(s, checks), "Details copied")}>
+            <I.copy size={13} />
+            Copy details
+          </button>
+        </span>
+      </div>
+      {checks.map((c, i) => (
+        <CheckRow key={c.id} c={c} after={firstBad >= 0 && i === firstBad + 1} now={now} s={s} onRetry={onRetry} onCheck={onCheck} onHalt={onHalt} />
+      ))}
+      {checks.some((c) => c.id === "reaches") && <p className="lc-mcp-checks-fine">To check, Liner sends one request to its own address through the tunnel, and nothing anywhere else.</p>}
+    </div>
+  );
+}
+
+function CheckRow({ c, after, now, s, onRetry, onCheck, onHalt }: { c: Step; after: boolean; now: number; s: McpStatus; onRetry: () => void; onCheck: () => void; onHalt: () => void }) {
+  const secs = c.state === "run" ? secondsSince(c.at, now) : 0;
+  const slow = c.state === "run" && secs * 1000 >= SLOW_MS;
+  const value = c.state === "run" ? `${secs} s` : c.state === "wait" && after ? "waits on the step above" : c.value;
+  const mark = c.state === "warn" ? <I.alert size={14} /> : <StepMark state={c.state === "ok" ? "done" : c.state === "bad" ? "failed" : c.state === "run" ? "working" : "waiting"} tone={c.state === "ok" ? "ok" : undefined} size={14} />;
+  const tool = s.reach === "tailscale" ? "Tailscale" : s.reach === "cloudflare" ? "Cloudflare" : "The tunnel";
+  return (
+    <>
+      <div className="lc-mcp-ck" data-state={c.state}>
+        <span className="lc-mcp-ck-m">{mark}</span>
+        <span className="lc-mcp-ck-t">{c.label}</span>
+        {value && <span className="lc-mcp-ck-v">{value}</span>}
+      </div>
+      {c.state === "bad" && c.why && (
+        <div className="lc-mcp-fix">
+          <span>{c.why}</span>
+          {c.fix && (
+            <span className="lc-mcp-addr">
+              <Mono>{c.fix}</Mono>
+              <button type="button" className="lc-ib l-focus" aria-label="Copy the command" onClick={() => copy(c.fix!, "Command copied")}>
+                <I.copy size={13} />
+              </button>
+            </span>
+          )}
+          <span className="lc-mcp-acts">
+            {c.link && (
+              <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => bridge.openExternal(c.link!)}>
+                {linkWord(c.link)}
+                <I.external size={12} />
+              </button>
+            )}
+            {c.id === "reaches" && s.tunnel.state === "up" ? (
+              <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onCheck}>
+                Check again
+              </button>
+            ) : (
+              <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onRetry}>
+                Try again
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {slow && (
+        <div className="lc-mcp-fix" data-tone="warn">
+          <span>
+            {tool} hasn't answered in {secs} seconds. It usually takes a few. Liner gives up at 30 seconds and says what {tool} last printed.
+          </span>
+          <span className="lc-mcp-acts">
+            <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={onHalt}>
+              Stop
+            </button>
+          </span>
+        </div>
+      )}
+      {c.state === "warn" && c.why && (
+        <div className="lc-mcp-fix" data-tone="warn">
+          <span>{c.why}</span>
+          {s.publicUrl && (
+            <span className="lc-mcp-acts">
+              <button
+                type="button"
+                className="lc-btn"
+                data-kind="plain"
+                data-size="sm"
+                onClick={() => {
+                  const message = `Change the address of the Liner Code MCP server to ${s.publicUrl} and keep its header.`;
+                  if (c.app === "grokbot") return copy(message, "Message copied. Paste it in Grok Bot."), bridge.openExternal("https://x.ai/bot");
+                  copy(message, "Message copied");
+                }}
+              >
+                {c.app === "grokbot" ? "Copy message and open Grok Bot" : "Copy the message"}
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 /** The address and the tunnel's state under From the internet, or the field for your own address. */
-function Reach({ s, onRetry }: { s: McpStatus; onRetry: () => void }) {
+function Reach({ s, onRetry, onCheck, onHalt }: { s: McpStatus; onRetry: () => void; onCheck: () => void; onHalt: () => void }) {
   const own = useEngine((x) => x.settings.mcpOwnUrl ?? "");
   const [v, setV] = useState(own);
   useEffect(() => setV(own), [own]);
@@ -217,16 +436,20 @@ function Reach({ s, onRetry }: { s: McpStatus; onRetry: () => void }) {
         )}
       </SubRow>
       <SubRow title={s.reach === "own" ? "Forwarding" : "Tunnel"}>
-        <span className="lc-mcp-state" data-state={s.tunnel.state}>
-          <i />
-          {s.tunnel.state === "starting" ? "Starting" : s.tunnel.state === "up" ? (s.tunnel.note ?? (s.reach === "own" ? `To port ${s.port} on ${os.here}` : "Up")) : s.tunnel.state === "down" ? (s.tunnel.note ?? "Down") : "Off"}
-          {(s.tunnel.state === "down" || missing) && (
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onRetry}>
-              Try again
-            </button>
-          )}
-        </span>
+        <TunnelLine s={s} />
+        {/* The check list carries the way out of a step that failed; without one (an older engine), it sits here. */}
+        {!s.tunnel.checks?.length && s.tunnel.state === "down" && s.tunnel.link && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => bridge.openExternal(s.tunnel.link!)}>
+            {linkWord(s.tunnel.link)}
+          </button>
+        )}
+        {((!s.tunnel.checks?.length && s.tunnel.state === "down") || missing) && (
+          <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={onRetry}>
+            Try again
+          </button>
+        )}
       </SubRow>
+      {s.tunnel.checks?.length ? <Checks s={s} onRetry={onRetry} onCheck={onCheck} onHalt={onHalt} /> : null}
       {s.reach === "cloudflare" && <SubRow title="Note">The address is new each time Liner starts the tunnel: apps you added need the new one.</SubRow>}
       {s.reach === "tailscale" && <SubRow title="Or">Cloudflare quick tunnel, no account, a new address each launch</SubRow>}
     </RowMore>
@@ -433,8 +656,10 @@ function Reaches() {
 const KINDS: McpAppKind[] = ["grokbot", "muse", "claude", "chatgpt", "other"];
 
 /** Add an app (boards Pair, PairMuse): which app, what it may do, and how to send it what it needs. The key shows once. */
-function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => void }) {
+function AddApp({ status, onClose: closed }: { status: McpStatus | null; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Every way out (Escape, the scrim, Close, Done) plays the sheet's exit first; then the settings page takes it away.
+  const onClose = (then?: () => void) => closeSheet(ref.current, () => (closed(), then?.()));
   const pressedOutside = useRef(false);
   const [kind, setKind] = useState<McpAppKind>("grokbot");
   const [level, setLevel] = useState<McpLevel>("ask");
@@ -442,7 +667,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
   const [named, setNamed] = useState("");
   const [turning, setTurning] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => void ref.current?.showModal(), []);
+  useEffect(() => openSheet(ref.current), []);
   const oauth = kind === "claude" || kind === "chatgpt";
   // An app that signs in itself: Liner takes a sign-in for the next 15 minutes, and none at any other time (mcp-oauth.ts).
   useEffect(() => {
@@ -475,12 +700,14 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
   const turnOn = async () => {
     const last = wordRead(localStorage, REACH_KEY, ["tailscale", "cloudflare", "own"], "");
     if (!last) {
-      onClose();
-      window.setTimeout(() => {
-        const b = document.querySelector<HTMLElement>('[aria-label="From the internet"]');
-        b?.scrollIntoView({ block: "center", behavior: "smooth" });
-        b?.click();
-      }, 80);
+      // Once the sheet has gone, so the menu opens on the page rather than under a dialog still leaving.
+      onClose(() =>
+        window.setTimeout(() => {
+          const b = document.querySelector<HTMLElement>('[aria-label="From the internet"]');
+          b?.scrollIntoView({ block: "center", behavior: "smooth" });
+          b?.click();
+        }, 80),
+      );
       return;
     }
     setTurning(true);
@@ -497,7 +724,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
           <span>
             <b id="lc-mcp-add-t">Add an app</b>
           </span>
-          <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={onClose}>
+          <button type="button" className="lc-ib l-focus" aria-label="Close" onClick={() => onClose()}>
             <I.close size={14} />
           </button>
         </div>
@@ -615,7 +842,7 @@ function AddApp({ status, onClose }: { status: McpStatus | null; onClose: () => 
         </div>
         <div className="lc-sheet-foot lc-mcp-add-foot">
           <small>{oauth ? "A sign-in lasts 30 days. Revoke it in Liner MCP." : "The key shows once and lasts 30 days. Revoke it in Liner MCP."}</small>
-          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={onClose}>
+          <button type="button" className="lc-btn" data-kind="primary" data-size="sm" onClick={() => onClose()}>
             Done
           </button>
         </div>

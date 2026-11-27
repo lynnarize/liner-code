@@ -1205,6 +1205,13 @@ test("a request from an ACP tool isn't taken for the answer to ours", async () =
   assert.deepEqual(models.map((m) => m.id), ["default", "m1"]);
 });
 
+test("An ACP tool's default row carries the name of the model the tool is set to", async () => {
+  const { env, scratch } = tool(acpReply('{ models: { currentModelId: "m2", availableModels: [{ modelId: "m1", name: "One" }, { modelId: "m2", name: "Two" }] } }'));
+  const models = await acpModels(["fake-acp"], "Fake", env, scratch);
+  assert.equal(models[0].id, "default");
+  assert.equal(models[0].now, "Two");
+});
+
 test("an ACP tool's model option may group its choices", async () => {
   const body = JSON.stringify({ configOptions: [{ id: "model", category: "model", currentValue: "m2", options: [{ group: "fast", name: "Fast", options: [{ value: "m1", name: "One" }] }, { group: "deep", name: "Deep", options: [{ value: "m2", name: "Two" }] }] }] });
   const { env, scratch } = tool(acpReply(body));

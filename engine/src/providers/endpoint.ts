@@ -25,6 +25,8 @@ export const hostOf = (url: string) => URL.parse(url.trim())?.host ?? url.trim()
 const nameOf = (e: Endpoint) => `liner_${e.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
 /** The voucher's endpoint (Liner Code's site), not one you added. */
 const isVoucher = (e: Endpoint) => e.id === VOUCHER.id && e.url === VOUCHER.url;
+/** What the picker says of the promo's model: whose it is, and that it costs nothing within the voucher's limits. */
+const PROMO_MODEL = { description: "Liner Code's promo, with your voucher", price: { input: "$0", output: "$0", note: "On the house within the voucher's 5-hour and weekly limits." } } satisfies Partial<ModelInfo>;
 const local = (url: string) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url.trim());
 
 /**
@@ -114,10 +116,15 @@ export function detectOnce(p: Provider, env: NodeJS.ProcessEnv): Promise<Provide
   return said;
 }
 
-/** The endpoint `e`, through `base` (the tool for its protocol). `key` is read when a session opens, so a key saved later counts. */
-export function endpointProvider(base: Provider, e: Endpoint, key: () => string | undefined): Provider {
+/**
+  The endpoint `e`, through `base` (the tool for its protocol). `key` is read when a session opens, so a key saved later counts.
+  `via`, the voucher's: the engine's relay (promo.ts), which the tool is pointed at with the relay's key in place of `key`,
+  so nothing the tool's agent can read holds the voucher. With no relay yet, no session opens rather than one with the voucher.
+*/
+export function endpointProvider(base: Provider, e: Endpoint, key: () => string | undefined, via?: () => { url: string; key: string } | undefined): Provider {
   const id = `${ENDPOINT_TOOL[e.protocol]}.${e.id}` as ProviderId;
-  const models = (): ModelInfo[] => e.models.map((m, i) => ({ id: m, label: isVoucher(e) ? "DeepSeek V4.1 Flash" : m, description: `${e.label}, through ${VIA[e.protocol]}`, ...(i === 0 ? { isDefault: true } : {}) }));
+  // The voucher's model is Liner Code's promo, on the house within its limits: said so, not as an endpoint of yours.
+  const models = (): ModelInfo[] => e.models.map((m, i) => ({ id: m, label: isVoucher(e) ? "DeepSeek V4.1 Flash" : m, description: `${e.label}, through ${VIA[e.protocol]}`, ...(isVoucher(e) ? PROMO_MODEL : {}), ...(i === 0 ? { isDefault: true } : {}) }));
   return {
     id,
     async detect(env) {
@@ -155,7 +162,9 @@ export function endpointProvider(base: Provider, e: Endpoint, key: () => string 
     warms: base.warms && ((env: NodeJS.ProcessEnv) => base.warms!(env)),
     open: (o: OpenOptions) => {
       const model = o.model && o.model !== "default" ? o.model : (e.models[0] ?? "");
-      const x = endpointOptions(e, model, key(), o.env);
+      const relay = via?.();
+      if (via && !relay) throw new Error("Liner Code's engine isn't ready to run the promo yet. Try again in a moment.");
+      const x = relay ? endpointOptions({ ...e, url: relay.url }, model, relay.key, o.env) : endpointOptions(e, model, key(), o.env);
       // Claude Code's subagents name Claude models; here they run on the endpoint's.
       const subagents = o.subagents && Object.fromEntries(Object.entries(o.subagents).map(([n, a]) => [n, { ...a, model: undefined }]));
       const s = base.open({ ...o, provider: id, env: x.env, model: x.model, subagents, config: { ...o.config, ...x.config }, ...(e.protocol === "anthropic" ? { noAuto: true } : {}) });

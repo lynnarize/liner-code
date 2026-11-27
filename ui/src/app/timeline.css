@@ -21,7 +21,7 @@
   border: 0;
   border-radius: var(--lc-r-card);
   background: var(--l-wash-2);
-  box-shadow: inset 0 0 0 1px var(--l-line);
+  box-shadow: inset 0 0 0 0.5px var(--l-line);
   cursor: zoom-in;
 }
 .lc-you-thumb:disabled {
@@ -33,7 +33,7 @@
   height: 100%;
   object-fit: cover;
   transition: scale 220ms var(--l-ease-out);
-  animation: l-unblur 320ms var(--l-ease-out) backwards;
+  animation: lc-focus-in 200ms var(--l-ease-out) backwards;
 }
 @media (hover: hover) {
   .lc-you-thumb:not(:disabled):hover img {
@@ -122,7 +122,7 @@
   width: 26px;
   height: min(calc(var(--n) * 9px), calc(100% - var(--lc-dock-h, 0px) - 96px));
   translate: 0 -50%;
-  animation: l-unblur 320ms var(--l-ease-out) 160ms backwards;
+  animation: lc-focus-in 200ms var(--l-ease-out) 160ms backwards;
 }
 .lc-pmap-tick {
   position: relative;
@@ -245,7 +245,7 @@
   border-radius: var(--lc-r-row);
   outline: none;
   background: var(--l-field-fill);
-  box-shadow: inset 0 0 0 1px var(--l-line-strong);
+  box-shadow: inset 0 0 0 0.5px var(--l-line-strong);
   color: var(--l-ink);
   font: 13px var(--l-font-mono);
   transition: box-shadow 180ms var(--l-ease-out);
@@ -301,8 +301,8 @@
 }
 
 /* ---------- 0.2.7: the turn, after Devin and Claude Code ---------- */
-/* What the turn changed: a ruled list in the answer. One thin line above and below, no fill,
-   no shadow and no corners, so it never reads as the composer's box. */
+/* What the turn changed: one bordered card (board Main), its faint fill and 0.5px edge, a 36px head with the count, the
+   lines and Review, then a 30px row a file under a hairline. */
 .lc-foot-row:has(> .lc-ledger) {
   flex-wrap: wrap;
 }
@@ -311,42 +311,80 @@
   flex: 1 1 100%;
   flex-direction: column;
   min-width: 0;
-  padding: 2px 0 4px;
-  border-top: 1px solid var(--lc-hair);
-  border-bottom: 1px solid var(--lc-hair);
+  overflow: hidden;
+  border-radius: var(--lc-r-card);
+  background: var(--lc-card);
+  box-shadow: var(--lc-card-ring);
 }
 .lc-ledger-h {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
+  height: 36px;
+  padding: 0 8px 0 12px;
   font-size: 13px;
+  font-weight: 500;
+  color: var(--l-ink);
+}
+.lc-ledger-h > svg {
+  flex: none;
   color: var(--l-ink-3);
 }
 .lc-ledger-h > b {
-  font-weight: 600;
-  color: var(--l-ink);
+  font-weight: 500;
+}
+.lc-ledger-h .lc-btn {
+  margin-left: 6px;
+}
+.lc-ledger .lc-lines {
+  font: 500 12px/1 var(--l-font-mono);
+  letter-spacing: 0;
 }
 .lc-ledger-r {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: calc(100% + 16px);
-  min-height: 30px;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
   box-sizing: border-box;
-  margin: 0 -8px;
-  padding: 0 8px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 8px;
+  border-top: 0.5px solid var(--lc-hair);
   background: none;
   font: inherit;
   font-size: 13px;
-  color: var(--l-ink-2);
+  color: var(--l-ink);
   text-align: left;
 }
 /* A row is a button only where its file can be opened (Timeline.tsx, onReview); a plain one has no hand and no plate. */
 button.lc-ledger-r {
   cursor: pointer;
+}
+/* The file's letter: M amber, A green, D red, R grey, on a tint of its colour. */
+.lc-ledger-badge {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--l-warn) 16%, transparent);
+  color: var(--l-warn-text);
+  font: 600 10px/1 var(--l-font-mono);
+  letter-spacing: 0;
+}
+.lc-ledger-badge[data-s="added"] {
+  background: color-mix(in oklab, var(--l-ok) 16%, transparent);
+  color: var(--l-ok-text);
+}
+.lc-ledger-badge[data-s="deleted"] {
+  background: color-mix(in oklab, var(--l-danger) 16%, transparent);
+  color: var(--l-danger-text);
+}
+.lc-ledger-badge[data-s="renamed"] {
+  background: var(--l-wash-2);
+  color: var(--l-ink-3);
 }
 .lc-ledger-p {
   min-width: 0;
@@ -354,14 +392,15 @@ button.lc-ledger-r {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lc-ledger-new,
-.lc-ledger-more {
-  flex: none;
-  font-size: 12px;
+.lc-ledger-dir {
   color: var(--l-ink-3);
 }
 .lc-ledger-more {
-  padding: 4px 0 2px;
+  flex: none;
+  padding: 6px 12px 8px;
+  border-top: 0.5px solid var(--lc-hair);
+  font-size: 12px;
+  color: var(--l-ink-3);
 }
 .lc-ledger-sq {
   display: inline-flex;
@@ -369,10 +408,10 @@ button.lc-ledger-r {
   gap: 2px;
 }
 .lc-ledger-sq > i {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: var(--l-wash-2);
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--lc-g4);
 }
 .lc-ledger-sq > i[data-k="a"] {
   background: var(--l-ok);
@@ -403,11 +442,13 @@ button.lc-ledger-r {
    up into place as the next one starts (Timeline.tsx, Slide), its time and a ›. Pressed, the steps so
    far open over it. It sits over the message box in every place a turn is shown (Session.tsx,
    design/Chat.tsx, security/ScanSession.tsx, SideChat.tsx) and on the Wall's tiles. */
+/* Line and dot (board Main): the one moving mark, the step's words in the second ink at 13px, the seconds dim, the arrow. */
 .lc-ll {
   display: grid;
   min-width: 0;
   color: var(--l-ink-2);
-  font-size: 13.5px;
+  font-family: var(--l-font-body);
+  font-size: 13px;
 }
 .lc-ll-row {
   display: flex;
@@ -427,11 +468,14 @@ button.lc-ledger-r {
   border: 0;
   border-radius: var(--lc-r-row);
   background: none;
-  color: var(--l-ink);
+  color: var(--l-ink-2);
   font: inherit;
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
   transition: background-color 160ms ease;
+}
+.lc-ll-head {
+  gap: 9px;
 }
 .lc-ll-head {
   flex: 0 1 auto;
@@ -479,20 +523,11 @@ button.lc-ledger-r {
   gap: 2px;
   margin-left: auto;
 }
-/* The kinds of step used, a mark each, quiet after the count; the folded line has the same row. */
-.lc-kinds {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  margin-left: 4px;
-  color: var(--l-ink-3);
-}
 /* Under the hairline: one step, in a box one line high that never grows. */
 .lc-ll-under {
   margin: 2px 0 0 7px;
   padding-left: 15px;
-  border-left: 1px solid var(--lc-hair);
+  border-left: 0.5px solid var(--lc-hair);
 }
 .lc-ll-tick {
   position: relative;
@@ -512,8 +547,12 @@ button.lc-ledger-r {
   flex: none;
   color: var(--l-ink-2);
 }
+/* What the step touches reads in its own words on the line, not as a chip: one quiet line. */
 .lc-ll-step > .lc-wk-target {
-  color: var(--l-ink);
+  padding: 0;
+  background: none;
+  color: var(--l-ink-2);
+  font: inherit;
 }
 /* A frame's name in Liner Design reads as a name (Timeline's plainTarget), as in its chat; files and commands stay mono. */
 .lc-ll .lc-wk-target[data-plain] {
@@ -556,8 +595,7 @@ button.lc-ledger-r {
   gap: 6px;
   min-width: 0;
   color: var(--l-ink-3);
-  font-family: var(--l-font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
   white-space: nowrap;
 }
@@ -605,7 +643,7 @@ html[data-bg] .lc-thread-foot > .lc-ll {
   padding-left: 15px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-left: 1px solid var(--lc-hair);
+  border-left: 0.5px solid var(--lc-hair);
   scrollbar-width: thin;
 }
 .lc-ll .lc-steps {
@@ -619,4 +657,25 @@ html[data-bg] .lc-thread-foot > .lc-ll {
 }
 [aria-expanded="true"] > .lc-sum-chev {
   rotate: 90deg;
+}
+
+/* ---------- Line and dot: an approval that waits in the chat (Liner's approval card, Timeline.tsx Approval) ----------
+   Drawn as the ask on the message box is (board Light): the box's corner, the card fill, an amber-tinted 0.5px edge (red
+   when it can't be undone), the icon a quiet square, and the white button first. */
+.lc-appr-wrap .lc-appr .l-appr__card {
+  border-radius: var(--lc-r-sheet);
+  background: var(--lc-well);
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--l-warn) 45%, var(--lc-line2));
+}
+.lc-appr-wrap .lc-appr[data-state]:has(.l-appr__receipt) .l-appr__card {
+  box-shadow: var(--lc-card-ring);
+}
+.lc-appr-wrap .lc-appr .l-appr__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--lc-r-row);
+  box-shadow: inset 0 0 0 0.5px var(--lc-hair);
+}
+.lc-appr-wrap .lc-appr .l-appr__ask {
+  animation: lc-focus-in 200ms var(--l-ease-out) backwards;
 }

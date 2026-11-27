@@ -52,17 +52,13 @@ function LeanRow({ cwd }: { cwd: string }) {
   const t = lean?.tokens;
   const name = lean?.off === "builtin" ? "Liner 2.0" : lean ? (lean.path?.split("/").pop() ?? "DESIGN.md") : skills ? "No DESIGN.md" : "No lean";
   const note = t && lean ? [t.colours.length && `${t.colours.length} colours`, t.type.length && `${t.type.length} ${t.type.length === 1 ? "voice" : "voices"}`, t.steps.length && `${t.steps[0]} pt steps`].filter(Boolean).join(" · ") : skills ? `${skills} ${skills === 1 ? "skill" : "skills"} loaded` : "Optional. The agent uses its own taste";
-  const sw = (t?.colours ?? []).slice(0, 4);
+  // The value at the row's end, as board Design's "DESIGN.md · Foreshore": the lean's title when it has one, else a short word.
+  const value = (lean?.text.match(/^#\s+(.+)$/m)?.[1].trim() || undefined) ?? (lean ? `${t?.colours.length ?? 0} colours` : skills ? "skills only" : "");
   return (
-    <button type="button" className="ld-lean l-focus" aria-label={`The lean: ${name}. Open it`} onClick={() => (sideSlots.openLean ? sideSlots.openLean() : window.dispatchEvent(new CustomEvent("ld:open-lean", { detail: { cwd } })))}>
-      <span className="ld-q4" data-none={!lean || undefined} aria-hidden>
-        {sw.length ? sw.map((c) => <i key={c.name} style={{ background: c.value }} />) : <i />}
-      </span>
-      <span className="ld-lean-t">
-        <b>{name}</b>
-        {note && <small>{note}</small>}
-      </span>
-      <I.chevR size={12} />
+    <button type="button" className="ld-tr ld-lean l-focus" title={`${name}: ${note}. Open the lean`} aria-label={`The lean: ${name}, ${note}. Open it`} onClick={() => (sideSlots.openLean ? sideSlots.openLean() : window.dispatchEvent(new CustomEvent("ld:open-lean", { detail: { cwd } })))}>
+      <I.file size={14} />
+      <span className="ld-ell">{name}</span>
+      <span className="ld-m ld-ell">{value}</span>
     </button>
   );
 }

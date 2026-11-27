@@ -457,7 +457,8 @@ export function TerminalSurface({ thread, visible, below, lead }: { thread: Thre
   });
   useEffect(() => {
     let live = true;
-    const scripts = takeScripts(thread.id).map((x): Pane => ({ key: newKey(), title: x.name, command: x.command, gen: 0 }));
+    // A script with no command is a plain shell (the panel's + has New terminal).
+    const scripts = takeScripts(thread.id).map((x): Pane => ({ key: newKey(), title: x.name, command: x.command || undefined, gen: 0 }));
     void rpc("term.list", { threadId: thread.id })
       .catch(() => null)
       .then((list) => {
@@ -482,7 +483,7 @@ export function TerminalSurface({ thread, visible, below, lead }: { thread: Thre
   useEffect(
     () =>
       onScript(thread.id, (x) => {
-        const p: Pane = { key: newKey(), title: x.name, command: x.command, gen: 0 };
+        const p: Pane = { key: newKey(), title: x.name, command: x.command || undefined, gen: 0 };
         put(thread.id, (k) => ({ panes: [...k.panes, p], on: p.key }));
       }),
     [thread.id],

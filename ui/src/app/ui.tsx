@@ -2,7 +2,7 @@
   Small pieces the screens share: an anchored glass panel with rich rows, agent discs, the
   model chip, badges and the session's status mark.
 */
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@liner/lib/overlay";
 import { cx } from "@liner/lib/hooks";
@@ -15,6 +15,7 @@ import { shortcutOf } from "./keymap";
 import { panelLeft, panelSide, placeMenu, sideMenuLeft, TOP_ROW, type Box } from "./menu-place";
 import { backFromSide, FIRST_FOCUS, inText, movesRows } from "./menu-keys";
 import * as os from "./os";
+import { cardAfter, EXIT_SLACK, MOTION, originCss, originOf, stageAfter, type CardStage, type Stage } from "./motion";
 import { RollingNumber } from "@liner/components/rolling-number/rolling-number";
 import { Switch, type SwitchProps } from "@liner/components/switch/switch";
 
@@ -28,7 +29,63 @@ export function useSteady<A extends unknown[], R = void>(fn: ((...a: A) => R) | 
 type Side = "top" | "bottom";
 const EDGE = 10;
 const GAP = 6;
-type Place = { side: Side | "left" | "right"; top: number; left: number; max?: number; w?: number; ready: boolean };
+/** `origin`: where it grows from, the trigger's centre on the edge it hangs from (motion.ts originOf). */
+type Place = { side: Side | "left" | "right"; top: number; left: number; max?: number; w?: number; origin?: string; ready: boolean };
+
+/**
+  A part that closes with a motion (a menu, a side menu, a tip): it stays on screen in its closing state until its exit
+  ends (`end`, from its transitionend) or, if that never comes (a hidden window, Reduce motion, nothing animated), until a
+  timer a little past `ms` (motion.ts stageAfter). `again`: open once more after an exit began, so it doesn't replay its
+  entrance from nothing and flash; it goes back from where the exit had got to.
+*/
+export function usePresence(open: boolean, ms: number) {
+  const [stage, setStage] = useState<Stage>(open ? "open" : "shut");
+  const now = stageAfter(stage, open ? "open" : "close");
+  if (now !== stage) setStage(now);
+  const back = useRef(false);
+  if (now === "closing") back.current = true;
+  if (now === "shut") back.current = false;
+  const end = useCallback(() => setStage((s) => stageAfter(s, "ended")), []);
+  const closing = now === "closing";
+  useEffect(() => {
+    if (!closing) return;
+    const t = window.setTimeout(end, ms + EXIT_SLACK);
+    return () => window.clearTimeout(t);
+  }, [closing]);
+  /** For the panel's onTransitionEnd: its own opacity finishing while it closes ends the exit. */
+  const onEnd = (e: { target: EventTarget; currentTarget: EventTarget; propertyName?: string }) => {
+    if (closing && e.target === e.currentTarget && (e.propertyName === undefined || e.propertyName === "opacity")) end();
+  };
+  return { mounted: now !== "shut", closing, again: now === "open" && back.current, onEnd };
+}
+
+/** A closing panel's parts: a side menu opened from it closes with it. */
+const Closing = createContext(false);
+
+/**
+  What a panel holds while it closes: drawn as it was when it closed and not again from its caller, whose rows may be gone by
+  then (a menu for a row just deleted). Parts inside that redraw on their own and fail meanwhile draw nothing rather than take
+  the window down; a failure while it is open is passed on as ever.
+*/
+class Held extends Component<{ hold: boolean; children: ReactNode }, { error: unknown; wasHold: boolean }> {
+  state = { error: undefined as unknown, wasHold: false };
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error ?? new Error("A closing panel failed") };
+  }
+  static getDerivedStateFromProps(p: { hold: boolean }, s: { error: unknown; wasHold: boolean }) {
+    return s.error !== undefined && s.wasHold && !p.hold ? { error: undefined, wasHold: false } : { wasHold: p.hold };
+  }
+  shouldComponentUpdate(next: { hold: boolean }, nextState: { error: unknown }) {
+    return !next.hold || nextState.error !== this.state.error;
+  }
+  render() {
+    if (this.state.error !== undefined) {
+      if (this.props.hold) return null;
+      throw this.state.error;
+    }
+    return this.props.children;
+  }
+}
 
 /** The least room a panel that keeps its side needs there, before it gives up and flips. */
 const KEEP_MIN = 260;
@@ -85,22 +142,25 @@ function usePlace(open: boolean, anchor: RefObject<HTMLElement | null>, panel: R
       if (fittedRoom) p.style.setProperty("--lc-pop-room", fittedRoom);
       const { side, max } = panelSide({ h, below, above, prefer, keep, keepMin: KEEP_MIN, whole });
       const tall = Math.min(h, max ?? h);
+      // It grows out of its trigger, from the edge it hangs from, wherever it was placed (above, below, beside).
+      const grow = (s: Place["side"], left: number, top: number, width: number, height: number) => originCss(originOf(s, { left, top, width, height }, r));
       if (right) {
         const fit = Math.min(h, vh - EDGE - TOP_ROW);
         const top = Math.max(TOP_ROW, Math.min(r.top - 8, vh - EDGE - fit));
-        setAt({ side: "right", top: Math.round(top), left: from, max: h > fit ? fit : undefined, w: wide, ready: true });
+        setAt({ side: "right", top: Math.round(top), left: from, max: h > fit ? fit : undefined, w: wide, origin: grow("right", from, Math.round(top), wide, fit), ready: true });
         return;
       }
       // Beside, to the left (the session tray's menus): level with the trigger's top, kept on screen.
       if (beside === "left" && r.left - GAP - w >= EDGE) {
         const fit = Math.min(h, vh - EDGE - TOP_ROW);
         const top = Math.max(TOP_ROW, Math.min(r.top, vh - EDGE - fit));
-        setAt({ side: "left", top: Math.round(top), left: Math.round(r.left - GAP * 2 - w), max: h > fit ? fit : undefined, w, ready: true });
+        const left = Math.round(r.left - GAP * 2 - w);
+        setAt({ side: "left", top: Math.round(top), left, max: h > fit ? fit : undefined, w, origin: grow("left", left, Math.round(top), w, fit), ready: true });
         return;
       }
       const left = panelLeft(align, r, w, lo, hi, out);
       const top = side === "bottom" ? r.bottom + GAP : Math.max(TOP_ROW, r.top - GAP - tall);
-      setAt({ side, top: Math.round(top), left: Math.round(left), max, w, ready: true });
+      setAt({ side, top: Math.round(top), left: Math.round(left), max, w, origin: grow(side, Math.round(left), Math.round(top), w, tall), ready: true });
     };
     place();
     window.addEventListener("resize", place);
@@ -158,6 +218,7 @@ export function Pop({
   out = 0,
   open: openAsked,
   onOpenChange,
+  tip,
 }: {
   trigger: ReactNode;
   label: string;
@@ -187,6 +248,8 @@ export function Pop({
   /** Open or shut from outside, as a key opens the agents popup; leave both unset and the trigger alone opens it. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** The app's tip on an icon-only trigger (Tips.tsx), its key in grey as "Add (⌘U)" gives it. */
+  tip?: string;
 }) {
   const [own, setOwn] = useState(false);
   const open = openAsked ?? own;
@@ -198,12 +261,18 @@ export function Pop({
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const { subs, inside } = useSubs();
-  const at = usePlace(open, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within, bare, out);
+  // Shut, it stays on screen for its exit (usePresence), placed where it was, then goes.
+  const life = usePresence(open, MOTION.menuOut);
+  const at = usePlace(life.mounted, btn, panel, side === "left" || side === "right" ? "bottom" : side, align, width, keep, side === "left" || side === "right" ? side : false, within, bare, out);
   useDismiss(open, () => setOpen(false), [wrap, panel, inside], btn);
   const close = () => {
     setOpen(false);
     btn.current?.focus({ preventScroll: true });
   };
+  // Shut from outside (a key, its caller) with the keyboard in it: the keyboard goes back to the trigger at once, not when the exit ends.
+  useLayoutEffect(() => {
+    if (life.closing && panel.current?.contains(document.activeElement)) btn.current?.focus({ preventScroll: true });
+  }, [life.closing]);
   // Focus moves into the panel once it is placed, so the keyboard carries on inside it.
   useEffect(() => {
     if (!open || !at.ready) return;
@@ -213,10 +282,10 @@ export function Pop({
   }, [open, at.ready]);
   return (
     <div ref={wrap} className={cx("lc-pop", className)}>
-      <button ref={btn} type="button" {...triggerAttrs} className={cx("lc-pick l-focus", triggerClass)} aria-haspopup={menu ? "menu" : "dialog"} aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen(!open)}>
+      <button ref={btn} type="button" data-tip={tip} {...triggerAttrs} className={cx("lc-pick l-focus", triggerClass)} aria-haspopup={menu ? "menu" : "dialog"} aria-expanded={open} aria-label={label} disabled={disabled} data-open={open || undefined} onClick={() => setOpen(!open)}>
         {trigger}
       </button>
-      {open &&
+      {life.mounted &&
         createPortal(
           <div
             ref={panel}
@@ -224,11 +293,17 @@ export function Pop({
             data-side={at.side}
             data-align={align}
             data-ready={at.ready || undefined}
+            data-closing={life.closing || undefined}
+            data-again={life.again || undefined}
+            // Closing, it takes no presses and a screen reader no longer finds it; the trigger has the keyboard already.
+            inert={life.closing || undefined}
+            aria-hidden={life.closing || undefined}
             role={menu ? "menu" : "dialog"}
             aria-label={label}
             aria-describedby={describedBy}
+            onTransitionEnd={life.onEnd}
             // Placed here, not by Liner's anchored rules: those (bottom, translate) would fight the fixed layer.
-            style={{ width: typeof width === "number" && !within ? Math.min(width, document.documentElement.clientWidth - EDGE * 2) : at.w, maxHeight: at.max, ...(at.max !== undefined ? { "--lc-pop-room": `${at.max}px` } : {}), top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none" }}
+            style={{ width: typeof width === "number" && !within ? Math.min(width, document.documentElement.clientWidth - EDGE * 2) : at.w, maxHeight: at.max, ...(at.max !== undefined ? { "--lc-pop-room": `${at.max}px` } : {}), top: at.top, left: at.left, right: "auto", bottom: "auto", translate: "none", transformOrigin: at.origin }}
             onKeyDown={(e) => {
               // Something inside that took the Escape first (a list open in the panel) has closed itself; the panel stays.
               if (e.key === "Escape" && !e.defaultPrevented) {
@@ -245,9 +320,13 @@ export function Pop({
               }
             }}
           >
-            <Subs.Provider value={subs}>
-              <InMenu.Provider value={menu}>{children(close)}</InMenu.Provider>
-            </Subs.Provider>
+            <Closing.Provider value={life.closing}>
+              <Subs.Provider value={subs}>
+                <InMenu.Provider value={menu}>
+                  <Held hold={life.closing}>{life.closing ? null : children(close)}</Held>
+                </InMenu.Provider>
+              </Subs.Provider>
+            </Closing.Provider>
           </div>,
           // Inside a modal dialog the panel joins it in the top layer, or the dialog would cover it.
           wrap.current?.closest("dialog[open]") ?? document.body,
@@ -262,7 +341,7 @@ export function Pop({
 */
 export function ContextMenu({ at, label, onClose, children, width = 240 }: { at: { x: number; y: number; under?: Box; row?: Box } | null; label: string; onClose: () => void; children: (close: () => void) => ReactNode; width?: number }) {
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; max?: number; side: "top" | "bottom"; origin: string } | null>(null);
   const { subs, inside } = useSubs();
   useDismiss(Boolean(at), onClose, [panel, inside]);
   // Focus goes back where it was when the menu goes: a row whose menu the keyboard opened keeps the keyboard.
@@ -272,8 +351,14 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
     const back = document.activeElement as HTMLElement | null;
     return () => back?.focus({ preventScroll: true });
   }, [shown]);
+  // Shut, it stays where it was for its exit (usePresence): the place it was opened at is kept until it has gone.
+  const life = usePresence(shown, MOTION.menuOut);
+  const last = useRef(at);
+  if (at) last.current = at;
+  const held = at ?? (life.mounted ? last.current : null);
   useLayoutEffect(() => {
     const p = panel.current;
+    const at = held;
     if (!at || !p) return setPos(null);
     const place = () => {
       // Its own height, not the room it was fitted to last time.
@@ -281,8 +366,12 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
       p.style.maxHeight = "none";
       const h = p.scrollHeight;
       p.style.maxHeight = fitted;
-      const to = placeMenu({ at, under: at.under, row: at.row, w: Math.min(width, document.documentElement.clientWidth - EDGE * 2), h, vw: document.documentElement.clientWidth, vh: window.innerHeight });
-      setPos((was) => (was && was.top === to.top && was.left === to.left && was.max === to.max ? was : { top: to.top, left: to.left, max: to.max }));
+      const w = Math.min(width, document.documentElement.clientWidth - EDGE * 2);
+      const to = placeMenu({ at, under: at.under, row: at.row, w, h, vw: document.documentElement.clientWidth, vh: window.innerHeight });
+      // It grows from what opened it: the ··· it hangs from, else the pointer, on the side it was put (over it or under it).
+      const from = at.under ? { left: at.under.left, top: at.under.top, width: at.under.right - at.under.left, height: at.under.bottom - at.under.top } : { left: at.x, top: at.y, width: 0, height: 0 };
+      const origin = originCss(originOf(to.side, { left: to.left, top: to.top, width: w, height: to.max ?? h }, from));
+      setPos((was) => (was && was.top === to.top && was.left === to.left && was.max === to.max && was.side === to.side && was.origin === origin ? was : { top: to.top, left: to.left, max: to.max, side: to.side, origin }));
     };
     place();
     // A list that opens in the menu's place (Snooze until, Move to a group) is another height: the menu keeps to its button, above or below.
@@ -294,21 +383,27 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
       ro?.disconnect();
       window.removeEventListener("resize", place);
     };
-  }, [at?.x, at?.y, width]);
+  }, [held?.x, held?.y, width]);
   // The first row has the keyboard once it is placed; placed again (a list opened in it), the focus stays where the list put it.
   useEffect(() => {
-    if (pos) panel.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+    if (pos && at) panel.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });
   }, [Boolean(pos)]);
-  if (!at) return null;
+  if (!held) return null;
   return createPortal(
     <div
       ref={panel}
       className="l-pop lc-pop-panel lc-layer"
-      data-side="bottom"
+      // The side it was put on, over the pointer or under it, so it grows from that edge (it said "bottom" whatever happened).
+      data-side={pos?.side ?? "bottom"}
       data-ready={pos ? true : undefined}
+      data-closing={life.closing || undefined}
+      data-again={life.again || undefined}
+      inert={life.closing || undefined}
+      aria-hidden={life.closing || undefined}
       role="menu"
       aria-label={label}
-      style={{ width, top: pos?.top ?? -9999, left: pos?.left ?? -9999, maxHeight: pos?.max, right: "auto", bottom: "auto", translate: "none" }}
+      onTransitionEnd={life.onEnd}
+      style={{ width, top: pos?.top ?? -9999, left: pos?.left ?? -9999, maxHeight: pos?.max, right: "auto", bottom: "auto", translate: "none", transformOrigin: pos?.origin }}
       onKeyDown={(e) => {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           const list = [...(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
@@ -318,9 +413,13 @@ export function ContextMenu({ at, label, onClose, children, width = 240 }: { at:
         }
       }}
     >
-      <Subs.Provider value={subs}>
-        <InMenu.Provider value>{children(onClose)}</InMenu.Provider>
-      </Subs.Provider>
+      <Closing.Provider value={life.closing}>
+        <Subs.Provider value={subs}>
+          <InMenu.Provider value>
+            <Held hold={life.closing}>{life.closing ? null : children(onClose)}</Held>
+          </InMenu.Provider>
+        </Subs.Provider>
+      </Closing.Provider>
     </div>,
     document.body,
   );
@@ -440,11 +539,20 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
   const row = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number; max?: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; max?: number; side: "left" | "right"; origin: string } | null>(null);
   const done = () => {
     setOpen(false);
     row.current?.focus({ preventScroll: true });
   };
+  // Shut, it plays its exit as a menu does; the menu it opened from closing takes it with it, in step.
+  const life = usePresence(open, MOTION.menuOut);
+  const outerClosing = useContext(Closing);
+  const closing = life.closing || outerClosing;
+  // Back from an exit (its own or its menu's), it goes back from where that had got to rather than entering again.
+  const exited = useRef(false);
+  if (closing) exited.current = true;
+  if (!life.mounted) exited.current = false;
+  const again = !closing && exited.current;
   // Counted as the menu's own while it shows, so a press in it doesn't close the menu.
   useLayoutEffect(() => {
     const p = panel.current;
@@ -454,7 +562,9 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
   }, [open]);
   // Beside the menu it opened from: to its right while the window has room, else its left (menu-place.ts sideMenuLeft).
   useLayoutEffect(() => {
-    if (!open) return setPos(null);
+    if (!life.mounted) return setPos(null);
+    // Placed once as it opens; while it closes it stays where it was.
+    if (!open) return;
     const r = row.current;
     const p = panel.current;
     const menu = r?.closest<HTMLElement>(".lc-pop-panel");
@@ -464,23 +574,29 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
     const vw = document.documentElement.clientWidth;
     const vh = window.innerHeight;
     const w = Math.min(width, vw - EDGE * 2);
-    const left = sideMenuLeft(m, w, vw);
+    const left = sideMenuLeft(m, w, vw, menu?.dataset.side === "left");
     p.style.maxHeight = "none";
     const h = p.scrollHeight;
     const fit = Math.min(h, vh - EDGE - TOP_ROW);
     const top = Math.max(TOP_ROW, Math.min(rr.top - 4, vh - EDGE - fit));
-    setPos({ top: Math.round(top), left: Math.round(left), max: h > fit ? fit : undefined });
-  }, [open, width]);
+    const side = left < m.left ? "left" : "right";
+    // It grows out of its row, from the edge it opened beside.
+    const origin = originCss(originOf(side, { left: Math.round(left), top: Math.round(top), width: w, height: fit }, rr));
+    setPos({ top: Math.round(top), left: Math.round(left), max: h > fit ? fit : undefined, side, origin });
+  }, [open, life.mounted, width]);
   // The keyboard goes in once it is placed: to its text field when it has one (a chooser's find field), else its first row.
   useEffect(() => {
     if (pos) (panel.current?.querySelector<HTMLElement>(FIRST_FOCUS) ?? panel.current?.querySelector<HTMLElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
   }, [Boolean(pos)]);
-  // A press anywhere but here or on its row closes it (another row of the menu, or outside, where the menu goes too).
+  // A press anywhere but here or on its row closes it (another row of the menu, or outside, where the menu goes too). A press in
+  // a side menu opened from this one (Your apps inside +'s More) is one of its own: that menu is among the outer menu's `subs`.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (panel.current?.contains(t) || row.current?.contains(t)) return;
+      // (Two side menus of one menu are never open at once, a press on another row closing this one, so any other is this one's.)
+      if ([...(subs ?? [])].some((s) => s !== panel.current && s.contains(t))) return;
       setOpen(false);
     };
     window.addEventListener("pointerdown", onDown, true);
@@ -511,16 +627,21 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
           <I.chevR size={14} />
         </span>
       </button>
-      {open &&
+      {life.mounted &&
         createPortal(
           <div
             ref={panel}
             className="l-pop lc-pop-panel lc-layer"
-            data-side="right"
+            data-side={pos?.side ?? "right"}
             data-ready={pos ? true : undefined}
+            data-closing={closing || undefined}
+            data-again={again || undefined}
+            inert={closing || undefined}
+            aria-hidden={closing || undefined}
             role="menu"
             aria-label={label}
-            style={{ width: Math.min(width, document.documentElement.clientWidth - EDGE * 2), top: pos?.top ?? -9999, left: pos?.left ?? -9999, maxHeight: pos?.max, right: "auto", bottom: "auto", translate: "none" }}
+            onTransitionEnd={life.onEnd}
+            style={{ width: Math.min(width, document.documentElement.clientWidth - EDGE * 2), top: pos?.top ?? -9999, left: pos?.left ?? -9999, maxHeight: pos?.max, right: "auto", bottom: "auto", translate: "none", transformOrigin: pos?.origin }}
             onKeyDown={(e) => {
               // Its own Escape and ←: back to its row, the menu it came from still open. A text field in it keeps ← for its caret.
               const typing = inText(e.target as HTMLElement);
@@ -539,7 +660,11 @@ export function SubMenu({ title, icon, value, label, width = 240, children }: { 
               }
             }}
           >
-            <InMenu.Provider value>{children(done)}</InMenu.Provider>
+            <Closing.Provider value={closing}>
+              <InMenu.Provider value>
+                <Held hold={closing}>{closing ? null : children(done)}</Held>
+              </InMenu.Provider>
+            </Closing.Provider>
           </div>,
           row.current?.closest("dialog[open]") ?? document.body,
         )}
@@ -698,39 +823,71 @@ export function SendButton({ ready, stop, label, title, disabled, submit, classN
 export function HoverNote({ note, children, className, width = 280 }: { note: ReactNode; children: ReactNode; className?: string; width?: number }) {
   const at = useRef<HTMLSpanElement>(null);
   const timer = useRef<number | undefined>(undefined);
+  const stage = useRef<CardStage>("hidden");
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Fading out (data-closing), and back from a fade (data-again), so it returns from where the fade had got to.
+  const [fading, setFading] = useState(false);
+  const [again, setAgain] = useState(false);
+  const me = useRef({ drop: () => {} });
   const place = () => {
     const r = at.current?.getBoundingClientRect();
     if (!r) return;
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     setPos(window.innerHeight - r.bottom > 140 ? { left, top: r.bottom + 6 } : { left, bottom: window.innerHeight - r.top + 6 });
   };
-  const show = (now = false) => {
+  /** Where motion.ts cardAfter says it goes next, with its timer. */
+  const to = (n: { to: CardStage; wait?: number; swap?: boolean }) => {
     window.clearTimeout(timer.current);
-    if (now) place();
-    else timer.current = window.setTimeout(place, 450);
+    const was = stage.current;
+    stage.current = n.to;
+    if (n.to === "shown") {
+      place();
+      if (was === "fading") setAgain(true);
+      setFading(false);
+      // One note at a time: another still up gives way at once, so moving along goes from one to the next with no wait and no blink.
+      if (notesUp && notesUp !== me.current) notesUp.drop();
+      notesUp = me.current;
+    }
+    if (n.to === "fading") setFading(true);
+    if (n.to === "hidden") {
+      setPos(null);
+      setFading(false);
+      setAgain(false);
+      if (notesUp === me.current) notesUp = null;
+    }
+    if (n.wait !== undefined) timer.current = window.setTimeout(() => to(cardAfter(stage.current, "timer")), n.wait);
   };
-  const hide = () => {
-    window.clearTimeout(timer.current);
-    setPos(null);
-  };
+  me.current.drop = () => to({ to: "hidden" });
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      if (notesUp === me.current) notesUp = null;
+    },
+    [],
+  );
+  // At once from the keyboard, or while another note is up; else after the rest's wait.
+  const show = (now = false) => to(now || (notesUp && notesUp !== me.current) ? { to: "shown" } : cardAfter(stage.current, "enter"));
+  const leave = () => to(cardAfter(stage.current, "leave"));
+  // A press or Escape doesn't wait: it fades now.
+  const fade = () => (stage.current === "hidden" || stage.current === "waiting" ? to({ to: "hidden" }) : to(cardAfter("lingering", "timer")));
   return (
     <span
       ref={at}
       className={cx("lc-hnote-at", className)}
       onPointerEnter={(e) => e.pointerType === "mouse" && show()}
-      onPointerLeave={hide}
-      onPointerDown={hide}
+      onPointerLeave={leave}
+      onPointerDown={fade}
       onFocus={(e) => (e.target as HTMLElement).matches(":focus-visible") && show(true)}
-      onBlur={hide}
-      onKeyDown={(e) => e.key === "Escape" && pos && (e.stopPropagation(), hide())}
+      onBlur={leave}
+      onKeyDown={(e) => e.key === "Escape" && pos && !fading && (e.stopPropagation(), fade())}
     >
       {children}
-      {pos && createPortal(<span role="tooltip" className="lc-hnote" style={{ ...pos, width }}>{note}</span>, document.body)}
+      {pos && createPortal(<span role="tooltip" className="lc-hnote" data-closing={fading || undefined} data-again={again || undefined} aria-hidden={fading || undefined} style={{ ...pos, width }}>{note}</span>, document.body)}
     </span>
   );
 }
+/** The hover note up now (shown, lingering or fading), so the next one reached takes over from it at once. */
+let notesUp: { drop: () => void } | null = null;
 
 /** +19 −7, in mono. */
 export const Lines = ({ added, removed }: { added: number; removed: number }) => (

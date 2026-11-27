@@ -63,7 +63,8 @@ export function PullRequests({ sidebar, onSidebar, pick }: { sidebar: boolean; o
     // Look again asks the hosts afresh; everything else may take the engine's last minute's list.
     const fresh = lookFresh.current;
     lookFresh.current = false;
-    setLooking(true);
+    // Only Look again's own press turns its arrow: a list read again in the background, or for another filter, says nothing.
+    setLooking(fresh);
     rpc("worklists.prs", { ...query, ...(fresh ? { fresh } : {}) })
       .then((r) => {
         if (!live) return;

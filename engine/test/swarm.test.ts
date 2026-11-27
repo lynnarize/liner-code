@@ -2858,3 +2858,48 @@ describe("Landing a worker's worktree", () => {
     }
   });
 });
+
+describe("Swarm board posts and swaps that say what happened", () => {
+  it("A model swap on a team that has closed is saved, and its board post doesn't say the worker is waking.", async () => {
+    const models: string[] = [];
+    const h = makeHarness({ onWorkerTurn: async ({ model }) => void models.push(model) });
+    h.settings.swarmAutoPost = false;
+    try {
+      await h.swarm.addWorker(TID, { name: "a", workspace: "inherit", mode: "read", brief: "Work" });
+      await waitFor(() => models.length === 1 && memberOf(h.swarm, "a")?.state === "hibernated");
+      h.swarm.post(TID, { from: "coordinator", text: "[done] finished" });
+      assert.equal(h.swarm.snapshot(TID)!.active, false);
+      h.swarm.swapModel(TID, "a", "codex:gpt-6.1-sol", "stuck");
+      await sleep(60);
+      assert.equal(memberOf(h.swarm, "a")?.model, "codex:gpt-6.1-sol", "the swap is saved");
+      assert.equal(models.length, 1, "nothing woke the worker on a closed team");
+      const said = h.swarm.snapshot(TID)!.posts.at(-1)!;
+      assert.equal(said.from, "system");
+      assert.doesNotMatch(said.text, /Waking/);
+      assert.match(said.text, /when the team runs again/);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+
+  it("A post longer than the board keeps still notifies the members named at its end, and swarm_post says it was clipped.", async () => {
+    const woke: string[] = [];
+    const h = makeHarness({ onWorkerTurn: async ({ name }) => void woke.push(name) });
+    h.settings.swarmAutoPost = false;
+    try {
+      await h.swarm.addWorker(TID, { name: "reviewer", workspace: "inherit", mode: "read", brief: "Review" });
+      await waitFor(() => woke.length === 1 && memberOf(h.swarm, "reviewer")?.state === "hibernated");
+      const out = await h.swarm.handleTool(TID, undefined, "swarm_post", { text: `${"x".repeat(4500)} @reviewer` });
+      assert.match(out.text, /notified @reviewer/);
+      assert.match(out.text, /clipped to 4,000 characters/);
+      const post = h.swarm.snapshot(TID)!.posts.at(-1)!;
+      assert.ok(post.text.length <= 4000);
+      assert.deepEqual(post.to, ["reviewer"]);
+      await waitFor(() => woke.length === 2);
+      const short = await h.swarm.handleTool(TID, undefined, "swarm_post", { text: "@reviewer one more look" });
+      assert.doesNotMatch(short.text, /clipped/);
+    } finally {
+      h.swarm.dispose();
+    }
+  });
+});

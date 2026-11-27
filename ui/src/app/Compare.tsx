@@ -102,7 +102,6 @@ function Column({ t, i, diffs, busy, onKeep, onOpen }: { t: Thread; i: number; d
   return (
     <section className="lc-cmp-col" style={{ animationDelay: `${i * 60}ms` }} aria-label={name}>
       <PaneHead
-        canvas={false}
         name={<ModelTag kind={markOf(model)} label={name} size={14} />}
         shows={a.name !== name ? <PaneWords>{a.name}</PaneWords> : undefined}
         tools={

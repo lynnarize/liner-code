@@ -1020,3 +1020,29 @@ test("routines: a step cut off by the engine stopping doesn't spin for ever", ()
   assert.equal(routines.recent[0].status, "failed");
   assert.equal(routines.recent[0].steps[0].status, "failed");
 });
+
+test("limits: a limited session with a queued message brings its worktree back before the queued turn carries on at the reset", async () => {
+  const order: string[] = [];
+  const { restore } = fake(async (text) => void order.push(`turn: ${text}`));
+  const { store, runtime, home, dir } = session({ status: "limited", turns: 1, limit: { message: "used up", until: Date.now() - 2 * 60_000, provider: "claude" }, queue: [{ id: "q1", text: "and the tests", at: 1 }] });
+  try {
+    const now = Date.now();
+    const until0 = store.thread("t").limit!.until!;
+    store.setSettings({ resumeAtReset: true });
+    store.putItem("t", { kind: "limit", id: "l", turn: 1, at: until0 - 3_600_000, message: "used up", until: until0, provider: "claude" });
+    // A worktree session whose folder was removed gets it back here; the queued turn would fail in a missing folder without it.
+    runtime.worktreeBack = async () => {
+      await tick(20);
+      order.push("worktree back");
+    };
+    runtime.resumeLimited(now);
+    await until(() => order.includes("turn: and the tests") && !runtime.isRunning("t"), "the queued turn ran");
+    await tick(30);
+    assert.deepEqual(order, ["worktree back", "turn: and the tests"]);
+  } finally {
+    restore();
+    store.flush();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

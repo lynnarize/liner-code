@@ -7,6 +7,7 @@ import type { AgentProfile, PanelPlace, RoutineRun, SessionMode, Thread } from "
 import { CREATE_ADDON_ASK, ROUTINES_ON } from "@contracts";
 import { CommandMenu, type CommandItem } from "@liner/pro/command-menu/command-menu";
 import { Toaster, toast } from "@liner/components/toast/toast";
+import { Tips } from "./Tips";
 import { Boundary } from "./Boundary";
 import { Backdrop, Scene } from "./Backdrop";
 import { bridge, onCommand } from "./bridge";
@@ -18,7 +19,8 @@ import { markLabelOf, markStateOf } from "./session-state";
 import { SideMark } from "./SideList";
 import { Session, showAppTab, showBelow } from "./Session";
 import { applyLook, entering, readLook } from "./look";
-import { useSteady } from "./ui";
+import { usePresence, useSteady } from "./ui";
+import { MOTION } from "./motion";
 import { needsYou, Sidebar } from "./Sidebar";
 import { reviewHeld } from "./session-state";
 import { early, lazyAgain } from "./early";
@@ -46,6 +48,7 @@ const Issues = lazyAgain(() => import("./Issues").then((m) => m.Issues));
 import { keepDock, keptDock, SURFACES, type SurfaceId, type Tab } from "./Surfaces";
 import { openTab } from "./dock";
 import { openSurface } from "./TopBar";
+import { showDetails } from "./pinned";
 import { askPicker } from "./pr-pick";
 import { AppPage } from "./Addon";
 import { AppModelHost } from "./AppModel";
@@ -514,7 +517,9 @@ export function App() {
     setView(v);
   };
   const openSession = (id: string, tab?: Tab) => {
-    if (tab) keepDock(id, openTab(keptDock(id), tab));
+    // Session is no tab since 2026-11-27: a notification or a link that asks for it opens the session with its details card.
+    if (tab === "session") showDetails();
+    else if (tab) keepDock(id, openTab(keptDock(id), tab));
     go({ kind: "session", id });
   };
   // An app made from an offer, opened on its page, and the session that made it ("Open it" on the offer), or
@@ -611,7 +616,7 @@ export function App() {
       if (document.querySelector("dialog[open], .lc-st-side")) return;
       const t = e.target instanceof Element ? e.target : null;
       if (t instanceof HTMLTextAreaElement && t.closest(".lc-compose")) return void (e.preventDefault(), t.blur());
-      if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog']")) return;
+      if (t?.closest("input, textarea, select, [contenteditable='true'], [contenteditable=''], .xterm, [role='menu'], [role='listbox'], [role='dialog'], .lst-card")) return;
       e.preventDefault();
       setView({ kind: "wall" });
     };
@@ -687,6 +692,7 @@ export function App() {
   const showSidebar = useCallback(() => setSidebar(true), []);
   const newAgent = useCallback(() => setAgentDialog({ open: true }), []);
   const closeSettings = useCallback(() => setSettings(false), []);
+  const settingsLife = usePresence(settings, MOTION.sheetOut);
   const editAgent = useCallback((agent?: AgentProfile) => setAgentDialog({ open: true, agent }), []);
   const steadyOpen = useSteady(openSession);
   const openFromSettings = useSteady((id: string) => (setSettings(false), openSession(id)));
@@ -874,7 +880,9 @@ export function App() {
       const branch = here.worktree?.branch ?? projects.find((p) => p.id === here.projectId)?.branch;
       items.push(
         // The panel's surfaces, opened beside this session (T3 Code's palette lists them too).
-        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : s.id === "session" ? "Show the Session card" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
+        // The details card first, under the Session key it had as a surface: it shows wherever the panel stands.
+        { id: "surface-session", label: "Show session details", group: "This session", icon: <I.details size={16} />, shortcut: shortcutOf("surface.session"), onSelect: () => openSession(here.id, "session") },
+        ...SURFACES.map((s) => ({ id: `surface-${s.id}`, label: s.id === "linked" ? "Pick a pull request in this project" : `Open ${s.label}`, group: "This session", icon: <s.icon size={16} />, shortcut: shortcutOf(`surface.${s.id}`), onSelect: () => showSurface(here.id, s.id) })),
         ...(branch ? [{ id: "copy-branch", label: "Copy branch name", group: "This session", hint: branch, icon: <I.branch size={16} />, onSelect: () => copy(branch, "the branch name") }] : []),
         { id: "copy-id", label: "Copy session id", group: "This session", hint: here.id, icon: <I.copy size={16} />, onSelect: () => copy(here.id, "the session id") },
         // A session's own rows in the words and order of its row menu in the sidebar (board RowMenu, row-menu.ts): Pin, Mark unread, Settle; Open beside, Export as Markdown; Stop it while it works, Archive.
@@ -990,6 +998,7 @@ export function App() {
           </Suspense>
         </Boundary>
         <Toaster className="lc-toaster" />
+        <Tips />
       </>
     );
 
@@ -1129,11 +1138,12 @@ export function App() {
           )}
         </>
       )}
-      {settings && (
+      {settingsLife.mounted && (
         // Its own code loads apart (early.ts): one that didn't load says so over the window, with Try again and Close.
+        // Shut, it stays for its fade (a dialog's 160ms, usePresence) and then goes.
         <Boundary label="Settings" quiet place="float" onClose={closeSettings}>
           <Suspense fallback={null}>
-            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} />
+            <Settings onClose={closeSettings} onAgent={editAgent} onOpen={openFromSettings} closing={settingsLife.closing} />
           </Suspense>
         </Boundary>
       )}
@@ -1164,6 +1174,7 @@ export function App() {
         </Suspense>
       </Boundary>
       <Toaster className="lc-toaster" />
+      <Tips />
     </div>
   );
 }

@@ -52,6 +52,7 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
                                           ├─ xcrun simctl  (the Device surface)
                                         POST /hooks/r/<id>?key=…  a routine's webhook (its own secret)
                                         POST /outside    the stdio MCP server's calls (outside.ts), with the key in outside.json
+                                        POST /promo/v1/chat/completions  a voucher's model, from OpenCode with a key of this run's, sent on to linercode.dev with the voucher (promo.ts)
                                         127.0.0.1:7318   Liner MCP's own listener, while apps are let in: /mcp and OAuth, nothing else
                                         127.0.0.1:<n>    one proxy per dev-server port, for the Browser surface
 ```
@@ -91,7 +92,10 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   answer to a session at Full access always asks. A revoked terminal agent is turned away by its name until let in again. No app answers a permission ask or changes a
   setting, and each gets 60 calls a minute. From the internet (off unless picked): Tailscale Funnel (`tailscale funnel --bg
   <port>`, taken down with `tailscale funnel --https=443 off`), a Cloudflare quick tunnel (`cloudflared tunnel --url
-  http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. The engine's own
+  http://127.0.0.1:<port>`, a new trycloudflare.com address each start), or your own https address. Each start lists its
+  steps for Settings (`Tunnel.checks`: tool, signed in, Funnel on, :443 free, started), and once up the engine GETs its own
+  public `/.well-known/oauth-protected-resource/mcp` and expects its own address back, then every 5 minutes and on
+  `mcp.checkAgain`; `mcp.halt` stops a start that hangs. The engine's own
   server still takes no host but its own. Tell an app posts `{event, session title, app}` with your secret to your https
   webhook when a session starts waiting on you: never to this computer or a private network, no redirects, 10 seconds, two
   retries.
@@ -161,6 +165,8 @@ into the `TurnSink`. Any agent that speaks the Agent Client Protocol is one line
 - **Keys** are sealed with Electron's safeStorage (its key sits in the login keychain). The shell
   hands them to the engine once, over its standard input (never its environment, which other processes can read), and the engine passes them only to the tool that uses them (Anthropic → Claude Code
   when billing is set to the key; OpenAI → Codex). They are never written to disk or sent to the app.
+  A voucher is the exception: no tool gets it. OpenCode runs its model against the engine's `/promo/v1` with a key made
+  for that run, and the engine adds the voucher as it sends each call on to linercode.dev (`promo.ts`).
 - **Approvals** come from the agent's own permission system (Claude Code's `canUseTool`, ACP's
   `session/request_permission`). In Full access the **guard** still asks before force pushes,
   `rm -rf`, `sudo`, publishing, `curl | sh` and similar.

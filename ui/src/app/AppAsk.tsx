@@ -85,6 +85,7 @@ function AskCard({ a }: { a: McpAsk }) {
   };
   return (
     <section className="lc-appask-card" aria-label={`${a.appName} asks first`}>
+      <i className="lc-ht lc-ht-corner lc-ht-soft lc-ht-warn lc-appask-ht" aria-hidden />
       <header>
         <span className="lc-appask-logo">
           <AppLogo kind={a.appKind} size={16} />
@@ -154,6 +155,7 @@ function SignInCard({ s }: { s: McpSignIn }) {
   };
   return (
     <section className="lc-appask-card" aria-label={`An app calling itself ${s.clientName} wants to connect`}>
+      <i className="lc-ht lc-ht-corner lc-ht-soft lc-ht-warn lc-appask-ht" aria-hidden />
       <header>
         {/* No logo: the name is only what the app calls itself, and anyone can call themselves Claude. */}
         <span className="lc-appask-logo">

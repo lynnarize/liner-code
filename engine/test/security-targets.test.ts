@@ -219,6 +219,56 @@ test("Fix them starts one session in a worktree of its own with every open findi
   assert.equal(sent.filter((s) => s.method === "thread.create").length, 2);
 });
 
+test("Every finding a Fix them session works on is fixed when its pull request is merged, not only the first", async () => {
+  const { sec, store } = rig();
+  const { scanId, threadId } = await scanTarget(sec, { target: { kind: "pr", projectId: "p", number: 131 } });
+  await call(sec, "security_report_finding", { title: "SQL built from the harbour id", severity: "high", file: "src/alerts/store.ts", line: 42, lead: "Anyone can read every harbour's alerts.", wrong: "The id goes into the SQL as text." }, { threadId, sidekick: false });
+  await call(sec, "security_report_finding", { title: "Alerts are sent without a sign-in", severity: "medium", file: "src/alerts/send.ts", line: 7, lead: "Anyone can send an alert.", wrong: "The route has no sign-in check." }, { threadId, sidekick: false });
+  sec.patchScan(scanId, { state: "done", finishedAt: Date.now() });
+  const { fixTarget } = await import("../src/security-targets.ts");
+  const t = await fixTarget(sec, { scanId });
+  const found = sec.findings("p");
+  assert.equal(found.length, 2);
+  assert.ok(found.every((f) => f.fix?.threadId === t.id && f.fix.state === "working"));
+  store.patchThread(t.id, { status: "running" });
+  store.patchThread(t.id, { status: "done" });
+  assert.deepEqual(sec.findings("p").map((f) => f.fix?.state), ["ready", "ready"]);
+  store.patchThread(t.id, { pr: { number: 12, url: "https://github.com/x/y/pull/12", state: "MERGED" } });
+  assert.deepEqual(sec.findings("p").map((f) => f.state), ["fixed", "fixed"]);
+});
+
+test("Fix them after a rescan briefs a new session with only what no live fix is working on", async () => {
+  const { sec, sent } = rig();
+  const report = async (threadId: string, title: string, file: string) => call(sec, "security_report_finding", { title, severity: "high", file, line: 3, lead: `${title}.`, wrong: "It is wrong." }, { threadId, sidekick: false });
+  const first = await scanTarget(sec, { target: { kind: "pr", projectId: "p", number: 131 } });
+  await report(first.threadId, "SQL built from the harbour id", "src/a.ts");
+  await report(first.threadId, "Alerts are sent without a sign-in", "src/b.ts");
+  sec.patchScan(first.scanId, { state: "done", finishedAt: Date.now() });
+  const { fixTarget } = await import("../src/security-targets.ts");
+  const t1 = await fixTarget(sec, { scanId: first.scanId });
+  // A rescan meets A and B again and finds C.
+  const again = await scanTarget(sec, { target: { kind: "pr", projectId: "p", number: 131 } });
+  await report(again.threadId, "SQL built from the harbour id", "src/a.ts");
+  await report(again.threadId, "Alerts are sent without a sign-in", "src/b.ts");
+  await report(again.threadId, "The token is logged", "src/c.ts");
+  sec.patchScan(again.scanId, { state: "done", finishedAt: Date.now() });
+  const t2 = await fixTarget(sec, { scanId: again.scanId });
+  assert.notEqual(t2.id, t1.id);
+  const brief = String(sent.filter((s) => s.method === "thread.send").at(-1)!.params.text);
+  assert.match(brief, /Fix this security problem/);
+  assert.match(brief, /The token is logged/);
+  assert.doesNotMatch(brief, /SQL built from the harbour id|Alerts are sent without a sign-in/);
+  const by = (title: string) => sec.findings("p").find((f) => f.title === title)!;
+  assert.equal(by("SQL built from the harbour id").fix?.threadId, t1.id);
+  assert.equal(by("Alerts are sent without a sign-in").fix?.threadId, t1.id);
+  assert.equal(by("The token is logged").fix?.threadId, t2.id);
+  assert.deepEqual(sent.filter((s) => s.method === "thread.create").at(-1)!.params.security, { kind: "fix", finding: by("The token is logged").id });
+  // Everything it found is at work now: a third press opens a live fix rather than a third worktree.
+  const creates = sent.filter((s) => s.method === "thread.create").length;
+  assert.ok([t1.id, t2.id].includes((await fixTarget(sec, { scanId: again.scanId })).id));
+  assert.equal(sent.filter((s) => s.method === "thread.create").length, creates);
+});
+
 test("A Linear issue is refused in plain words, not with a missing project", async () => {
   const { sec, sent } = rig();
   const why = "Linear issues can't be checked against the code yet — start a session from it in a project.";
@@ -250,7 +300,18 @@ test("Who scans lists only tools that are ready, and names a tool once when its 
   const demo = readersOf({ providers, specialists: [], own: "@demo:demo" });
   assert.equal(demo[0].label, "Demo");
   const hermes = readersOf({ providers: [{ ...providers[2], signedIn: true }], specialists: [], own: "@hermes:default" });
-  assert.equal(hermes[0].label, "Hermes");
+  assert.equal(hermes[0].label, "Hermes · its default model");
+});
+
+test("Who scans names the model a tool's default row is set to, not the tool alone", () => {
+  const hermes = tool("hermes", "Hermes", ["default", "kimi-k3"], { signedIn: true, modelsFrom: "cli" });
+  hermes.models[0] = { ...hermes.models[0], label: "Hermes default", now: "Kimi K3" };
+  const opencode = tool("opencode", "OpenCode", ["default", "zen/glm-5.3"], { signedIn: true, modelsFrom: "cli" });
+  opencode.models[0].label = "OpenCode default";
+  const r = readersOf({ providers: [tool("claude", "Claude Code", ["claude-sonnet-5-5"], { modelsFrom: "cli" }), hermes, opencode], specialists: [], own: "@claude:claude-sonnet-5-5" });
+  assert.equal(r.find((x) => x.brand === "hermes")?.label, "Hermes · Kimi K3");
+  // OpenCode's own list doesn't say which model it is set to: the row says so rather than reading as the tool alone.
+  assert.equal(r.find((x) => x.brand === "opencode")?.label, "OpenCode · its default model");
 });
 
 test("A chip reads a scan's finish from the record the engine sends, at once, keeping what it had counted", async () => {

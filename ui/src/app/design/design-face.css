@@ -34,27 +34,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ld-lean {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: var(--l-ink);
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-.ld-lean:hover {
-  background: var(--l-wash);
-}
-.ld-lean > svg {
-  flex: none;
-  color: var(--l-ink-3);
+/* The lean is a row like the rest (board Design's "DESIGN.md · Foreshore"): its file, its name, its title at the end. */
+.ld-lean > .ld-m {
+  flex: 0 1 auto;
+  max-width: 50%;
 }
 .ld-q4 {
   display: grid;
@@ -65,7 +48,7 @@
   overflow: hidden;
   border-radius: 6px;
   background: var(--l-wash-2);
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 .ld-q4[data-small] {
   width: 16px;
@@ -89,44 +72,29 @@
 .ld-side .lc-pop > .ld-tr-add {
   color: var(--l-ink-2);
 }
-.ld-side .lc-pop {
+/* Only the Pop that wraps a whole "add" row is as wide as the list: a heading's ··· keeps its own width, at the heading's end. */
+.ld-side .lc-pop:has(> .ld-tr-add) {
   width: 100%;
 }
 .ld-side .lc-pop > .ld-tr-add {
   cursor: pointer;
 }
-.ld-lean-t {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-.ld-lean-t b {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ld-lean-t small {
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--l-ink-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* A row of the Design sidebar, in the Code sidebar's place-row size (app.css .lc-sb-nav): 28 high, 9 in, the row corner, 13/500. */
 .ld-tr {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 9px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--lc-r-row);
   background: none;
   font: inherit;
   font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   text-align: left;
   color: var(--l-ink-2);
 }
@@ -141,7 +109,8 @@ button.ld-tr:hover {
   background: var(--l-wash-2);
   color: var(--l-ink);
 }
-.ld-tr > svg {
+.ld-tr > svg,
+.ld-tr-b > svg {
   flex: none;
   color: var(--l-ink-3);
 }
@@ -167,7 +136,7 @@ button.ld-tr:hover {
   gap: 6px;
   height: 28px;
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: var(--lc-r-row);
   font-size: 13px;
   color: var(--l-ink-2);
   white-space: nowrap;
@@ -178,7 +147,7 @@ button.ld-tr:hover {
   background: var(--l-wash);
 }
 .ld-ly[data-on] {
-  background: color-mix(in oklab, var(--l-accent) 14%, transparent);
+  background: var(--l-wash-2);
   color: var(--l-ink);
 }
 .ld-ly > svg {
@@ -226,9 +195,9 @@ button.ld-tr:hover {
 .ld-ly-acts:has([data-open]) {
   display: flex;
 }
-/* A loaded skill's row: its button fills it, its ··· at the end. */
+/* A loaded skill's row: its button fills it, its switch at the end. */
 .ld-tr-w {
-  padding-right: 6px;
+  padding-right: 8px;
   transition: background 140ms ease;
 }
 .ld-tr-w:hover {
@@ -238,7 +207,7 @@ button.ld-tr:hover {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
   height: 100%;
   padding: 0;
@@ -268,31 +237,6 @@ button.ld-tr:hover {
   font-size: 13px;
   color: var(--l-ink-3);
 }
-/* The filter: a 30px field, as the app's small fields are. */
-.ld-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  margin: 4px 0;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: var(--lc-well);
-  color: var(--l-ink-3);
-}
-.ld-filter input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--l-ink);
-}
-.ld-filter input::placeholder {
-  color: var(--l-ink-4);
-}
 /* ---------- the face ---------- */
 .ld-face {
   display: grid;
@@ -321,6 +265,33 @@ html[data-motion="quick"] .ld-face {
 }
 .ld-bar .lc-pop {
   flex: none;
+}
+/* Where you are, before the design's name, in the Code face's crumb (app.css .lc-crumb): it gives way first when the row is narrow. */
+.ld-bar > .ld-crumb {
+  margin-right: 2px;
+}
+@container ld-bar (max-width: 760px) {
+  .ld-bar > .ld-crumb {
+    display: none;
+  }
+}
+/* Compare, outlined, and Build, the one white button, at the row's end; Build's count is quieter than its word. */
+.ld-bar > .ld-top-cmp,
+.ld-bar > .ld-top-build {
+  flex: none;
+  gap: 6px;
+}
+.ld-top-cmp[aria-pressed="true"] {
+  background: var(--l-wash-2);
+}
+.ld-top-n {
+  font-weight: 400;
+  opacity: 0.6;
+}
+@container ld-bar (max-width: 640px) {
+  .ld-top-n {
+    display: none;
+  }
 }
 /* A narrow row gives way from the least needed: the kept copy's name, then the kept copies altogether. The title, the
    zoom, Play and the ··· stay: the title shortens (its own rule below). */
@@ -461,7 +432,7 @@ html[data-motion="quick"] .ld-face {
   width: 292px;
   min-width: 0;
   min-height: 0;
-  box-shadow: -1px 0 0 var(--lc-hair);
+  box-shadow: -0.5px 0 0 var(--lc-hair);
 }
 .ld-insp-col > * {
   flex: 1;
@@ -479,7 +450,7 @@ html[data-motion="quick"] .ld-face {
     z-index: 20;
     width: min(292px, 88%);
     background: var(--lc-paper);
-    box-shadow: -1px 0 0 var(--lc-hair), var(--l-shadow-lg);
+    box-shadow: -0.5px 0 0 var(--lc-hair), var(--l-shadow-lg);
   }
 }
 .ld-empty {
@@ -520,10 +491,14 @@ html[data-motion="quick"] .ld-face {
 }
 
 /* ---------- the canvas ---------- */
+/* The ground with a grid of small dots that rides with the pan (Canvas.tsx sets where), so the frames move over it. */
 .ld-cv-hit {
   position: absolute;
   outline: none;
   inset: 0;
+  background-image: radial-gradient(circle, var(--lc-line2) 1px, transparent 1.4px);
+  background-size: 16px 16px;
+  background-position: var(--ld-gx, 0) var(--ld-gy, 0);
   overflow: hidden;
   touch-action: none;
   user-select: none;
@@ -551,7 +526,7 @@ html[data-motion="quick"] .ld-face {
 .ld-frame {
   position: absolute;
   background: #fff;
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--l-ink) 10%, transparent), 0 2px 8px color-mix(in oklab, var(--l-ink) 6%, transparent);
+  box-shadow: 0 0 0 0.5px var(--lc-line2), 0 14px 30px -16px oklch(0 0 0 / 0.45);
 }
 .ld-frame[hidden] {
   display: block;
@@ -579,7 +554,7 @@ html[data-motion="quick"] .ld-face {
   gap: 0 8px;
   height: 18px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--l-ink-3);
   white-space: nowrap;
   pointer-events: auto;
@@ -597,12 +572,12 @@ html[data-motion="quick"] .ld-face {
 }
 .ld-label b {
   overflow: hidden;
-  font-weight: 500;
-  color: var(--l-ink-2);
+  font-weight: 400;
+  color: var(--l-ink-3);
   text-overflow: ellipsis;
 }
 .ld-label[data-on] b {
-  color: var(--l-accent-text, var(--l-accent));
+  color: var(--lc-blue);
 }
 .ld-name {
   width: 160px;
@@ -622,15 +597,17 @@ html[data-motion="quick"] .ld-face {
   align-items: center;
   gap: 4px;
   height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
+  padding: 0 7px 0 5px;
+  border-radius: 3px 10px 10px 10px;
   background: var(--ld-side);
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--lc-ground);
 }
+/* The lead in the accent with white words; the sidekick in the blue with the ground's (board Design's .d-pres). */
 .ld-ptag[data-lead] {
   background: var(--ld-lead);
+  color: var(--lc-act-ink);
 }
 /* The frame an agent is on: a ring in its colour. That it works is the state mark in its tag (.ld-ptag), the one mark for state. */
 .ld-pres {
@@ -638,23 +615,24 @@ html[data-motion="quick"] .ld-face {
   box-shadow: 0 0 0 1.5px var(--ld-side);
 }
 .ld-pres[data-lead] {
-  box-shadow: 0 0 0 1.5px var(--ld-lead);
+  box-shadow: 0 0 0 1.5px var(--ld-lead), 0 0 0 5px color-mix(in oklab, var(--ld-lead) 22%, transparent);
 }
+/* What you point at and what is picked are blue (board Design's .d-sel), apart from the accent the lead draws in. */
 .ld-hover {
   position: absolute;
-  box-shadow: 0 0 0 1px var(--l-accent);
+  box-shadow: 0 0 0 1px var(--lc-blue);
 }
 .ld-sel {
   position: absolute;
   z-index: 2;
-  box-shadow: 0 0 0 1.5px var(--l-accent);
+  box-shadow: 0 0 0 1.5px var(--lc-blue);
 }
 .ld-sel > i {
   position: absolute;
   width: 8px;
   height: 8px;
   box-sizing: border-box;
-  border: 1.5px solid var(--l-accent);
+  border: 1.5px solid var(--lc-blue);
   border-radius: 2px;
   background: #fff;
   pointer-events: auto;
@@ -686,43 +664,76 @@ html[data-motion="quick"] .ld-face {
   border-radius: 2px;
   background: #fff;
 }
+/* The picked layer's name and size on a blue tag at its top left (board Design's .d-sel::before). */
+.ld-sel[data-n]::before {
+  content: attr(data-n);
+  position: absolute;
+  left: -1.5px;
+  bottom: calc(100% + 1.5px);
+  padding: 0 5px;
+  border-radius: 3px 3px 3px 0;
+  background: var(--lc-blue);
+  font: 500 10px/15px var(--l-font-body);
+  color: var(--lc-ground);
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* Where, above it, the tag would land on the frame's own label row (Canvas.tsx tagInside), it goes inside the layer's top
+   edge, as board Design draws it, and the frame's name stays readable. */
+.ld-sel[data-n][data-in]::before {
+  top: 0;
+  bottom: auto;
+  left: 0;
+  border-radius: 0 0 3px 0;
+}
 .ld-draw {
   position: absolute;
   background: color-mix(in oklab, var(--l-accent) 8%, transparent);
   box-shadow: 0 0 0 1px var(--l-accent);
 }
 
-/* ---------- the rail ---------- */
+/* ---------- the tools ---------- */
+/* A segmented control in the top row (board Design): a washed track 2px in, 24px buttons with an 8px corner, the tool
+   in use on the raised tile with a 0.5px edge, as the app's segmented controls are. */
 .ld-rail {
-  position: absolute;
-  z-index: 4;
-  top: 10px;
-  left: 10px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border-radius: var(--lc-r-card);
-  background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair), 0 2px 8px oklch(0 0 0 / 0.06);
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  height: 28px;
+  box-sizing: border-box;
+  margin-right: 6px;
+  padding: 2px;
+  border-radius: var(--lc-r-field);
+  background: var(--l-wash);
+}
+.ld-rail .lc-tb {
+  width: 28px;
+  height: 24px;
+  border-radius: var(--lc-r-row);
+  color: var(--l-ink-3);
+}
+.ld-rail .lc-tb[aria-pressed="true"] {
+  background: var(--l-raised, var(--lc-float));
+  box-shadow: inset 0 0 0 0.5px var(--lc-line2);
+  color: var(--l-ink);
 }
 .ld-rail hr {
-  width: 18px;
-  height: 1px;
-  margin: 3px auto;
+  width: 0.5px;
+  height: 14px;
+  margin: 0 3px;
   border: 0;
-  background: var(--lc-hair);
+  background: var(--lc-line2);
 }
 .ld-rail .lc-tb:hover,
 .ld-rail .lc-pick:hover {
-  background: var(--l-wash);
+  background: var(--l-wash-2);
   color: var(--l-ink);
 }
 .ld-rail .lc-tb:disabled {
   opacity: 0.45;
   cursor: default;
 }
-
 /* ---------- the say bar ---------- */
 .ld-say {
   position: absolute;
@@ -769,7 +780,7 @@ html[data-motion="quick"] .ld-face {
   color: var(--l-ink-2);
 }
 .ld-say-v {
-  width: 1px;
+  width: 0.5px;
   height: 16px;
   margin: 0 2px;
   background: var(--lc-hair);
@@ -793,10 +804,22 @@ html[data-motion="quick"] .ld-face {
 .ld-dock-in {
   width: min(560px, calc(100% - 96px));
 }
-/* Solid, not glass: a blur over the frames would redraw with each of theirs. */
+/* Solid, not glass: a blur over the frames would redraw with each of theirs. The message box's own card and lift
+   (board Design), over the canvas's ground. */
 .ld-dock .lc-tray {
-  background: color-mix(in oklab, var(--l-ink) 4%, var(--lc-paper));
-  box-shadow: 0 0 0 1px var(--lc-hair), 0 16px 40px -18px oklch(0 0 0 / 0.3);
+  padding: 4px;
+  border-radius: calc(var(--lc-r-sheet) + 4px);
+  background: var(--lc-well);
+  box-shadow: var(--lc-raise);
+}
+/* Here the card holds its rows (the chat, the plan, what is to fix) at its own width over the box: the message box's tab
+   (app.css .lc-tray-head) is a part of this card, not a tab of its own, so it takes no inset, fill, ring or corner. */
+.ld-dock .lc-tray-head {
+  margin: 0;
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 .ld-q {
   flex: none;
@@ -821,14 +844,15 @@ html[data-motion="quick"] .ld-face {
   height: 28px;
   padding: 0 4px 0 8px;
   border-radius: 8px;
-  background: color-mix(in oklab, var(--l-accent) 13%, transparent);
-  font-size: 13px;
+  background: color-mix(in oklab, var(--lc-blue) 14%, transparent);
+  font-size: 12.5px;
   font-weight: 500;
-  color: var(--l-ink);
+  color: var(--lc-blue);
 }
+/* The picked layer as a chip in the message box: blue, as its outline on the canvas is. */
 .ld-chip > svg {
   flex: none;
-  color: var(--l-ink-2);
+  color: var(--lc-blue);
 }
 /* Its cross: 20 square inside the chip's 28, its corner the chip's less the 4 between them. */
 .ld-chip button {
@@ -863,7 +887,7 @@ html[data-motion="quick"] .ld-face {
 /* A frame whose file is gone: an empty box at its place, its name and one line. */
 .ld-frame[data-gone] {
   background: var(--lc-paper);
-  box-shadow: 0 0 0 1px var(--lc-hair);
+  box-shadow: 0 0 0 0.5px var(--lc-hair);
 }
 .ld-gone {
   display: flex;
@@ -887,13 +911,13 @@ html[data-motion="quick"] .ld-face {
   color: var(--l-ink-3);
 }
 
-/* A part of the face that hit a fault: its sentence in its own place, the canvas's clear of the rail. */
+/* A part of the face that hit a fault: its sentence in its own place, the canvas's along its top. */
 .ld-cv > .ld-broke {
   position: absolute;
   z-index: 5;
   top: 10px;
   right: 10px;
-  left: 64px;
+  left: 10px;
 }
 .ld-cv > .ld-broke[data-what="dock"] {
   top: auto;

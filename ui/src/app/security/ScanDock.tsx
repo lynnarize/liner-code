@@ -170,7 +170,8 @@ function CardBody({ scanId }: { scanId: string }) {
   const model = tool?.models.find((m) => m.id === rest.join(":"))?.label ?? rest.join(":");
   const lookBy = r.secondLook ? (providers.find((p) => p.id === r.secondLook!.split(":")[0])?.label ?? r.secondLook) : undefined;
   return (
-    <div className="lst-card" role="dialog" aria-label={`Liner Security scan of ${r.target ? targetName(r.target) : r.title}`}>
+    // A region, not a dialog: the card floats beside your work, and a dialog would hold every shortcut while it shows (hasOpenModal).
+    <div className="lst-card" role="region" aria-label={`Liner Security scan of ${r.target ? targetName(r.target) : r.title}`}>
       <div className="lst-head">
         <I.shield size={14} />
         <b>{headWords(r)}</b>

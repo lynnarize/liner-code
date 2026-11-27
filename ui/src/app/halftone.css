@@ -1,0 +1,189 @@
+/*
+  The dots of "line and dot" (2026-11-27): colour that breaks into round dots on a 4px grid, in three sizes, thinning
+  from one side or one corner. They mean something is alive or chosen, never decoration on a plain list:
+  - .lc-ht, the halftone: laid behind the head of a card that is alive or chosen (the plan in work, the model you
+    picked, an ask, a pull request, a session card on Home). Put it as the first child of a positioned card; it fills
+    the card, takes its corners and lets the pointer through. From the left by default; .lc-ht-corner from the top
+    right corner along a quarter circle, .lc-ht-down from the top, .lc-ht-left from the right. .lc-ht-soft and
+    .lc-ht-faint make it quieter, .lc-ht-big puts it on a 6px grid. Its colour is the action colour (Liner red) unless
+    one of .lc-ht-blue, -ok, -prog, -warn, -bad or -ink says the card's state, or --lc-ht-c is set.
+  - .lc-ht-fill: the same, solid where it starts and then dots, as the fill of a track.
+  - .lc-dotbar: a measured bar as rows of dots (the session details card's Context, a file's share): one colour, or a row
+    of coloured spans, runs under the grid and the grid lets it through. 12px high by default.
+  - .lc-dither: the fill of a track that ends at a knob (the Effort track): solid action colour, with light round dots
+    that come in one cell at a time (an ordered 4×4 pattern on a 3px grid) until they are a checkerboard just before the
+    knob, and a fill that runs on round the knob as a half circle. Give it eight empty <i> children and its width up to
+    the knob's far side; the dots stop 12px before its end (the knob's centre).
+  No blur, and nothing here moves.
+*/
+
+/* ---------- The halftone ---------- */
+.lc-ht {
+  --lc-ht-c: var(--lc-act);
+  --lc-ht-d: to right;
+  --lc-ht-s: 4px;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle, var(--lc-ht-c) calc(var(--lc-ht-s) * 0.13), transparent calc(var(--lc-ht-s) * 0.2)) 0 0 / var(--lc-ht-s) var(--lc-ht-s);
+  -webkit-mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 16%, transparent 100%);
+  mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 16%, transparent 100%);
+}
+.lc-ht::before,
+.lc-ht::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.lc-ht::after {
+  background: radial-gradient(circle, var(--lc-ht-c) calc(var(--lc-ht-s) * 0.25), transparent calc(var(--lc-ht-s) * 0.33)) 0 0 / var(--lc-ht-s) var(--lc-ht-s);
+  -webkit-mask-image: linear-gradient(var(--lc-ht-d), #000 0, transparent 66%);
+  mask-image: linear-gradient(var(--lc-ht-d), #000 0, transparent 66%);
+}
+.lc-ht::before {
+  background: radial-gradient(circle, var(--lc-ht-c) calc(var(--lc-ht-s) * 0.41), transparent calc(var(--lc-ht-s) * 0.49)) 0 0 / var(--lc-ht-s) var(--lc-ht-s);
+  -webkit-mask-image: linear-gradient(var(--lc-ht-d), #000 0, transparent 38%);
+  mask-image: linear-gradient(var(--lc-ht-d), #000 0, transparent 38%);
+}
+.lc-ht-down {
+  --lc-ht-d: to bottom;
+}
+.lc-ht-left {
+  --lc-ht-d: to left;
+}
+/* From a corner: the halftone thins along a quarter circle, so it never ends on a straight edge. */
+.lc-ht-corner {
+  -webkit-mask-image: radial-gradient(farthest-side at 100% 0, #000 0, #000 10%, transparent 100%);
+  mask-image: radial-gradient(farthest-side at 100% 0, #000 0, #000 10%, transparent 100%);
+}
+.lc-ht-corner::after {
+  -webkit-mask-image: radial-gradient(farthest-side at 100% 0, #000 0, transparent 68%);
+  mask-image: radial-gradient(farthest-side at 100% 0, #000 0, transparent 68%);
+}
+.lc-ht-corner::before {
+  -webkit-mask-image: radial-gradient(farthest-side at 100% 0, #000 0, transparent 40%);
+  mask-image: radial-gradient(farthest-side at 100% 0, #000 0, transparent 40%);
+}
+.lc-ht-soft {
+  opacity: 0.45;
+}
+.lc-ht-faint {
+  opacity: 0.22;
+}
+.lc-ht-big {
+  --lc-ht-s: 6px;
+}
+.lc-ht-blue {
+  --lc-ht-c: var(--lc-blue);
+}
+.lc-ht-ok {
+  --lc-ht-c: var(--l-ok);
+}
+.lc-ht-prog {
+  --lc-ht-c: var(--lc-progress);
+}
+.lc-ht-warn {
+  --lc-ht-c: var(--l-warn);
+}
+.lc-ht-bad {
+  --lc-ht-c: var(--l-danger);
+}
+.lc-ht-ink {
+  --lc-ht-c: var(--l-ink-2);
+}
+/* Solid where it starts, then dots: the fill of a track. */
+.lc-ht.lc-ht-fill {
+  background:
+    linear-gradient(var(--lc-ht-d), var(--lc-ht-c) 0, var(--lc-ht-c) 30%, transparent 30.5%),
+    radial-gradient(circle, var(--lc-ht-c) calc(var(--lc-ht-s) * 0.2), transparent calc(var(--lc-ht-s) * 0.28)) 0 0 / var(--lc-ht-s) var(--lc-ht-s);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.lc-ht.lc-ht-fill::after {
+  -webkit-mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 30%, transparent 92%);
+  mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 30%, transparent 92%);
+}
+.lc-ht.lc-ht-fill::before {
+  -webkit-mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 30%, transparent 62%);
+  mask-image: linear-gradient(var(--lc-ht-d), #000 0, #000 30%, transparent 62%);
+}
+
+/* ---------- A measured bar as rows of dots ---------- */
+.lc-dotbar {
+  display: flex;
+  height: 12px;
+  background: var(--l-wash-2);
+  -webkit-mask: radial-gradient(circle, #000 1.3px, transparent 1.7px) 0 0 / 4px 4px;
+  mask: radial-gradient(circle, #000 1.3px, transparent 1.7px) 0 0 / 4px 4px;
+}
+.lc-dotbar > * {
+  flex: none;
+  height: 100%;
+  background: var(--lc-dotbar-c, var(--l-ink-2));
+}
+
+/* ---------- The dither fill of a track (the Effort track) ---------- */
+.lc-dither {
+  --lc-dither-ink: var(--lc-act-ink);
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--lc-act);
+  pointer-events: none;
+}
+.lc-dither > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 12px;
+  background-size: 12px 12px;
+}
+/* The eight cells of the 4×4 ordered pattern on one grid from the fill's start, each one let in a little nearer the knob
+   than the one before (cut, not moved, so the cells never fall off the grid). Each comes in a set distance before the knob's
+   centre (this layer's right end), 156 down to 24px as board Menus spaces them, whatever the fill's length, so a long fill
+   (Max) thins over the same few cells as a short one instead of stretching into wide bands; and the cut is rounded down to
+   the 12px tile, so no cell is ever cut in half into a hard seam. The plain line before each is for an engine without round(). */
+.lc-dither > i:nth-child(1) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 156px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 156px), 12px)));
+  background-image: radial-gradient(circle at 1.5px 1.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(2) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 132px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 132px), 12px)));
+  background-image: radial-gradient(circle at 7.5px 7.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(3) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 108px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 108px), 12px)));
+  background-image: radial-gradient(circle at 7.5px 1.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(4) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 84px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 84px), 12px)));
+  background-image: radial-gradient(circle at 1.5px 7.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(5) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 60px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 60px), 12px)));
+  background-image: radial-gradient(circle at 4.5px 4.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(6) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 48px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 48px), 12px)));
+  background-image: radial-gradient(circle at 10.5px 10.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(7) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 36px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 36px), 12px)));
+  background-image: radial-gradient(circle at 10.5px 4.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}
+.lc-dither > i:nth-child(8) {
+  clip-path: inset(0 0 0 max(0px, calc(100% - 24px)));
+  clip-path: inset(0 0 0 max(0px, round(down, calc(100% - 24px), 12px)));
+  background-image: radial-gradient(circle at 4.5px 10.5px, color-mix(in oklab, var(--lc-dither-ink) 62%, transparent) 1.05px, transparent 1.4px);
+}

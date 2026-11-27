@@ -199,10 +199,13 @@ const server = await startServer({
   knows: { surface: (key) => Boolean(key && tools.threadOf(key)), outside: (key) => Boolean(outside.now?.allows(key)) },
   check: { page: (t) => tools.checkPage(t), call: (t, b) => tools.checkCall(t, b), report: (t, b) => tools.checkReport(t, b as never), settle: (t) => tools.checkSettle(t) },
   dsh: (token, rest, search, req, res) => dsh.serve(token, rest, search, req, res),
+  promo: (rest, req, res) => runtime.promo.serve(rest, req, res),
   // No window left: every canvas and design watch goes, and the windows that come back watch again as they open their designs.
   alone: () => (resetWatches(design), designs.unwatchAll()),
 });
 tools.url = `http://127.0.0.1:${server.port}`;
+// The promo's model reaches Liner Code's site through this engine, which alone holds the voucher (promo.ts).
+runtime.promo.url = tools.url;
 outside.now.url = tools.url;
 // Where a ported plugin's tools bring your agents' calls (dsh-mcp.ts).
 dsh.url = tools.url;

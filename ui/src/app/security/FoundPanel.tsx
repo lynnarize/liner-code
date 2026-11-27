@@ -102,7 +102,7 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
     const f = mine[0];
     return (
       <aside className="lsc-found" aria-label="The finding">
-        <PaneHead name="Finding" canvas={false} onClose={onClose} />
+        <PaneHead name="Finding" onClose={onClose} />
         <PaneBody>
           {f ? (
             <PaneSection label="Summary">
@@ -148,7 +148,6 @@ export function FoundPanel({ scanId, threadId, projectId, finding, paused, left,
     <aside className="lsc-found" aria-label={done ? "What the scan found" : "What the scan has found so far"}>
       <PaneHead
         name="Found"
-        canvas={false}
         onClose={onClose}
         shows={
           <PaneField icon={<I.search size={14} />}>

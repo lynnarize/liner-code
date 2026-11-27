@@ -27,7 +27,7 @@
   border: 0;
   background: var(--l-wash);
   color: var(--l-ink-2);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
   cursor: pointer;
 }
 .lst-chip:hover {
@@ -67,7 +67,7 @@
 .lst-split {
   background: var(--l-wash);
   color: var(--l-ink-2);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
 }
 .lst-split:hover,
 .lst-split:has([data-open]) {
@@ -105,7 +105,7 @@
   margin: 0 4px 0 0;
   padding: 0 4px 0 7px;
   border: 0;
-  border-left: 1px solid var(--l-line-2);
+  border-left: 0.5px solid var(--l-line-2);
   border-radius: 0;
   background: none;
   color: var(--l-ink-3);
@@ -170,10 +170,9 @@
 }
 .lst-card,
 .lst-pill {
-  background: var(--l-float);
-  -webkit-backdrop-filter: var(--l-lens,) var(--l-backdrop);
-  backdrop-filter: var(--l-lens,) var(--l-backdrop);
-  box-shadow: var(--l-shadow-float), var(--l-glass-shadow);
+  /* Solid, with no backdrop blur: the menus' own float and edge, so the words under it never show through. */
+  background: var(--lc-float);
+  box-shadow: 0 0 0 0.5px var(--lc-line2), var(--lc-float-shadow);
   color: var(--l-ink);
   animation: l-pop-up 220ms var(--l-ease-enter) backwards;
 }
@@ -192,7 +191,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 8px 0 14px;
-  border-bottom: 1px solid var(--l-line);
+  border-bottom: 0.5px solid var(--l-line);
   font-size: 13.5px;
 }
 .lst-head > svg {
@@ -370,7 +369,7 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 10px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--l-line);
 }
 .lst-bubble {
   align-self: flex-end;
@@ -397,10 +396,10 @@
   padding: 0 6px 0 12px;
   border-radius: 12px;
   background: var(--l-wash);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
 }
 .lst-mini:focus-within {
-  box-shadow: 0 0 0 1px var(--l-line-strong);
+  box-shadow: 0 0 0 0.5px var(--l-line-strong);
 }
 .lst-mini input {
   flex: 1;
@@ -440,7 +439,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 10px 8px 14px;
-  border-top: 1px solid var(--l-line);
+  border-top: 0.5px solid var(--l-line);
 }
 .lst-grow {
   flex: 1;
@@ -454,7 +453,7 @@
   border: 0;
   border-radius: 8px;
   background: var(--l-wash);
-  box-shadow: 0 0 0 1px var(--l-line-2);
+  box-shadow: 0 0 0 0.5px var(--l-line-2);
   color: var(--l-ink);
   font: inherit;
   font-size: 13px;
@@ -495,7 +494,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 8px 0 14px;
-  border-radius: 19px;
+  border-radius: 999px;
   font-size: 13px;
 }
 .lst-pill > b {

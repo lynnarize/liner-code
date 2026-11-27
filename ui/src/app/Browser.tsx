@@ -721,9 +721,9 @@ export function BrowserSurface({ thread, agentName, hidden }: { thread: Thread; 
         <SurfaceNote
           icon={<I.globe size={20} />}
           title={ports === null ? "Looking for a dev server" : "Nothing of this session's is running yet"}
-          action={ports === null ? undefined : <PaneButton onClick={() => setListOpen(true)}>{servers.length ? "Run a dev server" : "Open a page"}</PaneButton>}
+          action={ports === null ? undefined : <PaneButton ink onClick={() => setListOpen(true)}>{servers.length ? "Run a dev server" : "Open a page"}</PaneButton>}
         >
-          {ports === null ? null : launch?.error ? launch.error : servers.length ? <>Run one of the folder's dev servers, open a page, or type an address. Servers come from .claude/launch.json.</> : <>Start the dev server in the Terminal, or ask {agentName} to build a page. Plain HTML opens without one. Servers in .claude/launch.json run from here.</>}
+          {ports === null ? null : launch?.error ? launch.error : servers.length ? <>Run one of the dev servers in its .claude/launch.json, open a page, or type an address.</> : <>Start the dev server in the Terminal or ask {agentName} to build a page; plain HTML opens without one.</>}
         </SurfaceNote>
       </>
     );

@@ -238,11 +238,11 @@ export function ShipCard({ thread }: { thread: Thread }) {
                 Commit and push
               </span>
               <span className="x1" aria-hidden={!live.x1}>
-                <StepMark state="working" size={14} />
+                <StepMark state="working" size={14} live />
                 Committing {plural(s.files, "file")}
               </span>
               <span className="x2" aria-hidden={!live.x2}>
-                <StepMark state="working" size={14} />
+                <StepMark state="working" size={14} live />
                 {words.pushing}
               </span>
               <span className="x3" aria-hidden={!live.x3}>

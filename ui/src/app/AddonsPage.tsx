@@ -197,7 +197,7 @@ export function AddonsPage({ sidebar, onSidebar, onMake }: { sidebar: boolean; o
                   </button>
                 }
               >
-                Say what you'd like, and an agent makes it in Workshop: a page for your notes, a panel of TODOs, a connection to Linear. Or add one someone else made, from Add one.
+                Say what you'd like and an agent makes it in Workshop, or add one someone else made from Add one.
               </PaneNote>
             )}
           </section>
@@ -332,7 +332,6 @@ function Details({ a, onClose }: { a: AddonInfo; onClose: () => void }) {
               )}
             </Pop>
           }
-          canvas={false}
           onClose={onClose}
         />
         <PaneBody className="lc-ao-sheet-body">

@@ -193,8 +193,11 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
   const [finding, setFinding] = useState(false);
   const [wtStatus, setWtStatus] = useState<{ branch?: string; changes: FileChange[] } | null>(null);
   const [wtTick, setWtTick] = useState(0);
+  // The working tree is read whenever no turn has changes still to commit (none yet, or all committed or undone), as the
+  // message box's commit tab counts it (Session.tsx): while Changes shows that tab steps aside, so Commit is here instead.
+  const turnsOpen = cps.some((c) => !c.reverted && !c.committed);
   useEffect(() => {
-    if (!project?.git || cps.length > 0) return;
+    if (!project?.git || turnsOpen) return;
     let live = true;
     void rpc("git.status", { projectId: project.id, threadId: thread.id })
       .then((st) => live && setWtStatus({ branch: st.branch, changes: st.changes }))
@@ -202,7 +205,7 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
     return () => {
       live = false;
     };
-  }, [project?.id, project?.git, thread.id, thread.turns, cps.length, wtTick]);
+  }, [project?.id, project?.git, thread.id, thread.turns, cps.length, turnsOpen, wtTick]);
   // The turn you chose, or else the newest. While a comment is being written on a line, the newest stands still: a turn that
   // ends meanwhile would otherwise move the view to its own diff and close the comment under your hands.
   const chosen = focus?.id && (focus.id === "all" || focus.id === "branch" || cps.some((c) => c.id === focus.id)) ? focus.id : undefined;
@@ -397,6 +400,8 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
 
   const openCps = cps.filter((c) => !c.reverted && !c.committed);
   const openFiles = new Set(openCps.flatMap((c) => c.files.map((f) => f.path))).size;
+  // What Commit commits: the turns' files still open, else the working tree's (the same count as the message box's tab).
+  const toCommit = openFiles || (turnsOpen ? 0 : (wtStatus?.changes.length ?? 0));
   const files = shown.map((p) => p.file.path);
   const seen = files.filter((f) => viewed.has(f)).length;
   const lines = shown.reduce((s, p) => ({ added: s.added + p.added, removed: s.removed + p.removed }), { added: 0, removed: 0 });
@@ -434,6 +439,10 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
               <PaneFile key={f.path} path={f.path} status={f.status[0]?.toUpperCase() || "M"} lines={{ added: f.added, removed: f.removed }} onOpen={() => window.dispatchEvent(new CustomEvent("lc:open-file", { detail: { path: f.path, threadId: thread.id } }))} />
             ))}
           </div>
+          {/* The message box's commit tab steps aside while Changes shows, so the white Commit is here, in this view too. */}
+          <PaneFoot say={plural(wtFiles.length, "file") + " in the working tree"}>
+            <CommitButton thread={thread} files={wtFiles.length} disabled={thread.status === "running"} />
+          </PaneFoot>
         </div>
       );
     return (
@@ -470,16 +479,11 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
     <Pop label="How it's shown" menu align="end" width={260} triggerClass={PANE_TOOL} trigger={<I.sliders size={16} />}>
       {(close) => (
         <>
-          <SubMenu title="Layout" icon={view === "split" ? <I.split size={14} /> : <I.unified size={14} />} value={view === "split" ? "Split" : "Unified"} label="Layout" width={200}>
-            {() => (
-              <>
-                <MenuRow title="Unified" icon={<I.unified size={14} />} on={view === "unified"} onPick={() => (close(), setView("unified"))} />
-                <MenuRow title="Split" icon={<I.split size={14} />} on={view === "split"} onPick={() => (close(), setView("split"))} />
-              </>
-            )}
-          </SubMenu>
-          {/* Both remembered (T3 Code: DiffPanel.tsx). Split is drawn by CodeDiff, which doesn't mark spaces: there that row stands dimmed and says where it works. */}
-          <MenuRow title="Wrap lines" icon={<I.wrap size={14} />} on={wrap} onPick={() => (close(), setWrap(!wrap))} />
+          {/* One column or side by side, and Wrap, are on the bar itself (line and dot, board Main); both remembered (T3 Code: DiffPanel.tsx).
+              Split is drawn by CodeDiff, which doesn't mark spaces: there that row stands dimmed and says where it works. */}
+          <MenuRow title="Previous change" icon={<I.chevU size={14} />} end="K" disabled={!shown.length} onPick={() => (close(), goChange(at - 1))} />
+          <MenuRow title="Next change" icon={<I.chevD size={14} />} end="J" disabled={!shown.length} onPick={() => (close(), goChange(at + 1))} />
+          <Sep />
           <MenuRow title="Spaces and tabs" note={view === "split" ? "In the unified view" : undefined} keepNote icon={<I.pilcrow size={14} />} on={spaces && view === "unified"} disabled={view === "split"} onPick={() => (close(), setSpaces(!spaces))} />
           {tests > 0 && (
             <SubMenu title="Test files" icon={<I.flask size={14} />} value={hideTests ? "Hidden" : "Shown"} label="Test files" width={200}>
@@ -530,8 +534,11 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
         }
         tools={
           <>
-            <PaneTool label="Previous change (K)" icon={<I.chevU size={16} />} disabled={!shown.length} onClick={() => goChange(at - 1)} />
-            <PaneTool label="Next change (J)" icon={<I.chevD size={16} />} disabled={!shown.length} onClick={() => goChange(at + 1)} />
+            <span className="lc-pane-seg" role="group" aria-label="Layout">
+              <PaneTool label="One column" icon={<I.unified size={16} />} pressed={view === "unified"} onClick={() => setView("unified")} />
+              <PaneTool label="Side by side" icon={<I.split size={16} />} pressed={view === "split"} onClick={() => setView("split")} />
+            </span>
+            <PaneTool label="Wrap long lines" icon={<I.wrap size={16} />} pressed={wrap} onClick={() => setWrap(!wrap)} />
             {options}
           </>
         }
@@ -609,7 +616,7 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
             ) : !diff.length ? (
               <SurfaceNote title={pick === "branch" ? "This branch matches main" : "Nothing changed here"} />
             ) : !shown.length ? (
-              <SurfaceNote title="Only test files changed here" action={<PaneButton onClick={() => setHideTests(false)}>Show them</PaneButton>} />
+              <SurfaceNote title="Only test files changed here" action={<PaneButton ink onClick={() => setHideTests(false)}>Show them</PaneButton>} />
             ) : view === "split" ? (
               // Its own row of tools is hidden (app.css, .lc-diff): the head has them. Clicking a line number lets you ask about that line in split view too.
               <div
@@ -649,7 +656,7 @@ export function Review({ thread, focus, onFocus, wide = false, visible = true }:
                 Undo turn {cp.turn}
               </PaneButton>
             )}
-            {openFiles > 0 ? <CommitButton thread={thread} files={openFiles} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
+            {toCommit > 0 ? <CommitButton thread={thread} files={toCommit} disabled={busy !== null || thread.status === "running"} /> : <PushButton thread={thread} branch={branch} />}
           </PaneFoot>
         </section>
       </div>

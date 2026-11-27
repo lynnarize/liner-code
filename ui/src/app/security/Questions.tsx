@@ -11,7 +11,7 @@
 */
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Item } from "@contracts";
-import { I, StateMark } from "../icons";
+import { I } from "../icons";
 import { PaneTool } from "../Pane";
 
 export type QuestionItem = Extract<Item, { kind: "question" }>;
@@ -71,7 +71,8 @@ export function ScanQuestions({ it, state, onState, onDone, note }: { it: Questi
   return (
     <section ref={card} className="lc-dask lsc-ask" tabIndex={-1} aria-label={`The scan asks: ${q.question}`} onKeyDown={onKey}>
       <div className="lc-dask-top">
-        <StateMark state="needs" size={14} />
+        {/* No mark at the head (the owner's ruling): the card's amber edge says it waits; a screen reader hears it in words. */}
+        <span className="l-sr-only">Waiting for you: </span>
         <span className="lc-dask-who">The scan asks · answering is optional</span>
         {total > 1 && (
           <>

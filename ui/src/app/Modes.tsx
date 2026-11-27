@@ -12,7 +12,6 @@ import { useState, type ReactNode } from "react";
 import type { AgentProfile, SessionMode, Thread } from "@contracts";
 import { BUILTIN_MODES, modeName, startOf } from "@contracts";
 import { Dialog } from "@liner/components/dialog/dialog";
-import { Tooltip } from "@liner/components/tooltip/tooltip";
 import { toast } from "@liner/components/toast/toast";
 import { openSession } from "./Addon";
 import { getState, rpc, useEngine } from "./engine";
@@ -168,11 +167,10 @@ function ModeCard({ id, name, badge, blurb, guide, isDefault, onDefault, end }: 
         </button>
         {end}
         <span className="lc-grow" />
-        <Tooltip content={isDefault ? "The default for new sessions" : "Make it the default for new sessions"}>
-          <button type="button" className="lc-ib l-focus lc-mode-set" aria-label={isDefault ? `${name} is the default for new sessions` : `Make ${name} the default for new sessions`} aria-pressed={isDefault} onClick={() => !isDefault && onDefault()}>
-            <I.notes size={14} />
-          </button>
-        </Tooltip>
+        {/* Its tip is the app's one (Tips.tsx), from the title, as every icon button's is. */}
+        <button type="button" className="lc-ib l-focus lc-mode-set" aria-label={isDefault ? `${name} is the default for new sessions` : `Make ${name} the default for new sessions`} title={isDefault ? "The default for new sessions" : "Make it the default for new sessions"} aria-pressed={isDefault} onClick={() => !isDefault && onDefault()}>
+          <I.notes size={14} />
+        </button>
       </footer>
       {open && <GuideDialog name={name} guide={guide} tab={open} onTab={setOpen} onClose={() => setOpen(null)} />}
     </article>

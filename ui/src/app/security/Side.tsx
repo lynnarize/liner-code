@@ -1,6 +1,6 @@
 /*
-  Liner Security's sidebar body, in place of Code's sessions: Start a scan, Overview, Findings (how many are open) and
-  Projects; then "Sessions" with its one menu, its scans, fixes and questions on the list parts every face shares
+  Liner Security's sidebar body, in place of Code's sessions: Overview, Findings (how many are open) and Projects (Start
+  a scan is the compose button in the sidebar's field, as Code's New session); then "Sessions" with its one menu, its scans, fixes and questions on the list parts every face shares
   (SideList.tsx): By folder (the default), each project a folder holding its own, those needing you first, then those
   working, then the newest; or By kind, under Scans, Fixes and Asked about. A row is Code's row (Rows.dc.html): the mark,
   the title and the time since it last did something; under it what its session is doing now, what it asks you in its own
@@ -18,7 +18,7 @@ import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "../engine";
 import { I, N, type MarkKind } from "../icons";
 import { agentOf, ago, clock, markOf, modelLabel, plural } from "../model";
-import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useWindowFocused, type SideState } from "../SideList";
+import { SideFacts, SideFolder, SideHead, SideLabel, SideMark, SideRow, useFieldNew, useWindowFocused, type SideState } from "../SideList";
 import { askWords, markLabelOf, markStateOf, prSaid, reviewHeld, seenAsk, sideStateOf, type MarkState } from "../session-state";
 import { PaneField } from "../Pane";
 import { Row } from "../ui";
@@ -98,6 +98,8 @@ export function SecuritySide() {
   useMinute();
   const now = Date.now();
   const on = (kind: SecurityPage["kind"]) => (page.kind === kind ? "page" : undefined);
+  // Liner Security's new thing sits in the sidebar's field, where Code's New session is: Start a scan, lit while its page is open.
+  useFieldNew({ label: "Start a scan", on: page.kind === "start", onClick: () => goSecurity({ kind: "start" }) });
   // Archived fixes/asks are hidden by default unless the user toggles Show archived in the Sessions menu.
   const fixes = showArchived
     ? threads.filter((t) => !t.sideOf && t.archived && !hidden(t.projectId) && t.security?.kind === "fix").sort((a, b) => b.updatedAt - a.updatedAt)
@@ -144,9 +146,9 @@ export function SecuritySide() {
   const standing = (t: Thread): SideState => { const mark = sideStateOf(t); return mark === "new" ? "done" : mark; };
   /** A session's state mark, as Code's rows draw it (session-state.ts markStateOf): fresh until you open what finished while you were elsewhere, its pull request after. */
   const markFor = (t: Thread): MarkState => { const mark = markStateOf(t, { looking: looking(t.id) }); return mark === "new" ? "done" : mark; };
-  /** The mark a row shows: a question you've opened and left is grey, its words grey too (seenAsk). */
+  /** The mark a row shows: a question you've opened and left draws none, its words grey (seenAsk, markStateOf's "seen"); never the done tick, since it still waits. */
   // No brand: a working mark is never tinted by its model (rule 7); the model is among the row's facts.
-  const markOn = (state: SideState | MarkState, seen: boolean | undefined, _brand?: MarkKind, label?: string) => <SideMark state={seen ? "done" : state} label={seen ? "Waits for your answer" : label} />;
+  const markOn = (state: SideState | MarkState, seen: boolean | undefined, _brand?: MarkKind, label?: string) => <SideMark state={seen ? "seen" : state} label={seen ? "Waits for your answer" : label} />;
   /** A fix's or a question's second line while it works, waits or stopped; null when it has ended well. Worded as Code's rows word it (rowWords): a question in its own words. */
   const live = (t: Thread): { text: string; tone?: "warn" | "danger" } | null =>
     t.status === "running" ? { text: t.doing?.text || "Working" } : t.status === "waiting" && !reviewHeld(t) ? { text: askWords(t), tone: seenAsk(t, looking(t.id)) ? undefined : "warn" } : t.status === "limited" ? { text: `Hit its plan's limit${t.limit?.until ? `, back at ${clock(t.limit.until, now)}` : ""}`, tone: "warn" } : t.status === "error" ? { text: "Ran into a problem", tone: "danger" } : null;
@@ -173,7 +175,8 @@ export function SecuritySide() {
     const t = s.threadId ? threads.find((x) => x.id === s.threadId) : undefined;
     // A scan that ended is an ordinary chat: while you talk with it, its row says what its session does, not how the scan ended.
     const chat = s.state !== "running" && s.state !== "asking" && t && (t.status === "running" || (t.status === "waiting" && !reviewHeld(t))) ? t.status : undefined;
-    const state: SideState = s.state === "running" || chat === "running" ? "working" : s.state === "asking" || chat === "waiting" ? "needs" : s.state === "stopped" || s.state === "failed" ? "error" : "done";
+    // Stopped by you is not a failure: it rests as a finished scan does, its second line says "Stopped"; only a scan that failed is red.
+    const state: SideState = s.state === "running" || chat === "running" ? "working" : s.state === "asking" || chat === "waiting" ? "needs" : s.state === "failed" ? "error" : "done";
     // A free checks run has no session: nothing to say it's doing but the word.
     const sub = s.state === "running" || chat === "running" ? t?.doing?.text || "Working" : s.state === "asking" || chat === "waiting" ? (t ? askWords(t) : "Needs you") : scanEnd(s);
     const brand = t ? brandOf(t) : undefined;
@@ -191,15 +194,17 @@ export function SecuritySide() {
         <SideRow
           key={`scan:${s.id}`}
           data-row={s.threadId}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
-          mark={markOn(state === "done" && t?.unread && !looking(t.id) ? "fresh" : state, seen, brand, state === "error" ? (s.state === "stopped" ? "Stopped" : "Ran into a problem") : undefined)}
+          mark={markOn(state === "done" && t?.unread && !looking(t.id) ? "fresh" : state, seen, brand, state === "error" ? "Ran into a problem" : s.state === "stopped" ? "Stopped" : undefined)}
           title={s.title}
           ago={ago(t?.updatedAt ?? s.finishedAt ?? s.startedAt, now)}
           sub={sub}
-          tone={state === "needs" && !seen ? "warn" : state === "error" && s.state === "failed" ? "danger" : undefined}
+          tone={state === "needs" && !seen ? "warn" : state === "error" ? "danger" : undefined}
           facts={t && factsOf(t)}
           pick={opener(() => (s.threadId ? goSecurity({ kind: "scan", threadId: s.threadId }) : goSecurity({ kind: "findings", scan: s.id })))}
         />
@@ -224,7 +229,9 @@ export function SecuritySide() {
         <SideRow
           key={`fix:${t.id}`}
           data-row={t.id}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
@@ -258,7 +265,9 @@ export function SecuritySide() {
         <SideRow
           key={`ask:${t.id}`}
           data-row={t.id}
-          wrap
+          compact
+          // One that waits on you and is not seen yet: its title in full ink, as Code's rows.
+          loud={state === "needs" && !seen}
           current={current}
           quiet={state === "done"}
           aria-current={current ? "page" : undefined}
@@ -300,40 +309,36 @@ export function SecuritySide() {
 
   return (
     <div className="ls-side">
+      {/* Start a scan is the compose button at the end of the sidebar's field (useFieldNew, above), lit while its page is open. */}
       <div className="lc-sb-top">
-        <button type="button" className="lc-sb-nav l-focus" aria-current={on("start")} onClick={() => goSecurity({ kind: "start" })}>
-          <N.plus size={14} />
-          <span>Start a scan</span>
-        </button>
         <button type="button" className="lc-sb-nav l-focus" aria-current={on("overview")} onClick={() => goSecurity({ kind: "overview" })}>
           <N.shield size={14} />
           <span>Overview</span>
         </button>
         {/* The engine leaves the Sample project out of the count itself (Security.projects) unless the Demo is shown. */}
         <FindingsNav current={on("findings")} open={data?.open ?? 0} />
-        <button type="button" className="lc-sb-nav l-focus" aria-current={on("projects")} onClick={() => goSecurity({ kind: "projects" })}>
+        <button type="button" className="lc-sb-nav l-focus" aria-current={on("projects")} aria-label={`Projects, ${projects.length}`} onClick={() => goSecurity({ kind: "projects" })}>
           <N.folder size={14} />
           <span>Projects</span>
+          {/* How many, as board Security's place rows say it. */}
+          {projects.length > 0 && <span className="ls-num">{projects.length}</span>}
         </button>
       </div>
 
-      <SideHead title="Sessions" note={showArchived ? "Archived" : view === "kind" ? "By kind" : undefined} menuLabel="What the list shows">
+      <SideHead title="Sessions" note={showArchived ? "Archived" : view === "kind" ? "By kind" : undefined} menuLabel="What the list shows" filtering={search !== null} onFilter={() => setSearch((s) => (s === null ? "" : null))}>
         {(close) => (
           <>
             <Row title="By folder" icon={<I.folder size={16} />} keepIcon on={view === "folder"} onPick={() => (close(), pickView("folder"))} />
             <Row title="By kind" icon={<I.list size={16} />} keepIcon on={view === "kind"} onPick={() => (close(), pickView("kind"))} />
-            <Row title={search !== null ? "Hide Find" : "Find a session"} icon={<I.search size={16} />} keepIcon on={search !== null} onPick={() => (close(), setSearch((s) => (s === null ? "" : null)))} />
             <Row title="Show archived" icon={<I.box size={16} />} keepIcon on={showArchived} onPick={() => (close(), setShowArchived((a) => !a))} />
           </>
         )}
       </SideHead>
       {/* The app's one find field (PaneField), as the panel's and the Findings page's. */}
       {search !== null && (
-        <div className="ls-side-find">
-          <PaneField icon={<I.search size={14} />}>
-            <input value={search} placeholder="Find a session" aria-label="Find a session" autoFocus onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))} />
-          </PaneField>
-        </div>
+        <PaneField className="lc-sb-filter" icon={<N.search size={14} />}>
+          <input value={search} placeholder="Filter by title or project" aria-label="Filter the sessions by title or project" autoFocus onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setSearch(null))} onBlur={(e) => !e.target.value.trim() && setSearch(null)} />
+        </PaneField>
       )}
 
       <div className="ls-side-list lc-sl-list">

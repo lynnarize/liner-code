@@ -23,7 +23,7 @@ import { lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BringInResult, FindingExplain, GitHubReach, NewFinding, SecurityFinding, Severity } from "../../contracts/src/index.ts";
-import { findingKey, normalKey } from "../../contracts/src/index.ts";
+import { normalKey } from "../../contracts/src/index.ts";
 import { outside, run, which } from "./exec.ts";
 import { excerptOf, maskText, SAFE_GIT } from "./security-checks.ts";
 import type { Security } from "./security.ts";
@@ -39,9 +39,10 @@ const REACH_MS = 60_000;
 
 function addAll(sec: Security, projectId: string, list: NewFinding[], by: string): BringInResult & { keys: Set<string> } {
   const out = { added: 0, already: 0, leftOut: 0, keys: new Set<string>() };
-  for (const n of list) out.keys.add(findingKey(projectId, n));
-  // One write for the batch, however many results.
+  // One write for the batch, however many results. The keys met are the stored findings' own: a result can meet one stored
+  // under another key (one without an instance), which must not then be closed as gone from GitHub.
   for (const a of sec.addMany(projectId, list, by)) {
+    out.keys.add(a.finding.key);
     if (a.outcome === "new" || a.outcome === "reopened") out.added++;
     else if (a.outcome === "already-open") out.already++;
     else out.leftOut++;

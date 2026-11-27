@@ -58,16 +58,27 @@ test("A row that opens a menu to its side is a menu item only inside a menu, as 
   assert.doesNotMatch(sub.slice(0, sub.indexOf("createPortal(")), /role="menuitem"/, "the side-menu row calls itself a menu item in the pinned Session card, which is no menu");
 });
 
-test("In a thread too narrow to make room, the pinned column's end scrolls clear of the message box over it", () => {
+test("In a thread too narrow to make room, the details card's end scrolls clear of the message box over it", () => {
   const css = app("app.css");
-  const narrow = container(css, "@container lc-thread (max-width: 999.98px)");
+  // Line and dot: the chat keeps a gutter clear of the card from 640px of thread; under that the card stands over it.
+  const narrow = container(css, "@container lc-thread (max-width: 639.98px)");
   const pin = rules(narrow, ".lc-pin");
-  assert.equal(pin.length, 1, "the narrow thread gives the pinned column no rule of its own");
-  assert.equal(value(pin[0], "padding-bottom"), "calc(var(--lc-dock-h, 132px) + 12px)", "the column's last cards stay under the message box");
-  // Wide, the message box stands beside the column, so its end needs no more than its own 12px.
-  const wide = container(css, "@container lc-thread (min-width: 1000px)");
+  assert.equal(pin.length, 1, "the narrow thread gives the card's column no rule of its own");
+  assert.equal(value(pin[0], "padding-bottom"), "calc(var(--lc-dock-h, 132px) + 12px)", "the card's end stays under the message box");
+  // Wide, the message box stands beside the card, so its end needs no more than its own 12px.
+  const wide = container(css, "@container lc-thread (min-width: 640px)");
   assert.equal(rules(wide, ".lc-pin").length, 0, "the wide thread pads the column under a message box that isn't over it");
-  assert.equal(value(rules(css, ".lc-pin")[0] ?? "", "padding"), "8px 12px 12px");
+  // 6px under the top row and 10px from the sheet's edge, as board Details floats it.
+  assert.equal(value(rules(css, ".lc-pin")[0] ?? "", "padding"), "6px 10px 12px");
+  // That padding only keeps the card clear if the card is bounded by the column and scrolls inside it: a card that grows
+  // past the stage puts its lowest rows (Commit, Changes, Context) under the message box or off the sheet for good.
+  const pinRule = rules(css, ".lc-pin")[0] ?? "";
+  assert.equal(value(pinRule, "max-height"), "100%", "the column isn't bounded by the stage");
+  const card = rules(css, ".lc-dcard")[0] ?? "";
+  assert.equal(value(card, "overflow"), "hidden auto", "the card doesn't scroll past the room it has");
+  assert.equal(value(card, "min-height"), "0", "the card can't shrink to the room it has, so it never scrolls");
+  assert.equal(value(card, "flex"), "0 1 auto", "the card keeps its full height in the column, so it never scrolls");
+  assert.equal(value(card, "overscroll-behavior"), "contain");
 });
 
 test("The model picker's star and All sources mark are the picker's 14px, and its icon button the 6px corner of its chips", () => {
@@ -79,10 +90,10 @@ test("The model picker's star and All sources mark are the picker's 14px, and it
   assert.equal(value(rules(css, ".lc-pk-ib")[0] ?? "", "border-radius"), "6px", "the star's button keeps the old 8px corner");
 });
 
-test("The Session key and ⌘K say they show the pinned Session card, and nothing in the app calls it a popup", () => {
-  assert.match(app("keymap.ts"), /session: "Show or hide the Session card"/, "the keyboard settings say the key opens a popup");
+test("The Session key and ⌘K say they show the session's details, and nothing in the app calls it a popup", () => {
+  assert.match(app("keymap.ts"), /session: "Show or hide session details"/, "the keyboard settings don't name the details card the key shows");
   const palette = app("App.tsx");
-  assert.match(palette, /s\.id === "session" \? "Show the Session card"/, "⌘K says it opens a popup");
+  assert.match(palette, /\{ id: "surface-session", label: "Show session details",[^\n]*onSelect: \(\) => openSession\(here\.id, "session"\) \}/, "⌘K doesn't name the details card it shows");
   const files: string[] = [];
   const walk = (dir: URL, at: string) => {
     for (const name of readdirSync(dir)) {

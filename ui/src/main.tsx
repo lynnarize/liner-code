@@ -7,6 +7,7 @@ import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "./liner/foundation.css";
 import "./app/app.css";
+import "./app/halftone.css";
 import { App } from "./app/App";
 import { Boundary } from "./app/Boundary";
 import { enableWindowDrag, quietFields, quietMenus } from "./app/bridge";

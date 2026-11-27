@@ -7,15 +7,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { Tunnel, findTool, ownAddress, type TunnelDeps } from "../src/tunnel.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Tunnel, defaultDeps, findTool, ownAddress, probeAddress, type TunnelDeps } from "../src/tunnel.ts";
 
-function tailscale(o: { running?: boolean; serving?: unknown; funnelCode?: number } = {}) {
+function tailscale(o: { running?: boolean; serving?: unknown; funnelCode?: number; self?: Record<string, unknown> } = {}) {
   const ran: string[] = [];
   const deps: TunnelDeps = {
     which: async (n) => (n === "tailscale" ? "/fake/tailscale" : null),
     run: async (_c, args) => {
       ran.push(args.join(" "));
-      if (args[0] === "status") return { code: 0, stdout: JSON.stringify(o.running === false ? { BackendState: "NeedsLogin" } : { BackendState: "Running", Self: { DNSName: "mac.tail1234.ts.net." } }), stderr: "" };
+      if (args[0] === "status") return { code: 0, stdout: JSON.stringify(o.running === false ? { BackendState: "NeedsLogin" } : { BackendState: "Running", Self: { DNSName: "mac.tail1234.ts.net.", ...o.self } }), stderr: "" };
       if (args[0] === "funnel" && args[1] === "status") return { code: 0, stdout: JSON.stringify(o.serving ?? {}), stderr: "" };
       if (args[0] === "funnel" && args[1] === "--bg") return o.funnelCode ? { code: o.funnelCode, stdout: "", stderr: "Funnel is not enabled on your tailnet.\nTo enable, visit: https://login.tailscale.com/f/funnel" } : { code: 0, stdout: "", stderr: "" };
       if (args[0] === "version") return { code: 0, stdout: "1.90.0\n", stderr: "" };
@@ -60,6 +63,46 @@ test("Tailscale not signed in, or Funnel not enabled, says why and stays down", 
   await no.start("tailscale", 7318);
   assert.equal(no.now.state, "down");
   assert.match(no.now.note ?? "", /Funnel is not enabled/);
+  assert.equal(no.now.link, "https://login.tailscale.com/f/funnel", "the page Tailscale names is the way out");
+});
+
+test("A tailnet without Funnel turned on is told so with Tailscale's page for it, and Funnel, which would wait for it forever, isn't started", async () => {
+  // What Tailscale 1.104 says of a node whose tailnet hasn't turned Funnel on: neither "https" nor "funnel" in its caps.
+  const { deps, ran } = tailscale({ self: { ID: "nk7vVP3gN921CNTRL", CapMap: { "https://tailscale.com/cap/ssh": null }, Capabilities: ["https://tailscale.com/cap/ssh"] } });
+  const t = new Tunnel(deps);
+  await t.start("tailscale", 7318);
+  assert.equal(t.now.state, "down");
+  assert.match(t.now.note ?? "", /Funnel isn't turned on for your tailnet/);
+  assert.equal(t.now.link, "https://login.tailscale.com/f/funnel?node=nk7vVP3gN921CNTRL");
+  assert.equal(ran.some((r) => r.startsWith("funnel --bg")), false);
+  // With both caps it goes up as before.
+  const on = new Tunnel(tailscale({ self: { ID: "n1", CapMap: { https: null, funnel: null } } }).deps);
+  await on.start("tailscale", 7318);
+  assert.equal(on.now.state, "up");
+});
+
+test("A tool started by a wrapper script without exec still ends when its time is up, and when the script ends first", { skip: process.platform === "win32" }, async () => {
+  // Tailscale's /usr/local/bin/tailscale on a Mac is `#!/bin/sh` and then the app's binary, without exec.
+  const dir = mkdtempSync(join(tmpdir(), "liner-tunnel-"));
+  try {
+    const hangs = join(dir, "hangs");
+    writeFileSync(hangs, "#!/bin/sh\necho waiting\nsleep 30\n", { mode: 0o755 });
+    const leaves = join(dir, "leaves");
+    writeFileSync(leaves, "#!/bin/sh\necho done\nsleep 30 &\nexit 3\n", { mode: 0o755 });
+    const { run } = defaultDeps(process.env);
+    let t0 = Date.now();
+    const timedOut = await run(hangs, [], 1000);
+    assert.ok(Date.now() - t0 < 3000, `ended after ${Date.now() - t0} ms`);
+    assert.equal(timedOut.code, -1);
+    assert.match(timedOut.stdout, /waiting/);
+    t0 = Date.now();
+    const ended = await run(leaves, [], 10_000);
+    assert.ok(Date.now() - t0 < 3000, `ended after ${Date.now() - t0} ms`);
+    assert.equal(ended.code, 3);
+    assert.match(ended.stdout, /done/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("A Cloudflare quick tunnel's address is read from its output, and the process ends with off", async () => {
@@ -179,4 +222,142 @@ test("A stop that comes while an earlier tunnel is still coming down leaves no t
   release();
   await Promise.all([next, off]);
   assert.equal(t.now.state, "off");
+});
+
+const states = (t: Tunnel) => t.checks.map((c) => `${c.id}:${c.state}`).join(" ");
+
+test("Each step of a Tailscale start is listed as it passes, and the one that fails says why with the way out, the steps after it waiting", async () => {
+  const { deps } = tailscale({ self: { ID: "nk7vVP3gN921CNTRL", CapMap: { "https://tailscale.com/cap/ssh": null } } });
+  const t = new Tunnel({ ...deps, probe: async () => ({ ok: true, ms: 1 }) });
+  await t.start("tailscale", 7318);
+  assert.equal(states(t), "tool:ok signedIn:ok funnelOn:bad free:wait started:wait reaches:wait");
+  assert.equal(t.checks[0]!.value, "1.90.0");
+  assert.equal(t.checks[1]!.value, "mac.tail1234.ts.net");
+  const off = t.checks[2]!;
+  assert.match(off.why ?? "", /hasn't turned on HTTPS and Funnel/);
+  assert.equal(off.link, "https://login.tailscale.com/f/funnel?node=nk7vVP3gN921CNTRL");
+  assert.ok(t.since && t.since <= Date.now());
+  await t.stop();
+  assert.deepEqual(t.checks, [], "off lists nothing");
+});
+
+test("An address that's up is tried for Liner's own answer, one that doesn't reach this Mac says why while the tunnel stays up, and Check again tries once more", async () => {
+  const { deps } = tailscale();
+  const tries: string[] = [];
+  let answer: Awaited<ReturnType<NonNullable<TunnelDeps["probe"]>>> = { ok: false, reason: "status", status: 502 };
+  const t = new Tunnel({ ...deps, probe: async (origin) => (tries.push(origin), answer) });
+  await t.start("tailscale", 7318);
+  await t.checking;
+  assert.equal(t.now.state, "up");
+  assert.deepEqual(tries, ["https://mac.tail1234.ts.net"]);
+  const reach = t.checks.find((c) => c.id === "reaches")!;
+  assert.equal(reach.state, "bad");
+  assert.equal(reach.value, "502");
+  assert.match(reach.why ?? "", /Tailscale answers, but nothing of Liner's is behind it \(502\)/);
+  assert.equal(reach.fix, "tailscale funnel status");
+  assert.ok(t.checkedAt);
+  answer = { ok: true, ms: 12 };
+  await t.checkAgain();
+  const again = t.checks.find((c) => c.id === "reaches")!;
+  assert.equal(again.state, "ok");
+  assert.equal(again.value, "12 ms");
+  assert.equal(again.why, undefined, "the old reason goes with the old try");
+  await t.stop();
+});
+
+test("A new quick tunnel's name is tried a few times before it's said not to be found", async () => {
+  const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), kill() { return true; } });
+  let n = 0;
+  const t = new Tunnel({ which: async (b) => (b === "cloudflared" ? "/fake/cloudflared" : null), run: async () => ({ code: 0, stdout: "cloudflared version 2026.10.0 (built 2026-10-01)", stderr: "" }), spawn: () => child as never, probe: async () => (++n < 3 ? { ok: false, reason: "dns" } : { ok: true, ms: 40 }) });
+  t.retryMs = 1;
+  await t.start("cloudflare", 7318);
+  child.stderr.emit("data", Buffer.from("INF |  https://quiet-river-bend.trycloudflare.com  |"));
+  await t.checking;
+  assert.equal(n, 3);
+  assert.equal(states(t), "tool:ok started:ok reaches:ok");
+  assert.equal(t.checks[0]!.value, "2026.10.0");
+  await t.stop();
+});
+
+test("Stop while Funnel is still starting brings the tunnel down, says the step it stopped at, and a late answer changes nothing", async () => {
+  let release!: () => void;
+  const { deps, ran } = tailscale();
+  const run = deps.run;
+  const t = new Tunnel({
+    ...deps,
+    run: async (c, args, ms) => {
+      if (args.join(" ") === "funnel --bg 7318") await new Promise<void>((r) => (release = r));
+      return run(c, args, ms);
+    },
+  });
+  const starting = t.start("tailscale", 7318);
+  while (t.checks.find((c) => c.id === "started")?.state !== "run") await new Promise((r) => setImmediate(r));
+  await t.halt();
+  assert.equal(t.now.state, "down");
+  assert.equal(t.now.note, "Stopped before it came up.");
+  const started = t.checks.find((c) => c.id === "started")!;
+  assert.equal(started.state, "bad");
+  assert.equal(started.why, "You stopped it.");
+  assert.equal(ran.includes("funnel --https=443 off"), false, "nothing was up yet to take down");
+  release();
+  await starting;
+  assert.equal(t.now.state, "down", "the answer that came after Stop doesn't bring it up");
+  assert.equal(ran.filter((r) => r === "funnel --https=443 off").length, 1, "the Funnel that came up after Stop is taken down, not left public on :443");
+});
+
+test("A Funnel that comes up after a newer Tailscale start is up is left to that start", async () => {
+  let release!: () => void;
+  let held = false;
+  const { deps, ran } = tailscale();
+  const run = deps.run;
+  const t = new Tunnel({
+    ...deps,
+    run: async (c, args, ms) => {
+      if (args.join(" ") === "funnel --bg 7318" && !held) {
+        held = true;
+        await new Promise<void>((r) => (release = r));
+      }
+      return run(c, args, ms);
+    },
+  });
+  const first = t.start("tailscale", 7318);
+  while (t.checks.find((c) => c.id === "started")?.state !== "run") await new Promise((r) => setImmediate(r));
+  await t.start("tailscale", 7318);
+  assert.equal(t.now.state, "up");
+  release();
+  await first;
+  assert.equal(t.now.state, "up");
+  assert.equal(ran.includes("funnel --https=443 off"), false, "the newer start's Funnel stays up");
+  await t.stop();
+  assert.equal(ran.filter((r) => r === "funnel --https=443 off").length, 1);
+});
+
+test("Every tool the tunnel starts is started without a window of its own on Windows", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/tunnel.ts", import.meta.url), "utf8");
+  const calls = src.split("nodeSpawn(").slice(1).map((c) => c.split("\n")[0]!);
+  assert.equal(calls.length, 2);
+  for (const c of calls) assert.match(c, /windowsHide: true/);
+});
+
+test("Trying an address knows Liner's own answer from another's, a gateway's error, and a name that isn't found", async () => {
+  const { createServer } = await import("node:http");
+  let reply: (res: import("node:http").ServerResponse, origin: string) => void = () => {};
+  const server = createServer((req, res) => reply(res, `http://${req.headers.host}`));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    reply = (res, o) => void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ resource: `${o}/mcp`, resource_name: "Liner Code" }));
+    assert.equal((await probeAddress(origin)).ok, true);
+    reply = (res) => void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ resource: "https://someone-else.example/mcp" }));
+    assert.deepEqual(await probeAddress(origin), { ok: false, reason: "other" });
+    reply = (res) => void res.writeHead(502).end("Bad gateway");
+    assert.deepEqual(await probeAddress(origin), { ok: false, reason: "status", status: 502 });
+    reply = () => {};
+    assert.deepEqual(await probeAddress(origin, 200), { ok: false, reason: "timeout" });
+  } finally {
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+  }
+  assert.deepEqual(await probeAddress("https://liner-check.invalid"), { ok: false, reason: "dns" });
 });

@@ -116,6 +116,8 @@ export function stripLeadingCd(command: string, cwd: string): string {
   Builds an OpenCode V2 `Permission.Ruleset` (last matching rule wins) for one session:
   - Everything defaults to `ask` so Liner Code's permission handler enforces the live access level.
   - Other sessions' Liner MCP servers (`liner_*`) are denied; only this session's `serverName` is allowed.
+  - Add-ons (`addons.others`) another session in the folder put on the shared server, which this one hasn't (switched off,
+    Lean, sealed), are denied: OpenCode keeps a folder's MCP servers for every session in it.
   - Code Mode (`execute*`) and unasked mutators (`OPENCODE_UNASKED`) are always denied.
   - Native in-process `subagent*` / `task*` are allowed on normal sessions (child permissions route
     back through the shared SSE stream) and denied on sidekicks, side chats, and sealed scans.
@@ -123,7 +125,7 @@ export function stripLeadingCd(command: string, cwd: string): string {
     the leading ask, as the ACP driver's opencodeRules carries them: a session's rules are the last OpenCode reads, so
     that ask would bury a deny of yours otherwise (2.3.2 ran `bash: deny` at Full). Your allows don't: the level decides.
 */
-export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | "scan" | "sealed" | "swarm">, serverName?: string, yours: Json = {}): PermRule[] {
+export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | "scan" | "sealed" | "swarm">, serverName?: string, yours: Json = {}, addons: { others: string[]; mine: string[] } = { others: [], mine: [] }): PermRule[] {
   // Everything denied but what you named, as you said it, with what you named coming to the access level.
   const shut = yours["*"] === "deny";
   const rules: PermRule[] = [
@@ -132,6 +134,7 @@ export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | 
     // Isolate per-session Liner MCP servers on a shared daemon: deny every other session's `liner_*`, then allow ours.
     { action: "liner_*", resource: "*", effect: "deny" },
     ...(serverName ? TOOLS.map((t): PermRule => ({ action: `${serverName}_${t.name}`, resource: "*", effect: "allow" })) : []),
+    ...addonRules(addons.others, addons.mine, shut),
     ...yourDenies(yours, shut ? [] : OPENCODE_NOTES),
     { action: "execute*", resource: "*", effect: "deny" },
     ...OPENCODE_UNASKED.map((action): PermRule => ({ action, resource: "*", effect: "deny" })),
@@ -141,6 +144,24 @@ export function opencodeSessionRules(o: Pick<OpenOptions, "sidekick" | "side" | 
   rules.push({ action: "task*", resource: "*", effect: subEffect });
   rules.push({ action: "subagent*", resource: "*", effect: subEffect });
   return rules;
+}
+
+/** A session on OpenCode's default model: none named, or "default". */
+const isDefault = (model?: string) => !(model ?? "").trim() || (model ?? "").trim() === "default";
+/** The name an add-on connection goes by on the shared server: `liner` is Liner Code's own. */
+const addonName = (name: string) => (name === "liner" ? "liner-addon" : name);
+/** How OpenCode 2 names an MCP server's tools, `<server>_<tool>` with what isn't a letter, a digit, `_` or `-` made `_` (seen in 2.4.2). */
+const toolsOf = (server: string) => [...new Set([server.replace(/[^a-zA-Z0-9_-]/g, "_"), server])].map((n) => `${n}_`);
+/**
+  Denies for the tools of other sessions' add-ons, and this session's own add-on brought back to the level after a deny whose
+  name begins its name (`foo` denied beside your `foo_bar`), longest last, since the last rule that fits wins. Under your
+  deny-all your own stays as shut as the rest.
+*/
+function addonRules(others: string[], mine: string[], shut: boolean): PermRule[] {
+  const deny = [...new Set(others.flatMap(toolsOf))];
+  const keep = shut ? [] : [...new Set(mine.flatMap(toolsOf))].filter((k) => !deny.includes(k) && deny.some((p) => k.startsWith(p)));
+  const each = [...deny.map((p) => ({ p, effect: "deny" as const })), ...keep.map((p) => ({ p, effect: "ask" as const }))];
+  return each.sort((a, b) => a.p.length - b.p.length).map(({ p, effect }): PermRule => ({ action: `${p}*`, resource: "*", effect }));
 }
 
 /** OpenCode 2's own names for a name your rules may use (acp.ts RENAMED), and edit for write and patch, which 2.x asks as edit. Read when called: acp.ts imports this file. */
@@ -291,6 +312,13 @@ export class OpenCodeDaemon {
   private doubting: Promise<void> | undefined;
   /** How many open sessions hold each Liner MCP server name, so a close removes a server only when its last session goes. */
   private mcpHolds = new Map<string, number>();
+  /**
+    How many open sessions hold each add-on connection, by folder and name: OpenCode keeps an MCP server for every session in its
+    `location[directory]`, so the last of them to close takes it off, and the others in the folder deny its tools (addonRules).
+  */
+  private addonHolds = new Map<string, number>();
+  /** An add-on's removal in flight, by folder and name: putting it back waits for it, or it could land after and take it away again. */
+  private dropping = new Map<string, Promise<unknown>>();
 
   private constructor(url: string, password: string, child: ChildProcessWithoutNullStreams | null, onDead?: () => void, mark?: Mark) {
     this.url = url.replace(/\/+$/, "");
@@ -435,6 +463,41 @@ export class OpenCodeDaemon {
     if (left > 0) this.mcpHolds.set(name, left);
     else this.mcpHolds.delete(name);
     return left <= 0;
+  }
+
+  /** A session holds an add-on in a folder; true when none held it there before, so the folder's other sessions are told (addonsChanged). */
+  holdAddon(cwd: string, name: string) {
+    const key = `${cwd}\0${name}`;
+    const had = this.addonHolds.get(key) ?? 0;
+    this.addonHolds.set(key, had + 1);
+    return had === 0;
+  }
+
+  /** A session lets an add-on go; once no session in the folder holds it, it's taken off the server. */
+  releaseAddon(cwd: string, name: string) {
+    const key = `${cwd}\0${name}`;
+    const left = (this.addonHolds.get(key) ?? 1) - 1;
+    if (left > 0) return void this.addonHolds.set(key, left);
+    this.addonHolds.delete(key);
+    const gone: Promise<unknown> = this.request("DELETE", `/api/experimental/mcp/${encodeURIComponent(name)}?location[directory]=${encodeURIComponent(cwd)}`, undefined, AbortSignal.timeout(5000))
+      .catch(() => {})
+      .finally(() => this.dropping.get(key) === gone && this.dropping.delete(key));
+    this.dropping.set(key, gone);
+  }
+
+  /** Settles once an add-on's removal in a folder has landed, if one is on its way. */
+  dropped(cwd: string, name: string): Promise<unknown> {
+    return this.dropping.get(`${cwd}\0${name}`) ?? Promise.resolve();
+  }
+
+  /** The add-ons open sessions hold in a folder. */
+  addonsIn(cwd: string): string[] {
+    return [...this.addonHolds.keys()].filter((k) => k.startsWith(`${cwd}\0`)).map((k) => k.slice(cwd.length + 1));
+  }
+
+  /** An add-on came onto the server in a folder: the folder's other sessions write their rules again, to deny its tools if they haven't it. */
+  addonsChanged(cwd: string, from: OpenCodeServerSession) {
+    for (const s of new Set(this.sessions.values())) if (s !== from) void s.reRule(cwd);
   }
 
   register(sessionID: string, session: OpenCodeServerSession) {
@@ -764,6 +827,8 @@ export class OpenCodeServerSession implements ProviderSession {
   private serverName: string | undefined;
   private toldServer = false;
   private registeredMcps = new Set<string>();
+  /** The add-ons this session holds on its server (OpenCodeDaemon.holdAddon), let go as it closes. */
+  private heldAddons = new Set<string>();
   private sink: TurnSink | null = null;
   private signal: AbortSignal | null = null;
   private done: (() => void) | null = null;
@@ -821,6 +886,8 @@ export class OpenCodeServerSession implements ProviderSession {
       this.sessionID = undefined;
       this.serverName = undefined;
       this.registeredMcps.clear();
+      for (const name of this.heldAddons) this.daemon.releaseAddon(this.o.cwd, name);
+      this.heldAddons.clear();
       this.toldServer = false;
     }
     let d: OpenCodeDaemon;
@@ -873,19 +940,27 @@ export class OpenCodeServerSession implements ProviderSession {
     }
 
     // Register user add-on connections (unless sealed or security scan).
+    let came = false;
     if (!this.o.sealed && !this.o.scan) {
       for (const c of this.o.connections ?? []) {
-        const name = c.name === "liner" ? "liner-addon" : c.name;
+        const name = addonName(c.name);
         if (this.registeredMcps.has(name)) continue;
         const config = c.http
           ? { type: "remote", url: c.http.url, ...(c.http.headers ? { headers: c.http.headers } : {}) }
           : { type: "local", command: [c.stdio!.command, ...c.stdio!.args], ...(c.stdio!.env ? { environment: c.stdio!.env } : {}) };
+        await d.dropped(this.o.cwd, name);
         const r = await d.request("PUT", `/api/experimental/mcp/${encodeURIComponent(name)}?${locQuery}`, { config }, AbortSignal.timeout(10_000)).catch(() => null);
-        if (r && r.status >= 200 && r.status < 300) this.registeredMcps.add(name);
+        if (r && r.status >= 200 && r.status < 300) {
+          this.registeredMcps.add(name);
+          this.heldAddons.add(name);
+          if (d.holdAddon(this.o.cwd, name)) came = true;
+        }
       }
     }
+    // The folder's other sessions on this server would have this one's add-ons too, at their own level: they deny them now.
+    if (came) d.addonsChanged(this.o.cwd, this);
 
-    const rules = opencodeSessionRules(this.o, this.serverName, yourRules(this.o.cwd, this.o.env));
+    const rules = this.rules();
     const modelRef = parseModelRef(this.model, this.effort);
 
     if (this.o.resume && this.o.fork) {
@@ -917,7 +992,9 @@ export class OpenCodeServerSession implements ProviderSession {
         }
       }
       this.sessionID = r.data.data.id;
-      if (modelRef) await d.request("POST", `/api/session/${encodeURIComponent(this.sessionID)}/model`, { model: modelRef }).catch(() => {});
+      // On the default, the model OpenCode uses by default: the conversation stays on the one it was on otherwise.
+      const ref = await this.modelRefOf(d);
+      if (ref) await d.request("POST", `/api/session/${encodeURIComponent(this.sessionID)}/model`, { model: ref }).catch(() => {});
     } else {
       const r = await d.request<{ data?: { id?: string } }>("POST", "/api/session", {
         location: { directory: this.o.cwd },
@@ -950,6 +1027,8 @@ export class OpenCodeServerSession implements ProviderSession {
     const d = await this.ensureReady(sink);
     if (!d) return this.fallback!.turn(text, sink, signal, attached);
     const sid = this.sessionID!;
+    // Stopped before it began: nothing of a turn is set up, since the cleanup below runs only for a turn that starts.
+    if (signal.aborted) return;
     d.clearStopping(sid);
     this.sink = sink;
     this.signal = signal;
@@ -983,7 +1062,6 @@ export class OpenCodeServerSession implements ProviderSession {
         },
       );
     };
-    if (signal.aborted) return;
     signal.addEventListener("abort", onAbort, { once: true });
 
     if (this.reconcileMs > 0) {
@@ -1045,13 +1123,51 @@ export class OpenCodeServerSession implements ProviderSession {
     this.model = u.model;
     this.effort = u.effort;
     if (modelChanged && this.daemon?.alive && this.sessionID) {
-      const ref = parseModelRef(this.model, this.effort);
+      const ref = await this.modelRefOf(this.daemon);
       if (ref) {
         const r = await this.daemon.request("POST", `/api/session/${encodeURIComponent(this.sessionID)}/model`, { model: ref }).catch(() => null);
         return Boolean(r && r.status >= 200 && r.status < 300);
       }
+      // Back on the default with no default to read, it would stay on the model it had: it opens again instead.
+      if (isDefault(this.model)) return false;
     }
     return true;
+  }
+
+  /**
+    The model this session goes on: the one named, else (the default) the one OpenCode uses for a session with no model of its
+    own (GET /api/model/default, 2.4.2), since a session once on a named model stays on it until told another.
+  */
+  private async modelRefOf(d: OpenCodeDaemon): Promise<ModelRef | undefined> {
+    if (!isDefault(this.model)) return parseModelRef(this.model, this.effort);
+    type Info = { id?: string; modelID?: string; providerID?: string };
+    let info: Info | null | undefined;
+    // A folder OpenCode is still loading answers null for its first moments (2.4.2: about 150 ms), so null is asked again a few times.
+    for (let i = 0; i < 6; i++) {
+      if (i) await new Promise((ok) => setTimeout(ok, 200));
+      const r = await d.request<{ data?: Info | null }>("GET", `/api/model/default?location[directory]=${encodeURIComponent(this.o.cwd)}`, undefined, AbortSignal.timeout(5000)).catch(() => null);
+      if (!r || r.status !== 200) break;
+      info = r.data?.data;
+      if (info) break;
+    }
+    const id = info?.id || info?.modelID;
+    if (!info?.providerID || !id) return undefined;
+    const variant = this.effort && this.effort !== "default" ? this.effort.trim() : undefined;
+    return { providerID: info.providerID, id, ...(variant ? { variant } : {}) };
+  }
+
+  /** This session's rules, with the add-ons other sessions in its folder hold on the server and it hasn't denied. */
+  private rules(): PermRule[] {
+    const mine = this.o.sealed || this.o.scan ? [] : (this.o.connections ?? []).map((c) => addonName(c.name));
+    const others = this.daemon ? this.daemon.addonsIn(this.o.cwd).filter((n) => !mine.includes(n)) : [];
+    return opencodeSessionRules(this.o, this.serverName, yourRules(this.o.cwd, this.o.env), { others, mine });
+  }
+
+  /** Another session put an add-on on the server in `cwd`: this one's rules are written again if it's in that folder. */
+  async reRule(cwd: string): Promise<void> {
+    const d = this.daemon;
+    if (this.closed || cwd !== this.o.cwd || !d?.alive || !this.sessionID) return;
+    await d.request("PATCH", `/api/session/${encodeURIComponent(this.sessionID)}`, { permissions: this.rules() }, AbortSignal.timeout(10_000)).catch(() => null);
   }
 
   async stopAgent(taskId: string): Promise<boolean> {
@@ -1096,6 +1212,9 @@ export class OpenCodeServerSession implements ProviderSession {
       d.unregister(sid);
       if (this.unanswered) void d.doubt(wait);
     }
+    // Its add-ons go with the last session in the folder that holds them, so none stays for a session that has them switched off.
+    if (d?.alive) for (const name of this.heldAddons) d.releaseAddon(this.o.cwd, name);
+    this.heldAddons.clear();
     this.finishTurn();
   }
 

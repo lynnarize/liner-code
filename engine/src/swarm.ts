@@ -1387,7 +1387,8 @@ export class SwarmManager {
     const text = clip(args.text.trim());
     if (!text) throw new Error("Board post text cannot be empty.");
     const channel = (args.channel?.trim().toLowerCase().replace(/^#/, "") || "main").slice(0, 32);
-    const mentioned = parseMentions(text);
+    // Mentions come from the whole post, not the clipped one: a long report names who it's for at its end.
+    const mentioned = parseMentions(args.text);
     const explicit = (args.to ?? []).map((x) => x.trim().toLowerCase().replace(/^@+/, "")).filter(Boolean);
     const to = [...new Set([...explicit, ...mentioned])];
     const screenshots = parseScreenshots(text);
@@ -1535,12 +1536,14 @@ export class SwarmManager {
     m.swapReason = reason?.trim() || `switched from ${was} to ${resolved.label}`;
     m.state = "hibernated";
     m.rssMb = 0;
+    // The system's mention wakes no one on a team that isn't running (enqueueWake), so the post says when the swap takes hold instead.
+    const then = r.data.active ? "Waking with board checkpoint." : "It takes effect when the team runs again.";
     this.post(threadId, {
       from: "system",
       to: [name],
       channel: "main",
       kind: "system",
-      text: `Switched @${name} from ${was} to ${resolved.ref}${reason ? ` (${reason})` : ""}. Waking with board checkpoint.`,
+      text: `Switched @${name} from ${was} to ${resolved.ref}${reason ? ` (${reason})` : ""}. ${then}`,
     });
     return this.snapshotOf(r);
   }
@@ -1711,7 +1714,9 @@ export class SwarmManager {
         const me = r.data.members.find((x) => x.name === sender);
         if (me && sender !== "coordinator") me.report = msg;
         const { post } = this.post(threadId, { from: sender, text: msg, to, channel });
-        return { text: `Posted #${post.seq} in #${post.channel}${post.to.length ? ` (notified ${post.to.map((x) => `@${x}`).join(", ")})` : ""}.` };
+        // The sender is told its post was cut, so it can post the rest or put it in a file.
+        const clipped = msg.length > POST_MAX ? ` It was clipped to ${POST_MAX.toLocaleString("en-US")} characters.` : "";
+        return { text: `Posted #${post.seq} in #${post.channel}${post.to.length ? ` (notified ${post.to.map((x) => `@${x}`).join(", ")})` : ""}.${clipped}` };
       }
       if (tool === "swarm_manage") {
         const r = this.ensure(threadId);

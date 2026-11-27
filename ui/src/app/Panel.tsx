@@ -1,10 +1,11 @@
 /*
-  The right panel beside the session: a flush column of the paper, one hairline down its left edge
-  (the resize grip is on it), showing one surface at a time (dock.ts has the rules; SPEC rule 2, board
-  Main, 2026-11-25). There is no strip of tabs: the session header's icon row picks the surface
-  (Switcher.tsx), and each surface's own head (Pane.tsx PaneHead), on the session header's row, says
-  its name and carries Full canvas and Close. In the full canvas the panel takes the paper under the
-  session header, which stays in view with its icon row.
+  The right panel beside the session: a flush column of the paper, 500 wide until you drag it, one 0.5px
+  rule down its left edge (the resize grip is on it), showing one surface at a time (dock.ts has the rules).
+  Since line and dot (board Main, 2026-11-27) its own head row, on the chat's top row's line, names the
+  surfaces it holds as tabs, then + for every surface, Fill the window and Hide the panel (Switcher.tsx
+  PanelTabs), with a hairline under it; under that each surface draws its own 40px bar where it needs one
+  (Pane.tsx PaneHead). In the full canvas the panel takes the paper under the chat's top row.
+  Open with nothing in it, the panel shows its start page (PanelStart.tsx), with no tabs and no hairline.
   Every surface you open is mounted once and kept while the panel holds it, so going to another
   never reloads a page or restarts a shell.
   Changes is the diff, kept by turn (Review.tsx, the same in the panel and the full canvas).
@@ -23,12 +24,13 @@ import { PrSurface } from "./Pr";
 import { SideChat } from "./SideChat";
 import { surfaceOf, type Tab } from "./Surfaces";
 import { PaneFrame } from "./Pane";
+import { PanelTabs } from "./Switcher";
+import { PanelStart } from "./PanelStart";
 import { entering } from "./look";
 import { early, lazyAgain } from "./early";
 import "./dock.css";
 // The terminal brings xterm.js; it loads the first time you open one.
 const TerminalSurface = lazyAgain(() => import("./Terminal").then((m) => m.TerminalSurface));
-const SessionSurface = lazyAgain(() => import("./SessionInfo").then((m) => m.SessionSurface));
 /*
   Surfaces opened now and then, kept out of the start: they load once the dock is up and the app is
   idle, so the first open has nothing to wait for (early.ts, as App's screens do). Changes (Review,
@@ -60,9 +62,9 @@ const waitFor = (what: string) => (
 );
 
 /*
-  The two surfaces that read the whole timeline, a reply's words too (the session's context, a
-  design's live frames), each subscribe on their own, so the dock itself doesn't redraw with every
-  frame of a reply. Out of sight, one keeps the timeline as it was when it went: a hidden tab costs
+  The surface that reads the whole timeline, a reply's words too (a design's live frames),
+  subscribes on its own, so the dock itself doesn't redraw with every frame of a reply. Out of
+  sight, it keeps the timeline as it was when it went: a hidden tab costs
   nothing while a reply streams, and catches up as it comes back.
 */
 function useItemsShown(threadId: string, visible: boolean) {
@@ -72,15 +74,7 @@ function useItemsShown(threadId: string, visible: boolean) {
   return items;
 }
 const NO_ITEMS: Item[] = [];
-/** The Session card's inside (Switcher.tsx, from Session.tsx): what it reads of the timeline, as the surfaces here read theirs. */
-export const SessionTab = memo(function SessionTab({ thread, visible, onShowChange }: { thread: Thread; visible: boolean; onShowChange: (path: string) => void }) {
-  const items = useItemsShown(thread.id, visible);
-  return (
-    <Suspense fallback={null}>
-      <SessionSurface thread={thread} items={items} visible={visible} onShowChange={onShowChange} />
-    </Suspense>
-  );
-});
+const NO_CHANGES = { files: 0, added: 0, removed: 0 };
 const DesignTab = memo(function DesignTab({ thread, agentName, visible }: { thread: Thread; agentName: string; visible: boolean }) {
   const items = useItemsShown(thread.id, visible);
   return <DesignSurface thread={thread} items={items} agentName={agentName} visible={visible} />;
@@ -96,6 +90,10 @@ export function Panel({
   onOpenSession,
   onRoutine,
   leaving,
+  counts = {},
+  changes = NO_CHANGES,
+  onBelow = () => {},
+  onMake = () => {},
 }: {
   thread: Thread;
   dock: DockState;
@@ -107,6 +105,14 @@ export function Panel({
   onRoutine: (id?: string) => void;
   /** Shut, and on its way out: it stays as it was while its column closes, and takes no clicks. */
   leaving?: boolean;
+  /** The numbers the head row's tabs carry ("Changes 3"). */
+  counts?: Partial<Record<string, number>>;
+  /** What is changed and not committed, as the commit tab says it: the start page's Changes row ends in it. */
+  changes?: { files: number; added: number; removed: number };
+  /** Shows the bottom panel with the shells, as the head row's + does once it has started a new one. */
+  onBelow?: (on: boolean) => void;
+  /** New add-on, from +'s Your apps: asks the agent for one in the composer. */
+  onMake?: () => void;
 }) {
   const runs = useEngine((s) => s.runs);
   const addons = useEngine((s) => s.addons);
@@ -132,7 +138,7 @@ export function Panel({
   }, [shown]);
   useEffect(() => setMounted((m) => new Set([...m].filter((t) => all.includes(t)))), [all.join()]);
   // A surface you go to, or the panel you open, shows what it holds as it is at Quick motion (look.ts,
-  // entering); the panel itself still slides in. Each surface's box stays mounted, so the ones that were
+  // entering); the panel itself still fades in (200ms). Each surface's box stays mounted, so the ones that were
   // showing are known by their element. One opened for the first time gets its box a render later,
   // once it is in mounted, so that change is watched too.
   const box = useRef<HTMLElement>(null);
@@ -147,10 +153,6 @@ export function Panel({
   }, [shown, mounted]);
   const open = (t: Tab) => onDock(openTab(dock, t));
   const wideReview = dock.full && shown === "changes";
-  // The same function each render, so a memoised surface doesn't redraw for a new one.
-  const showChangeNow = useRef((_path: string) => {});
-  showChangeNow.current = (path) => (onFocus({ id: "all", path }), open("changes"));
-  const [showChange] = useState(() => (path: string) => showChangeNow.current(path));
 
   const body = (t: Tab, visible: boolean) => {
     if (t === "changes")
@@ -160,8 +162,6 @@ export function Panel({
         </Suspense>
       );
     if (t === "agents") return <AgentsSurface thread={thread} />;
-    // Session is a popup now (Switcher.tsx); a layout that still held it is put right before it gets here (dock.ts dropPopups).
-    if (t === "session") return <SessionTab thread={thread} visible={visible} onShowChange={showChange} />;
     if (t === "terminal")
       return (
         <Suspense fallback={<div className="lc-diff-wait"><span className="l-shimmer">Opening a terminal</span></div>}>
@@ -207,13 +207,16 @@ export function Panel({
 
   return (
     <aside ref={box} className="lc-panel" aria-label="Panel" data-tab={shown} data-wide-review={wideReview || undefined} data-leaving={leaving || undefined} inert={leaving || undefined}>
+      <PanelTabs thread={thread} dock={dock} onDock={onDock} nameOf={nameOf} counts={counts} onBelow={onBelow} onMake={onMake} />
+      {/* Open with nothing in it, the panel is its start page rather than an empty frame; what it opens takes its place as a tab. */}
+      {all.length === 0 && <PanelStart thread={thread} dock={dock} onDock={onDock} changes={changes} onBelow={onBelow} onMake={onMake} />}
       {all.map((t) => {
         if (!mounted.has(t)) return null;
         const visible = t === shown;
         return (
           <div key={t} className="lc-surface" hidden={!visible} role="region" aria-label={nameOf(t)}>
             {/* The frame is outside the boundary: a surface that breaks says so in its own place, and its head still closes the panel. */}
-            {/* Close puts the surface away as well as the panel (its lit icon only hides the panel), so a page, a Device or an add-on doesn't stay open unseen; its icon or its card opens it again. */}
+            {/* A surface's own close (usePaneFrame) puts it away as well as the panel, so a page, a Device or an add-on doesn't stay open unseen; + or its card opens it again. */}
             <PaneFrame name={nameOf(t)} full={dock.full} onFull={() => onDock(toggleFull(dock))} onClose={() => onDock(hideDock(closeTab(dock, t)))}>
               <Boundary label={nameOf(t)} quiet>
                 {body(t, visible && dock.open)}

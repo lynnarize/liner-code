@@ -36,6 +36,13 @@ export type McpEvent = { type: "mcp"; asks: McpAsk[]; signIns: McpSignIn[] };
 */
 export type McpSignIn = { id: string; clientName: string; expect: McpAppKind; redirectHost: string; at: number };
 
+/**
+  One step of bringing a tunnel up, as Settings › Liner MCP lists it. `wait`: not reached, because a step before it failed
+  or is still running. `run`: at work since `at`. `why` says what went wrong in words, `fix` is a command that fixes it
+  (shown, never run), and `link` a page that does.
+*/
+export type TunnelCheck = { id: string; label: string; state: "ok" | "bad" | "warn" | "run" | "wait"; value?: string; why?: string; fix?: string; link?: string; at?: number };
+
 /** How the app listener is reached from the internet. Never on unless the person picked one. */
 export type McpReach = "off" | "tailscale" | "cloudflare" | "own";
 
@@ -51,7 +58,11 @@ export type McpStatus = {
   reach: McpReach;
   /** The tunnel or own address, once known: the /mcp URL apps outside this Mac use. */
   publicUrl?: string;
-  tunnel: { state: "off" | "starting" | "up" | "down"; note?: string; found?: { tailscale: boolean; cloudflared: boolean } };
+  /**
+    `link` is a page that fixes a tunnel that's down, such as Tailscale's for turning Funnel on. `checks` are the steps the
+    tunnel went through, in order; `since` is when this start began and `checkedAt` when the address was last tried.
+  */
+  tunnel: { state: "off" | "starting" | "up" | "down"; note?: string; link?: string; checks?: TunnelCheck[]; since?: number; checkedAt?: number; found?: { tailscale: boolean; cloudflared: boolean } };
   /** Level a terminal agent on stdio gets (today's behaviour was Trusted). */
   stdioLevel: McpLevel;
   webhook?: { url: string; hasSecret: boolean };

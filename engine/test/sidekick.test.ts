@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Item, PairShare, ProviderInfo, Thread } from "../../contracts/src/index.ts";
@@ -796,7 +796,9 @@ test("sidekick: when the lead's tool cancels its call (it gave up waiting), the 
 });
 
 test("sidekick: a brief whose call has less than the least time left once it's out of line (BRIEF_MIN_MS) isn't started, and is refused before then", async () => {
-  assert.equal(new Runtime(new Store(mkdtempSync(join(tmpdir(), "lc-sk-"))), process.env).briefMinMs, BRIEF_MIN_MS);
+  const bare = mkdtempSync(join(tmpdir(), "lc-sk-"));
+  assert.equal(new Runtime(new Store(bare), process.env).briefMinMs, BRIEF_MIN_MS);
+  rmSync(bare, { recursive: true, force: true });
   assert.equal(BRIEF_MIN_MS, 15_000);
   let ran = 0;
   const side = fake("codex", async (_o, text, sink, signal) => {
@@ -811,7 +813,7 @@ test("sidekick: a brief whose call has less than the least time left once it's o
     const call = (k: string, brief: string) => hand(tools, o, sink, k, { brief }).then((r) => (got.push({ ...r, at: Date.now() - t0 }), r));
     await Promise.all([call("k1", "first"), call("k2", "second")]);
   });
-  const { store, runtime, tools } = pair();
+  const { store, runtime, tools, home, dir } = pair();
   // Each call has 3 s, and a brief needs 1.5 s of it: the first takes 2 s, so the second, in line, would start with 1 s.
   runtime.linerWaitMs = BRIEF_MARGIN_MS + 3000;
   runtime.briefMinMs = 1500;
@@ -829,6 +831,50 @@ test("sidekick: a brief whose call has less than the least time left once it's o
   } finally {
     side.restore();
     lead.restore();
+    store.flush();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("sidekick: a brief whose wait in line ran out isn't started, even when the clock reads a little earlier than the timer that ended the wait", async (t) => {
+  let ran = 0;
+  const side = fake("codex", async (_o, text, sink, signal) => {
+    ran++;
+    await nap(2000, signal);
+    sink.text(`did ${text}`);
+  });
+  // Node's timers can fire a millisecond or so before Date.now says they should: here the clock reads 50 ms behind
+  // once both calls are in line, so the second's wait ends with the clock still saying a little over BRIEF_MIN_MS is left.
+  const real = Date.now.bind(Date);
+  let behindFrom = Infinity;
+  t.mock.method(Date, "now", () => {
+    const n = real();
+    return n >= behindFrom ? n - 50 : n;
+  });
+  const got: { text: string; isError: boolean }[] = [];
+  const lead = fake("claude", async (o, _t, sink) => {
+    behindFrom = real() + 500;
+    const call = (k: string, brief: string) => hand(tools, o, sink, k, { brief }).then((r) => (got.push(r), r));
+    await Promise.all([call("k1", "first"), call("k2", "second")]);
+  });
+  const { store, runtime, tools, home, dir } = pair();
+  runtime.linerWaitMs = BRIEF_MARGIN_MS + 3000;
+  runtime.briefMinMs = 1500;
+  try {
+    await runtime.send("t", "two things");
+    const done = got.find((r) => !r.isError);
+    const refused = got.find((r) => r.isError);
+    assert.match(done?.text ?? "", /did first/);
+    assert.match(refused?.text ?? "", /didn't start on it: nothing was done/);
+    assert.equal(ran, 1, "the second never ran beside the first");
+  } finally {
+    side.restore();
+    lead.restore();
+    // What the store has yet to write goes now, so nothing is written into its folder once that is gone.
+    store.flush();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

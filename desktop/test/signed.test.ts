@@ -95,3 +95,16 @@ test("a waiting update no newer than this copy is left for the engine to clear, 
   assert.ok(!existsSync(join(updates, "refused.json")));
   assert.equal(waiting(mkdtempSync(join(tmpdir(), "lc-signed-empty-")), running, "0.1.0"), null);
 });
+
+test("a waiting update whose CFBundleShortVersionString differs from ready.json is refused and removed", { skip: process.platform !== "darwin" }, () => {
+  const running = miniApp(mkdtempSync(join(tmpdir(), "lc-signed-run-")), "0.1.0");
+  const home = mkdtempSync(join(tmpdir(), "lc-signed-ver-"));
+  const updates = join(home, "updates");
+  const app = miniApp(updates, "0.1.0");
+  writeFileSync(join(updates, "ready.json"), JSON.stringify({ version: "0.2.0", app }));
+  const r = waiting(home, running, "0.1.0");
+  assert.ok(r && "refused" in r);
+  assert.match(r.refused, /0\.1\.0.*0\.2\.0/);
+  for (const f of ["ready.json", "Liner Code.app"]) assert.ok(!existsSync(join(updates, f)), `${f} is gone`);
+  assert.ok(existsSync(join(updates, "refused.json")));
+});

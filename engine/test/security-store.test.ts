@@ -8,7 +8,7 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderInfo, SecurityFinding, Thread } from "../../contracts/src/index.ts";
@@ -295,6 +295,25 @@ test("security: the threat model is read only from inside the project by real pa
   writeFileSync(join(path, "real", "SECURITY.md"), "# Model\n\n## Sign in\nWho gets in.\n");
   sec.setModelFile("p", "real/SECURITY.md");
   assert.deepEqual(sec.model("p").areas.map((x) => x.name), ["Sign in"]);
+});
+
+test("security: writeModel checks symlink containment before creating subdirectories", () => {
+  const { path, sec } = rig();
+  const outside = mkdtempSync(join(tmpdir(), "lc-sec-write-out-"));
+  symlinkSync(outside, join(path, "docs"));
+  sec.setModelFile("p", "docs/newdir/SECURITY.md");
+  assert.throws(() => sec.writeModel("p", "# Sec\n"), /outside the project/);
+  assert.equal(existsSync(join(outside, "newdir")), false, "no directory is created outside the project root");
+
+  symlinkSync(join(outside, "missing"), join(path, "dangling"));
+  sec.setModelFile("p", "dangling/sub/SECURITY.md");
+  assert.throws(() => sec.writeModel("p", "# Sec\n"), /outside the project/);
+  assert.equal(existsSync(join(outside, "missing")), false, "no directory is created through a dangling link");
+
+  sec.setModelFile("p", "real2/sub/SECURITY.md");
+  const saved = sec.writeModel("p", "# Model\n\n## Auth\nTokens.\n");
+  assert.equal(saved.exists, true);
+  assert.deepEqual(saved.areas.map((a) => a.name), ["Auth"]);
 });
 
 test("security: the Overview's dismissed counts what is dismissed now, its reasons are the current ones, and being fixed is only fixes at work", () => {

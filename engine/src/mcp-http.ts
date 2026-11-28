@@ -71,6 +71,12 @@ export function startMcpHttp(o: HttpOptions): Promise<Listener> {
   /** Open MCP sessions, each one app's, with the calls at work in it (ended when the app is revoked). */
   const sessions = new Map<string, { appId: string; at: number; work: Set<{ abort: () => void }> }>();
   let port = o.port;
+  const dropSession = (id: string) => {
+    const s = sessions.get(id);
+    if (!s) return;
+    for (const w of [...s.work]) w.abort();
+    sessions.delete(id);
+  };
 
   /** Only this listener's own address, or the public host while a tunnel is up. Never anything else. */
   const hostOk = (host: string | undefined) => {
@@ -138,7 +144,7 @@ export function startMcpHttp(o: HttpOptions): Promise<Listener> {
     const sid = String(req.headers["mcp-session-id"] ?? "");
     if (req.method === "DELETE") {
       const s = sessions.get(sid);
-      if (s && s.appId === app.id) sessions.delete(sid);
+      if (s && s.appId === app.id) dropSession(sid);
       return void res.writeHead(204).end();
     }
     // No stream of the server's own to offer: what an app is told comes in the answer to its call.
@@ -155,7 +161,7 @@ export function startMcpHttp(o: HttpOptions): Promise<Listener> {
     if (msg.method === "initialize") {
       const id = randomUUID();
       const mine = [...sessions].filter(([, s]) => s.appId === app.id).sort((a, b) => a[1].at - b[1].at);
-      while (mine.length >= SESSIONS_PER_APP) sessions.delete(mine.shift()![0]);
+      while (mine.length >= SESSIONS_PER_APP) dropSession(mine.shift()![0]);
       sessions.set(id, { appId: app.id, at: Date.now(), work: new Set() });
       const asked = String(msg.params?.protocolVersion ?? "");
       return json(res, 200, { jsonrpc: "2.0", id: msg.id ?? null, result: { protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0], capabilities: { tools: {} }, serverInfo: { name: "liner-code", title: "Liner Code", version: VERSION }, instructions: SERVER_INSTRUCTIONS } }, { "mcp-session-id": id });
@@ -217,17 +223,13 @@ export function startMcpHttp(o: HttpOptions): Promise<Listener> {
         port,
         close: () =>
           new Promise<void>((done) => {
-            for (const s of sessions.values()) for (const w of s.work) w.abort();
+            for (const s of sessions.values()) for (const w of [...s.work]) w.abort();
             sessions.clear();
             server.close(() => done());
             server.closeAllConnections?.();
           }),
         endApp: (appId) => {
-          for (const [id, s] of sessions)
-            if (s.appId === appId) {
-              for (const w of s.work) w.abort();
-              sessions.delete(id);
-            }
+          for (const [id, s] of [...sessions]) if (s.appId === appId) dropSession(id);
         },
       });
     });

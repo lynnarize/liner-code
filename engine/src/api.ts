@@ -1390,9 +1390,13 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       }
       // Universal /teamwork or /swarm trigger: works from Home, Session, or any external caller across every CLI and API.
       const tw = !t.sideOf && !t.security ? /^\/(teamwork|swarm)(?:\s+([\s\S]*))?$/i.exec(text.trim()) : null;
+      let twSwitched = false;
       if (tw) {
         const wantMode = tw[1].toLowerCase() === "swarm" ? "swarm" : "teamwork";
-        if (!t.swarm?.enabled || (t.swarm.mode ?? "teamwork") !== wantMode) runtime.swarm.enable(id, { enabled: true, mode: wantMode });
+        if (!t.swarm?.enabled || (t.swarm.mode ?? "teamwork") !== wantMode) {
+          twSwitched = true;
+          runtime.swarm.enable(id, { enabled: true, mode: wantMode });
+        }
         const body = (tw[2] ?? "").trim();
         if (!body && !files?.length) {
           store.putItem(id, {
@@ -1429,7 +1433,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         if (goal && !runtime.isRunning(id)) return void (await runtime.startGoal(id, what).catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "The goal didn't start", body: String(e?.message ?? e) })));
         // Sent from Liner Design: the turn hears where the design is and what's selected (runtime.ts, lean.ts designNote).
         // `once`: the prompt check's fast model for this message only (Runtime.dispatch), a model ref of the session's own tool.
-        await runtime.send(id, c.text, mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown, typeof once === "string" && /^[\w.@/-]+:[\w.:/@-]+$/.test(once) ? once : undefined);
+        await runtime.send(id, c.text, twSwitched ? "queue" : mode, anchor, c.files, design?.file ? { file: String(design.file), ...(design.sel ? { sel: design.sel } : {}) } : undefined, shown, typeof once === "string" && /^[\w.@/-]+:[\w.:/@-]+$/.test(once) ? once : undefined);
       })().catch((e) => store.emit({ type: "notify", threadId: id, kind: "error", title: "That didn't start", body: String(e?.message ?? e) }));
       return null;
     },

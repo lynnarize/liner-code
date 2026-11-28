@@ -6,6 +6,9 @@
   it never goes to this computer or a private network, by its address or by what its name looks up to as it's sent, so the
   secret and the post can't be pointed at a service on this computer or the local network.
 */
+import type { LookupAddress } from "node:dns";
+import { request as httpsRequest, type RequestOptions } from "node:https";
+import { isIP } from "node:net";
 import type { EngineEvent, Thread } from "../../contracts/src/index.ts";
 import { LOOPBACK, addressesOf, normalIp, privateIp } from "./ip.ts";
 
@@ -30,12 +33,50 @@ export type WebhookOptions = {
   url: () => string | undefined;
   secret: () => string | undefined;
   fetch?: typeof fetch;
+  request?: typeof httpsRequest;
   /** Waits before the second and third tries. */
   delays?: number[];
   log?: (line: string) => void;
   /** What the host leads to as it's sent (ip.ts addressesOf); tests give their own. */
   lookup?: (host: string) => Promise<string[]>;
 };
+
+/** Posts JSON over HTTPS pinned strictly to the already-checked IPs, refusing any 3xx redirect. */
+export function postHttps(u: URL, ips: string[], headers: Record<string, string>, body: string, signal: AbortSignal, reqFn: typeof httpsRequest = httpsRequest): Promise<boolean> {
+  const addrs: LookupAddress[] = ips
+    .map((address) => ({ address, family: isIP(address) }))
+    .filter((a) => a.family === 4 || a.family === 6);
+  if (!addrs.length) return Promise.reject(new Error("not found"));
+  const lookup: NonNullable<RequestOptions["lookup"]> = (_host, opts, cb) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const o = typeof opts === "function" ? {} : (opts ?? {});
+    const family = Number(o.family ?? 0);
+    const list = family === 4 || family === 6 ? addrs.filter((a) => a.family === family) : addrs;
+    if (!list.length) return void (callback as (err: NodeJS.ErrnoException) => void)(Object.assign(new Error("not found"), { code: "ENOTFOUND" }));
+    if (o.all) return void (callback as (err: null, addresses: LookupAddress[]) => void)(null, list);
+    return void (callback as (err: null, address: string, family: number) => void)(null, list[0].address, list[0].family);
+  };
+  return new Promise<boolean>((resolve, reject) => {
+    const req = reqFn(
+      u,
+      {
+        method: "POST",
+        headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
+        lookup,
+        signal,
+      },
+      (res) => {
+        res.on("error", () => {});
+        res.resume();
+        const code = res.statusCode ?? 0;
+        if (code >= 300 && code < 400) return void reject(new Error(`redirect ${code}`));
+        resolve(code >= 200 && code < 300);
+      },
+    );
+    req.on("error", reject);
+    req.end(body);
+  });
+}
 
 export class Webhook {
   private o: WebhookOptions;
@@ -61,19 +102,21 @@ export class Webhook {
     const u = webhookOk(this.o.url());
     if (!u) return false;
     const secret = this.o.secret();
-    const go = this.o.fetch ?? fetch;
     const delays = this.o.delays ?? [2000, 10_000];
     const body = JSON.stringify({ event: "needs_you", session: title.slice(0, 200), app: "Liner Code" });
     const say = this.o.log ?? ((l: string) => console.error(l));
     for (let i = 0; i <= delays.length; i++) {
       if (i) await new Promise((r) => setTimeout(r, delays[i - 1]));
       try {
-        // Looked up at each try, as pictures.ts does: a name that leads into a private network is refused at once.
+        // Looked up once per try and pinned for the connection so DNS rebinding can't redirect after the check.
         const ips = await (this.o.lookup ?? addressesOf)(u.hostname);
         if (ips.some(privateIp)) return (say(`[mcp] Tell an app: ${u.host} leads to this computer or a private network, so nothing was sent`), false);
         if (!ips.length) throw new Error("not found");
-        const r = await go(u.toString(), { method: "POST", headers: { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body, redirect: "error", signal: AbortSignal.timeout(10_000) });
-        if (r.ok) return true;
+        const headers = { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${secret}` } : {}) };
+        const ok = this.o.fetch
+          ? (await this.o.fetch(u.toString(), { method: "POST", headers, body, redirect: "error", signal: AbortSignal.timeout(10_000) })).ok
+          : await postHttps(u, ips, headers, body, AbortSignal.timeout(10_000), this.o.request);
+        if (ok) return true;
       } catch {
         // Unreachable or slow: tried again below.
       }

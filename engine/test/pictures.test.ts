@@ -398,3 +398,12 @@ test("L2: every way of writing this Mac's or a private address is caught (mapped
   for (const link of ["https://[::ffff:7f00:1]:9/x.png", "https://[::ffff:127.0.0.1]:9/x.png", "https://2130706433:9/x.png", "https://0x7f.1:9/x.png", "https://[::127.0.0.1]:9/x.png"]) await assert.rejects(fetchLinked(link, remote, AbortSignal.timeout(3000)), /link to this Mac/, link);
   await assert.rejects(fetchLinked("https://[::ffff:c0a8:101]/x.png", remote, AbortSignal.timeout(3000)), /private network/);
 });
+
+test("privateIp catches transition, multicast, reserved, site-local and discard ranges while keeping TEST-NET-3 public", () => {
+  for (const a of ["::ffff:0:127.0.0.1", "::ffff:0:7f00:1", "64:ff9b::10.0.0.1", "64:ff9b:1::192.168.1.1", "64:ff9b:1:7f00:1::", "2002:7f00:0001::", "2002:a9fe:a9fe::", "224.0.0.1", "240.0.0.1", "255.255.255.255", "ff02::1", "fec0::1", "100::1"]) {
+    assert.equal(privateIp(a), true, a);
+  }
+  for (const a of ["203.0.113.7", "2001:db8::1", "8.8.8.8", "64:ff9b::8.8.8.8", "::ffff:0:8.8.8.8", "2002:0808:0808::"]) {
+    assert.equal(privateIp(a), false, a);
+  }
+});

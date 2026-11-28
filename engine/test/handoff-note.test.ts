@@ -220,3 +220,27 @@ test("Switching again after the session went back to its first tool shows the ne
     codex.restore();
   }
 });
+
+test("Handoff caps a long file list and preserves at least the newest turn even on a tight budget with large stand-apart notes", () => {
+  const longFiles: Item[] = [
+    { kind: "user", id: "u1", turn: 1, at: 1, text: "F".repeat(1600) },
+    { kind: "text", id: "x1", turn: 1, at: 1, text: "a".repeat(200), streaming: false },
+    { kind: "plan", id: "p1", turn: 1, at: 1, entries: Array.from({ length: 40 }, (_, i) => ({ title: `step number ${i} with a long description to fill plan budget`, status: "pending" as const })) },
+    { kind: "checkpoint", id: "c1", turn: 1, at: 1, files: Array.from({ length: 40 }, (_, i) => ({ path: `src/feature-${i}/`.padEnd(250, "x"), status: "added" as const, added: 1, removed: 0, rel: true })), from: "f", to: "t" },
+    { kind: "user", id: "u2", turn: 2, at: 2, text: "NEWEST_REQUEST_".repeat(500) },
+    { kind: "text", id: "x2", turn: 2, at: 2, text: "newest answer", streaming: false },
+  ];
+  const out = handoff(longFiles, "fork", 12000);
+  assert.match(out, /You were asked: NEWEST_REQUEST_/, "newest turn is preserved when 40 paths are very long");
+  assert.match(out, /cut here: it was too long to carry over/);
+  const body = out.slice(out.indexOf("<earlier>\n") + 10, out.indexOf("\n</earlier>")).replace(/^\(\d+ older turns? left out\)\n\n/m, "");
+  assert.ok(body.length <= 12000, `body length ${body.length} exceeds 12000 budget`);
+  const filesLine = body.split("\n").find((l) => l.startsWith("Files changed so far and not undone:")) ?? "";
+  assert.ok(filesLine.length <= 1600, `filesNote length ${filesLine.length} exceeds 1600 cap`);
+
+  // Tight budget where full firstNote + planNote + filesNote alone exceed budget: newest turn is still kept and body stays in budget.
+  const tight = handoff(longFiles, "fork", 2600);
+  assert.match(tight, /You were asked: NEWEST_REQUEST_/, "newest turn is never dropped on a tight budget");
+  const tightBody = tight.slice(tight.indexOf("<earlier>\n") + 10, tight.indexOf("\n</earlier>")).replace(/^\(\d+ older turns? left out\)\n\n/m, "");
+  assert.ok(tightBody.length <= 2600, `tight body length ${tightBody.length} exceeds 2600 budget`);
+});

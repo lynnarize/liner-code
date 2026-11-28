@@ -47,7 +47,7 @@ export function waiting(home: string, running: string, current: string): Waiting
   }
   if (!r.version || !newerVersion(r.version, current)) return null;
   const path = join(dir, APP_BUNDLE_NAME);
-  const why = whyNot(r.app, path, running);
+  const why = whyNot(r.app, path, running, r.version);
   if (!why) return { path, version: r.version, ready };
   try {
     refuse(dir, r.version, why);
@@ -59,17 +59,25 @@ export function waiting(home: string, running: string, current: string): Waiting
 }
 
 /** Why the bundle at `path` (where ready.json says `said`) can't take `running`'s place, or nothing. */
-function whyNot(said: string | undefined, path: string, running: string) {
+function whyNot(said: string | undefined, path: string, running: string, version: string) {
   if (said !== path) return "It isn't where Liner Code left it.";
   const plist = join(path, "Contents/Info.plist");
   if (!existsSync(plist)) return "It isn't a whole app.";
+  const read = (key: string) => execFileSync("plutil", ["-extract", key, "raw", "-o", "-", plist], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   let id = "";
   try {
-    id = execFileSync("plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    id = read("CFBundleIdentifier");
   } catch {
     return "It isn't a whole app.";
   }
   if (id !== APP_BUNDLE_ID) return "It isn't Liner Code: its bundle id is different.";
+  let bundleVersion = "";
+  try {
+    bundleVersion = read("CFBundleShortVersionString");
+  } catch {
+    return "It isn't a whole app.";
+  }
+  if (bundleVersion !== version) return `It says it's ${bundleVersion || "no version"}, not ${version}.`;
   // Checked again here, not only when it was downloaded: the swap can come days later, and it puts this in the app's place.
   if (!signedAsOurs(path, running)) return "Its signature no longer holds, or it isn't signed by whoever signed this copy.";
   return undefined;

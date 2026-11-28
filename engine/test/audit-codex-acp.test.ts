@@ -1059,6 +1059,13 @@ test("codex: an edit outside the project, or one granting a folder outside it, i
   assert.equal(grant.rule, undefined);
   const legacy = await codexCard({ method: "applyPatchApproval", params: { fileChanges: { "/etc/hosts": {} } } }, { cwd });
   assert.equal(legacy.risk, "high");
+  const gitEdit = await codexCard({ method: "item/fileChange/requestApproval", params: { itemId: "p1" } }, { cwd }, startedPatch(`${cwd}/.git/hooks/pre-commit`));
+  assert.equal(gitEdit.risk, "high");
+  assert.equal(gitEdit.rule, undefined);
+  assert.match(gitEdit.description ?? "", /git's own folder/);
+  const legacyGit = await codexCard({ method: "applyPatchApproval", params: { fileChanges: { [`${cwd}/.git/config`]: {} } } }, { cwd });
+  assert.equal(legacyGit.risk, "high");
+  assert.equal(legacyGit.rule, undefined);
 });
 
 test("codex: its question can go unanswered, so a routine's turn never waits for good on one", async () => {

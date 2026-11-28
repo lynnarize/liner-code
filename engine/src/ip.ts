@@ -63,17 +63,28 @@ export const LOOPBACK = (host: string) => {
   const ip = normalIp(host);
   return ip === "localhost" || /^127\./.test(ip) || ip === "0:0:0:0:0:0:0:1";
 };
+const v4From = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+
 /** An address of a private network (or this Mac's own link), in any form: a picture's link or a webhook may not lead there. */
 export function privateIp(addr: string) {
   const ip = normalIp(addr);
   const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
   if (v4) {
     const [a, b] = [Number(v4[1]), Number(v4[2])];
-    return a === 10 || a === 0 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+    return a === 10 || a === 0 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
   }
   if (!ip.includes(":")) return false;
-  const first = parseInt(ip.split(":")[0], 16);
-  return ip === "0:0:0:0:0:0:0:1" || ip === "0:0:0:0:0:0:0:0" || (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
+  const groups = ipv6(ip);
+  if (!groups) return false;
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+  // IPv4-translated (::ffff:0:0:0/96), well-known NAT64 (64:ff9b::/96), and 6to4 (2002::/16): check the embedded IPv4.
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) return privateIp(v4From(g6, g7));
+  if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return privateIp(v4From(g6, g7));
+  if (g0 === 0x2002) return privateIp(v4From(g1, g2));
+  // Local-use NAT64 (64:ff9b:1::/48) and discard-only (100::/64).
+  if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) return true;
+  if (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) return true;
+  return ip === "0:0:0:0:0:0:0:1" || ip === "0:0:0:0:0:0:0:0" || (g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80 || (g0 & 0xff00) === 0xff00 || (g0 & 0xffc0) === 0xfec0;
 }
 
 /** The addresses a host leads to: itself when it's written as one, else what its name looks up to now (none when it doesn't). */

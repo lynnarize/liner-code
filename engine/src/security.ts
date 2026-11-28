@@ -14,8 +14,8 @@
   the threat model's areas, the scans.
 */
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { EngineEvent, Project, ProviderInfo, RpcMethod, RpcParams, RpcResult, Settings } from "../../contracts/src/index.ts";
 import { findingKey, noSeverities, sealable, SEVERITIES, SPECIALIST_MODELS } from "../../contracts/src/index.ts";
 import type { DismissReason, SecurityFinding, SecurityFindingAdded, FindingEvent, FindingState, FreeCheckRun, NewFinding, ScanRecord, SecurityChange, SecurityOverview, SecurityProject, Severity, SeverityCounts, SecondLookState, SpecialistSource, ThreatArea, ThreatModel } from "../../contracts/src/index.ts";
@@ -679,8 +679,12 @@ export class Security {
     const abs = join(p.path, file);
     const rel = relative(p.path, abs);
     if (!rel || outside(rel)) throw new Error("The threat model must live inside the project folder.");
-    mkdirSync(resolve(abs, ".."), { recursive: true });
-    if (!insideReal(p.path, resolve(abs, ".."))) throw new Error("The threat model folder points outside the project.");
+    const dir = resolve(abs, "..");
+    let up = dir;
+    while (!lstatSync(up, { throwIfNoEntry: false }) && up !== dirname(up)) up = dirname(up);
+    if (!insideReal(p.path, up)) throw new Error("The threat model folder points outside the project.");
+    mkdirSync(dir, { recursive: true });
+    if (!insideReal(p.path, dir)) throw new Error("The threat model folder points outside the project.");
     writeAtomic(abs, `${text.replace(/\r\n/g, "\n").trimEnd()}\n`);
     const next = this.model(projectId);
     this.changed(["projects"], projectId);

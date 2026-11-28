@@ -116,8 +116,15 @@ export function testCommand(cwd: string, scripts: { name: string; command: strin
   if (has("Cargo.toml")) return "cargo test";
   if (has("go.mod")) return "go test ./...";
   if (has("Package.swift")) return "swift test";
-  if (has("pytest.ini") || (has("pyproject.toml") && /\[tool\.pytest/.test(readFileSync(join(cwd, "pyproject.toml"), "utf8")))) return "pytest";
-  if (has("Makefile") && /^test\s*:/m.test(readFileSync(join(cwd, "Makefile"), "utf8"))) return "make test";
+  const read = (f: string) => {
+    try {
+      return readFileSync(join(cwd, f), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  if (has("pytest.ini") || (has("pyproject.toml") && /\[tool\.pytest/.test(read("pyproject.toml")))) return "pytest";
+  if (has("Makefile") && /^test\s*:/m.test(read("Makefile"))) return "make test";
   return undefined;
 }
 

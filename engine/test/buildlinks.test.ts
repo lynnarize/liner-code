@@ -161,3 +161,11 @@ test("build links: a frame whose file is gone isn't ahead and says nothing chang
     assert.deepEqual(buildState(ctx, cwd, "tide-tables")[0].state, "step");
   });
 });
+
+test("frameHash strips single- and double-quoted data-l ids, and builtCopy normalises cwd", () => {
+  assert.equal(frameHash("<p data-l='w1'>Week</p>"), frameHash('<p data-l="w1">Week</p>'));
+  assert.equal(frameHash("<p data-l='w1'>Week</p>"), frameHash("<p>Week</p>"));
+  const { home, cwd } = setup();
+  assert.equal(builtCopy(home, `${cwd}/`, "tide-tables", "phone-today"), builtCopy(home, cwd, "tide-tables", "phone-today"));
+  assert.equal(builtCopy(home, join(cwd, "sub", ".."), "tide-tables", "phone-today"), builtCopy(home, cwd, "tide-tables", "phone-today"));
+});

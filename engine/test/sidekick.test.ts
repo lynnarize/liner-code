@@ -1022,3 +1022,98 @@ test("sidekick: a first brief stopped before it's prompted, its tool already sta
     lead.restore();
   }
 });
+
+test("sidekick: changing the sidekick while a brief is still opening stops the brief and closes its session instead of running on a closed tool", async () => {
+  const made: { closed: boolean; texts: string[] }[] = [];
+  const saved = providers.codex;
+  let retoolOnWarm = true;
+  const { store, runtime, tools } = pair();
+  providers.codex = {
+    id: "codex",
+    detect: async () => info("codex", []),
+    warms: () => true,
+    open: () => {
+      const m = { closed: false, texts: [] as string[] };
+      made.push(m);
+      return {
+        turn: async (text, sink) => {
+          m.texts.push(text);
+          sink.text("Done.");
+        },
+        warm: async () => {
+          if (retoolOnWarm) {
+            retoolOnWarm = false;
+            store.patchThread("t", { sidekick: "claude:claude-haiku-5-5" });
+            void runtime.retool("t");
+          }
+        },
+        settled: () => true,
+        close: () => void (m.closed = true),
+      };
+    },
+  };
+  let said = "";
+  const lead = fake("claude", async (o, _t, sink) => void (said = (await hand(tools, o, sink, "k1", { brief: "look" })).text));
+  const live = () => [...(runtime as unknown as { live: Map<string, unknown> }).live.keys()].filter((k) => k.endsWith("#sidekick"));
+  try {
+    await runtime.send("t", "go");
+    await until(() => made[0]?.closed === true, "the sidekick session opened for it is closed");
+    assert.deepEqual(made[0].texts, [], "the replaced sidekick was never prompted");
+    assert.deepEqual(live(), [], "no stale sidekick session remains live");
+    assert.ok(store.timeline("t").some((x) => x.kind === "notice" && /The sidekick changed while/.test(x.text)), "notice posted");
+    assert.match(said, /before the sidekick .* started on it/);
+    assert.equal(rows(store.timeline("t")).at(-1)?.agent?.state, "stopped");
+    runtime.shutdown();
+  } finally {
+    providers.codex = saved;
+    lead.restore();
+  }
+});
+
+test("retool: switching only the thread's model while a turn is still taking its snapshot stops the turn instead of closing its session underneath it", async () => {
+  const made: { closed: boolean; texts: string[] }[] = [];
+  const savedClaude = providers.claude;
+  const savedCodex = providers.codex;
+  const { store, runtime } = pair({ agent: "forge", model: "claude:claude-opus-5-5", sidekick: undefined });
+  let retoolOnWarm = true;
+  providers.claude = {
+    id: "claude",
+    detect: async () => info("claude", ["claude-opus-5-5"]),
+    warms: () => true,
+    open: () => {
+      const m = { closed: false, texts: [] as string[] };
+      made.push(m);
+      return {
+        turn: async (text, sink) => {
+          m.texts.push(text);
+          sink.text("Old turn.");
+        },
+        warm: async () => {
+          if (retoolOnWarm) {
+            retoolOnWarm = false;
+            store.patchThread("t", { model: "codex:gpt-6.1-sol" });
+            void runtime.retool("t");
+          }
+        },
+        settled: () => true,
+        close: () => void (m.closed = true),
+      };
+    },
+  };
+  providers.codex = {
+    id: "codex",
+    detect: async () => info("codex", ["gpt-6.1-sol"]),
+    open: () => ({ close: () => {}, turn: async () => {} }),
+  };
+  try {
+    await runtime.send("t", "go");
+    await until(() => made[0]?.closed === true, "the old provider session is closed");
+    assert.deepEqual(made[0].texts, [], "the old session was never prompted after the model switched");
+    assert.ok(store.timeline("t").some((x) => x.kind === "notice" && /This session moved to/.test(x.text)), "switch notice posted");
+    assert.notEqual(store.thread("t").status, "error", "turn stopped cleanly rather than crashing on a closed session");
+    runtime.shutdown();
+  } finally {
+    providers.claude = savedClaude;
+    providers.codex = savedCodex;
+  }
+});

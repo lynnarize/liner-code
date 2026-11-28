@@ -6,9 +6,12 @@
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import type { ClientRequest, IncomingMessage } from "node:http";
+import type { RequestOptions } from "node:https";
 import type { Thread } from "../../contracts/src/index.ts";
 import { emptyUsage } from "../../contracts/src/index.ts";
-import { Webhook, webhookOk } from "../src/mcp-webhook.ts";
+import { postHttps, Webhook, webhookOk } from "../src/mcp-webhook.ts";
 
 /** A name that looks up to an address on the internet (TEST-NET-3), so no test asks real DNS. */
 const PUBLIC = async () => ["203.0.113.7"];
@@ -58,4 +61,63 @@ test("A webhook on this computer or a private network is refused, by its address
   assert.equal(await hook.tell("Tide chart"), false);
   assert.equal(tries, 0, "nothing was posted, and the secret went nowhere");
   assert.match(logs[0] ?? "", /private network/);
+});
+
+test("A webhook pins the single checked DNS lookup to https.request and rejects 3xx redirects", async () => {
+  for (const u of ["https://[::ffff:0:127.0.0.1]/hook", "https://[64:ff9b::10.0.0.1]/hook", "https://[64:ff9b:1::192.168.1.1]/hook", "https://[2002:7f00:1::]/hook", "https://224.0.0.1/hook", "https://240.0.0.1/hook", "https://[ff02::1]/hook", "https://[fec0::1]/hook", "https://[100::1]/hook"]) {
+    assert.equal(webhookOk(u), null, u);
+  }
+  const fakeReq = (statusCode: number, inspect?: (opts: RequestOptions) => void) =>
+    ((_url: string | URL, opts: RequestOptions, cb?: (res: IncomingMessage) => void) => {
+      inspect?.(opts);
+      const req = new EventEmitter() as ClientRequest;
+      req.end = (() => {
+        const res = new EventEmitter() as IncomingMessage;
+        res.statusCode = statusCode;
+        res.resume = () => res;
+        queueMicrotask(() => cb?.(res));
+        return req;
+      }) as ClientRequest["end"];
+      return req;
+    }) as unknown as typeof import("node:https").request;
+
+  let lookups = 0;
+  let seenAll: unknown;
+  let seenSingle: unknown;
+  let seenMissingFamily: unknown;
+  const hook = new Webhook({
+    url: () => "https://bot.example/hook",
+    secret: () => "s3cret",
+    delays: [],
+    lookup: async () => (lookups++, ["203.0.113.7"]),
+    request: fakeReq(200, (opts) => {
+      opts.lookup!("bot.example", { all: true }, (err, addrs) => {
+        seenAll = { err, addrs };
+      });
+      opts.lookup!("bot.example", { family: 4 }, (err, address, family) => {
+        seenSingle = { err, address, family };
+      });
+      opts.lookup!("bot.example", { family: 6 }, (err) => {
+        seenMissingFamily = err?.message;
+      });
+    }),
+  });
+  assert.equal(await hook.tell("Tide chart"), true);
+  assert.equal(lookups, 1, "DNS is resolved only once per attempt");
+  assert.deepEqual(seenAll, { err: null, addrs: [{ address: "203.0.113.7", family: 4 }] });
+  assert.deepEqual(seenSingle, { err: null, address: "203.0.113.7", family: 4 });
+  assert.equal(seenMissingFamily, "not found");
+
+  await assert.rejects(postHttps(new URL("https://bot.example/hook"), ["203.0.113.7"], {}, "{}", AbortSignal.timeout(2000), fakeReq(302)), /redirect 302/);
+  let redirLookups = 0;
+  const redirHook = new Webhook({
+    url: () => "https://bot.example/hook",
+    secret: () => "s3cret",
+    delays: [1],
+    log: () => {},
+    lookup: async () => (redirLookups++, ["203.0.113.7"]),
+    request: fakeReq(302),
+  });
+  assert.equal(await redirHook.tell("Tide chart"), false);
+  assert.equal(redirLookups, 2);
 });

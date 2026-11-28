@@ -54,8 +54,10 @@ test("outside: the key file is there only while it's on, readable by you alone, 
 });
 
 test("outside: projects, sessions, a session read with what waits on you, and starting one", async () => {
-  const { o, calls } = rig();
+  const { store, o, calls } = rig();
   assert.equal(out(await o.call("liner_projects", {})), "p · Counter · /work/counter");
+  store.putProject({ id: "d", name: "Landing", path: "/work/landing", kind: "design", git: false, createdAt: 2 });
+  assert.equal(out(await o.call("liner_projects", {})), "p · Counter · /work/counter\nd · Landing (design) · /work/landing");
   assert.equal(out(await o.call("liner_sessions", { project: "Counter" })), "th_1 · Reset button · Counter · waiting");
   const read = out(await o.call("liner_read", { session: "th_1" }));
   assert.match(read, /^Reset button · waiting \(it asks the person something in Liner Code\)[\s\S]*The person: Add a Reset button\.\n- Edit index\.html\nWaiting on the person: Run npm test/);

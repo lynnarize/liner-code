@@ -121,7 +121,7 @@ test("The commit tab shows, dim, only the message the commit form kept for these
   assert.match(commit, /const key = items \? changeKey\(items, files\) : null;/, "the form keeps its message under another change-set key than the tab reads");
   assert.doesNotMatch(read("commit-held.ts"), /rpc\(|git\.message|fetch\(/, "the held message is asked for");
   const session = read("Session.tsx");
-  assert.match(session, /held=\{heldMessage\(thread\.id, cps, openFiles \|\| wtChanges\)\}/, "the tab isn't handed the held message");
+  assert.match(session, /held=\{heldMessage\(thread\.id, cps, openFiles\)\}/, "the tab isn't handed the held message");
   const tab = session.slice(session.indexOf("function ToCommit("), session.indexOf("\n}\n", session.indexOf("function ToCommit(")));
   assert.doesNotMatch(tab, /rpc\(|git\.message|fetch\(/, "the commit tab asks for its message");
   assert.match(tab, /\{held && \(\s*<span className="lc-trow-dim"/, "the tab doesn't show the held message, or shows an empty line without one");
@@ -168,7 +168,7 @@ test("Changes' file strips meet on one rule: none doubled between strips, none u
 
 test("While Changes shows, the commit tab over the message box steps aside and Changes offers the white Commit in every view of it", () => {
   const session = read("Session.tsx");
-  assert.match(session, /\(openFiles > 0 \|\| wtChanges > 0\) && !\(dock\.open && dock\.panes\[dock\.at\]\?\.tab === "changes"\) && <ToCommit /, "the tab no longer steps aside for Changes");
+  assert.match(session, /\{openFiles > 0 && !\(dock\.open && dock\.panes\[dock\.at\]\?\.tab === "changes"\) && <ToCommit /, "the tab no longer steps aside for Changes");
   const review = read("Review.tsx");
   // The working tree's own view (no turn made a change) has its foot with Commit.
   const wt = review.slice(review.indexOf("const wtFiles = wtStatus?.changes ?? [];"), review.indexOf("<SurfaceNote icon={<I.changes size={20} />} title=\"No changes yet\">"));
@@ -194,4 +194,15 @@ test("Inside the panel a surface's own head is a 40px bar under the tabs, and dr
   assert.match(pane, /className="lc-pane-head lc-pane-bar"/);
   assert.match(rule(read("pane.css"), ".lc-pane-head.lc-pane-bar"), /height: 40px;/);
   assert.doesNotMatch(pane, /own === 0 && <HeadRow/, "the frame still draws a head of its own over the tabs");
+});
+
+test("The commit row over the message box counts only this session's own changes, never files the project held before it or someone else changed", () => {
+  const session = read("Session.tsx");
+  const top = session.slice(session.indexOf("{asking && <AskDock dock={asking} />}"), session.indexOf("</>", session.indexOf("{asking && <AskDock dock={asking} />}")));
+  assert.match(top, /<ToCommit files=\{openFiles\} lines=\{lines\}/, "the row doesn't count the session's own files and lines");
+  // The working tree's count (git status) is any change in the project: untracked folders kept on purpose put the row
+  // over every session's message box, a new one included, with nothing for its agent to commit.
+  assert.doesNotMatch(top, /wtChanges/, "the row shows for changes in the project that this session's turns never made");
+  // Changes' badge and its own view still count the whole working tree, so those files stay one click away.
+  assert.match(session, /counts=\{\{ changes: openFiles \|\| wtChanges \|\| undefined \}\}/, "the Changes badge no longer counts the working tree");
 });

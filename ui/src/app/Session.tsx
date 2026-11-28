@@ -887,10 +887,12 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
                   // The tray's head: an ask waiting on you, over what's waiting to commit. Who the work waits on is the
                   // card at the chat's end now (Crew.tsx CrewCard), not a strip here (SPEC rule 6).
                   // While Changes is the surface showing, its own foot has Commit, so the row steps aside.
+                  // Only this session's own turns put the row here: files left uncommitted on purpose, or changed by you
+                  // or another session, would keep it over every message box of the project. Changes' badge counts those.
                   top={
                     <>
                       {asking && <AskDock dock={asking} />}
-                      {(openFiles > 0 || wtChanges > 0) && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles || wtChanges} lines={openFiles > 0 ? lines : { added: 0, removed: 0 }} held={heldMessage(thread.id, cps, openFiles || wtChanges)} onView={() => setDock((d) => openTab(d, "changes"))} />}
+                      {openFiles > 0 && !(dock.open && dock.panes[dock.at]?.tab === "changes") && <ToCommit files={openFiles} lines={lines} held={heldMessage(thread.id, cps, openFiles)} onView={() => setDock((d) => openTab(d, "changes"))} />}
                     </>
                   }
                 />
@@ -935,8 +937,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
 });
 
 /**
-  What's waiting to commit, as a row of the composer tray's head, so it stays in sight with the
-  panel closed (the rail's dot said it before). Its words open the Changes surface, and its small
+  What this session's turns changed and nobody committed or undid yet, as a row of the composer
+  tray's head, so it stays in sight with the panel closed (the rail's dot said it before). Its words open the Changes surface, and its small
   Commit does too. The session leaves it out while Changes shows: Changes' foot commits.
 */
 function ToCommit({ files, lines, held, onView }: { files: number; lines: { added: number; removed: number }; held?: string; onView: () => void }) {

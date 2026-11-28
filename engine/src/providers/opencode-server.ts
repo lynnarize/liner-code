@@ -92,6 +92,13 @@ const ACTION_KIND: Record<string, ToolKind> = {
 };
 
 const COMPACT = /^\/compact\s*$/;
+/** A count of tokens as the timeline says it: 23k. */
+const kTokens = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+/** What one step of OpenCode's put in the model's context, from its `tokens` (input leaves out the cache it read and wrote). */
+function contextOf(tok: unknown): number {
+  const t = (tok ?? {}) as { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
+  return (Number(t.input) || 0) + (Number(t.output) || 0) + (Number(t.reasoning) || 0) + (Number(t.cache?.read) || 0) + (Number(t.cache?.write) || 0);
+}
 const opencodeOutputs = (env: NodeJS.ProcessEnv) => join(env.XDG_DATA_HOME || join(env.HOME || homedir(), ".local", "share"), "opencode", "tool-output");
 
 /** Thrown when the installed `opencode` binary does not speak the V2 `/api/*` HTTP server API. */
@@ -678,9 +685,12 @@ export class OpenCodeDaemon {
       const r = await this.request("GET", `/api/model?location[directory]=${encodeURIComponent(dir)}`, undefined, signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000)).catch(() => null);
       return r?.status === 200 ? opencodeModelList(r.text) : null;
     };
+    // Each pause lets go of `signal` as it ends: the agree loop pauses up to twenty times, and every listener left on the
+    // look's signal stayed there until it was done with, past Node's warning at eleven.
     const pause = (ms: number) => new Promise<void>((ok) => {
-      const t = setTimeout(ok, ms);
-      signal?.addEventListener("abort", () => (clearTimeout(t), ok()), { once: true });
+      const stop = () => (clearTimeout(t), ok());
+      const t = setTimeout(() => (signal?.removeEventListener("abort", stop), ok()), ms);
+      signal?.addEventListener("abort", stop, { once: true });
     });
     if (!said()) {
       let heard = () => {};
@@ -1001,6 +1011,12 @@ export class OpenCodeServerSession implements ProviderSession {
   private inputs = new Map<string, Json>();
   /** A Stop's interrupt the server hasn't answered: on close, the server is asked whether it still answers at all (doubt). */
   private unanswered = false;
+  /** The model the root session's step runs on, as its `session.step.started` names it ("provider/model"). */
+  private stepModel: string | undefined;
+  /** Each model's context window as the server lists it (`limit.context`), by "provider/model": asked once a session. */
+  private windows: Promise<Map<string, number>> | null = null;
+  /** The notice a compaction under way updates when it ends. */
+  private compactKey: string | null = null;
   /** Settle window in ms after subagents finish (shortened in tests). */
   settleMs = 1500;
   /** Interval in ms between active-turn reconciliation checks (shortened in tests). */
@@ -1250,6 +1266,34 @@ export class OpenCodeServerSession implements ProviderSession {
       this.done = null;
       this.fail = null;
     }
+  }
+
+  /**
+    OpenCode 2's server compacts on request (POST /api/session/:id/compact), so /compact is its own; the ACP session an older
+    OpenCode falls back to says for itself.
+  */
+  canCompact(): boolean {
+    return this.fallback ? Boolean(this.fallback.canCompact?.()) : true;
+  }
+
+  /** The context window OpenCode lists for `model` ("provider/model"), asked of its model list once a session. */
+  private async windowOf(d: OpenCodeDaemon, model: string | undefined): Promise<number | undefined> {
+    if (!model) return undefined;
+    this.windows ??= d
+      .request("GET", `/api/model?location[directory]=${encodeURIComponent(this.o.cwd)}`, undefined, AbortSignal.timeout(5000))
+      .then((r) => {
+        const out = new Map<string, number>();
+        const list = r.status === 200 ? ((r.data as { data?: unknown } | undefined)?.data ?? []) : [];
+        for (const m of Array.isArray(list) ? (list as { id?: unknown; providerID?: unknown; limit?: { context?: unknown } }[]) : []) {
+          const size = Number(m?.limit?.context);
+          if (typeof m?.id === "string" && typeof m.providerID === "string" && size > 0) out.set(`${m.providerID}/${m.id}`, size);
+        }
+        // A list that hasn't loaded yet (OpenCode answers an empty one for its first moments) is asked again next time.
+        if (!out.size) this.windows = null;
+        return out;
+      })
+      .catch(() => ((this.windows = null), new Map<string, number>()));
+    return (await this.windows).get(model);
   }
 
   async steer(text: string, attached?: string[]): Promise<boolean> {
@@ -1701,6 +1745,35 @@ export class OpenCodeServerSession implements ProviderSession {
           },
           true,
         );
+        break;
+      }
+      // The session's usage above is its running totals; a step's own count is what its context holds now, which the message box
+      // shows as "N% of context" with Compact beside it, against the window OpenCode lists for the step's model.
+      case "session.step.started": {
+        const m = data.model as { id?: unknown; providerID?: unknown } | undefined;
+        if (typeof m?.id === "string" && typeof m.providerID === "string") this.stepModel = `${m.providerID}/${m.id}`;
+        break;
+      }
+      case "session.step.ended": {
+        const used = contextOf(data.tokens);
+        if (!used) break;
+        sink.usage({ contextTokens: used });
+        const d = this.daemon;
+        const model = this.stepModel ?? (isDefault(this.model) ? undefined : this.model);
+        if (d) void this.windowOf(d, model).then((size) => size && sink.usage({ contextWindow: size }));
+        break;
+      }
+      case "session.compaction.started": {
+        this.compactKey ??= `compact-${randomBytes(6).toString("hex")}`;
+        sink.notice("Compacting the conversation…", this.compactKey);
+        break;
+      }
+      // Its own compaction, asked for with /compact or made to make room: said when it ends, with what it summed up.
+      case "session.compaction.ended": {
+        const before = contextOf(data.tokens);
+        const why = data.reason === "manual" ? "" : " to make room";
+        sink.notice(`OpenCode compacted the conversation${why}${before ? ` (${kTokens(before)} tokens before)` : ""}.`, this.compactKey ?? undefined);
+        this.compactKey = null;
         break;
       }
       case "session.execution.succeeded":

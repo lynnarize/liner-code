@@ -17,6 +17,39 @@ test("The / list names Teamwork and Swarm among Liner Code's own commands, which
   assert.ok(LINER_COMMANDS.every((c) => c.source === "liner"));
 });
 
+test("The / list offers /compact as Liner Code's own, which sends just /compact, unless the tool lists its own", () => {
+  const own = commandsWith([]).find((c) => c.name === "compact");
+  assert.equal(own?.source, "liner");
+  // Picked from the list, the box gets "/compact " with no hint after it: the runtime takes that as the command (runtime.ts COMPACT).
+  assert.equal(own?.hint, undefined);
+  const listed = commandsWith([tool("compact")]).filter((c) => c.name === "compact");
+  assert.deepEqual(listed.map((c) => c.source), ["tool"]);
+});
+
+test("A side chat and a scan offer /compact too, since the turn compacts there, but the Demo is never offered it", () => {
+  assert.ok(commandsWith([], false).some((c) => c.name === "compact" && c.source === "liner"));
+  assert.ok(!commandsWith([], true, false).some((c) => c.name === "compact"));
+  assert.ok(!commandsWith([], false, false).some((c) => c.name === "compact"));
+});
+
+test("A Demo session's / list leaves out /compact, which the runtime hands the Demo as words", async () => {
+  const home = mkdtempSync(join(tmpdir(), "lc-slash-home-"));
+  const proj = mkdtempSync(join(tmpdir(), "lc-slash-proj-"));
+  const store = new Store(home);
+  store.putProject({ id: "p", name: "p", path: proj, git: false, createdAt: 1 });
+  const env = { PATH: "/usr/bin:/bin", HOME: home };
+  const runtime = new Runtime(store, env);
+  const api = createApi(store, runtime, env, { routines: { routines: [], recent: [] }, terms: {}, logs: {}, proxies: {} } as never);
+  try {
+    const r = (await api.call("agent.commands", { projectId: "p", agent: "@demo:demo" } as never)) as { commands: CommandInfo[] };
+    assert.ok(r.commands.some((c) => c.name === "reviewer"), "the Demo's list has none of Liner Code's commands");
+    assert.ok(!r.commands.some((c) => c.name === "compact"));
+  } finally {
+    api.updates.stop();
+    runtime.shutdown();
+  }
+});
+
 test("A side chat or a scan, which takes no team, lists neither /teamwork nor /swarm", () => {
   const names = commandsWith([tool("compact")], false).map((c) => c.name);
   assert.ok(!names.includes("teamwork") && !names.includes("swarm"));

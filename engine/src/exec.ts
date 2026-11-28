@@ -5,7 +5,7 @@
 import { execFile, execFileSync, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { accessSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, extname, isAbsolute, join, sep } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, sep } from "node:path";
 
 const win = process.platform === "win32";
 
@@ -484,7 +484,16 @@ export async function sweepMarks(look: Parameters<typeof engineAlive>[3] = {}): 
     }
     let stuck = false;
     for (const file of files) {
-      const mark: Mark = { value: "", file };
+      // A run's file named for its environment's value (Claude Code's: providers/claude.ts) finds by that too what let the file go.
+      const named = /^liner-run-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(basename(file));
+      const mark: Mark = named ? { name: RUN_ENV, value: named[1], file } : { value: "", file };
+      // And what runs below those: Claude Code's commands don't keep its descriptors, and once it's pid 1's, its tree is all that says they're its.
+      const carrying = async () => {
+        const [all, pids] = await Promise.all([processes(), markedPids(mark)]);
+        const top = all.filter((p) => pids.has(p.pid));
+        // Never this engine, which a dead one's Terminal may have started (`npm run dev` there).
+        return [...new Map([...top, ...top.flatMap((p) => below(all, p.pid))].map((p) => [p.pid, p])).values()].filter((p) => p.pid !== process.pid);
+      };
       // A look that failed isn't "nothing holds it": the folder stays, for the next look.
       const held = async () => {
         const pids = await (look.holders ?? holders)(file);
@@ -497,13 +506,13 @@ export async function sweepMarks(look: Parameters<typeof engineAlive>[3] = {}): 
         continue;
       }
       if (!pids.size) continue;
-      const holding = await marked(mark);
+      const holding = await carrying();
       if (!holding.length) {
         // Held, but not listed (ps refused, say), unless what held it ended meanwhile: nothing was ended, so it stays too.
         stuck ||= (await held())?.size !== 0;
         continue;
       }
-      const still = await endAll(holding, () => marked(mark));
+      const still = await endAll(holding, carrying);
       out.ended += holding.length - still.length;
       out.left.push(...still);
       stuck ||= still.length > 0;

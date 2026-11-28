@@ -702,3 +702,26 @@ test("A Teamwork worker in a session that names an agent and sets no effort runs
     runtime.shutdown();
   }
 });
+
+test("Reading an OpenCode's model list until two answers agree leaves no wait listening on the look that asked", async () => {
+  const m = await mockServer();
+  const d = await OpenCodeDaemon.connect(m.url, "pw");
+  const folder = mkdtempSync(join(tmpdir(), "lc-efforts-folder-"));
+  // An OpenCode that never says the folder is loaded and whose list keeps changing: every read waits a pause, then another.
+  const base = JSON.parse(SAMPLE) as { data: { name?: string }[] };
+  let n = 0;
+  const moving = setInterval(() => (m.list.now = { ...base, data: base.data.map((x, i) => (i === 0 ? { ...x, name: `${x.name} ${++n}` } : x)) }), 5);
+  const look = new AbortController();
+  try {
+    await withWaits({ said: 50, agree: 600, every: 20 }, async () => {
+      await d.models(folder, look.signal);
+    });
+    const { getEventListeners } = (await import("node:events")) as unknown as { getEventListeners: (t: EventTarget, name: string) => unknown[] };
+    assert.ok(m.list.asks > 5, `it read ${m.list.asks} times`);
+    assert.equal(getEventListeners(look.signal, "abort").length, 0, "each pause let go of the look once it ended");
+  } finally {
+    clearInterval(moving);
+    await d.shutdown();
+    m.close();
+  }
+});

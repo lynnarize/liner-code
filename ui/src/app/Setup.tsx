@@ -8,7 +8,7 @@
   picked projects in and starts. The faint halftone sits in the sheet's top right corner. The name the boot screen
   showed stays in place while the line under it says what this is, then gives way to the page.
 */
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FoundRepo, ProviderInfo, Settings, SystemCheck } from "@contracts";
 import { castOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
@@ -273,8 +273,9 @@ function Tools({ opened, toggle, setOpened }: Opens & { setOpened: (o: Opened) =
     const key = value.trim();
     if (!key || !keyFor) return;
     try {
-      await bridge.keychainSet(`key:${keyFor}`, key);
+      // The engine takes it first, then the keychain keeps it for the next launch: a key it turns away isn't kept.
       await rpc("keys.set", { provider: keyFor, key });
+      await bridge.keychainSet(`key:${keyFor}`, key);
       if (keyFor === "anthropic") await rpc("settings.save", { claudeBilling: "key" });
       toast.success(`${KEYS.find((k) => k.id === keyFor)?.name} key saved`, { description: `Kept in ${os.keyStore("this Mac's keychain")}.` });
       setKeyFor(null);
@@ -375,6 +376,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
   const open = opened === "projects";
   const [clone, setClone] = useState("");
   const [cloning, setCloning] = useState(false);
+  const cloningNow = useRef(false);
 
   useEffect(() => {
     // A scan that fails says nothing turned up, rather than looking for ever.
@@ -421,7 +423,9 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
     }
   };
   const doClone = async () => {
-    if (!clone.trim()) return;
+    // Enter in the field isn't held back by the button's disabled look: a second one would clone it twice.
+    if (!clone.trim() || cloningNow.current) return;
+    cloningNow.current = true;
     setCloning(true);
     try {
       const p = await rpc("project.clone", { url: clone.trim() });
@@ -431,6 +435,7 @@ function Projects({ onAdds, opened, toggle }: { onAdds: (a: Adds) => void } & Op
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      cloningNow.current = false;
       setCloning(false);
     }
   };

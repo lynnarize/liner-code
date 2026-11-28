@@ -204,6 +204,7 @@ export const LINER_COMMANDS: CommandInfo[] = [
   { name: "teamwork", description: "A coordinator plans the work and hands its parts to a tree of agents", hint: "<what to build>", source: "liner" },
   { name: "swarm", description: "Peers on one board take the work between them, parked while they wait", hint: "<the goal>", source: "liner" },
   { name: "reviewer", description: "Have the Reviewer, another model family, read the changes now", source: "liner" },
+  { name: "compact", description: "Sum up the conversation so far, so the context has room again", source: "liner" },
   { name: "pr", description: "Open a pull request from this branch, right here in the chat", source: "liner" },
 ];
 /** The commands that turn a team on, which a side chat and a scan never take (thread.send leaves them to the tool there). */
@@ -211,10 +212,11 @@ const TEAM_COMMANDS = new Set(["teamwork", "swarm"]);
 /**
   What the composer's "/" lists: Liner Code's own first, then the tool's. A tool command with the same name stays the
   tool's, every time it is asked, the cached answer as the fresh one (the cached one listed both). A session with no team
-  (a side chat, a scan) has no Teamwork or Swarm.
+  (a side chat, a scan) has no Teamwork or Swarm. /compact is in a side chat and a scan too, since the turn compacts there
+  as anywhere (runtime.ts COMPACT), but not on the Demo, which the runtime hands the words to as they are.
 */
-export function commandsWith(tool: CommandInfo[], team = true): CommandInfo[] {
-  return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && !tool.some((x) => x.name === c.name)), ...tool];
+export function commandsWith(tool: CommandInfo[], team = true, compacts = true): CommandInfo[] {
+  return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && (compacts || c.name !== "compact") && !tool.some((x) => x.name === c.name)), ...tool];
 }
 /**
   Whether the "/" list offers /teamwork and /swarm: not in a side chat or a scan, and not when the box says it takes no
@@ -957,14 +959,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const had = commandsCache.get(key);
       const t = threadId ? store.threads.find((x) => x.id === threadId) : undefined;
       const team = takesTeam(t, hint);
-      const own = { commands: commandsWith([], team), skills: [] as SkillInfo[] };
-      if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team), skills: had.skills };
+      const compacts = familyOf(provider) !== "demo";
+      const own = { commands: commandsWith([], team, compacts), skills: [] as SkillInfo[] };
+      if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team, compacts), skills: had.skills };
       const p = providers[provider];
       if (!p?.commands) return own;
       try {
         const r = await p.commands(runtime.envFor(provider), cwd);
         commandsCache.set(key, { at: Date.now(), ...r });
-        return { commands: commandsWith(r.commands, team), skills: r.skills };
+        return { commands: commandsWith(r.commands, team, compacts), skills: r.skills };
       } catch {
         return own;
       }
@@ -1209,11 +1212,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           tree = sub ? { path: join(root, sub), branch, root, made: true } : { path: root, branch, made: true };
           // Setting up a new worktree: its submodules, which git leaves empty, then the project's setup
           // command, optional trusted `.liner/worktree-setup.sh`, and scripts marked to run there.
-          const steps = setupSteps(projectId);
-          const hookFile = worktreeHookPath(tree.path);
+          // A fix of a pull request starts at its head, someone else's code: the setup command (an install runs the scripts its
+          // package.json names) and its hook would run that code as you, outside the session's level, so neither runs.
+          const foreign = tag?.kind === "fix" && Boolean(base);
+          const steps = foreign ? [] : setupSteps(projectId);
+          const hookFile = foreign ? null : worktreeHookPath(tree.path);
           const hookTrusted = Boolean(hookFile && store.settings.worktreeHooksTrusted?.includes(projectId));
-          if (hookFile && hookTrusted) steps.push(`sh ${JSON.stringify(hookFile)}`);
+          // The hook you trusted is the one in the project's folder: a branch the worktree starts from (a pull request's head)
+          // may have rewritten it, and trust in yours isn't trust in that.
+          const hookSame = hookTrusted && sameFile(hookFile, worktreeHookPath(project.path));
+          if (hookSame) steps.push(`sh ${JSON.stringify(hookFile)}`);
+          else if (hookTrusted) notice = "This worktree's .liner/worktree-setup.sh isn't the one you trusted in the project's folder (the branch it starts from changed it), so it didn't run. Read it, then run it yourself if it's right.";
           else if (hookFile) notice = "Found .liner/worktree-setup.sh — trust worktree setup hooks for this project in Settings to run it automatically.";
+          if (foreign && (setupSteps(projectId).length || worktreeHookPath(tree.path))) notice = "This fix starts at the pull request's head, someone else's code, so the worktree wasn't set up: the project's setup command and setup hook would have run that code as you. Set it up yourself once you've read the changes.";
           const mods = existsSync(join(root, ".gitmodules"));
           const at = tree.path;
           const prep = async () => {
@@ -1343,8 +1354,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         access: s.access,
         live: s.live,
         context: s.context ? { ...s.context, measured: true } : last,
-        // Any Claude Code account compacts on request (a second one is "claude.work"); another tool where its look says it does, and Codex before that look.
-        compact: familyOf(s.provider) === "claude" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
+        // Any Claude Code account compacts on request (a second one is "claude.work"), and OpenCode (its server or its ACP); another
+        // tool where its look says it does, and Codex before that look.
+        compact: familyOf(s.provider) === "claude" || familyOf(s.provider) === "opencode" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
       };
     },
     "outside.info": () => {
@@ -2513,6 +2525,16 @@ function unsealable(agent?: string, sidekick?: string, profile: (id: string) => 
   if (agent !== undefined && (!ref || !sealable(tool(ref)))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: pick a Claude Code model.";
   if (sidekick && !sealable(tool(sidekick))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: its sidekick has to be a Claude Code model, or none.";
   return undefined;
+}
+
+/** Whether two files hold the same bytes; false when either isn't there or can't be read. */
+function sameFile(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    return readFileSync(a).equals(readFileSync(b));
+  } catch {
+    return false;
+  }
 }
 
 /**

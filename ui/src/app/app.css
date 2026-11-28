@@ -4591,6 +4591,16 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     background: var(--l-wash);
   }
 }
+/* Compact beside it while a turn runs or a compact is on its way: fainter, and no wash, since a press does nothing. */
+.lc-under-b:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-under-b:disabled:hover {
+    background: none;
+  }
+}
 .lc-under-t {
   min-width: 0;
   overflow: hidden;

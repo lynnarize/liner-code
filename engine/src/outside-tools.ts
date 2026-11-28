@@ -63,6 +63,14 @@ function paged(lines: string[], cursor: unknown, empty: string, size = PAGE) {
 const settled = (s: NonNullable<Thread["startedBy"]>) => ({ appId: s.appId, name: s.name, kind: s.kind });
 const unread = (r: WorklistResult<unknown>) => (r.unavailable.length ? `\nCouldn't read: ${r.unavailable.map((u) => `${u.project} (${u.why})`).join("; ")}` : "");
 
+/**
+  A choice an MCP server asks through a session (its elicitation: a yes or no, or one of a list) is in effect a permission
+  (may it delete this, may it send that), so only the person answers it. A box to fill in from a server, and every question
+  the agent asks itself, an app may answer.
+*/
+const serversChoice = (q: Extract<Item, { kind: "question" }>) => q.elicited === true && q.questions.some((x) => x.options.length > 0);
+const SERVERS_CHOICE = "That is a choice an MCP server asks through the session, which is in effect a permission: the person answers it in Liner Code.";
+
 export class Outside {
   private key: string | null = null;
   private store: Store;
@@ -128,10 +136,16 @@ export class Outside {
     return p;
   }
 
-  /** The question a session asks the person now, in its own words, if it asks one (for liner_answer's card). */
+  /** The question a session asks the person now, in its own words, if it asks one an app may answer (for liner_answer's card). */
   question(threadId: string) {
     const q = this.store.timeline(threadId).findLast((x) => x.kind === "question" && x.state === "asking");
-    return q?.kind === "question" ? clip(q.questions[0]?.question ?? "", 200) : undefined;
+    return q?.kind === "question" && !serversChoice(q) ? clip(q.questions[0]?.question ?? "", 200) : undefined;
+  }
+
+  /** Why an app can't answer what a session asks now, when it's a choice an MCP server asks (serversChoice). */
+  unanswerable(threadId: string) {
+    const q = this.store.timeline(threadId).findLast((x) => x.kind === "question" && x.state === "asking");
+    return q?.kind === "question" && serversChoice(q) ? SERVERS_CHOICE : undefined;
   }
 
   thread(id: unknown) {
@@ -260,6 +274,7 @@ export class Outside {
           // A question only: an approval (may it run this, edit that) is never an app's to answer.
           const q = this.store.timeline(t.id).findLast((x) => x.kind === "question" && x.state === "asking");
           if (!q || q.kind !== "question") return fail("That session isn't asking a question. What it asks for permission stays the person's to answer in Liner Code.");
+          if (serversChoice(q)) return fail(SERVERS_CHOICE);
           if (q.questions.length !== 1) return fail("It asks several questions at once; the person answers those in Liner Code.");
           await this.api.call("question.answer", { threadId: t.id, itemId: q.id, answers: { [q.questions[0].question]: clip(answer, 4000) } });
           return text("Answered.");

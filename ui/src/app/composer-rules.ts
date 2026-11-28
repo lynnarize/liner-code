@@ -41,3 +41,29 @@ const COMMAND_ICONS: Record<string, string> = {
   new: "compose", quit: "close", exit: "close", skills: "notes", context: "layers", rewind: "back", undo: "undo",
 };
 export const commandIconOf = (name: string) => COMMAND_ICONS[name.toLowerCase()] ?? "slash";
+
+/**
+  Whether a session's tool takes /compact. Every tool does now: the engine runs the tool's own compact where it has one and
+  compacts in Liner Code where it has none (runtime.ts COMPACT). Only the Demo is left out, which is handed the words as
+  they are and would answer them as a message.
+*/
+export const compactsOn = (provider: string) => provider.split(".")[0] !== "demo";
+
+/**
+  The Compact button beside "N% of context" under a session's box: there once the context holds something on a tool that
+  compacts, and not pressable while a turn runs or a press of it is still on its way (DetailsParts.tsx useCompact), since a
+  second /compact would sum up what was just summed up.
+*/
+export const compactButton = (o: { provider: string; contextTokens?: number; running: boolean; compacting: boolean }) => ({
+  shown: compactsOn(o.provider) && (o.contextTokens ?? 0) > 0,
+  disabled: o.running || o.compacting,
+});
+
+/** A long thread past its cache: the next message is read again at full price, so the box offers to compact. */
+export const COLD_TOKENS = 200_000;
+/**
+  Whether the box offers "Compact now" because the cache has run out on a long thread: past the cache's end, a thread over
+  COLD_TOKENS, on any tool that compacts, and not once you dismissed it for this cache.
+*/
+export const coldCompact = (o: { provider: string; cacheUntil?: number; seen?: number; now: number; contextTokens?: number }) =>
+  compactsOn(o.provider) && o.cacheUntil !== undefined && o.seen !== o.cacheUntil && o.now > o.cacheUntil && (o.contextTokens ?? 0) > COLD_TOKENS;

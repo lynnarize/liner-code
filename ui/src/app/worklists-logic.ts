@@ -83,6 +83,16 @@ export function groupIssues(items: IssueItem[], sort: IssueSort = "updated"): Gr
   ].filter((g) => g.items.length > 0);
 }
 
+/**
+  What the Pull requests page does with an open detail its list doesn't hold. One asked for as the page came up (`pick`,
+  an issue's Linked line) may be merged or closed, so the open list hasn't it: the page looks in every state first. Any
+  other (a row a search or another state now hides, or a pick not there in any state) closes.
+*/
+export function missingPick(open: string | null, pick: string | undefined, shown: string, found: boolean): "keep" | "all" | "close" {
+  if (!open || found) return "keep";
+  return open === pick && shown !== "all" ? "all" : "close";
+}
+
 /** A row's key: a number is only unique within its project. */
 export const prKey = (p: { projectId: string; number: number }) => `${p.projectId}#${p.number}`;
 export const issueKey = (i: { projectId: string; key: string }) => `${i.projectId}#${i.key}`;

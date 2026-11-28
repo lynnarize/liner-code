@@ -21,7 +21,7 @@ import { agentsWorked } from "./session-pop";
 import { runScript } from "./Surfaces";
 import { prEnd } from "./surface-row";
 import { CardContext, CardSetup } from "./DetailsParts";
-import { BackRow, Lines, MenuFoot, PanelHead, Pop, Row, Sep } from "./ui";
+import { BackRow, Lines, MenuFoot, PanelHead, Pop, Row, Sep, useConfirm } from "./ui";
 import * as os from "./os";
 
 type More = "mac" | "editor" | "script" | "branch" | "commit" | null;
@@ -342,13 +342,17 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onPr, on
   };
   const then = (saved("lc:commit-then") as Then | null) ?? "push";
   // Commit as the title's menu commits: with files, Changes opens with its commit form; with none, the step after it.
+  // The card stays up beside the chat, so a stray click is easy: a push or a turn sent to the agent waits for a second press.
+  const outward = useConfirm();
   const commit = () => {
     if (files > 0) return (askCommit(thread.id, then), onChanges());
-    if (then === "pr") return void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail);
+    if (then === "pr") return outward.press(() => void rpc("thread.send", { id: thread.id, text: "create pr" }).catch(fail));
     if (then === "push")
-      void rpc("git.push", { threadId: thread.id })
-        .then((p) => toast.success(`Pushed ${p.branch} to ${p.remote}`))
-        .catch(fail);
+      outward.press(() =>
+        void rpc("git.push", { threadId: thread.id })
+          .then((p) => toast.success(`Pushed ${p.branch} to ${p.remote}`))
+          .catch(fail),
+      );
   };
   const panel = (more: Exclude<More, null>, label: string) => (
     <Pop label={label} menu align="end" width={300} triggerClass="lc-dr-end l-focus" triggerAttrs={{ title: label }} trigger={<I.chevD size={14} />}>
@@ -412,9 +416,9 @@ export function DetailsCard({ thread, project, files, lines, onChanges, onPr, on
             {panel("branch", "Branch")}
           </div>
           <div className="lc-dr">
-            <button type="button" className="lc-dr-main l-focus" disabled={running || (files === 0 && then === "commit")} title={running ? "Once the turn ends" : undefined} onClick={commit}>
+            <button type="button" className="lc-dr-main l-focus" disabled={running || (files === 0 && then === "commit")} title={running ? "Once the turn ends" : undefined} data-danger={(outward.asked && files === 0) || undefined} onBlur={outward.reset} onClick={commit}>
               <I.commit size={14} />
-              <span className="lc-dr-t">{files > 0 ? "Commit" : then === "pr" ? "Open a pull request" : then === "push" ? "Push" : "Commit"}</span>
+              <span className="lc-dr-t">{files > 0 ? "Commit" : outward.asked ? (then === "pr" ? "Press again to ask for a pull request" : "Press again to push") : then === "pr" ? "Open a pull request" : then === "push" ? "Push" : "Commit"}</span>
               {files > 0 && <em>{plural(files, "file")}</em>}
             </button>
             {panel("commit", "After committing")}

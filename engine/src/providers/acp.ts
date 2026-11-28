@@ -29,6 +29,8 @@ type Json = Record<string, unknown>;
 type Msg = { jsonrpc: "2.0"; id?: number | string; method?: string; params?: Json; result?: Json; error?: { code: number; message: string } };
 /** How much of a tool's output the app gets, its end; the running output reaches it a few times a second (T3 Code: provider-acp runtimeModel.ts bounds it to a tail and coalesces too). */
 const OUTPUT_MAX = 20000;
+/** A compaction: the agent's own command, which it reads as one only with nothing in front of it. */
+const COMPACT = /^\/compact\s*$/;
 const OUTPUT_EVERY_MS = 250;
 /** How long a close waits to read what its agent's process started before it ends it anyway (close). */
 const CLOSE_LOOK_MS = 1500;
@@ -2169,23 +2171,26 @@ class AcpSession implements ProviderSession {
       }
       // The model is told which of the person's connections it doesn't have, and why, when that changes; with Antigravity's
       // system prompt it heard that, and its level, as the session opened, and hears of a change of either here.
+      // A /compact goes alone: with its soul in front (the first message of a process, a resumed session's too) the agent took it
+      // for words to the model. What else was to be said waits for the next turn.
+      const compacting = COMPACT.test(text);
       const heldNow = JSON.stringify(this.held());
-      const heldNote = heldNow !== this.toldHeld ? this.heldModelNote() || (this.toldHeld ? "(The person's own connections are in this session now.)" : "") : "";
-      this.toldHeld = heldNow;
+      const heldNote = !compacting && heldNow !== this.toldHeld ? this.heldModelNote() || (this.toldHeld ? "(The person's own connections are in this session now.)" : "") : "";
+      if (!compacting) this.toldHeld = heldNow;
       // The level, in one line, at the first turn of each process (a start, a resume, a load) and after every change: never in
       // agy's system prompt, which it keeps from the session's first start whatever a resume sends.
-      const levelNow = this.system && this.o.access !== this.told ? `(${levelNote(this.o.access, this.server)})` : "";
-      this.told = this.o.access;
+      const levelNow = !compacting && this.system && this.o.access !== this.told ? `(${levelNote(this.o.access, this.server)})` : "";
+      if (!compacting) this.told = this.o.access;
       // Its tools' names, with the level at the first turn of each process: the name is new in each (AcpSpec.tagged).
-      const nameNow = this.known.tagged && this.o.mcp && this.server !== this.toldName ? `(${namesNote(this.server)})` : "";
-      this.toldName = this.server;
+      const nameNow = !compacting && this.known.tagged && this.o.mcp && this.server !== this.toldName ? `(${namesNote(this.server)})` : "";
+      if (!compacting) this.toldName = this.server;
       // A sentence kept for this turn names Liner Code's server only as SERVER_NOW: the name is the process's now running, put in here.
-      const refusedNote = this.refusedLast ? `(${this.refusedLast.replaceAll(SERVER_NOW, this.server)})` : "";
-      this.refusedLast = "";
-      const endedNote = this.endedLast ? `(${this.endedLast})` : "";
-      this.endedLast = "";
-      const said = [this.o.soul && !this.soulSent ? this.o.soul : "", heldNote, levelNow, nameNow, refusedNote, endedNote, text].filter(Boolean).join("\n\n");
-      this.soulSent = true;
+      const refusedNote = !compacting && this.refusedLast ? `(${this.refusedLast.replaceAll(SERVER_NOW, this.server)})` : "";
+      if (!compacting) this.refusedLast = "";
+      const endedNote = !compacting && this.endedLast ? `(${this.endedLast})` : "";
+      if (!compacting) this.endedLast = "";
+      const said = compacting ? text.trim() : [this.o.soul && !this.soulSent ? this.o.soul : "", heldNote, levelNow, nameNow, refusedNote, endedNote, text].filter(Boolean).join("\n\n");
+      if (!compacting) this.soulSent = true;
       // Your images go as they are when the agent takes them; every file is named in the text either way.
       const images = this.images ? files.flatMap((f) => {
         const image = imagePart(f, 20 * 1024 * 1024);
@@ -2251,6 +2256,16 @@ class AcpSession implements ProviderSession {
       // An error, not a notice: this turn didn't do what was asked, and a routine's step mustn't read as done.
       if (cut && !signal.aborted) sink.error(cut);
       if (!r) return;
+      // OpenCode's /compact ends with nothing said, and its count says only what the compaction itself used: the timeline says it was done.
+      if (compacting && this.opencode && !signal.aborted && (r.stopReason === "end_turn" || r.stopReason === undefined)) {
+        sink.notice("OpenCode compacted the conversation.");
+        // Its summary keeps the work, not what it was set up with: the soul, the level, its tools' names and the connections it
+        // hasn't go again with the next message, as at the start of a session.
+        this.soulSent = false;
+        this.told = undefined;
+        this.toldName = undefined;
+        this.toldHeld = "";
+      }
       if (r.stopReason === "refusal") sink.notice(this.known.refusal ?? "The agent declined this one.");
       // agy ends a turn Google refused (a used-up quota, a rate limit: seen for a 429 RESOURCE_EXHAUSTED) as a normal one, with
       // only these words in its answer: said for what it most likely is, without reading its own logs for the reason.
@@ -2368,8 +2383,10 @@ class AcpSession implements ProviderSession {
     return out;
   }
 
+  // OpenCode has /compact before it lists its commands (available_commands_update comes after the session opens): without
+  // this, a /compact as the first message of a process was taken for a tool without one, and Liner Code compacted instead.
   canCompact() {
-    return this.compactCommand;
+    return this.compactCommand || this.opencode;
   }
 
   async update(o: Pick<OpenOptions, "model" | "effort" | "access">) {
@@ -2785,7 +2802,8 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
     id,
     async detect(env) {
       const path = which(cmd[0], envOf(env));
-      const base = { id, label, adapter: true, login: spec.login, models: [{ id: "default", label: `${label} default`, description: `The model ${label} is set up with` }], modelsFrom: "builtin" as const, added: spec.added, supports: { approvals: true, resume: true, effort: false, plan: true } };
+      // OpenCode compacts on request however it's driven (its server's compact, its ACP /compact); another agent says so as its session opens (canCompact).
+      const base = { id, label, adapter: true, login: spec.login, models: [{ id: "default", label: `${label} default`, description: `The model ${label} is set up with` }], modelsFrom: "builtin" as const, added: spec.added, supports: { approvals: true, resume: true, effort: false, plan: true, ...(isOpenCode ? { compact: true } : {}) } };
       if (!path) return { ...base, available: false, detail: `${label} isn't installed.`, install: spec.install };
       // A package runner (npx, uvx) reports its own version, not the agent's.
       const runner = /^(npx|uvx|bunx|pnpx)$/.test(cmd[0]);

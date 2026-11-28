@@ -292,3 +292,50 @@ test("a fork made before forks copied their attachments keeps reading them: dele
   await call("thread.remove", { id: t.id });
   assert.ok(existsSync(pic), "the old fork's attachment stays");
 });
+
+/** Waits until a session's worktree is set up (its "Set up in" notice), or a second and a half. */
+const setUpDone = async (store: Store, id: string) => {
+  for (let i = 0; i < 30 && !store.timeline(id).some((x) => x.kind === "notice" && /^Set up in|setup command failed/.test(x.text)); i++) await new Promise((r) => setTimeout(r, 50));
+};
+
+test("A worktree setup hook you trusted runs only as it is in the project: a branch that rewrote it doesn't get its own version run", async () => {
+  const { dir, store, call } = await setup();
+  const marks = mkdtempSync(join(tmpdir(), "lc-wt-marks-"));
+  mkdirSync(join(dir, ".liner"), { recursive: true });
+  writeFileSync(join(dir, ".liner", "worktree-setup.sh"), `echo yours >> ${JSON.stringify(join(marks, "ran"))}\n`);
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "-q", "-m", "the project's own hook");
+  // Someone else's branch (a pull request's head) with a hook of its own.
+  await git(dir, "checkout", "-q", "-b", "theirs");
+  writeFileSync(join(dir, ".liner", "worktree-setup.sh"), `echo theirs >> ${JSON.stringify(join(marks, "ran"))}\n`);
+  await git(dir, "commit", "-q", "-am", "a hook of the branch's own");
+  await git(dir, "checkout", "-q", "main");
+  store.setSettings({ worktreeHooksTrusted: ["p"] });
+  const own = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true });
+  await setUpDone(store, own.id);
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true, base: "theirs" });
+  await new Promise((r) => setTimeout(r, 400));
+  await setUpDone(store, t.id);
+  const ran = existsSync(join(marks, "ran")) ? readFileSync(join(marks, "ran"), "utf8") : "";
+  assert.equal(ran, "yours\n", "only the hook you trusted ran");
+  assert.ok(store.timeline(t.id).some((x) => x.kind === "notice" && /worktree-setup\.sh/.test(x.text) && /isn't the one you trusted|differs/.test(x.text)), "the session says why its hook didn't run");
+});
+
+test("A fix of a pull request's findings runs nothing of the pull request as its worktree is set up", async () => {
+  const { dir, store, call } = await setup();
+  const marks = mkdtempSync(join(tmpdir(), "lc-wt-marks-"));
+  await git(dir, "checkout", "-q", "-b", "theirs");
+  writeFileSync(join(dir, "b.txt"), "theirs\n");
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "-q", "-m", "someone else's change");
+  const head = (await git(dir, "rev-parse", "HEAD")).trim();
+  await git(dir, "checkout", "-q", "main");
+  // The project's setup installs its packages, which runs the scripts the pull request's package.json names.
+  store.putProject({ ...store.project("p"), setup: `echo ran > ${JSON.stringify(join(marks, "setup"))}` });
+  const t = await call<Thread>("thread.create", { projectId: "p", agent: "demo", worktree: true, base: head, security: { kind: "fix", finding: "f_1" } });
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(t.worktree?.made, true);
+  assert.ok(existsSync(join(t.worktree!.path, "b.txt")), "it starts at the pull request's head");
+  assert.ok(!existsSync(join(marks, "setup")), "the setup command didn't run on the pull request's code");
+  assert.ok(store.timeline(t.id).some((x) => x.kind === "notice" && /set up/i.test(x.text)), "the session says its setup was left out");
+});

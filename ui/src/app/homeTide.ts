@@ -16,7 +16,7 @@
   (halftone.css, .lc-ht-corner), which looks the same, still. The numbers and the shader are in tide.ts.
 */
 
-import { TIDE_ALPHA, TIDE_SHADER, TIDE_STEP_MAX, VERTEX, ease, tideGap } from "./tide";
+import { TIDE_ALPHA, TIDE_SHADER, TIDE_STEP_MAX, VERTEX, ease, tideGap } from "./tide.ts";
 
 type RGB = [number, number, number];
 let probe: CanvasRenderingContext2D | null = null;
@@ -86,6 +86,9 @@ export function startTide(canvas: HTMLCanvasElement, home: HTMLElement, onPaper:
   let raf = 0;
   let last = 0;
   let lost = false;
+  // Stopped (Home gone): a frame asked for before then mustn't start the clock again on a canvas no one holds.
+  let stopped = false;
+  let inked = 0;
   // The pointer as drawn (eased toward where it is) and how strongly it swells, 0 to 1.
   const aim = { x: 0, y: 0, on: 0 };
   const at = { x: 0, y: 0, on: 0 };
@@ -126,7 +129,7 @@ export function startTide(canvas: HTMLCanvasElement, home: HTMLElement, onPaper:
     kick();
   };
   const kick = () => {
-    if (timer || raf || lost) return;
+    if (timer || raf || lost || stopped) return;
     const gap = tideGap({ hidden: document.hidden, seen, reduced: !!reduced?.matches, focused: document.hasFocus(), touched: aim.on > 0 || at.on > 0.01 });
     if (gap === null) return;
     timer = window.setTimeout(
@@ -160,7 +163,10 @@ export function startTide(canvas: HTMLCanvasElement, home: HTMLElement, onPaper:
   });
   io.observe(canvas);
   // The theme, the accent or a theme of your own changed the colour: the page's root says so.
-  const mo = new MutationObserver(() => requestAnimationFrame(() => (ink(), once())));
+  const mo = new MutationObserver(() => {
+    cancelAnimationFrame(inked);
+    inked = requestAnimationFrame(() => ((inked = 0), ink(), once()));
+  });
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-theme"] });
   const onVisible = () => (document.hidden ? pause() : (last = 0, kick()));
   const onFocus = () => kick();
@@ -194,7 +200,9 @@ export function startTide(canvas: HTMLCanvasElement, home: HTMLElement, onPaper:
 
   return {
     stop() {
+      stopped = true;
       pause();
+      cancelAnimationFrame(inked);
       ro.disconnect();
       io.disconnect();
       mo.disconnect();

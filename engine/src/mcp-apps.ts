@@ -278,7 +278,7 @@ function prettyClient(name: string) {
 const fail = (t: string): McpResult => ({ content: [{ type: "text", text: t }], isError: true });
 
 /** What runs a call once the gate lets it through: outside-tools.ts Outside. */
-type Runner = { call(tool: string, args: Record<string, unknown>, ctx: CallCtx): Promise<McpResult>; thread(id: unknown): Thread; project(ref: unknown): { id: string; name: string }; /** The question a session asks now, in its words, if it asks one. */ question(threadId: string): string | undefined };
+type Runner = { call(tool: string, args: Record<string, unknown>, ctx: CallCtx): Promise<McpResult>; thread(id: unknown): Thread; project(ref: unknown): { id: string; name: string }; /** The question a session asks now, in its words, if it asks one an app may answer. */ question(threadId: string): string | undefined; /** Why an app may not answer what it asks now (a choice an MCP server asks), if that's why. */ unanswerable?(threadId: string): string | undefined };
 /** What an app that's trusted may let its sessions do: your default, but never Full access (Edits on its own instead). */
 export const trustedAccess = (dflt: Access): Access => (dflt === "full" ? "edits" : dflt);
 
@@ -446,7 +446,7 @@ export class McpGate {
       if (tool === "liner_answer") {
         // What it would answer, quoted: the question is the session's own, and the answer goes into its turn.
         const q = this.o.runner.question(t.id);
-        if (!q) return { error: "That session isn't asking a question. What it asks for permission stays the person's to answer in Liner Code." };
+        if (!q) return { error: this.o.runner.unanswerable?.(t.id) ?? "That session isn't asking a question. What it asks for permission stays the person's to answer in Liner Code." };
         return { summary: `It wants to answer “${q}” in “${t.title || "a session"}”.`, project, message: String(args.answer ?? ""), threadId: t.id, runsOn: this.o.runsOn?.(t.id), access: t.access };
       }
       return { summary: `It wants to stop “${t.title || "a session"}”.`, project, threadId: t.id };

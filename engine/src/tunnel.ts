@@ -10,9 +10,11 @@
   The tools are run here and nowhere else, through `deps`, so tests use fakes and never start a real tunnel.
 */
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, rmSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { McpReach, TunnelCheck } from "../../contracts/src/mcp.ts";
+import { markFile, marking, RUN_ENV, type Mark } from "./exec.ts";
 
 export type TunnelState = { state: "off" | "starting" | "up" | "down"; url?: string; note?: string; link?: string };
 /** One try of an address: Liner's own answer came back, or why not. */
@@ -124,7 +126,21 @@ export function defaultDeps(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
         // What's still in the pipes comes within a moment of the exit; anything left in the group after that is killed.
         p.on("exit", (code) => void setTimeout(() => done || (kill(), end(code ?? -1)), 200).unref?.());
       }),
-    spawn: (cmd, args) => nodeSpawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }),
+    spawn: (cmd, args) => {
+      // Marked as an agent's process is (exec.ts marking): cloudflared doesn't end when the engine does, so after an engine
+      // that died hard it went on serving the address; the next engine's sweep (sweepMarks) now finds it by its mark and ends it.
+      const mark: Mark = { value: randomBytes(12).toString("hex"), file: platform === "win32" ? undefined : markFile("run", randomBytes(9).toString("hex")) };
+      const { stdio, done } = marking(["ignore", "pipe", "pipe"], [mark]);
+      let p: ChildProcess;
+      try {
+        p = nodeSpawn(cmd, args, { env: { ...env, [RUN_ENV]: mark.value }, stdio: stdio as ["ignore", "pipe", "pipe"], windowsHide: true });
+      } finally {
+        done();
+      }
+      // Ended in the ordinary way: its mark goes with it.
+      p.once("exit", () => mark.file && rmSync(mark.file, { force: true }));
+      return p;
+    },
     probe: (origin) => probeAddress(origin),
   };
 }

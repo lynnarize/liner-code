@@ -707,6 +707,38 @@ export function ConfirmRow({ title, sure, note, sureNote, icon, forGood, red, on
   );
 }
 /**
+  ConfirmRow's two presses for a control that isn't a menu row: `press(act)` asks on the first press and acts on a later
+  one (confirm.ts), and the ask runs out after CONFIRM_LAPSE or when `reset` is called (the focus leaving), so it never
+  waits for a press meant for something else.
+*/
+export function useConfirm() {
+  const [askedAt, setAskedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (askedAt === null) return;
+    const t = setTimeout(() => setAskedAt(null), CONFIRM_LAPSE);
+    return () => clearTimeout(t);
+  }, [askedAt]);
+  return {
+    asked: askedAt !== null,
+    press: (act: () => void) => {
+      const now = performance.now();
+      const step = confirmPress(askedAt, now);
+      if (step === "ask") setAskedAt(now);
+      else if (step === "do") (setAskedAt(null), act());
+    },
+    reset: () => setAskedAt(null),
+  };
+}
+/** A button that asks before it acts: its words turn into `sure` at the first press, and a later press acts (useConfirm). */
+export function SureButton({ className, attrs, sure, onConfirm, children }: { className: string; attrs?: Record<string, string | undefined>; sure: ReactNode; onConfirm: () => void; children: ReactNode }) {
+  const c = useConfirm();
+  return (
+    <button type="button" className={className} {...attrs} data-danger={c.asked || undefined} aria-live="polite" onBlur={c.reset} onClick={() => c.press(onConfirm)}>
+      {c.asked ? sure : children}
+    </button>
+  );
+}
+/**
   A menu's grey label (12.5px, fourth ink, 28px), over the rows it names: "Dev servers", "This session".
   `end` is a live note at its right end ("1 running", "1 open"), in the same grey.
 */

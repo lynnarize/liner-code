@@ -17,7 +17,7 @@ import { plural } from "./model";
 import { ConfirmRow, Row, Sep } from "./ui";
 import { openSession } from "./Addon";
 import { ScanChip } from "./security/ScanChip";
-import { age, checksSaid, groupPrs, headCount, parseSearch, prBrief, prKey, prMatches, PR_SORTS, reviewSaid, splitPath, type PrSort } from "./worklists-logic";
+import { age, checksSaid, groupPrs, headCount, missingPick, parseSearch, prBrief, prKey, prMatches, PR_SORTS, reviewSaid, splitPath, type PrSort } from "./worklists-logic";
 import { keepPrs, markPrsSeen } from "./worklists-store";
 import { Body, copyLink, Detail, Facts, GroupHead, Label, ListNote, listKeys, pageKeys, PR_WORD, PrMark, SecurityLine, sessionOnPr, Toolbar, Unavailable, useScanStatus, WorkHead, Who, type Choice } from "./worklists-parts";
 
@@ -103,8 +103,12 @@ export function PullRequests({ sidebar, onSidebar, pick }: { sidebar: boolean; o
   const groups = useMemo(() => groupPrs(items, sort), [items, sort]);
   const picked = (data?.items ?? []).find((p) => prKey(p) === open) ?? null;
   // A row that no longer shows (another state, a search) closes its detail rather than showing one that isn't in the list.
+  // One asked for from an issue may be merged or closed, out of the open list: the page shows every state for it instead.
   useEffect(() => {
-    if (open && data && !picked) setOpen(null);
+    if (!data) return;
+    const next = missingPick(open, pick, shown, Boolean(picked));
+    if (next === "all") setShown("all");
+    else if (next === "close") setOpen(null);
   }, [data, picked === null]);
   // Merged from here: shown merged at once, then the list is read again (the engine let go of its kept one), so on Open it goes.
   const merged = (p: PrItem) => {

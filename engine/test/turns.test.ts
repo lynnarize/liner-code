@@ -165,6 +165,22 @@ test("a question still open when its turn ends: your answer goes as your next me
   }
 });
 
+test("a question an MCP server asks through the tool is kept as the server's on its card, and the agent's own isn't", async () => {
+  const { restore } = fake(async (_text, sink, signal) => {
+    void sink.ask([{ question: "Drop the table?", options: [{ label: "Yes" }, { label: "No" }] }], signal, { optional: true, elicited: true }).catch(() => {});
+    void sink.ask([{ question: "Which database?", options: [{ label: "SQLite" }] }], signal).catch(() => {});
+    await tick(20);
+  });
+  try {
+    const { store, runtime } = session({ access: "ask" });
+    await runtime.send("t", "build it");
+    const qs = store.timeline("t").flatMap((x) => (x.kind === "question" ? [[x.questions[0].question, x.elicited === true]] : []));
+    assert.deepEqual(qs, [["Drop the table?", true], ["Which database?", false]]);
+  } finally {
+    restore();
+  }
+});
+
 test("a question left from an ended turn, skipped: the session isn't left in Needs you", async () => {
   const { restore } = fake(async (_text, sink, signal) => {
     void sink.ask([{ question: "Which database?", options: [{ label: "SQLite" }] }], signal).catch(() => {});

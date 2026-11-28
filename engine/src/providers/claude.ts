@@ -16,9 +16,9 @@
   A side chat doesn't run in plan mode, which makes every turn end in a plan or a question, even
   "hello": it runs in the default mode with the editing tools taken away, and answers directly.
 */
-import { getSessionMessages, query, type ElicitationRequest, type ModelInfo as SdkModel, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore } from "@anthropic-ai/claude-agent-sdk";
+import { getSessionMessages, query, type ElicitationRequest, type ModelInfo as SdkModel, type ElicitationResult, type McpServerConfig, type Options, type PermissionMode, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKPermissionRuleEntry, type SDKResultMessage, type SDKUserMessage, type SessionStore, type SpawnedProcess, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -26,7 +26,7 @@ import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
 import type { Access, ContextPart, ContextSource, ContextUse, ErrorWhy, LimitWindow, ModelInfo, PlanEntry, ProviderInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { base64Size, imagePart, imageType, isPdf, pdfPages, readUpTo } from "./attachments.ts";
-import { below, endAll, markedPids, outside, processes, run, RUN_ENV, sdkPath, versionOf, which, type Mark, type Proc } from "../exec.ts";
+import { below, endAll, holders, markedPids, markFile, marking, outside, processes, run, RUN_ENV, sdkPath, spawn, versionOf, which, type Mark, type Proc } from "../exec.ts";
 import { VERSION } from "../version.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { commandRisk, isDestructive, ruleFor } from "../risk.ts";
@@ -790,6 +790,42 @@ async function treeOf(pid: number | undefined, mark: Mark): Promise<Proc[]> {
   return tree.length || !pid || all.length ? tree : [{ pid, ppid: process.pid, command: "claude" }];
 }
 
+/** A Claude Code process the SDK started: its marker, its pid as it spawned, and the end of what it said on stderr. */
+type Own = { mark: Mark; pid?: number; said?: string };
+
+/**
+  Claude Code started for the SDK (its spawnClaudeCodeProcess) as the SDK's own spawn starts it, and holding its marker file
+  besides, at the descriptor after its stdio (exec.ts marking), as every other agent's process does: its environment's marker
+  alone is no help once the engine has died hard, since the next engine can't know its value, and the sweep finds a dead engine's
+  processes by the files in its folder (exec.ts sweepMarks). Claude Code 2.1.332 outlives an engine killed hard until the command
+  it runs ends, which for a dev server is never. Not on Windows, which has no marker files: the SDK's own spawn there.
+*/
+function spawnMarked(s: SpawnOptions, own: Own): SpawnedProcess {
+  const { stdio, done } = marking(["pipe", "pipe", "pipe"], [own.mark]);
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(s.command, s.args, { cwd: s.cwd, env: s.env, signal: s.signal, stdio: stdio as ["pipe", "pipe", "pipe"], windowsHide: true });
+  } finally {
+    done();
+  }
+  own.pid = child.pid;
+  // Read, or a Claude Code that says a lot there would stall on a full pipe; its end is said with a failure, as the SDK's own spawn does.
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (d: string) => void (own.said = ((own.said ?? "") + d).slice(-4000)));
+  child.once("exit", () => void letGo(own.mark.file));
+  return child as unknown as SpawnedProcess;
+}
+
+/** A process's marker file, removed once nothing holds it (what it started may take a moment to go); one still held after is the next engine's to sweep. */
+async function letGo(file: string | undefined) {
+  if (!file) return;
+  for (let i = 0; i < 5; i++) {
+    const held = await holders(file);
+    if (held && !held.size) return rmSync(file, { force: true });
+    await new Promise((r) => setTimeout(r, 1000).unref());
+  }
+}
+
 /** How long a close waits for Claude Code's process to be gone: the SDK's grace before its kill, and a little more. */
 const CLOSE_WAIT_MS = 5000;
 
@@ -892,7 +928,7 @@ class ClaudeSession implements ProviderSession {
   /** Queries left behind (one whose resume failed): what they still say goes nowhere. */
   private retired = new WeakSet<Query>();
   /** Each process's pid, as the SDK says it spawned it, and its own marker (RUN_ENV in its environment), which all it starts inherits: what a cut ends. */
-  private marks = new WeakMap<Query, { mark: Mark; pid?: number }>();
+  private marks = new WeakMap<Query, Own>();
   /** A process Stop gave up on, being ended (cut): the next process waits for it to be gone. */
   private cutting: Promise<void> | null = null;
   /** Tasks Stop ended: their notifications are expected, and wake nothing. */
@@ -967,7 +1003,9 @@ class ClaudeSession implements ProviderSession {
     const denied = [...new Set([...(o.side ? SIDE_DENIED : o.sidekick || o.swarm ? ["Task", "Agent", "Workflow"] : []), ...(o.scan ? SCAN_DENIED : [])])];
     const sealed: Partial<Options> = o.sealed && !o.plain ? { settingSources: [], skills: [], plugins: [], strictMcpConfig: true, agents: undefined, disallowedTools: [...new Set([...denied, "Skill"])] } : {};
     const plain: Partial<Options> = o.plain ? { tools: [], settingSources: [], settings: { permissions: { deny: PLAIN_DENIED } }, mcpServers: undefined, agents: undefined, permissionMode: "default", disallowedTools: ["mcp__*"], systemPrompt: o.soul, thinking: { type: "disabled" } } : {};
-    const own: { mark: Mark; pid?: number } = { mark: { name: RUN_ENV, value: randomUUID() } };
+    const value = randomUUID();
+    // Its file too, named for the same value (exec.ts sweepMarks), which a dead engine's next one finds it by.
+    const own: Own = { mark: { name: RUN_ENV, value, file: process.platform === "win32" ? undefined : markFile("run", value) } };
     const options: Options = {
       cwd: o.cwd,
       // T3 Code: ClaudeAdapterV2.ts hands its attachments folder over the same way.
@@ -1067,6 +1105,8 @@ class ClaudeSession implements ProviderSession {
       onElicitation: (request, { signal }) => this.elicit(request, signal),
       // Its pid, for a cut: the SDK says it as it spawns (claude-agent-sdk 0.3.310, not in its types). Without it the marker alone finds it.
       ...({ onProcessSpawned: (pid: number) => void (own.pid = pid) } as unknown as Partial<Options>),
+      // Started holding its marker file, which the SDK's own spawn can't hand it (spawnMarked).
+      ...(own.mark.file ? { spawnClaudeCodeProcess: (s: SpawnOptions) => spawnMarked(s, own) } : {}),
       ...sealed,
       ...plain,
     };
@@ -1157,7 +1197,7 @@ class ClaudeSession implements ProviderSession {
     if (!form || !sink) return { action: "decline" };
     let content: Record<string, unknown> | null = null;
     if (form.length) {
-      const answers = await sink.ask(form.map((f) => f.question), signal, { optional: true }).catch(() => null);
+      const answers = await sink.ask(form.map((f) => f.question), signal, { optional: true, elicited: true }).catch(() => null);
       if (answers) content = Object.fromEntries(form.map((f) => [f.key, f.value(answers[f.question.question] ?? "")]));
     } else {
       const answer = await sink.approve({ tool: `mcp__${request.serverName}`, title: request.message, description: request.description, risk: "high", fields: [{ label: "Asked by", value: request.displayName ?? request.serverName }] }, signal).catch(() => ({ allow: false }));
@@ -1230,7 +1270,10 @@ class ClaudeSession implements ProviderSession {
       for await (const m of q) if (!this.retired.has(q)) this.onMessage(m);
       if (!this.retired.has(q)) this.fail?.(new Error("Claude Code stopped."));
     } catch (e) {
-      if (!this.retired.has(q)) this.fail?.(e instanceof Error ? e : new Error(String(e)));
+      // What it said on stderr, which the SDK adds to its words only for a process it started itself (spawnMarked).
+      const said = this.marks.get(q)?.said?.trim();
+      const err = e instanceof Error && said && /^Claude Code process (?:exited|terminated)/.test(e.message) && !e.message.includes(". stderr: ") ? Object.assign(e, { message: `${e.message}. stderr: ${said.slice(-1000)}` }) : e;
+      if (!this.retired.has(q)) this.fail?.(err instanceof Error ? err : new Error(String(err)));
     } finally {
       if (this.q === q) this.lost();
       // One left behind ends after the next process has started: the tails are that one's now.

@@ -32,7 +32,7 @@ const PicturesSettings = lazy(() => import("./design/Pictures").then((m) => ({ d
 import { ModesPlace } from "./Modes";
 import { StartPick } from "./Models";
 import { startSaid } from "./start-words";
-import { Badge, ConfirmRow, Disc, Kbd, LookAgain, MenuFoot, ModelTag, NamedSwitch, PanelHead, Pop, Row, Sep } from "./ui";
+import { Badge, ConfirmRow, Disc, Kbd, LookAgain, MenuFoot, ModelTag, NamedSwitch, PanelHead, Pop, Row, Sep, SureButton } from "./ui";
 import { confirmPress } from "./confirm";
 import { CONFIRM_LAPSE } from "./confirm";
 import { bindingsOf, commandOn, COMMANDS, FIXED, glyphs, onBindings, readBindings, specOf } from "./keymap";
@@ -382,9 +382,10 @@ export const Settings = memo(function Settings({ initial = "general", onClose, o
               {page === "about" && <About />}
               {reset && (
                 <p className="lc-st-restore">
-                  <button type="button" className="lc-linkbtn l-focus" onClick={() => (reset(), toast("Put back as it came"))}>
+                  {/* It can't be undone (Appearance's takes your dots and picture choices with it), so it asks first. */}
+                  <SureButton key={page} className="lc-linkbtn l-focus" sure="Press again to restore the defaults" onConfirm={() => (reset(), toast("Put back as it came"))}>
                     Restore defaults
-                  </button>
+                  </SureButton>
                 </p>
               )}
             </div>

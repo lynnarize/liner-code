@@ -30,6 +30,7 @@ import { Slider } from "@liner/components/slider/slider";
 import { toast } from "@liner/components/toast/toast";
 import { rpc } from "./engine";
 import { I } from "./icons";
+import { SureButton } from "./ui";
 import { darkNow, DOT_INKS, dotsOf, homeInOf, homeOf, homeShown, readLook, updateDots, updateLook, type BehindHome as Behind, type HomeIn, type DotLook, type DotMove, type DotSource, type DotStyle, type DotTone, type Look } from "./look";
 import "./dots.css";
 
@@ -1552,9 +1553,10 @@ export function BehindHome({ look, onClose }: { look: Look; onClose: () => void 
                   {d.source === "picture" && img && (
                     <>
                       <Focus img={img} focus={v.focus} onFocus={(focus) => soon({ focus })} />
-                      <button type="button" className="lc-linkbtn l-focus lc-bh-remove" onClick={remove}>
+                      {/* The engine deletes the saved file, so it asks first. */}
+                      <SureButton className="lc-linkbtn l-focus lc-bh-remove" sure="Press again to delete your picture" onConfirm={remove}>
                         Remove your picture
-                      </button>
+                      </SureButton>
                     </>
                   )}
                 </>

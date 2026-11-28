@@ -199,3 +199,10 @@ Notes for the next release are collected here, then moved into `CHANGELOG.md` wh
 - The Files tree keeps a row you can reach with Tab after a refresh takes away the one you were on, and Refresh in Session
   details stops spinning once its check is done.
 - A project picture whose file name has a space in it shows as a background in Liner Design.
+- OpenCode's models show their effort levels and prices again. OpenCode 2.4 answers with an empty model list in its first
+  moment, and Liner Code asked exactly then, so every model read "OpenCode hasn't said which effort levels this model
+  takes". The list is now read once OpenCode says its models are loaded, and again while the app runs whenever OpenCode
+  says they changed (a new sign-in, a provider or plugin added), so a new model's levels arrive without Look again.
+- A row or button you clicked no longer gets a blue ring when you then press Shift, ⌘ or another key (a screenshot
+  shortcut did it), and the model picker's Find a sidekick and Find a lead fields take the focus without one. Tab and
+  the arrow keys still show where the focus is.

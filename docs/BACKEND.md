@@ -130,9 +130,11 @@ Electron shell ──spawns──▶ <the app's own binary, ELECTRON_RUN_AS_NODE
   again in Agent tools, and in Check my tools (30 seconds each). Claude Code: the Agent SDK's `supportedModels()` on a session
   with no prompt (`~/.liner-code/probe`, your user settings only, 30 seconds), and a second one with the older models in
   its picker (`modelPicker`) only when its answer isn't kept yet for that account and `claude --version`. Codex: `codex
-  debug models` (20 seconds). Antigravity: `agy models` (30 seconds). OpenCode 2 and later: `opencode api --standalone GET /api/model`
-  in the probe folder, its whole process group ended past 30 seconds or on a stop; an older OpenCode, or one whose list
-  fails, and every other ACP agent: `initialize` and `session/new` in the probe folder (45 seconds), then it is ended. All
+  debug models` (20 seconds). Antigravity: `agy models` (30 seconds). OpenCode 2 and later: `GET /api/model` for the probe
+  folder on its local server (the shared `opencode serve` when a session has one up, else one started for the ask and ended
+  after it), read once the server says the folder's models are loaded (`model.updated`), its whole process group ended past
+  30 seconds or on a stop, and asked again whenever a running server says its models changed; an older OpenCode, or one
+  whose list fails, and every other ACP agent: `initialize` and `session/new` in the probe folder (45 seconds), then it is ended. All
   run with the engine's environment; only a model's id, name, description, group, levels, default and price are kept.
 - **AI pictures** (optional). An endpoint of yours that speaks OpenAI's Images API, set up in Settings › Agent tools
   (`settings.pictures`, its key in the keychain as `pictureKey(id)`). The engine posts to its `/images/generations`

@@ -198,6 +198,22 @@ export function quietFields() {
   );
 }
 
+/** The keys that move the focus: after one of them a focus ring is wanted (ringsForKeys). */
+const MOVES = new Set(["Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
+
+/**
+  The focus ring is for moving about with the keyboard, and the browser alone doesn't keep to that: once any key goes down,
+  a bare Shift or ⌘ too (a screenshot's shortcut), it rings whatever was clicked last, and whatever a script focuses next.
+  So a source clicked in the model picker's card got a blue ring a moment later, seemingly by itself. The page says which
+  input came last, `data-pointer` on its root after a press and gone at the next key that moves the focus (MOVES), and
+  app.css draws no ring on a row or button while it's there.
+*/
+export function ringsForKeys() {
+  const root = document.documentElement;
+  window.addEventListener("pointerdown", () => root.setAttribute("data-pointer", ""), true);
+  window.addEventListener("keydown", (e) => MOVES.has(e.key) && root.removeAttribute("data-pointer"), true);
+}
+
 /**
   In the app, a right-click on the page's chrome opens nothing: no browser menu over buttons,
   cards or the routine canvas. Text you selected and fields you type in keep Copy and Paste,

@@ -18,10 +18,10 @@ import { VERSION } from "../version.ts";
 import { commandRisk, gitPlace, isDestructive, readsOnly, ruleFor, shellWords, unwrapped } from "../risk.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { TOOLS } from "../liner-tools.ts";
-import { acpCommands, acpModelRequest, acpModels, agyModels, opencodeModels, thoughtLevels } from "./models.ts";
+import { acpCommands, acpModelRequest, acpModels, agyModels, thoughtLevels } from "./models.ts";
 import { imagePart } from "./attachments.ts";
 import { goKeys, goUsage, hermesGoKey } from "./opencode-go.ts";
-import { openOpenCodeServer } from "./opencode-server.ts";
+import { openOpenCodeServer, opencodeModels } from "./opencode-server.ts";
 import { LINER_WAIT_SEC, ResumeFailed, saysOf, scrub, type OpenOptions, type Provider, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 import type { Connection } from "../addons.ts";
 
@@ -2802,7 +2802,7 @@ export function acpProvider(id: ProviderId, spec: AcpSpec): Provider {
       return { ...base, ...listedNow, available: true, version: gate.version, signedIn, supports: { ...base.supports, effort }, detail: signedIn === undefined ? `${detail}; it didn't say whether it's signed in` : detail };
     },
     models: async (env, scratch, signal) => {
-      // OpenCode 2 lists each model's effort levels and price in its own model list, which its ACP session doesn't carry: asked
+      // OpenCode 2 lists each model's effort levels and price in its server's model list, which its ACP session doesn't carry: asked
       // there first when it is the opencode program itself; an older one, or an answer in another shape, falls back to the session.
       // Its version, from the gate's --version (kept while the program is the same file), says whether it has that list at all.
       if (isOpenCode && /(^|[\\/])opencode(\.exe|\.cmd)?$/i.test(cmd[0])) {

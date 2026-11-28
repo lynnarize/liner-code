@@ -10,7 +10,7 @@ import "./app/app.css";
 import "./app/halftone.css";
 import { App } from "./app/App";
 import { Boundary } from "./app/Boundary";
-import { enableWindowDrag, quietFields, quietMenus } from "./app/bridge";
+import { enableWindowDrag, quietFields, quietMenus, ringsForKeys } from "./app/bridge";
 
 // The first paint's text is Inter's latin face: fetched now, not when the stylesheet first asks for it.
 // The same hashed file the @font-face points at, so it is fetched once.
@@ -23,6 +23,7 @@ document.body.classList.add("l-root", "l-scope");
 enableWindowDrag();
 quietFields();
 quietMenus();
+ringsForKeys();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

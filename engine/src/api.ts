@@ -24,6 +24,7 @@ import { ensureSampleProject } from "./providers/demo.ts";
 import { detectOnce, endpointModels } from "./providers/endpoint.ts";
 import { skillsIn, toolLevels } from "./providers/models.ts";
 import { onAcpCommands, onAcpEfforts } from "./providers/acp.ts";
+import { onOpenCodeModels } from "./providers/opencode-server.ts";
 import type { Routines } from "./routines.ts";
 import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
@@ -237,6 +238,13 @@ function rulesOf(root: string) {
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
 
+/**
+  How the tools' model lists are asked, counted up when a way changes so a list saved from the old way is asked again at
+  once. 2: OpenCode's comes from its server once the folder's models are loaded; before, the first answer of a server just
+  started (an empty list) left its session's list in its place, with no effort levels or prices.
+*/
+const LIST_WAY = 2;
+
 /** A saved tool as the snapshot needs it, checked before last launch's list stands in for this one's look. */
 const isInfo = (d: unknown): d is ProviderInfo => {
   const x = d as ProviderInfo;
@@ -314,7 +322,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // answer is kept on disk and shown at once; the tool is asked again in the background when it
   // was updated, after half a day, or when you press Look again.
   const modelsFile = join(store.home, "models.json");
-  type Listed = { version?: string; at: number; models: ModelInfo[] };
+  // `way` is how the lists were asked (LIST_WAY): one saved from an older way is asked again rather than kept its half day.
+  type Listed = { version?: string; at: number; models: ModelInfo[]; way?: number };
   let listed: Record<string, Listed> = {};
   try {
     listed = JSON.parse(readFileSync(modelsFile, "utf8")) as Record<string, Listed>;
@@ -326,17 +335,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const commandsCache = new Map<string, { at: number; commands: CommandInfo[]; skills: SkillInfo[] }>();
   /** When each project's base branch was last fetched, for the pull request card. */
   const fetched = new Map<string, number>();
-  const askModels = async (id: ProviderInfo["id"], force: boolean) => {
+  // `quiet` is an ask nobody pressed for (the tool said its models changed): an answer the same as the one shown changes nothing.
+  const askModels = async (id: ProviderInfo["id"], force: boolean, quiet = false) => {
     const p = providers[id];
     const info = detected.find((d) => d.id === id);
     const had = listed[id];
     if (!p?.models || !info?.available || !info.adapter || asking.has(id)) return;
-    if (!force && had && had.version === info.version && Date.now() - had.at < 12 * 3600_000) return;
+    if (!force && had && had.way === LIST_WAY && had.version === info.version && Date.now() - had.at < 12 * 3600_000) return;
     asking.add(id);
     try {
       const models = await p.models(env, join(store.home, "probe"));
       if (!models.length) return;
-      listed = { ...listed, [id]: { version: info.version, at: Date.now(), models } };
+      if (quiet && had?.way === LIST_WAY && JSON.stringify(had.models) === JSON.stringify(models)) return;
+      listed = { ...listed, [id]: { version: info.version, at: Date.now(), models, way: LIST_WAY } };
       writeFileSync(modelsFile, JSON.stringify(listed));
       const hasEffort = models.some((m) => Boolean(m.efforts?.length));
       detected = detected.map((d) => (d.id === id ? { ...d, models, modelsFrom: "cli", modelsAt: listed[id].at, supports: { ...d.supports, effort: d.supports.effort || hasEffort } } : d));
@@ -411,7 +422,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { ...m, efforts };
     });
     if (!changed) return;
-    listed = { ...listed, [providerId]: { version: cur.version, at: Date.now(), models } };
+    listed = { ...listed, [providerId]: { version: cur.version, at: Date.now(), models, way: listed[providerId]?.way } };
     try {
       writeFileSync(modelsFile, JSON.stringify(listed));
     } catch {
@@ -420,6 +431,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     detected = detected.map((d) => (d.id === providerId ? { ...d, models, supports: { ...d.supports, effort: true } } : d));
     publish();
   });
+  // OpenCode's server says when its models change (a sign-in, a provider or plugin added): its list is asked again then, so
+  // the picker has a model's levels while the app runs, as T3 Code re-reads its catalog on the same word.
+  onOpenCodeModels(() => void askModels("opencode", true, true));
   // Each tool's plan windows, asked of the tool: once its tools are found, again after a turn on
   // it (fifteen seconds apart at most: Claude Code's answer starts it), and when you press Look
   // again. A minute's answer is reused otherwise. The app is sent them as they come.

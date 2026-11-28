@@ -568,7 +568,7 @@ npm run release -- 0.2.0 --publish   # …and creates the release v0.2.0 with gh
 | --- | --- | --- | --- | --- |
 | Claude Code | Claude Agent SDK, your installed `claude` | yes, every access level | yes, and real forks | plans with ExitPlanMode, asks with AskUserQuestion |
 | Codex CLI | `codex app-server` | yes: commands, edits and MCP tools (an older Codex's `exec` maps access to its sandbox) | yes | models come from `codex debug models` |
-| OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with; each model's effort levels and price from its own list (`opencode api --standalone GET /api/model`, asked only of OpenCode 2 or later, which has it), else its ACP session's |
+| OpenCode | ACP over stdio | yes | when the agent can | any model OpenCode is set up with; each model's effort levels and price from its own list (its local server's `GET /api/model`, read once the models are loaded and again when OpenCode says they changed; asked only of OpenCode 2 or later, which has it), else its ACP session's |
 | Hermes | ACP over stdio | yes | yes | depends on Hermes's own provider being up |
 | Cursor, Grok Build | ACP (`cursor-agent acp`, `grok agent stdio`) | yes | when the agent can | Beta: the drivers haven't been run against the real tools yet |
 | Demo | scripted | yes | – | edits only its sample project |

@@ -736,6 +736,13 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
   outline-offset: 2px;
 }
+/*
+  No ring while the last input was the pointer (bridge.ts ringsForKeys): the browser rings what was clicked last as soon as
+  any key goes down, a bare Shift included, and Tab or an arrow is what asks for one. A field you type in keeps its own.
+*/
+:root[data-pointer] :is(.l-focus, .lc-btn):focus-visible:not(input, textarea, select, [contenteditable]) {
+  outline: none;
+}
 .lc-btn:disabled {
   opacity: 0.45;
   cursor: default;

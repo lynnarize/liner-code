@@ -1041,7 +1041,7 @@ export type Item =
       error?: string;
     })
   /** `partial`: the answers given so far while it still asks (question.partial), kept so they survive a reload; by question text. */
-  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string>; answeredAt?: number; partial?: Record<string, string> })
+  | (Base & { kind: "question"; questions: Question[]; state: "asking" | "answered" | "skipped" | "expired"; answers?: Record<string, string>; answeredAt?: number; partial?: Record<string, string>; /** An MCP server asked it through the tool (an elicitation), not the agent: a choice of one is the person's alone to answer (outside-tools.ts). */ elicited?: boolean })
   /** A plan to approve (a tool's own plan mode). `auto`: one from before pairs that nobody asked to see, handed straight on. */
   | (Base & { kind: "proposal"; title: string; plan: string; state: "asking" | "approved" | "changed" | "expired"; note?: string; auto?: boolean; answeredAt?: number })
   | (Base & {

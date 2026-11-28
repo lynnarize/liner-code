@@ -249,6 +249,29 @@ test("liner_answer answers a question but never an approval", async () => {
   assert.deepEqual(calls, [["question.answer", { threadId: "th_1", itemId: "q", answers: { "Which colour?": "Blue" } }]]);
 });
 
+test("A choice an MCP server asks through the session is the person's to answer: no app answers it, and a plain question still can be", async () => {
+  const { apps, gate, calls, store } = rig();
+  const trusted = apps.get(apps.create({ name: "Claude", kind: "claude", level: "trusted" }).app.id)!;
+  const asks = apps.get(apps.create({ name: "Grok Bot", kind: "grokbot", level: "ask" }).app.id)!;
+  // An MCP server's elicitation with a yes or no: in effect a permission.
+  store.putItem("th_1", { kind: "question", id: "q1", turn: 1, at: 4, questions: [{ question: "Delete the staging database?", header: "db-admin", options: [{ label: "Yes" }, { label: "No" }] }], state: "asking", elicited: true });
+  for (const app of [trusted, asks]) {
+    const r = await gate.call(app, "liner_answer", { session: "th_1", answer: "Yes" }, { waitMax: 55 });
+    assert.equal(r.isError, true);
+    assert.match(words(r), /in effect a permission: the person answers it/);
+  }
+  assert.equal(gate.list().length, 0, "no card asks the person to let an app answer it");
+  assert.deepEqual(calls, []);
+  // A box to fill in from a server, with no choice to make, and the agent's own question: an app may answer both.
+  store.putItem("th_1", { kind: "question", id: "q1", turn: 1, at: 4, questions: [{ question: "Delete the staging database?", options: [] }], state: "answered", elicited: true });
+  store.putItem("th_1", { kind: "question", id: "q2", turn: 1, at: 5, questions: [{ question: "Your ticket's title?", header: "tracker", options: [] }], state: "asking", elicited: true });
+  assert.equal(words(await gate.call(trusted, "liner_answer", { session: "th_1", answer: "Flaky login" }, { waitMax: 55 })), "Answered.");
+  store.putItem("th_1", { kind: "question", id: "q2", turn: 1, at: 5, questions: [{ question: "Your ticket's title?", options: [] }], state: "answered" });
+  store.putItem("th_1", { kind: "question", id: "q3", turn: 1, at: 6, questions: [{ question: "Which colour?", options: [{ label: "Blue" }, { label: "Red" }] }], state: "asking" });
+  assert.equal(words(await gate.call(trusted, "liner_answer", { session: "th_1", answer: "Blue" }, { waitMax: 55 })), "Answered.");
+  assert.deepEqual(calls.map((c) => (c[1] as { itemId?: string }).itemId), ["q2", "q3"]);
+});
+
 test("An app gets 60 calls a minute, then is told to wait", async () => {
   const { apps, gate } = rig();
   const app = apps.get(apps.create({ name: "Muse", kind: "muse", level: "read" }).app.id)!;

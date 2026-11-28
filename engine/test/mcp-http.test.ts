@@ -459,3 +459,27 @@ test("Refused sign-ins and registrations through the listener don't use up the l
     await l.close();
   }
 });
+
+test("A request whose body never finishes coming is cut off, so nobody on the internet can hold the listener's connections open for good", async () => {
+  const { home } = base();
+  const apps = new McpApps(home);
+  const gate = new McpGate({ apps, runner: new Outside(new Store(home), { call: async () => null }), defaultAccess: () => "edits", stdioLevel: () => "trusted", log: () => {} });
+  const l = await startMcpHttp({ port: 0, apps, gate, oauth: new McpOAuth(apps), publicHost: () => null, requestMs: 300 });
+  try {
+    const { connect } = await import("node:net");
+    const s = connect(l.port, "127.0.0.1");
+    let said = "";
+    s.on("data", (d) => (said += d));
+    // No key is needed for /token: headers at once, then one byte of the thousand it says are coming, and nothing more.
+    s.write(`POST /token HTTP/1.1\r\nHost: 127.0.0.1:${l.port}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\n\r\ng`);
+    const closed = await new Promise<boolean>((r) => {
+      const t = setTimeout(() => r(false), 4000);
+      s.once("close", () => (clearTimeout(t), r(true)));
+    });
+    s.destroy();
+    assert.ok(closed, "the half-sent request is still held open");
+    assert.match(said, /^HTTP\/1\.1 408/);
+  } finally {
+    await l.close();
+  }
+});

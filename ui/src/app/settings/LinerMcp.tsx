@@ -459,7 +459,10 @@ function Reach({ s, onRetry, onCheck, onHalt }: { s: McpStatus; onRetry: () => v
 /** One app let in: its logo, name and level, how it comes in, its last call, its key's end and days left, and Revoke. */
 function AppRow({ a, stdioLevel, publicUp }: { a: McpApp; stdioLevel: McpLevel; publicUp: boolean }) {
   const [naming, setNaming] = useState<string | null>(null);
+  // Escape drops the name; the field's blur as it goes away mustn't save it after all.
+  const dropped = useRef(false);
   const rename = () => {
+    if (dropped.current) return void ((dropped.current = false), setNaming(null));
     const n = naming?.trim();
     setNaming(null);
     if (n && n !== a.name) void rpc("mcp.rename", { id: a.id, name: n }).catch(fail);
@@ -511,7 +514,7 @@ function AppRow({ a, stdioLevel, publicUp }: { a: McpApp; stdioLevel: McpLevel; 
       title={
         naming !== null ? (
           <span className="lc-st-input lc-mcp-rename">
-            <input autoFocus value={naming} maxLength={60} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? rename() : e.key === "Escape" ? setNaming(null) : undefined)} onBlur={rename} aria-label={`A name for ${a.name}`} />
+            <input autoFocus value={naming} maxLength={60} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => (e.key === "Enter" ? rename() : e.key === "Escape" ? ((dropped.current = true), setNaming(null)) : undefined)} onBlur={rename} aria-label={`A name for ${a.name}`} />
           </span>
         ) : (
           <>

@@ -736,6 +736,13 @@ html[data-native="mac"] .lc-app:not([data-sidebar]) .lc-top:not(.lc-beside + .lc
   outline: 2px solid color-mix(in oklab, var(--l-accent) 60%, transparent);
   outline-offset: 2px;
 }
+/*
+  No ring while the last input was the pointer (bridge.ts ringsForKeys): the browser rings what was clicked last as soon as
+  any key goes down, a bare Shift included, and Tab or an arrow is what asks for one. A field you type in keeps its own.
+*/
+:root[data-pointer] :is(.l-focus, .lc-btn):focus-visible:not(input, textarea, select, [contenteditable]) {
+  outline: none;
+}
 .lc-btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -4584,6 +4591,16 @@ html[data-composer="clear"] .lc-thread-foot .lc-card::before {
     background: var(--l-wash);
   }
 }
+/* Compact beside it while a turn runs or a compact is on its way: fainter, and no wash, since a press does nothing. */
+.lc-under-b:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (hover: hover) {
+  .lc-under-b:disabled:hover {
+    background: none;
+  }
+}
 .lc-under-t {
   min-width: 0;
   overflow: hidden;
@@ -8396,6 +8413,13 @@ body,
   height: 520px;
   z-index: 0;
   border-radius: 0;
+}
+/* The same corner drawn live (homeTide.ts): its colour is the ink the shader reads. */
+.lc-home > .lc-home-tide {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  color: var(--lc-act);
 }
 
 /* Carry on on Home (CarryOn.tsx HomeCarry): a grey label with "All N" at its end, then three cards. */

@@ -14,6 +14,7 @@ import type { ContextPart, ContextSource, SessionInfo, Thread } from "@contracts
 import { toast } from "@liner/components/toast/toast";
 import { rpc, useEngine } from "./engine";
 import { I } from "./icons";
+import { compactsOn } from "./composer-rules";
 import { compact } from "./model";
 import { MOTION } from "./motion";
 import { setContextOpen, useContextOpen } from "./pinned";
@@ -27,13 +28,14 @@ const fail = (e: Error) => toast.error(e.message);
   Compact, as the Session surface pressed it. A second press before the turn's status lands would queue another /compact,
   summarising what was just summarised: the press disables the button at once, and keeps it so until the turn is seen running
   (thread.send answers before that), when the turn's own state takes over; a send that fails lets it go, and so do five
-  seconds without a turn.
+  seconds without a turn. The message box's Compact and its "Compact now" press it too, from a box that may have no thread yet.
 */
-export function useCompact(thread: Thread) {
-  const running = thread.status === "running";
+export function useCompact(thread: Thread | undefined) {
+  const running = thread?.status === "running";
   const [compacting, setCompacting] = useState(false);
   const compactNow = () => {
     if (compacting) return;
+    if (!thread) return;
     setCompacting(true);
     rpc("thread.send", { id: thread.id, text: "/compact" }).then(
       () => toast("Compacting the conversation", { description: "The tool sums up what came before, so the context has room again." }),
@@ -100,8 +102,8 @@ export function CardContext({ thread, info }: { thread: Thread; info: SessionInf
           <span className="lc-dr-t">Context</span>
           <em>{!ctx ? "Empty" : open ? `${compact(ctx.used)} of ${compact(ctx.max)}` : `${share}% used`}</em>
         </button>
-        {/* Only where the surface offered it: a tool that compacts on request. Its own button, beside the row's. */}
-        {info?.compact && (
+        {/* On every tool but the Demo, as under the message box: the engine compacts in Liner Code where the tool can't. Its own button, beside the row's. */}
+        {info && compactsOn(info.provider) && (
           <button type="button" className="lc-dc-compact l-focus" title={compactNote} disabled={running || !ctx || compacting} onClick={compactNow}>
             Compact
           </button>

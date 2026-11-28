@@ -93,7 +93,8 @@ export type TurnSink = {
   approve(req: ApprovalRequest, signal: AbortSignal): Promise<{ allow: boolean; reason?: string; level?: boolean }>;
   /** Asks you to pick between options; resolves with an answer per question, or null if you skipped. */
   /** `optional`: fine to go unanswered, so nobody being there (a routine) answers it with null rather than waiting. */
-  ask(questions: Question[], signal: AbortSignal, o?: { optional?: boolean }): Promise<Record<string, string> | null>;
+  /** `elicited`: an MCP server asks it (an elicitation), not the agent, so an app outside Liner Code can't answer a choice of it. */
+  ask(questions: Question[], signal: AbortSignal, o?: { optional?: boolean; elicited?: boolean }): Promise<Record<string, string> | null>;
   /** Shows a plan to approve; resolves with your decision, and the plan as you edited it when you did. */
   propose(title: string, plan: string, signal: AbortSignal): Promise<{ approve: boolean; note?: string; plan?: string }>;
   /** Token use. `total` means the numbers are the session's running totals, not this turn's. */

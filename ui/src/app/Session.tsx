@@ -49,6 +49,7 @@ import { askPicker } from "./pr-pick";
 import { ModeChip } from "./Modes";
 import { CrewChip, LoneStop, openAgents, pairOf, showTeam } from "./Crew";
 import { setSessionPinned, showDetails, useSessionPinned } from "./pinned";
+import { settingsOver } from "./menu-keys";
 import { LiveLine, Timeline } from "./Timeline";
 import { Disc, Kbd, Lines, NamedSwitch, PanelHead, Pop, Row, Sep, ShowSidebar } from "./ui";
 
@@ -488,8 +489,8 @@ export const Session = memo(function Session({ thread, sidebar, onSidebar, onNew
   // A project script with keys of its own runs from them, in a Terminal tab of its own.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // A dialog (⌘K, a confirm) has the keyboard: a script's keys wait, as ⌘1 to ⌘9 do (App.tsx).
-      if (!keysOn.current || document.querySelector("dialog[open]")) return;
+      // A dialog (⌘K, a confirm) has the keyboard: a script's keys wait, as ⌘1 to ⌘9 do (App.tsx). So does Settings over the session.
+      if (!keysOn.current || document.querySelector("dialog[open]") || settingsOver(e.target, document)) return;
       const x = (project?.scripts ?? []).find((s) => s.key && matches(e, s.key));
       if (!x) return;
       // Ahead of everything else, so a script's keys beat a command on the same ones.

@@ -94,7 +94,8 @@ test("The Context row's Compact is the surface's own action, a button of its own
   const row = span(card, '<div className="lc-dr lc-dc-ctx">', "{ctx && (\n        <div className=\"lc-dc-bar\"");
   const fold = span(row, '<button type="button" className="lc-dr-main', "</button>");
   assert.doesNotMatch(fold, /Compact|compactNow/, "Compact sits inside the button that folds the row");
-  assert.match(row, /\{info\?\.compact && \(\s*<button type="button" className="lc-dc-compact l-focus" title=\{compactNote\} disabled=\{running \|\| !ctx \|\| compacting\} onClick=\{compactNow\}>\s*Compact\s*<\/button>/, "Compact is not its own button with the surface's states");
+  // Every tool but the Demo compacts (composer-rules.ts compactsOn), as Compact under the message box says.
+  assert.match(row, /\{info && compactsOn\(info\.provider\) && \(\s*<button type="button" className="lc-dc-compact l-focus" title=\{compactNote\} disabled=\{running \|\| !ctx \|\| compacting\} onClick=\{compactNow\}>\s*Compact\s*<\/button>/, "Compact is not its own button with the surface's states");
   const css = read("app.css");
   const b = rule(css, ".lc-dc-compact");
   assert.match(b, /height: 22px;/);

@@ -1568,3 +1568,79 @@ test("codex: its reason is what it says the command does, and a host it asks to 
   const edit = await codexCard({ method: "item/fileChange/requestApproval", params: { itemId: "p1" } }, {}, startedPatch("/etc/hosts"));
   assert.deepEqual(edit.why, [{ kind: "outside", text: "it changes /etc/hosts, outside the project" }]);
 });
+
+test("codex: a /compact the person asked for says Codex compacted the conversation, once, not that it made room", async () => {
+  // Codex 0.172 runs an asked-for compaction as a turn of its own, with a contextCompaction item in it.
+  const { s } = cx(codexServer(`if (m.method === "thread/compact/start") {
+    send({ id: m.id, result: {} });
+    send({ method: "turn/started", params: { threadId: "root", turn: { id: "compact-1" } } });
+    send({ method: "item/started", params: { threadId: "root", turnId: "compact-1", item: { type: "contextCompaction", id: "cc-1" } } });
+    send({ method: "item/completed", params: { threadId: "root", turnId: "compact-1", item: { type: "contextCompaction", id: "cc-1" } } });
+    send({ method: "thread/compacted", params: { threadId: "root", turnId: "compact-1" } });
+    setTimeout(() => send({ method: "turn/completed", params: { threadId: "root", turn: { id: "compact-1", status: "completed" } } }), 10);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  assert.equal(await settled(s.turn("/compact", sink, live()), 2000), "ok");
+  // One Codex makes by itself in a later turn still says it made room.
+  const later = recorder();
+  await s.turn("hi", later.sink, live());
+  s.close();
+  assert.deepEqual(r.notices.map((n) => n.text), ["Codex compacted the conversation."]);
+  assert.deepEqual(later.r.notices, []);
+});
+
+test("codex: a compaction Codex makes by itself mid-turn still says it made room", async () => {
+  const { s } = cx(codexServer(`if (m.method === "turn/start") {
+    send({ id: m.id, result: { turn: { id: "turn-1" } } });
+    send({ method: "item/completed", params: { threadId: "root", turnId: "turn-1", item: { type: "contextCompaction", id: "cc-2" } } });
+    setTimeout(() => send({ method: "turn/completed", params: { threadId: "root", turn: { id: "turn-1", status: "completed" } } }), 10);
+    continue;
+  }`));
+  const { r, sink } = recorder();
+  await s.turn("a long one", sink, live());
+  s.close();
+  assert.deepEqual(r.notices.map((n) => n.text), ["Codex compacted the conversation to make room."]);
+});
+
+test("acp: OpenCode's /compact is its own before it lists its commands, goes alone with no soul in front, and says when it's done", async () => {
+  // No available_commands_update at all: the first message of a process comes before OpenCode would send one.
+  const fake = script("opencode", acpAgent());
+  const p = acpProvider("acp.opencodefake" as ProviderInfo["id"], { label: "OpenCode", cmd: [fake.file], login: "" });
+  const s = p.open(opts({ soul: "SOUL WORDS", env: { ...process.env, FAKE_LOG: fake.log } }));
+  try {
+    assert.equal(s.canCompact?.(), true, "OpenCode's /compact was taken for a tool without one");
+    const { r, sink } = recorder();
+    await s.turn("/compact", sink, live());
+    const prompts = () => fake.read().filter((m) => m.method === "session/prompt").map((m) => (m.params.prompt as { text?: string }[])[0]?.text);
+    assert.deepEqual(prompts(), ["/compact"], "something went in front of /compact");
+    assert.ok(r.notices.some((n) => n.text === "OpenCode compacted the conversation."), "the compaction left no line on the timeline");
+    // What waited goes with the next message.
+    await s.turn("hi", recorder().sink, live());
+    assert.match(prompts()[1] ?? "", /SOUL WORDS[\s\S]*hi$/);
+  } finally {
+    s.close();
+  }
+});
+
+test("acp: after OpenCode compacts, the next message carries the soul again, once, since its summary drops it", async () => {
+  // A session it loads holds its soul already (as after a restart): it went once, and the summary dropped it.
+  const fake = script("opencode", acpAgent(`if (m.method === "session/load") { send({ id: m.id, result: {} }); continue; }`));
+  const p = acpProvider("acp.opencodefake" as ProviderInfo["id"], { label: "OpenCode", cmd: [fake.file], login: "" });
+  const s = p.open(opts({ soul: "SOUL WORDS", resume: "s-old", env: { ...process.env, FAKE_LOG: fake.log } }));
+  try {
+    const prompts = () => fake.read().filter((m) => m.method === "session/prompt").map((m) => (m.params.prompt as { text?: string }[])[0]?.text ?? "");
+    await s.turn("first", recorder().sink, live());
+    assert.doesNotMatch(prompts()[0], /SOUL WORDS/, "a loaded session was sent its soul again");
+    await s.turn("/compact", recorder().sink, live());
+    assert.equal(prompts()[1], "/compact", "something went in front of /compact");
+    await s.turn("after", recorder().sink, live());
+    assert.match(prompts()[2], /SOUL WORDS/, "the soul didn't go again after the compaction");
+    assert.match(prompts()[2], /after$/);
+    // Only once: the message after that has it no more.
+    await s.turn("again", recorder().sink, live());
+    assert.doesNotMatch(prompts()[3], /SOUL WORDS/);
+  } finally {
+    s.close();
+  }
+});

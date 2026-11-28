@@ -30,5 +30,8 @@
   //   FROM liner_usage WHERE timestamp > NOW() - INTERVAL '30' DAY GROUP BY day ORDER BY day
   // The dataset is made by the first point written; the dashboard lists it under Workers & Pages > Analytics Engine.
   "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "liner_usage" }],
+  // A pull request's build runs `wrangler preview`, which won't start without this: a preview writes its usage points
+  // to a dataset of its own, so testing a branch never counts as people using the app.
+  "previews": { "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "liner_usage_preview" }] },
   "observability": { "enabled": true }
 }

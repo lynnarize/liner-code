@@ -10,7 +10,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "node --test src/lib/downloads.test.ts"
+    "test": "node --test src/lib/downloads.test.ts worker/wrangler-config.test.ts"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

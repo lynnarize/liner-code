@@ -15,7 +15,7 @@ import { rpc, useEngine } from "../engine";
 import { I } from "../icons";
 import * as os from "../os";
 import { ScmIcon, SCM_NAME, type ScmMark } from "../scm-icons";
-import { LookAgain, NamedSwitch, Pop, Row as MenuRow } from "../ui";
+import { LookAgain, NamedSwitch, Pop, Row as MenuRow, SureButton } from "../ui";
 import { HostTile, Mono, Row, RowMore, Section, SubRow, Tag } from "./parts";
 import "./source-control.css";
 
@@ -247,9 +247,9 @@ export function SourceControlPlace() {
           {keyFor === "bitbucket" ? (
             <KeyField id="bitbucket" onDone={() => setKeyFor(null)} />
           ) : bb?.signedIn ? (
-            <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void forget("bitbucket")}>
+            <SureButton className="lc-btn" attrs={{ "data-kind": "ghost", "data-size": "sm" }} sure="Remove the key?" onConfirm={() => void forget("bitbucket")}>
               Remove
-            </button>
+            </SureButton>
           ) : (
             <button type="button" className="lc-btn" data-kind="plain" data-size="sm" onClick={() => setKeyFor("bitbucket")}>
               Add a token
@@ -275,9 +275,9 @@ export function SourceControlPlace() {
             <KeyField id="linear" onDone={() => setKeyFor(null)} />
           ) : lin?.signedIn ? (
             <>
-              <button type="button" className="lc-btn" data-kind="ghost" data-size="sm" onClick={() => void forget("linear")}>
+              <SureButton className="lc-btn" attrs={{ "data-kind": "ghost", "data-size": "sm" }} sure="Remove the key?" onConfirm={() => void forget("linear")}>
                 Remove
-              </button>
+              </SureButton>
               <NamedSwitch name="Use Linear" checked={trackerOn(s, "linear")} onCheckedChange={(on) => save({ trackers: { ...s.trackers, linear: on } })} />
             </>
           ) : (

@@ -14,17 +14,18 @@
   `opencode acp` cleanly on first open.
 */
 import { createHash, randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import type { Access, AgentStep, Question, ToolKind } from "../../../contracts/src/index.ts";
+import type { Access, AgentStep, ModelInfo, Question, ToolKind } from "../../../contracts/src/index.ts";
 import { linerTitle } from "../agent-tools.ts";
 import { below, endAll, killTree, marked, markFile, marking, processes, RUN_ENV, spawn, THREAD_ENV, which, type Mark, type Proc } from "../exec.ts";
 import { PAIR_ENV, SECURITY_ENV, SUBAGENT_ENV, SWARM_ENV, TOOLS } from "../liner-tools.ts";
 import { commandRisk, isDestructive, readsOnly, ruleFor } from "../risk.ts";
 import { CANCEL_MS, commandWords, fromFolder, gitInside, inFolder, jsonc, leaves, linerCall, opencodeOwn, plainOutput, RENAMED, secretFile } from "./acp.ts";
+import { OPENCODE_LIST, opencodeApiIn, opencodeModelList } from "./models.ts";
 import { LINER_WAIT_SEC, ResumeFailed, type OpenOptions, type ProviderSession, type ToolUpdate, type TurnSink } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -52,6 +53,14 @@ const CLOSE_LOOK_MS = 1500;
 /** How long an idle daemon with zero registered sessions stays alive before shutting down. */
 let daemonIdleMs = 60_000;
 export const setDaemonIdleMs = (ms: number) => void (daemonIdleMs = ms);
+/**
+  How long a folder's model list is waited for, in ms. A folder OpenCode hasn't loaded yet answers with an empty list, then
+  (the first folder of a cold server) with a startup snapshot that names every model under "opencode" alone, and says
+  `model.updated` for the folder once its real list is in: 2.4.2 took 0.9 seconds cold and 0.1 for a second folder. `said` is
+  the wait for that word; an OpenCode that never says it is read every `every` until two reads agree, for `agree` at most, as
+  T3 Code settles a catalog (provider-opencode OpencodeProviderStatus.ts settleOpenCode2Catalog). A test shortens them.
+*/
+export const OPENCODE_MODELS = { said: 5000, agree: 5000, every: 250 };
 /** Maximum characters kept per tool output or subagent report. */
 const OUTPUT_MAX = 20_000;
 const REPORT_MAX = 6_000;
@@ -83,6 +92,13 @@ const ACTION_KIND: Record<string, ToolKind> = {
 };
 
 const COMPACT = /^\/compact\s*$/;
+/** A count of tokens as the timeline says it: 23k. */
+const kTokens = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+/** What one step of OpenCode's put in the model's context, from its `tokens` (input leaves out the cache it read and wrote). */
+function contextOf(tok: unknown): number {
+  const t = (tok ?? {}) as { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
+  return (Number(t.input) || 0) + (Number(t.output) || 0) + (Number(t.reasoning) || 0) + (Number(t.cache?.read) || 0) + (Number(t.cache?.write) || 0);
+}
 const opencodeOutputs = (env: NodeJS.ProcessEnv) => join(env.XDG_DATA_HOME || join(env.HOME || homedir(), ".local", "share"), "opencode", "tool-output");
 
 /** Thrown when the installed `opencode` binary does not speak the V2 `/api/*` HTTP server API. */
@@ -319,6 +335,12 @@ export class OpenCodeDaemon {
   private addonHolds = new Map<string, number>();
   /** An add-on's removal in flight, by folder and name: putting it back waits for it, or it could land after and take it away again. */
   private dropping = new Map<string, Promise<unknown>>();
+  /** The folders whose model list the server has said is loaded (`model.updated`), as it names them. */
+  private modelsSaid = new Set<string>();
+  /** Who waits to hear that of a folder (models). */
+  private modelsWaits = new Map<string, Set<() => void>>();
+  /** Whether it's OpenCode's own server (not an API endpoint's), so a change to its models is a change to the tool's list. */
+  own = false;
 
   private constructor(url: string, password: string, child: ChildProcessWithoutNullStreams | null, onDead?: () => void, mark?: Mark) {
     this.url = url.replace(/\/+$/, "");
@@ -369,7 +391,8 @@ export class OpenCodeDaemon {
   }
 
   /** Spawns a headless `opencode serve --port 0 --hostname 127.0.0.1` daemon and verifies its V2 `/api/info`. */
-  static async spawn(bin: string, env: NodeJS.ProcessEnv, onDead?: () => void): Promise<OpenCodeDaemon> {
+  static async spawn(bin: string, env: NodeJS.ProcessEnv, onDead?: () => void, signal?: AbortSignal): Promise<OpenCodeDaemon> {
+    if (signal?.aborted) throw new Error("Stopped before opencode serve started.");
     const password = randomBytes(24).toString("hex");
     // Marked as an ACP agent's process is (acp.ts spawnAt): in its environment, and as a file in this engine's folder it and
     // everything it starts hold open, so what outlives a kill, or an engine that died hard, is still found and ended.
@@ -415,6 +438,8 @@ export class OpenCodeDaemon {
         child.stderr.on("data", onData);
         child.once("error", (err) => (clearTimeout(timer), rejectUrl(new NoV2Server(`Couldn't start opencode serve: ${err.message}`))));
         child.once("exit", (code) => (clearTimeout(timer), rejectUrl(new NoV2Server(`opencode serve exited (${code ?? "signal"}): ${out.slice(-300)}`))));
+        // Stopped while it starts (a look that was called off): ended below with all it started, not left to its 25 seconds.
+        signal?.addEventListener("abort", () => (clearTimeout(timer), rejectUrl(new Error("Stopped while opencode serve started."))), { once: true });
       });
       const auth = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`;
       const r = await fetch(`${url}/api/info`, { headers: { authorization: auth, accept: "application/json" }, signal: AbortSignal.timeout(5000), redirect: "error" });
@@ -642,13 +667,85 @@ export class OpenCodeDaemon {
     void loop();
   }
 
-  private dispatchRaw(raw: string) {
-    let ev: { type?: string; data?: Json };
+  /**
+    The models OpenCode lists in `dir`, each with its effort levels and price (models.ts opencodeModelList), read once the
+    folder's list is loaded (OPENCODE_MODELS); null when it lists none, can't say, or `signal` stopped the ask.
+  */
+  async models(dir: string, signal?: AbortSignal): Promise<ModelInfo[] | null> {
+    await this.waitSse();
+    const names = new Set([dir]);
     try {
-      ev = JSON.parse(raw) as { type?: string; data?: Json };
+      // OpenCode names a folder by its real path.
+      names.add(realpathSync(dir));
+    } catch {
+      // Not there: asked as given.
+    }
+    const said = () => [...names].some((n) => this.modelsSaid.has(n));
+    const read = async () => {
+      const r = await this.request("GET", `/api/model?location[directory]=${encodeURIComponent(dir)}`, undefined, signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000)).catch(() => null);
+      return r?.status === 200 ? opencodeModelList(r.text) : null;
+    };
+    // Each pause lets go of `signal` as it ends: the agree loop pauses up to twenty times, and every listener left on the
+    // look's signal stayed there until it was done with, past Node's warning at eleven.
+    const pause = (ms: number) => new Promise<void>((ok) => {
+      const stop = () => (clearTimeout(t), ok());
+      const t = setTimeout(() => (signal?.removeEventListener("abort", stop), ok()), ms);
+      signal?.addEventListener("abort", stop, { once: true });
+    });
+    if (!said()) {
+      let heard = () => {};
+      const word = new Promise<void>((ok) => (heard = ok));
+      for (const n of names) this.modelsWaits.set(n, (this.modelsWaits.get(n) ?? new Set()).add(heard));
+      try {
+        // The first ask is what has OpenCode load the folder; what it answers is the empty list or the snapshot.
+        await read();
+        await Promise.race([word, pause(OPENCODE_MODELS.said)]);
+      } finally {
+        for (const n of names) {
+          const waits = this.modelsWaits.get(n);
+          waits?.delete(heard);
+          if (waits && !waits.size) this.modelsWaits.delete(n);
+        }
+      }
+    }
+    let list = await read();
+    if (said() || signal?.aborted || this.closed) return signal?.aborted ? null : list;
+    const print = (l: ModelInfo[] | null) => (l ? JSON.stringify(l) : "");
+    let last = print(list);
+    for (const end = Date.now() + OPENCODE_MODELS.agree; Date.now() < end; ) {
+      await pause(OPENCODE_MODELS.every);
+      if (signal?.aborted || this.closed) return null;
+      const next = await read();
+      if (next && print(next) === last) {
+        for (const n of names) this.modelsSaid.add(n);
+        return next;
+      }
+      list = next ?? list;
+      last = print(next);
+    }
+    return list;
+  }
+
+  /**
+    OpenCode said a folder's models are loaded, or have changed. Whoever waits for that folder hears it; a change nobody was
+    waiting for, on OpenCode's own server, is passed on so the tool's list is asked again (onOpenCodeModels).
+  */
+  private modelsLoaded(dir: string) {
+    this.modelsSaid.add(dir);
+    const waits = this.modelsWaits.get(dir);
+    this.modelsWaits.delete(dir);
+    for (const heard of waits ?? []) heard();
+    if (!waits?.size && this.own) modelsChanged();
+  }
+
+  private dispatchRaw(raw: string) {
+    let ev: { type?: string; data?: Json; location?: { directory?: unknown } };
+    try {
+      ev = JSON.parse(raw) as typeof ev;
     } catch {
       return;
     }
+    if (ev?.type === "model.updated") return this.modelsLoaded(typeof ev.location?.directory === "string" ? ev.location.directory : "");
     const type = ev?.type;
     const data = ev?.data;
     if (!type || !data || typeof data !== "object") return;
@@ -778,22 +875,79 @@ const REAPING = new Set<Promise<void>>();
 /** Shared daemon pool keyed by `(binaryPath, envFingerprint)` so sessions and subagents share one process. */
 const DAEMONS = new Map<string, Promise<OpenCodeDaemon>>();
 
-/** Acquires (or spawns) the shared `OpenCodeDaemon` for `bin` and `env`. */
-export function sharedOpenCodeDaemon(bin: string, env: NodeJS.ProcessEnv): Promise<OpenCodeDaemon> {
+/** Who is told that OpenCode's own model list may have changed (onOpenCodeModels), and the pause that gathers a burst of changes into one telling. */
+const MODEL_LISTENERS = new Set<() => void>();
+let modelsTimer: NodeJS.Timeout | undefined;
+/**
+  Tells `fn` when OpenCode's own server says its models changed (a sign-in, a provider or plugin added, a folder loaded), so
+  the tool's list is asked again while the app runs rather than at the next launch. T3 Code re-reads its catalog on the same
+  event (provider-opencode OpencodeProviderStatus.ts makeOpenCode2CatalogWatch), 250 ms after the last of a burst.
+*/
+export function onOpenCodeModels(fn: () => void) {
+  MODEL_LISTENERS.add(fn);
+  return () => { MODEL_LISTENERS.delete(fn); };
+}
+function modelsChanged() {
+  clearTimeout(modelsTimer);
+  modelsTimer = setTimeout(() => {
+    for (const fn of MODEL_LISTENERS) fn();
+  }, 250);
+  modelsTimer.unref?.();
+}
+
+/**
+  OpenCode's own list with each model's levels and price, asked of its server for the empty folder `scratch`; null when it
+  can't say, so the caller asks an ACP session instead and no level or price is made up. The shared server answers when one
+  is up (a session is on it); otherwise one is started for the ask and ended after it, with all it started. It was `opencode
+  api --standalone GET /api/model`, which asks a server the moment it starts: OpenCode 2.4.2 answers that with an empty list,
+  since it loads a folder's models after its first ask, so no model ever had a level (OpenCodeDaemon.models waits for them).
+  Only OpenCode 2 has this server API, so `version` (its --version line) must say 2 or later, and an unknown one isn't asked.
+  Bounded by OPENCODE_LIST.ms and `signal`, so a listing that hangs never holds up the tool list or Check my tools.
+*/
+export async function opencodeModels(path: string, env: NodeJS.ProcessEnv, scratch: string, version: string | undefined, signal?: AbortSignal, timeout = OPENCODE_LIST.ms): Promise<ModelInfo[] | null> {
+  if (!opencodeApiIn(version) || signal?.aborted) return null;
+  mkdirSync(scratch, { recursive: true });
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), timeout);
+  const stopped = () => stop.abort();
+  signal?.addEventListener("abort", stopped, { once: true });
+  let mine: OpenCodeDaemon | undefined;
+  try {
+    const shared = await DAEMONS.get(poolKeyFor(path, env))?.catch(() => undefined);
+    if (shared?.alive) {
+      shared.own = true;
+      const list = await shared.models(scratch, stop.signal);
+      // One that went idle and closed under the ask says nothing: a server of the ask's own is tried.
+      if (list || stop.signal.aborted) return list;
+    }
+    mine = await OpenCodeDaemon.spawn(path, env, undefined, stop.signal);
+    return await mine.models(scratch, stop.signal);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stopped);
+    // Not waited for: the list is shown now, and a quit waits for the ending (shutdownOpenCodeDaemons).
+    void mine?.shutdown();
+  }
+}
+
+/** Acquires (or spawns) the shared `OpenCodeDaemon` for `bin` and `env`; `own` says a session of OpenCode itself asks, not an API endpoint's. */
+export function sharedOpenCodeDaemon(bin: string, env: NodeJS.ProcessEnv, own = false): Promise<OpenCodeDaemon> {
   const key = poolKeyFor(bin, env);
   const existing = DAEMONS.get(key);
   if (existing) {
     // One being checked after an unanswered Stop (doubt) is handed out once it has answered, or a new one once it's ended.
     return existing.then(async (d) => {
       await d.settled();
-      if (d.alive) return d;
+      if (d.alive) return (d.own ||= own), d;
       if (DAEMONS.get(key) === existing) DAEMONS.delete(key);
-      return sharedOpenCodeDaemon(bin, env);
+      return sharedOpenCodeDaemon(bin, env, own);
     });
   }
   const starting = OpenCodeDaemon.spawn(bin, env, () => {
     if (DAEMONS.get(key) === starting) DAEMONS.delete(key);
-  }).catch((e) => {
+  }).then((d) => ((d.own = own), d), (e) => {
     if (DAEMONS.get(key) === starting) DAEMONS.delete(key);
     throw e;
   });
@@ -857,6 +1011,12 @@ export class OpenCodeServerSession implements ProviderSession {
   private inputs = new Map<string, Json>();
   /** A Stop's interrupt the server hasn't answered: on close, the server is asked whether it still answers at all (doubt). */
   private unanswered = false;
+  /** The model the root session's step runs on, as its `session.step.started` names it ("provider/model"). */
+  private stepModel: string | undefined;
+  /** Each model's context window as the server lists it (`limit.context`), by "provider/model": asked once a session. */
+  private windows: Promise<Map<string, number>> | null = null;
+  /** The notice a compaction under way updates when it ends. */
+  private compactKey: string | null = null;
   /** Settle window in ms after subagents finish (shortened in tests). */
   settleMs = 1500;
   /** Interval in ms between active-turn reconciliation checks (shortened in tests). */
@@ -1106,6 +1266,34 @@ export class OpenCodeServerSession implements ProviderSession {
       this.done = null;
       this.fail = null;
     }
+  }
+
+  /**
+    OpenCode 2's server compacts on request (POST /api/session/:id/compact), so /compact is its own; the ACP session an older
+    OpenCode falls back to says for itself.
+  */
+  canCompact(): boolean {
+    return this.fallback ? Boolean(this.fallback.canCompact?.()) : true;
+  }
+
+  /** The context window OpenCode lists for `model` ("provider/model"), asked of its model list once a session. */
+  private async windowOf(d: OpenCodeDaemon, model: string | undefined): Promise<number | undefined> {
+    if (!model) return undefined;
+    this.windows ??= d
+      .request("GET", `/api/model?location[directory]=${encodeURIComponent(this.o.cwd)}`, undefined, AbortSignal.timeout(5000))
+      .then((r) => {
+        const out = new Map<string, number>();
+        const list = r.status === 200 ? ((r.data as { data?: unknown } | undefined)?.data ?? []) : [];
+        for (const m of Array.isArray(list) ? (list as { id?: unknown; providerID?: unknown; limit?: { context?: unknown } }[]) : []) {
+          const size = Number(m?.limit?.context);
+          if (typeof m?.id === "string" && typeof m.providerID === "string" && size > 0) out.set(`${m.providerID}/${m.id}`, size);
+        }
+        // A list that hasn't loaded yet (OpenCode answers an empty one for its first moments) is asked again next time.
+        if (!out.size) this.windows = null;
+        return out;
+      })
+      .catch(() => ((this.windows = null), new Map<string, number>()));
+    return (await this.windows).get(model);
   }
 
   async steer(text: string, attached?: string[]): Promise<boolean> {
@@ -1559,6 +1747,35 @@ export class OpenCodeServerSession implements ProviderSession {
         );
         break;
       }
+      // The session's usage above is its running totals; a step's own count is what its context holds now, which the message box
+      // shows as "N% of context" with Compact beside it, against the window OpenCode lists for the step's model.
+      case "session.step.started": {
+        const m = data.model as { id?: unknown; providerID?: unknown } | undefined;
+        if (typeof m?.id === "string" && typeof m.providerID === "string") this.stepModel = `${m.providerID}/${m.id}`;
+        break;
+      }
+      case "session.step.ended": {
+        const used = contextOf(data.tokens);
+        if (!used) break;
+        sink.usage({ contextTokens: used });
+        const d = this.daemon;
+        const model = this.stepModel ?? (isDefault(this.model) ? undefined : this.model);
+        if (d) void this.windowOf(d, model).then((size) => size && sink.usage({ contextWindow: size }));
+        break;
+      }
+      case "session.compaction.started": {
+        this.compactKey ??= `compact-${randomBytes(6).toString("hex")}`;
+        sink.notice("Compacting the conversation…", this.compactKey);
+        break;
+      }
+      // Its own compaction, asked for with /compact or made to make room: said when it ends, with what it summed up.
+      case "session.compaction.ended": {
+        const before = contextOf(data.tokens);
+        const why = data.reason === "manual" ? "" : " to make room";
+        sink.notice(`OpenCode compacted the conversation${why}${before ? ` (${kTokens(before)} tokens before)` : ""}.`, this.compactKey ?? undefined);
+        this.compactKey = null;
+        break;
+      }
       case "session.execution.succeeded":
       case "session.idle": {
         this.parentBusy = false;
@@ -1970,7 +2187,8 @@ export function openOpenCodeServer(o: OpenOptions, fallbackOpen: (o: OpenOptions
     () => {
       const bin = which("opencode", o.env);
       if (!bin) throw new NoV2Server("opencode isn't installed.");
-      return sharedOpenCodeDaemon(bin, o.env);
+      // An API endpoint through OpenCode names itself (`provider`): its server lists that endpoint's models, not OpenCode's.
+      return sharedOpenCodeDaemon(bin, o.env, !o.provider);
     },
     fallbackOpen,
   );

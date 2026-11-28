@@ -20,7 +20,7 @@
 */
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as KeyEvent, type ReactNode, type RefObject } from "react";
 import type { Access, CommandInfo, SkillInfo, Effort, PairTuning, PairWays, Project, ProviderInfo, QueuedMessage, SessionMode, SidekickClass, Thread } from "@contracts";
-import { castOf, costOf, familyOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, picturesOf, shortlistOf, splitModel, waysOf } from "@contracts";
+import { castOf, costOf, frontierClass, listedHere, openCodeHasGo, pairCostOf, picturesOf, shortlistOf, splitModel, waysOf } from "@contracts";
 import { toast } from "@liner/components/toast/toast";
 import { is } from "./keymap";
 import { mirror } from "./mdMirror";
@@ -39,8 +39,9 @@ import { drawingOf, setFace } from "./face";
 import type { DockAsk } from "./Ask";
 import { usePrecheck, type SendHow } from "./Precheck";
 import { draftRead, draftSaves, wordRead } from "./kept";
-import { commandIconOf, commandsAsk, stashKeyOf, steersHere } from "./composer-rules";
+import { coldCompact, commandIconOf, commandsAsk, compactButton, stashKeyOf, steersHere } from "./composer-rules";
 import { UsageRing } from "./UsageRing";
+import { useCompact } from "./DetailsParts";
 import { showDetails } from "./pinned";
 
 /**
@@ -368,8 +369,6 @@ function pastedName(taken: string[]) {
   }
 }
 
-/** A long thread past its cache: the next message is read again at full price, so the composer offers to compact. */
-const COLD_TOKENS = 200_000;
 /** The who panel's list of your agents (no tool has this id). */
 const AGENTS_TAB = "@agents";
 /** The Demo has a row of its own in this panel (Demo run): the model lists in it leave it out, so it's never a lead, a sidekick or a model of its own. */
@@ -897,15 +896,9 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     return () => window.removeEventListener("keydown", onKey);
   }, [thread?.id]);
 
-  // Compact: the tool sums up what came before (as the Session surface's Compact does). Claude Code and Codex take it.
-  const canCompact = Boolean(thread) && ["claude", "codex"].includes(familyOf(splitModel(model).provider));
-  const compactNow = () => {
-    if (!thread) return;
-    rpc("thread.send", { id: thread.id, text: "/compact" }).then(
-      () => toast("Compacting the conversation", { description: "The tool sums up what came before, so the context has room again." }),
-      (e: Error) => toast.error(e.message),
-    );
-  };
+  // Compact: the tool sums up what came before, pressed as the details card's Compact is (one press at a time). Every tool takes it but the Demo.
+  const { compacting, compactNow } = useCompact(thread);
+  const tool = splitModel(model).provider;
   // Past the cache's end, the next message re-reads the whole thread at full price. It shows once
   // the time comes, without waiting for anything else to change.
   const [, tick] = useState(0);
@@ -916,7 +909,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     const t = setTimeout(() => tick((n) => n + 1), Math.min(cacheUntil - Date.now() + 500, 2 ** 31 - 1));
     return () => clearTimeout(t);
   }, [cacheUntil]);
-  const cold = variant === "session" && !busy && canCompact && cacheUntil !== undefined && coldSeen !== cacheUntil && Date.now() > cacheUntil && (usage?.contextTokens ?? 0) > COLD_TOKENS;
+  const cold = variant === "session" && Boolean(thread) && !busy && coldCompact({ provider: tool, cacheUntil, seen: coldSeen, now: Date.now(), contextTokens: usage?.contextTokens });
 
   useEffect(() => onText?.(text), [text]);
 
@@ -1088,6 +1081,7 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
     and "42% of context", with the plan's usage ring beside it. Each goes when there is nothing to say.
   */
   const ctxPct = usage?.contextTokens && usage.contextWindow ? Math.min(100, Math.round((usage.contextTokens / usage.contextWindow) * 100)) : undefined;
+  const compactBtn = compactButton({ provider: tool, contextTokens: usage?.contextTokens, running: Boolean(busy) || thread?.status === "running", compacting });
   const working = thread?.agentsAtWork ?? 0;
   const under = variant === "session" && thread && !canvas && !aside && (
     <div className="lc-under">
@@ -1108,6 +1102,13 @@ export function Composer({ variant, project, thread, draftKey: draftAt, settings
         <button type="button" className="lc-under-u lc-under-b l-focus" title={`${compact(usage!.contextTokens!)} of ${compact(usage!.contextWindow!)} tokens in the context. Show what fills it`} onClick={() => showDetails({ context: true })}>
           <i className="lc-under-ring" style={{ "--lc-v": `${ctxPct}%` } as CSSProperties} aria-hidden />
           {ctxPct}% of context
+        </button>
+      )}
+      {/* Compact in one press, beside the share it frees: the same act as the details card's. */}
+      {compactBtn.shown && (
+        <button type="button" className="lc-under-u lc-under-b l-focus" disabled={compactBtn.disabled} title={compactBtn.disabled ? (compacting ? "Compacting the conversation" : "Compact once the turn ends") : "Sum up the conversation so far, so the context has room again. The next message goes on from the summary."} onClick={compactNow}>
+          <I.shrink size={12} />
+          Compact
         </button>
       )}
       <UsageRing model={model} />
@@ -1972,11 +1973,20 @@ function WhoPanel({ project, settings, onSettings, compare, onCompare, onNewAgen
     if (cast && pairReady(cast) && cast.sidekick !== runs) return cast.sidekick;
     return shortlistOf(providers, "quicker", { except: [runs] }).find((r) => r !== runs);
   }, [own, runs, toolNow, providers, picks]);
+  // On, the switch sets the pair's effort; off again in the same look, the lead goes back to the level it ran at before,
+  // unless a level was picked in between.
+  const beforeFusion = useRef<{ effort: Effort; set: Effort } | null>(null);
   const fusionOn = () => {
     if (solo || own || !freshSide) return;
-    onSettings({ sidekick: freshSide, tuning: undefined, effort: pairEffortFor(runs, providers, pairEffort) });
+    const set = pairEffortFor(runs, providers, pairEffort);
+    beforeFusion.current = { effort: settings.effort, set };
+    onSettings({ sidekick: freshSide, tuning: undefined, effort: set });
   };
-  const fusionOff = () => onSettings({ sidekick: undefined, tuning: undefined });
+  const fusionOff = () => {
+    const was = beforeFusion.current;
+    beforeFusion.current = null;
+    onSettings({ sidekick: undefined, tuning: undefined, ...(was && was.set === settings.effort ? { effort: was.effort } : {}) });
+  };
   const fusionSwitch = (open: (key: string) => void) => (
     <>
       <button type="button" role="switch" aria-checked={own} className="lc-who-row lc-pk-fzrow l-focus" data-rove disabled={!own && !freshSide} title={own || freshSide ? "The lead plans, decides and reviews; the sidekick does the work the lead hands it." : "Needs two different models ready"} onClick={() => (own ? fusionOff() : fusionOn())}>

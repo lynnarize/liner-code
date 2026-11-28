@@ -1831,7 +1831,9 @@ export class Runtime {
         const note = r.provider === "demo" ? "" : editsNote(edits, { skipUndo: retold });
         if (note) prompt = `${note}\n\n${prompt}`;
       }
-      if (fresh && r.provider !== "demo" && earlier.some((x) => x.kind === "user" || x.kind === "text")) {
+      // A /compact said before is no conversation: a session where nothing else was said still has nothing to compact.
+      const talked = earlier.some((x) => (x.kind === "user" && !COMPACT.test(x.text)) || x.kind === "text");
+      if (fresh && r.provider !== "demo" && talked) {
         if (compact) {
           // A session that knows nothing has nothing to compact, and has to be told the conversation next turn.
           this.drop(liveKeyOf(threadId, agentId));
@@ -1851,22 +1853,24 @@ export class Runtime {
           const again = shown?.kind === "notice" && shown.handoff?.to === to && !earlier.slice(earlier.indexOf(shown)).some((x) => x.kind === "turn" && !x.model.startsWith(`${r.provider}:`)) ? shown : undefined;
           if (switched && show) store.putItem(threadId, { kind: "notice", ...(again ? { id: again.id, turn: again.turn, at: again.at } : { id: uid("it"), turn, at: Date.now() }), text: `${this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider} takes over here, with the conversation so far.`, handoff: { ...(from ? { from } : {}), to, ...(r.effort ? { effort: r.effort } : {}), note } });
         }
+      } else if (compact && r.provider !== "demo" && !talked) {
+        // Nothing said yet, so nothing to compact, whatever the tool: it isn't asked, since Codex would compact its own
+        // instructions and Claude Code ends without a word.
+        store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: "Nothing to compact yet." });
+        blank = true;
       } else if (compact && r.provider !== "demo" && !(session.canCompact ? session.canCompact() : this.providerInfo.find((p) => p.id === r.provider)?.supports.compact ?? familyOf(r.provider) === "claude")) {
         // Providers without native /compact would treat literal "/compact" as chat text; reset the live provider session instead so the next turn starts fresh with Liner's handoff summary.
         const tool = this.providerInfo.find((p) => p.id === r.provider)?.label ?? r.provider;
         this.drop(liveKeyOf(threadId, agentId));
-        if (earlier.some((x) => x.kind === "user" || x.kind === "text")) {
-          const cur = store.thread(threadId);
-          if (agentId === cur.agent) store.patchThread(threadId, { providerSession: undefined, forkSession: undefined });
-          else if (cur.sessions?.[agentId]) {
-            const nextSessions = { ...cur.sessions };
-            delete nextSessions[agentId];
-            store.patchThread(threadId, { sessions: Object.keys(nextSessions).length ? nextSessions : undefined });
-          }
-          store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Compacted in Liner Code: ${tool} doesn't have a built-in /compact command, so your next message starts a fresh ${tool} session with a summary of the conversation so far.` });
-        } else {
-          store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Nothing to compact yet: ${tool} doesn't have a built-in /compact command.` });
+        const cur = store.thread(threadId);
+        if (agentId === cur.agent) store.patchThread(threadId, { providerSession: undefined, forkSession: undefined });
+        else if (cur.sessions?.[agentId]) {
+          const nextSessions = { ...cur.sessions };
+          delete nextSessions[agentId];
+          store.patchThread(threadId, { sessions: Object.keys(nextSessions).length ? nextSessions : undefined });
         }
+        // Said without claiming the tool has no /compact of its own: an ACP agent says it has one only once its session is up.
+        store.putItem(threadId, { kind: "notice", id: uid("it"), turn, at: Date.now(), text: `Compacted in Liner Code: your next message starts a fresh ${tool} session with a summary of the conversation so far.` });
         blank = true;
       }
       // What the Reviewer said about the last change that no model has heard (notes on a change it
@@ -4351,7 +4355,7 @@ export class Runtime {
         if (over || (o?.optional && this.unattended.has(threadId))) return Promise.resolve(null);
         settle();
         const id = uid("it");
-        store.putItem(threadId, { kind: "question", id, turn, at: Date.now(), questions, state: "asking" });
+        store.putItem(threadId, { kind: "question", id, turn, at: Date.now(), questions, state: "asking", ...(o?.elicited ? { elicited: true } : {}) });
         needsYou(questions[0]?.question ?? "A question");
         return wait(this.questions, id, sig);
       },
@@ -4609,6 +4613,8 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "swi
   /** What each turn asked, whole, however many lines it runs to. */
   const asked = new Map<number, string[]>();
   for (const it of items) {
+    // A /compact was a command to the tool, not a question left open for the next model.
+    if (it.kind === "user" && COMPACT.test(it.text)) continue;
     if (it.kind === "user") {
       add(it.turn, `${askedWord}: ${it.text}`);
       asked.set(it.turn, [...(asked.get(it.turn) ?? []), `${askedWord}: ${it.text}`]);
@@ -4624,7 +4630,7 @@ export function handoff(items: Item[], why: "switch" | "fork" | "restart" = "swi
     else if (it.kind === "error" || it.kind === "limit") add(it.turn, `(The turn ended on a problem: ${it.message.slice(0, 400)})`);
   }
   // What outlives the turns left out: the first ask, the plan as it stands, the files changed and not undone.
-  const firstAsk = items.find((x) => x.kind === "user");
+  const firstAsk = items.find((x): x is Extract<Item, { kind: "user" }> => x.kind === "user" && !COMPACT.test(x.text));
   const plan = items.findLast((x) => x.kind === "plan");
   const open = plan?.kind === "plan" && plan.entries.some((e) => e.status !== "completed") ? plan.entries : [];
   let planNote = open.length ? `The plan as it stands:\n${open.map((e) => `- [${e.status === "completed" ? "x" : e.status === "in_progress" ? "~" : " "}] ${e.title}`).join("\n").slice(0, 1600)}` : "";

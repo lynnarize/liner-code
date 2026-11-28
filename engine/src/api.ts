@@ -24,6 +24,7 @@ import { ensureSampleProject } from "./providers/demo.ts";
 import { detectOnce, endpointModels } from "./providers/endpoint.ts";
 import { skillsIn, toolLevels } from "./providers/models.ts";
 import { onAcpCommands, onAcpEfforts } from "./providers/acp.ts";
+import { onOpenCodeModels } from "./providers/opencode-server.ts";
 import type { Routines } from "./routines.ts";
 import { providers, shownOf, syncProviders, titleFrom, type Runtime } from "./runtime.ts";
 import { fromRegistry, listRegistry, readRegistry, slugFor, splitCommand } from "./providers/added.ts";
@@ -203,6 +204,7 @@ export const LINER_COMMANDS: CommandInfo[] = [
   { name: "teamwork", description: "A coordinator plans the work and hands its parts to a tree of agents", hint: "<what to build>", source: "liner" },
   { name: "swarm", description: "Peers on one board take the work between them, parked while they wait", hint: "<the goal>", source: "liner" },
   { name: "reviewer", description: "Have the Reviewer, another model family, read the changes now", source: "liner" },
+  { name: "compact", description: "Sum up the conversation so far, so the context has room again", source: "liner" },
   { name: "pr", description: "Open a pull request from this branch, right here in the chat", source: "liner" },
 ];
 /** The commands that turn a team on, which a side chat and a scan never take (thread.send leaves them to the tool there). */
@@ -210,10 +212,11 @@ const TEAM_COMMANDS = new Set(["teamwork", "swarm"]);
 /**
   What the composer's "/" lists: Liner Code's own first, then the tool's. A tool command with the same name stays the
   tool's, every time it is asked, the cached answer as the fresh one (the cached one listed both). A session with no team
-  (a side chat, a scan) has no Teamwork or Swarm.
+  (a side chat, a scan) has no Teamwork or Swarm. /compact is in a side chat and a scan too, since the turn compacts there
+  as anywhere (runtime.ts COMPACT), but not on the Demo, which the runtime hands the words to as they are.
 */
-export function commandsWith(tool: CommandInfo[], team = true): CommandInfo[] {
-  return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && !tool.some((x) => x.name === c.name)), ...tool];
+export function commandsWith(tool: CommandInfo[], team = true, compacts = true): CommandInfo[] {
+  return [...LINER_COMMANDS.filter((c) => (team || !TEAM_COMMANDS.has(c.name)) && (compacts || c.name !== "compact") && !tool.some((x) => x.name === c.name)), ...tool];
 }
 /**
   Whether the "/" list offers /teamwork and /swarm: not in a side chat or a scan, and not when the box says it takes no
@@ -236,6 +239,13 @@ function rulesOf(root: string) {
 }
 
 const ROOTS = ["Code", "code", "Projects", "projects", "Project", "Developer", "dev", "src", "repos", "GitHub", "Documents/GitHub", "AndroidStudioProjects", "Sites", "work"];
+
+/**
+  How the tools' model lists are asked, counted up when a way changes so a list saved from the old way is asked again at
+  once. 2: OpenCode's comes from its server once the folder's models are loaded; before, the first answer of a server just
+  started (an empty list) left its session's list in its place, with no effort levels or prices.
+*/
+const LIST_WAY = 2;
 
 /** A saved tool as the snapshot needs it, checked before last launch's list stands in for this one's look. */
 const isInfo = (d: unknown): d is ProviderInfo => {
@@ -314,7 +324,8 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   // answer is kept on disk and shown at once; the tool is asked again in the background when it
   // was updated, after half a day, or when you press Look again.
   const modelsFile = join(store.home, "models.json");
-  type Listed = { version?: string; at: number; models: ModelInfo[] };
+  // `way` is how the lists were asked (LIST_WAY): one saved from an older way is asked again rather than kept its half day.
+  type Listed = { version?: string; at: number; models: ModelInfo[]; way?: number };
   let listed: Record<string, Listed> = {};
   try {
     listed = JSON.parse(readFileSync(modelsFile, "utf8")) as Record<string, Listed>;
@@ -326,17 +337,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
   const commandsCache = new Map<string, { at: number; commands: CommandInfo[]; skills: SkillInfo[] }>();
   /** When each project's base branch was last fetched, for the pull request card. */
   const fetched = new Map<string, number>();
-  const askModels = async (id: ProviderInfo["id"], force: boolean) => {
+  // `quiet` is an ask nobody pressed for (the tool said its models changed): an answer the same as the one shown changes nothing.
+  const askModels = async (id: ProviderInfo["id"], force: boolean, quiet = false) => {
     const p = providers[id];
     const info = detected.find((d) => d.id === id);
     const had = listed[id];
     if (!p?.models || !info?.available || !info.adapter || asking.has(id)) return;
-    if (!force && had && had.version === info.version && Date.now() - had.at < 12 * 3600_000) return;
+    if (!force && had && had.way === LIST_WAY && had.version === info.version && Date.now() - had.at < 12 * 3600_000) return;
     asking.add(id);
     try {
       const models = await p.models(env, join(store.home, "probe"));
       if (!models.length) return;
-      listed = { ...listed, [id]: { version: info.version, at: Date.now(), models } };
+      if (quiet && had?.way === LIST_WAY && JSON.stringify(had.models) === JSON.stringify(models)) return;
+      listed = { ...listed, [id]: { version: info.version, at: Date.now(), models, way: LIST_WAY } };
       writeFileSync(modelsFile, JSON.stringify(listed));
       const hasEffort = models.some((m) => Boolean(m.efforts?.length));
       detected = detected.map((d) => (d.id === id ? { ...d, models, modelsFrom: "cli", modelsAt: listed[id].at, supports: { ...d.supports, effort: d.supports.effort || hasEffort } } : d));
@@ -411,7 +424,7 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       return { ...m, efforts };
     });
     if (!changed) return;
-    listed = { ...listed, [providerId]: { version: cur.version, at: Date.now(), models } };
+    listed = { ...listed, [providerId]: { version: cur.version, at: Date.now(), models, way: listed[providerId]?.way } };
     try {
       writeFileSync(modelsFile, JSON.stringify(listed));
     } catch {
@@ -420,6 +433,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
     detected = detected.map((d) => (d.id === providerId ? { ...d, models, supports: { ...d.supports, effort: true } } : d));
     publish();
   });
+  // OpenCode's server says when its models change (a sign-in, a provider or plugin added): its list is asked again then, so
+  // the picker has a model's levels while the app runs, as T3 Code re-reads its catalog on the same word.
+  onOpenCodeModels(() => void askModels("opencode", true, true));
   // Each tool's plan windows, asked of the tool: once its tools are found, again after a turn on
   // it (fifteen seconds apart at most: Claude Code's answer starts it), and when you press Look
   // again. A minute's answer is reused otherwise. The app is sent them as they come.
@@ -943,14 +959,15 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
       const had = commandsCache.get(key);
       const t = threadId ? store.threads.find((x) => x.id === threadId) : undefined;
       const team = takesTeam(t, hint);
-      const own = { commands: commandsWith([], team), skills: [] as SkillInfo[] };
-      if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team), skills: had.skills };
+      const compacts = familyOf(provider) !== "demo";
+      const own = { commands: commandsWith([], team, compacts), skills: [] as SkillInfo[] };
+      if (had && Date.now() - had.at < 5 * 60_000) return { commands: commandsWith(had.commands, team, compacts), skills: had.skills };
       const p = providers[provider];
       if (!p?.commands) return own;
       try {
         const r = await p.commands(runtime.envFor(provider), cwd);
         commandsCache.set(key, { at: Date.now(), ...r });
-        return { commands: commandsWith(r.commands, team), skills: r.skills };
+        return { commands: commandsWith(r.commands, team, compacts), skills: r.skills };
       } catch {
         return own;
       }
@@ -1195,11 +1212,19 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
           tree = sub ? { path: join(root, sub), branch, root, made: true } : { path: root, branch, made: true };
           // Setting up a new worktree: its submodules, which git leaves empty, then the project's setup
           // command, optional trusted `.liner/worktree-setup.sh`, and scripts marked to run there.
-          const steps = setupSteps(projectId);
-          const hookFile = worktreeHookPath(tree.path);
+          // A fix of a pull request starts at its head, someone else's code: the setup command (an install runs the scripts its
+          // package.json names) and its hook would run that code as you, outside the session's level, so neither runs.
+          const foreign = tag?.kind === "fix" && Boolean(base);
+          const steps = foreign ? [] : setupSteps(projectId);
+          const hookFile = foreign ? null : worktreeHookPath(tree.path);
           const hookTrusted = Boolean(hookFile && store.settings.worktreeHooksTrusted?.includes(projectId));
-          if (hookFile && hookTrusted) steps.push(`sh ${JSON.stringify(hookFile)}`);
+          // The hook you trusted is the one in the project's folder: a branch the worktree starts from (a pull request's head)
+          // may have rewritten it, and trust in yours isn't trust in that.
+          const hookSame = hookTrusted && sameFile(hookFile, worktreeHookPath(project.path));
+          if (hookSame) steps.push(`sh ${JSON.stringify(hookFile)}`);
+          else if (hookTrusted) notice = "This worktree's .liner/worktree-setup.sh isn't the one you trusted in the project's folder (the branch it starts from changed it), so it didn't run. Read it, then run it yourself if it's right.";
           else if (hookFile) notice = "Found .liner/worktree-setup.sh — trust worktree setup hooks for this project in Settings to run it automatically.";
+          if (foreign && (setupSteps(projectId).length || worktreeHookPath(tree.path))) notice = "This fix starts at the pull request's head, someone else's code, so the worktree wasn't set up: the project's setup command and setup hook would have run that code as you. Set it up yourself once you've read the changes.";
           const mods = existsSync(join(root, ".gitmodules"));
           const at = tree.path;
           const prep = async () => {
@@ -1329,8 +1354,9 @@ export function createApi(store: Store, runtime: Runtime, env: NodeJS.ProcessEnv
         access: s.access,
         live: s.live,
         context: s.context ? { ...s.context, measured: true } : last,
-        // Any Claude Code account compacts on request (a second one is "claude.work"); another tool where its look says it does, and Codex before that look.
-        compact: familyOf(s.provider) === "claude" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
+        // Any Claude Code account compacts on request (a second one is "claude.work"), and OpenCode (its server or its ACP); another
+        // tool where its look says it does, and Codex before that look.
+        compact: familyOf(s.provider) === "claude" || familyOf(s.provider) === "opencode" || (detected.find((p) => p.id === s.provider)?.supports.compact ?? s.provider === "codex"),
       };
     },
     "outside.info": () => {
@@ -2499,6 +2525,16 @@ function unsealable(agent?: string, sidekick?: string, profile: (id: string) => 
   if (agent !== undefined && (!ref || !sealable(tool(ref)))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: pick a Claude Code model.";
   if (sidekick && !sealable(tool(sidekick))) return "A Specialist scan is sealed, and only Claude Code can run a sealed session: its sidekick has to be a Claude Code model, or none.";
   return undefined;
+}
+
+/** Whether two files hold the same bytes; false when either isn't there or can't be read. */
+function sameFile(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    return readFileSync(a).equals(readFileSync(b));
+  } catch {
+    return false;
+  }
 }
 
 /**

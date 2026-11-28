@@ -105,6 +105,29 @@ test("A tool started by a wrapper script without exec still ends when its time i
   }
 });
 
+test("cloudflared is started marked as the engine's, so one an engine that died hard left serving the address is ended by the next", { skip: process.platform === "win32" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liner-tunnel-"));
+  try {
+    // Says whether it has the run's mark in its environment, and its marker file open beside its stdio, then keeps running as cloudflared does.
+    const fake = join(dir, "cloudflared");
+    writeFileSync(fake, '#!/bin/sh\necho "run=$LINER_RUN_ID"\nif [ -e /dev/fd/3 ]; then echo held; fi\necho ready\nsleep 30\n', { mode: 0o755 });
+    const child = defaultDeps(process.env).spawn(fake, []);
+    let out = "";
+    await new Promise<void>((r) => {
+      const t = setTimeout(r, 3000);
+      child.stdout?.on("data", (d: Buffer) => {
+        out += String(d);
+        if (out.includes("ready")) (clearTimeout(t), r());
+      });
+    });
+    child.kill();
+    assert.match(out, /run=[0-9a-f]{16,}/);
+    assert.match(out, /held/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("A Cloudflare quick tunnel's address is read from its output, and the process ends with off", async () => {
   const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), killed: false, kill() { this.killed = true; return true; } });
   let argv: string[] = [];

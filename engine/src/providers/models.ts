@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { CommandInfo, EffortInfo, ModelInfo, SkillInfo } from "../../../contracts/src/index.ts";
-import { jsonLines, killTree, run, runBounded, spawn, which } from "../exec.ts";
+import { jsonLines, killTree, run, spawn, which } from "../exec.ts";
 import { VERSION } from "../version.ts";
 
 const LEVELS: Record<string, { label: string; description: string }> = {
@@ -193,7 +193,7 @@ const costOf = (c: unknown): { input: number; output: number } | null => {
 };
 
 /**
-  OpenCode's models as `opencode api GET /api/model` prints them (its `model.list`, OpenCode 2): `{ data: [model…] }`, each with
+  OpenCode's models as its server's GET /api/model answers (its `model.list`, OpenCode 2): `{ data: [model…] }`, each with
   its provider (Zen is "opencode", Go "opencode-go"), its bare id, its name, its `variants` (the effort levels it takes from that
   provider, in OpenCode's order: GLM-5.3 low, high, max; Kimi K3 on Go max alone) and its `cost` (the first entry its base price,
   a later one with a context `tier` the price for long prompts; a free model all zeros, shown "$0"). Ids are "provider/id", as
@@ -239,22 +239,7 @@ export function opencodeModelList(stdout: string): ModelInfo[] | null {
 /** How long OpenCode's model listing may take, in ms, before it's ended and the session's list is used (a test shortens it). */
 export const OPENCODE_LIST = { ms: 30000 };
 
-/**
-  OpenCode's own list with each model's levels and price (opencodeModelList), asked of it standalone in `scratch`; null when it can't say.
-  Only OpenCode 2 has `opencode api`: 1.x could read "api" as a folder and start its interface, so `version` (its --version
-  line) must say 2 or later, and an unknown one isn't asked. Ended with all it started past OPENCODE_LIST.ms or on `signal`
-  (runBounded), so a listing that hangs never holds up the tool list or Check my tools.
-*/
-export async function opencodeModels(path: string, env: NodeJS.ProcessEnv, scratch: string, version: string | undefined, signal?: AbortSignal, timeout = OPENCODE_LIST.ms): Promise<ModelInfo[] | null> {
-  if (!opencodeApiIn(version) || signal?.aborted) return null;
-  mkdirSync(scratch, { recursive: true });
-  // Standalone: without it `opencode api` starts OpenCode's background service in a session of its own, which outlives
-  // this bound and the app, and a second OpenCode home holding its port makes every listing wait and fail.
-  const r = await runBounded(path, ["api", "--standalone", "GET", "/api/model"], { cwd: scratch, env, timeout, signal, input: "" });
-  return r.code === 0 && !r.cut ? opencodeModelList(r.stdout) : null;
-}
-
-/** Whether an OpenCode --version line is version 2 or later, which has `opencode api`. */
+/** Whether an OpenCode --version line is version 2 or later, which has the server API its model list is asked of (opencode-server.ts opencodeModels). */
 export function opencodeApiIn(version: string | undefined): boolean {
   const m = /(\d+)\.\d+\.\d+/.exec(version ?? "");
   return Boolean(m && Number(m[1]) >= 2);

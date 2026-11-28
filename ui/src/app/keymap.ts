@@ -9,6 +9,7 @@
   the Mac app's menu takes the same keys, so a menu item and its shortcut never disagree.
 */
 import { ROUTINES_ON, type KeyBinding } from "@contracts";
+import { settingsOver } from "./menu-keys";
 
 export type Command = { id: string; label: string; group: string; keys: string[]; when?: string };
 
@@ -139,9 +140,11 @@ function same(e: KeyboardEvent, c: Chord) {
 function context(e: KeyboardEvent) {
   const t = e.target instanceof Element ? e.target : null;
   const rv = document.querySelector(".lc-panel:not([data-leaving]) .lc-surface:not([hidden]) .lc-rv");
+  // Settings opens over the session as a pop-up, and the session stays under it: its keys wait, as when Settings was a page.
+  const over = settingsOver(t, document);
   return {
-    session: Boolean(document.querySelector(".lc-session")),
-    review: Boolean(rv && !rv.closest("[hidden]")),
+    session: !over && Boolean(document.querySelector(".lc-session")),
+    review: !over && Boolean(rv && !rv.closest("[hidden]")),
     settings: Boolean(document.querySelector(".lc-st-side")),
     composer: Boolean(t?.closest(".lc-composer")),
     textInput: Boolean(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || (t as HTMLElement).isContentEditable)),

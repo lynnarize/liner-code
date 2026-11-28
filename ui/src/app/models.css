@@ -528,6 +528,11 @@
   padding: 0 6px;
   border-bottom: 0.5px solid var(--lc-line2);
 }
+/* A search field in the picker's cards (Find a sidekick) takes the focus when its list opens: its caret says so, with no ring round it. */
+.lc-pk .lc-mp-find:focus-within {
+  background: var(--l-wash-2);
+  box-shadow: none;
+}
 .lc-pk-top .lc-mp-find {
   flex: 1;
   margin: 0;

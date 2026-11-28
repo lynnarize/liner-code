@@ -883,7 +883,7 @@ export class CodexServerSession implements ProviderSession {
       // codexAppServerManager.ts settles on it only when no turn is active).
       case "thread/compacted":
         if (!this.compacting || this.turnId) return;
-        sink.notice("Codex compacted the conversation.");
+        sink.notice("Codex compacted the conversation.", "codex-compact");
         this.done?.();
         return;
     }
@@ -945,8 +945,10 @@ export class CodexServerSession implements ProviderSession {
       case "plan":
         if (done && it.text) sink.text(String(it.text).trim(), id);
         return;
+      // The one asked for with /compact runs as a turn with this item in it (0.172): it was asked, not made to make room. Both
+      // ways it ends share a key, so a compaction that says it twice has one line.
       case "contextCompaction":
-        if (done) sink.notice("Codex compacted the conversation to make room.");
+        if (done) sink.notice(this.compacting ? "Codex compacted the conversation." : "Codex compacted the conversation to make room.", this.compacting ? "codex-compact" : undefined);
         return;
       case "imageGeneration": {
         const failed = it.status === "failed" || Boolean(it.failure);

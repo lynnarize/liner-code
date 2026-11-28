@@ -34,6 +34,11 @@ const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 /** Open MCP sessions an app may hold at once: the oldest goes past it. */
 const SESSIONS_PER_APP = 20;
 const MAX_BODY = 1024 * 1024;
+/**
+  How long a request may take to come in whole, headers and body: a sender that stops halfway is answered 408 and let go.
+  Only the coming in is timed, so an answer that takes minutes (liner_wait, a call waiting on your Allow) is untouched.
+*/
+const REQUEST_MS = 30_000;
 
 /** `close` resolves once the port is let go, so turning it off and on again gets the same port back. */
 type Listener = { port: number; close: () => Promise<void>; endApp: (appId: string) => void };
@@ -45,6 +50,8 @@ export type HttpOptions = {
   /** The tunnel's (or your own address's) public host while it's up: the one name besides this listener's own it answers to. */
   publicHost: () => string | null;
   log?: (line: string) => void;
+  /** How long a request may take to come in (REQUEST_MS); a test shortens it. */
+  requestMs?: number;
 };
 
 const json = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => void res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff", ...headers }).end(JSON.stringify(body));
@@ -203,16 +210,20 @@ export function startMcpHttp(o: HttpOptions): Promise<Listener> {
     json(res, 200, body, { "mcp-session-id": sid });
   };
 
-  const server = createServer((req, res) => {
+  const requestMs = o.requestMs ?? REQUEST_MS;
+  // Node looks for requests past their time at this interval, so it is well under the time itself.
+  const server = createServer({ connectionsCheckingInterval: Math.max(50, Math.min(30_000, Math.floor(requestMs / 3))) }, (req, res) => {
     void handle(req, res).catch((e) => {
       (o.log ?? ((l: string) => console.error(l)))(`[mcp] listener: ${e instanceof Error ? e.message : String(e)}`);
       if (!res.headersSent) res.writeHead(e instanceof Error && e.message === "too large" ? 413 : 500);
       res.end();
     });
   });
-  // Slow clients don't hold the door open: headers within 20 seconds, and an idle connection goes after a minute.
-  server.headersTimeout = 20_000;
-  server.requestTimeout = 0;
+  // Slow clients don't hold the door open: headers within 20 seconds, the whole request within REQUEST_MS, and an idle
+  // connection goes after a minute. With no time on the request, a POST to /token that never finished its body (no key is
+  // needed there) held its connection for good, so anyone who reached the tunnel could pile them up.
+  server.headersTimeout = Math.min(20_000, requestMs);
+  server.requestTimeout = requestMs;
   server.keepAliveTimeout = 60_000;
 
   return new Promise((resolve, reject) => {

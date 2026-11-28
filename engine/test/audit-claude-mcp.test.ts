@@ -73,14 +73,14 @@ function standIn(over: (n: number) => Over = () => ({})) {
 }
 
 function recorder(answer: { allow: boolean; reason?: string } = { allow: true }) {
-  const r = { text: "", notices: [] as { text: string; key?: string }[], plans: [] as { title: string; status: string }[][], errors: [] as string[], limits: [] as { message: string; until?: number }[], approvals: [] as ApprovalRequest[], asked: [] as Question[][], usage: [] as Partial<Usage>[], answers: null as Record<string, string> | null };
+  const r = { text: "", notices: [] as { text: string; key?: string }[], plans: [] as { title: string; status: string }[][], errors: [] as string[], limits: [] as { message: string; until?: number }[], approvals: [] as ApprovalRequest[], asked: [] as Question[][], askedHow: [] as ({ optional?: boolean; elicited?: boolean } | undefined)[], usage: [] as Partial<Usage>[], answers: null as Record<string, string> | null };
   const sink: TurnSink = {
     text: (d) => void (r.text += d),
     reasoning: () => {},
     tool: () => {},
     plan: (e) => void r.plans.push(e),
     approve: async (req) => (r.approvals.push(req), answer),
-    ask: async (q) => (r.asked.push(q), r.answers),
+    ask: async (q, _signal, o) => (r.asked.push(q), r.askedHow.push(o), r.answers),
     propose: async () => ({ approve: true }),
     usage: (u) => void r.usage.push(u),
     session: () => {},
@@ -1068,6 +1068,8 @@ test("an MCP server's form with choices comes as a question card, and its answer
     assert.deepEqual(a, { action: "accept", content: { env: "staging", now: true } });
     assert.deepEqual(r.asked[0].map((q) => q.question), ["Which environment?", "Deploy now?"]);
     assert.equal(r.asked[0][0].header, "deploy");
+    // Marked as the server's, so no app outside Liner Code can answer its choices through liner_answer.
+    assert.equal(r.askedHow[0]?.elicited, true);
     made[0].emit(result({ user_message_uuids: [mine] }));
     await turn;
     s.close();

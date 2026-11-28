@@ -62,6 +62,10 @@ function listen() {
   if (listening) return;
   listening = true;
   onStream((e) => {
+    if (e.type !== "security.scan" && e.type !== "security.changed") return;
+    // A target no chip shows isn't asked about, so what is kept for it is out of date from now: forgotten, it is asked
+    // afresh when its chip comes back, rather than saying Scanning for a scan that ended while the page was away.
+    for (const key of status.keys()) if (!shown.has(key)) status.delete(key);
     if (e.type === "security.scan" && e.scan.target) {
       // The chip moves with the record at once (a scan that just finished reads finished); its counts follow from the engine.
       const key = targetKey(e.scan.target);

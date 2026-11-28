@@ -1,11 +1,13 @@
 /*
   A model's effort levels and price are what its tool said for that model, never a shared list, another model's, or a guess:
-  Claude Code's supportedModels(), Codex's catalog, OpenCode's model list, an ACP session's thinking option. A saved effort the
+  Claude Code's supportedModels(), Codex's catalog, OpenCode's model list (read once it has loaded), an ACP session's thinking option. A saved effort the
   model no longer takes still runs. Run with `node --test engine/test/model-efforts.test.ts`.
 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { createServer, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ModelInfo, ProviderInfo, Thread } from "../../contracts/src/index.ts";
@@ -15,6 +17,7 @@ import { opencode } from "../src/providers/acp.ts";
 import { claude, sdk } from "../src/providers/claude.ts";
 import { codexListed } from "../src/providers/codex.ts";
 import { acpModels, effortOf, OPENCODE_LIST, opencodeModelList, thoughtLevels, toolLevels, ULTRACODE, ULTRATHINK } from "../src/providers/models.ts";
+import { onOpenCodeModels, OPENCODE_MODELS, OpenCodeDaemon } from "../src/providers/opencode-server.ts";
 import { Runtime } from "../src/runtime.ts";
 import { Store } from "../src/store.ts";
 
@@ -388,11 +391,14 @@ test("Claude Code's list saved for the next launch reads with its price apart an
 });
 
 /**
-  An opencode on PATH that says `version` to --version, answers `opencode api GET /api/model` with `said` (or fails when it's
-  null), or with `hang` starts a child that holds its output open and never answers; its ACP session lists one model. It logs
-  how it was started, and the pids of a hanging call and its child.
+  An opencode on PATH that says `version` to --version and whose `serve` is a small OpenCode 2 server, answering its model
+  list as 2.4.2 does: a folder's first ask gets an empty list, the asks after it a startup snapshot (every model under
+  "opencode" alone), and `cold` ms on, the real list `said`, announced by `model.updated` for the folder unless `says` is
+  false. With `said` null its list fails; with `hang` its serve starts a child, holds its output open and never says where it
+  listens. `opencode api` answers as the real one does to an ask made the moment its server starts: an empty list. Its ACP
+  session lists one model. It logs how it was started and each folder asked of, and the pids of a serve and a hanging one's child.
 */
-function fakeOpencode(said: string | null, o: { version?: string; hang?: boolean } = {}) {
+function fakeOpencode(said: string | null, o: { version?: string; hang?: boolean; cold?: number; says?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "lc-efforts-oc-"));
   const answer = join(dir, "answer.json");
   const pids = join(dir, "pids");
@@ -400,17 +406,48 @@ function fakeOpencode(said: string | null, o: { version?: string; hang?: boolean
   writeFileSync(join(dir, "opencode"), `#!/usr/bin/env node
 const fs = require("fs");
 const a = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(join(dir, "log"))}, JSON.stringify({ argv: a, cwd: process.cwd(), permission: Boolean(process.env.OPENCODE_PERMISSION) }) + "\\n");
+const log = (o) => fs.appendFileSync(${JSON.stringify(join(dir, "log"))}, JSON.stringify(o) + "\\n");
+log({ argv: a, cwd: process.cwd(), permission: Boolean(process.env.OPENCODE_PERMISSION) });
 if (a[0] === "--version") {
   process.stdout.write(${JSON.stringify(o.version ?? "2.3.0")} + "\\n");
   process.exit(0);
-} else if (a[0] === "api" && ${Boolean(o.hang)}) {
+} else if (a[0] === "api") {
+  process.stdout.write(JSON.stringify({ location: { directory: process.cwd() }, data: [] }));
+  process.exit(0);
+} else if (a[0] === "serve" && ${Boolean(o.hang)}) {
   const c = require("child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] });
   fs.appendFileSync(${JSON.stringify(pids)}, process.pid + "\\n" + c.pid + "\\n");
   setInterval(() => {}, 1000);
-} else if (a[0] === "api" && fs.existsSync(${JSON.stringify(answer)})) {
-  process.stdout.write(fs.readFileSync(${JSON.stringify(answer)}, "utf8"));
-  process.exit(0);
+} else if (a[0] === "serve") {
+  fs.appendFileSync(${JSON.stringify(pids)}, process.pid + "\\n");
+  const real = fs.existsSync(${JSON.stringify(answer)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(answer)}, "utf8")) : null;
+  const clients = new Set();
+  const folders = {};
+  const json = (res, v) => (res.writeHead(200, { "content-type": "application/json" }), res.end(JSON.stringify(v)));
+  const s = require("http").createServer((req, res) => {
+    const u = new URL(req.url, "http://x");
+    if (u.pathname === "/api/info") return json(res, { version: "2.4.2" });
+    if (u.pathname === "/api/event") return (res.writeHead(200, { "content-type": "text/event-stream" }), res.write(": hi\\n\\n"), clients.add(res));
+    if (u.pathname === "/api/model") {
+      const folder = u.searchParams.get("location[directory]") || "";
+      log({ asked: folder });
+      if (!real) return (res.writeHead(500), res.end("no list"));
+      const f = (folders[folder] ??= { asks: 0, loaded: false });
+      if (++f.asks === 1) {
+        setTimeout(() => {
+          f.loaded = true;
+          if (${o.says !== false}) for (const c of clients) c.write("data: " + JSON.stringify({ id: "e1", type: "model.updated", location: { directory: fs.realpathSync(folder) }, data: {} }) + "\\n\\n");
+        }, ${o.cold ?? 150});
+        return json(res, { data: [] });
+      }
+      return json(res, f.loaded ? real : { data: real.data.filter((m) => m.providerID === "opencode") });
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  s.listen(0, "127.0.0.1", () => console.log("opencode server listening on http://127.0.0.1:" + s.address().port));
+  // --stdio: it ends once its input closes.
+  process.stdin.on("end", () => process.exit(0)).resume();
 } else if (a[0] === "acp") {
   let buf = "";
   process.stdin.on("data", (d) => {
@@ -426,9 +463,11 @@ if (a[0] === "--version") {
 } else process.exit(1);
 `);
   chmodSync(join(dir, "opencode"), 0o755);
-  const log = () => readFileSync(join(dir, "log"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { argv: string[]; cwd: string; permission: boolean });
+  const lines = () => readFileSync(join(dir, "log"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { argv?: string[]; cwd?: string; permission?: boolean; asked?: string });
+  const log = () => lines().filter((l) => l.argv).map((l) => l as { argv: string[]; cwd: string; permission: boolean });
+  const asked = () => lines().flatMap((l) => (l.asked === undefined ? [] : [l.asked]));
   const started = () => (existsSync(pids) ? readFileSync(pids, "utf8").split("\n").filter(Boolean).map(Number) : []);
-  return { env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } as NodeJS.ProcessEnv, scratch: join(dir, "probe"), log, started };
+  return { dir, env: { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } as NodeJS.ProcessEnv, scratch: join(dir, "probe"), log, asked, started };
 }
 
 /** Waits up to 5 seconds for every one of `pids` to be gone (killTree's SIGKILL comes 2 seconds after its SIGTERM). */
@@ -446,42 +485,77 @@ const alive = (pid: number) => {
   }
 };
 
-test("OpenCode's models come from its own model list, asked with OpenCode's environment in an empty folder, with its default first", async () => {
+/** Runs `body` with OpenCode's waits for a folder's models set to `waits`, and puts them back. */
+async function withWaits(waits: Partial<typeof OPENCODE_MODELS>, body: () => Promise<void>) {
+  const was = { ...OPENCODE_MODELS };
+  Object.assign(OPENCODE_MODELS, waits);
+  try {
+    await body();
+  } finally {
+    Object.assign(OPENCODE_MODELS, was);
+  }
+}
+
+test("OpenCode's models come from its server's own model list, asked with OpenCode's environment for an empty folder, with its default first", async () => {
   const f = fakeOpencode(SAMPLE);
   const list = await opencode.models!(f.env, f.scratch);
   assert.equal(list[0].id, "default");
   assert.deepEqual(ids(list.find((m) => m.id === "opencode-go/kimi-k3")), ["max"]);
-  const call = f.log().find((c) => c.argv[0] === "api")!;
-  assert.deepEqual(call.argv.filter((a) => a !== "--standalone"), ["api", "GET", "/api/model"]);
-  assert.ok(call.cwd.endsWith("probe"), call.cwd);
+  const call = f.log().find((c) => c.argv[0] === "serve")!;
   assert.equal(call.permission, true, "started as every other OpenCode call is");
+  assert.ok(f.asked().length > 0 && f.asked().every((folder) => folder.endsWith("probe")), f.asked().join());
 });
 
-test("OpenCode's model list is asked standalone, so it never starts OpenCode's background service, which would outlive the app and its time limit", async () => {
+test("A model's effort levels come from the list OpenCode gives once the folder's models are loaded, not the empty list or the startup snapshot it answers first", async () => {
+  const f = fakeOpencode(SAMPLE, { cold: 500 });
+  const list = await opencode.models!(f.env, f.scratch);
+  assert.deepEqual(ids(list.find((m) => m.id === "opencode/glm-5.3")), ["low", "high", "max"]);
+  assert.deepEqual(ids(list.find((m) => m.id === "opencode-go/kimi-k3")), ["max"], "a Go model, which the snapshot leaves out");
+  assert.deepEqual(list.find((m) => m.id === "opencode-go/deepseek-v4-pro")?.price, { input: "$0.66", output: "$1.98" });
+  assert.ok(f.log().every((c) => c.argv[0] !== "acp"), "its session's list, which has no levels, never stood in for it");
+});
+
+test("An OpenCode that never says its models are loaded is read until two answers agree", async () => {
+  const f = fakeOpencode(SAMPLE, { cold: 100, says: false });
+  await withWaits({ said: 400, every: 50 }, async () => {
+    const list = await opencode.models!(f.env, f.scratch);
+    assert.deepEqual(ids(list.find((m) => m.id === "opencode-go/kimi-k3")), ["max"]);
+    assert.ok(f.asked().length >= 3, "the first ask, then two that agree");
+  });
+});
+
+test("OpenCode's model list is asked of a server started for the ask and ended after it, never its background service, which would outlive the app", async () => {
   const f = fakeOpencode(SAMPLE);
   await opencode.models!(f.env, f.scratch);
-  const call = f.log().find((c) => c.argv[0] === "api")!;
-  assert.deepEqual(call.argv, ["api", "--standalone", "GET", "/api/model"]);
+  const call = f.log().find((c) => c.argv[0] === "serve")!;
+  assert.deepEqual(call.argv, ["serve", "--stdio", "--port", "0", "--hostname", "127.0.0.1"]);
+  assert.ok(f.log().every((c) => c.argv[0] !== "api"), "not `opencode api`, which asks before the models are loaded");
+  const pids = f.started();
+  assert.equal(pids.length, 1);
+  await gone(pids);
+  assert.deepEqual(pids.filter(alive), [], "the server ended with the ask");
 });
 
 test("An OpenCode whose model list can't be read falls back to its session's list, with no levels or price made up", async () => {
   const f = fakeOpencode(null);
-  const list = await opencode.models!(f.env, f.scratch);
-  assert.ok(list.every((m) => !m.efforts && !m.price));
-  assert.deepEqual(f.log().map((c) => c.argv[0]), ["--version", "api", "acp"], "its version, its list, then a session");
+  await withWaits({ said: 200, agree: 200, every: 50 }, async () => {
+    const list = await opencode.models!(f.env, f.scratch);
+    assert.ok(list.every((m) => !m.efforts && !m.price));
+    assert.deepEqual(f.log().map((c) => c.argv[0]), ["--version", "serve", "acp"], "its version, its list, then a session");
+  });
 });
 
-test("An OpenCode before version 2 is never asked for its model list, which it could read as a folder, and its session's list comes", async () => {
+test("An OpenCode before version 2 is never asked for its model list, which it has no server API for, and its session's list comes", async () => {
   const f = fakeOpencode(SAMPLE, { version: "1.14.2" });
   const list = await opencode.models!(f.env, f.scratch);
-  assert.deepEqual(f.log().map((c) => c.argv[0]), ["--version", "acp"], "no api call");
+  assert.deepEqual(f.log().map((c) => c.argv[0]), ["--version", "acp"], "no server started");
   assert.ok(list.some((m) => m.id === "opencode/big-pickle"), "the session's list");
 });
 
 test("An OpenCode model list that hangs is ended with the children it started, and the session's list still arrives", async () => {
   const f = fakeOpencode(null, { hang: true });
   const was = OPENCODE_LIST.ms;
-  // Long enough for the call to start its child under a loaded run, short of the 30 seconds.
+  // Long enough for the server to start its child under a loaded run, short of the 30 seconds.
   OPENCODE_LIST.ms = 3000;
   try {
     const at = Date.now();
@@ -489,7 +563,7 @@ test("An OpenCode model list that hangs is ended with the children it started, a
     assert.ok(Date.now() - at < 15000, "not held up past its bound");
     assert.ok(list.some((m) => m.id === "opencode/big-pickle"), "the session's list");
     const pids = f.started();
-    assert.equal(pids.length, 2, "the call and its child");
+    assert.equal(pids.length, 2, "the server and its child");
     await gone(pids);
     assert.deepEqual(pids.filter(alive), [], "both ended");
   } finally {
@@ -501,7 +575,7 @@ test("An OpenCode model list is ended, with its children, when the look that ask
   const f = fakeOpencode(null, { hang: true });
   const stop = new AbortController();
   const at = Date.now();
-  // Stopped once the call and its child are both running.
+  // Stopped once the server and its child are both running.
   const watch = setInterval(() => f.started().length === 2 && (clearInterval(watch), stop.abort()), 50);
   const list = await opencode.models!(f.env, f.scratch, stop.signal);
   clearInterval(watch);
@@ -511,6 +585,106 @@ test("An OpenCode model list is ended, with its children, when the look that ask
   assert.equal(pids.length, 2);
   await gone(pids);
   assert.deepEqual(pids.filter(alive), [], "both ended");
+});
+
+/** An OpenCode 2 server in this process: its event stream, and a model list that is `list.now`, for each folder asked of. */
+async function mockServer() {
+  const clients = new Set<ServerResponse>();
+  const list = { now: JSON.parse(SAMPLE) as unknown, asks: 0 };
+  const server = createServer((req, res) => {
+    const u = new URL(req.url ?? "/", "http://x");
+    if (u.pathname === "/api/info") return void (res.writeHead(200, { "content-type": "application/json" }), res.end(JSON.stringify({ version: "2.4.2" })));
+    if (u.pathname === "/api/event") return void (res.writeHead(200, { "content-type": "text/event-stream" }), res.write(": hi\n\n"), clients.add(res));
+    if (u.pathname === "/api/model") return void (list.asks++, res.writeHead(200, { "content-type": "application/json" }), res.end(JSON.stringify(list.now)));
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const say = (directory: string) => {
+    for (const c of clients) c.write(`data: ${JSON.stringify({ id: "e", type: "model.updated", location: { directory }, data: {} })}\n\n`);
+  };
+  const close = () => {
+    for (const c of clients) c.destroy();
+    server.close();
+  };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, list, say, connected: () => clients.size > 0, close };
+}
+
+test("OpenCode's own server saying its models changed has the tool's list asked again, once for a burst, and a server for an API endpoint's models never does", async () => {
+  const m = await mockServer();
+  const own = await OpenCodeDaemon.connect(m.url, "pw");
+  const endpoint = await OpenCodeDaemon.connect(m.url, "pw");
+  own.own = true;
+  let told = 0;
+  const off = onOpenCodeModels(() => void told++);
+  try {
+    await own.waitSse();
+    await endpoint.waitSse();
+    for (let i = 0; i < 100 && !m.connected(); i++) await new Promise((r) => setTimeout(r, 10));
+    own.own = false;
+    m.say("/project");
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(told, 0, "neither is OpenCode's own yet");
+    own.own = true;
+    m.say("/project");
+    m.say("/other");
+    m.say("/project");
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(told, 1, "three changes in a moment are one telling");
+  } finally {
+    off();
+    await own.shutdown();
+    await endpoint.shutdown();
+    m.close();
+  }
+});
+
+test("The word that a folder's models are loaded, which an ask of that folder was waiting for, is the ask's answer and no change to tell of", async () => {
+  const m = await mockServer();
+  const d = await OpenCodeDaemon.connect(m.url, "pw");
+  d.own = true;
+  let told = 0;
+  const off = onOpenCodeModels(() => void told++);
+  const folder = mkdtempSync(join(tmpdir(), "lc-efforts-folder-"));
+  try {
+    const at = Date.now();
+    const asking = d.models(folder);
+    for (let i = 0; i < 100 && m.list.asks < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    m.say(realpathSync(folder));
+    const list = await asking;
+    assert.ok(Date.now() - at < 3000, "answered on the word, not after the 5 seconds it would wait for one");
+    assert.deepEqual(ids(list?.find((x) => x.id === "opencode-go/kimi-k3")), ["max"]);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(told, 0);
+    const asks = m.list.asks;
+    assert.ok(await d.models(folder), "a folder already loaded");
+    assert.equal(m.list.asks, asks + 1, "is asked once, with no wait");
+  } finally {
+    off();
+    await d.shutdown();
+    m.close();
+  }
+});
+
+test("A model list saved from before OpenCode's was asked of a loaded server is asked again at the next launch, and the levels reach the picker", async () => {
+  const f = fakeOpencode(SAMPLE);
+  const home = join(f.dir, "home");
+  mkdirSync(home, { recursive: true });
+  // What 0.3.2 kept: the session's list, which has no levels, for this same version, asked a moment ago.
+  writeFileSync(join(home, "models.json"), JSON.stringify({ opencode: { version: "2.3.0", at: Date.now(), models: [{ id: "default", label: "OpenCode default", description: "" }, { id: "opencode-go/kimi-k3", label: "Kimi K3", description: "", group: "opencode-go" }] } }));
+  const store = new Store(home);
+  const runtime = new Runtime(store, f.env);
+  const api = createApi(store, runtime, f.env, { routines: { routines: [], recent: [], put: () => undefined, remove: () => undefined }, terms: {}, logs: {}, proxies: {} } as never);
+  try {
+    const kimi = () => runtime.providerInfo.find((p) => p.id === "opencode")?.models.find((x) => x.id === "opencode-go/kimi-k3");
+    for (let i = 0; i < 200 && !kimi()?.efforts; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(ids(kimi()), ["max"]);
+    assert.equal(runtime.providerInfo.find((p) => p.id === "opencode")?.supports.effort, true);
+    assert.equal((JSON.parse(readFileSync(join(home, "models.json"), "utf8")) as { opencode: { way?: number } }).opencode.way, 2, "kept as asked the new way, so not asked again for its half day");
+  } finally {
+    api.updates.stop();
+    await runtime.shutdown();
+  }
 });
 
 test("A Teamwork worker in a session that names an agent and sets no effort runs at the agent's effort", () => {
@@ -526,5 +700,28 @@ test("A Teamwork worker in a session that names an agent and sets no effort runs
     assert.equal(swarm.effortOf("t", { model: "codex:gpt", mode: "write" }), "high");
   } finally {
     runtime.shutdown();
+  }
+});
+
+test("Reading an OpenCode's model list until two answers agree leaves no wait listening on the look that asked", async () => {
+  const m = await mockServer();
+  const d = await OpenCodeDaemon.connect(m.url, "pw");
+  const folder = mkdtempSync(join(tmpdir(), "lc-efforts-folder-"));
+  // An OpenCode that never says the folder is loaded and whose list keeps changing: every read waits a pause, then another.
+  const base = JSON.parse(SAMPLE) as { data: { name?: string }[] };
+  let n = 0;
+  const moving = setInterval(() => (m.list.now = { ...base, data: base.data.map((x, i) => (i === 0 ? { ...x, name: `${x.name} ${++n}` } : x)) }), 5);
+  const look = new AbortController();
+  try {
+    await withWaits({ said: 50, agree: 600, every: 20 }, async () => {
+      await d.models(folder, look.signal);
+    });
+    const { getEventListeners } = (await import("node:events")) as unknown as { getEventListeners: (t: EventTarget, name: string) => unknown[] };
+    assert.ok(m.list.asks > 5, `it read ${m.list.asks} times`);
+    assert.equal(getEventListeners(look.signal, "abort").length, 0, "each pause let go of the look once it ended");
+  } finally {
+    clearInterval(moving);
+    await d.shutdown();
+    m.close();
   }
 });
